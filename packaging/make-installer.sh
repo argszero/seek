@@ -73,6 +73,24 @@ case "$PLATFORM" in
       if [[ -n "$APP_SHA" ]]; then
         echo "==> pre-signing runtime mach-o binaries with $APP_SHA"
         SIGNED=0; SKIPPED=0; FAIL=0
+        # Entitlements for hardened-runtime executables: disable library validation
+        # so Python can dlopen its own pip wheels/dylibs under hardened runtime
+        # (without it, hardened runtime's library validation breaks extension load).
+        ENTITLEMENTS="$PKG_ROOT/python.entitlements"
+        cat > "$ENTITLEMENTS" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+  <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+  <true/>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+</dict>
+</plist>
+PLIST
         # Use the default/first keychain in the search list so codesign finds the
         # Developer ID Application. In CI this is /tmp/ci.keychain (set by the
         # import step). If auto-detect yields empty, codesign falls back to its
@@ -87,12 +105,23 @@ case "$PLATFORM" in
         find "$PAYLOAD/python" -type f -print0 2>/dev/null | tr '\0' '\n' > "$FILELIST"
         while IFS= read -r F; do
           [[ -n "$F" ]] || continue
-          if ! file "$F" 2>/dev/null | grep -q 'Mach-O'; then continue; fi
+          # Only Mach-O files need signing; plain text/scripts are untouched.
+          FT="$(file "$F" 2>/dev/null)"
+          if ! echo "$FT" | grep -q 'Mach-O'; then continue; fi
           # Already Developer-ID-signed (e.g. a vendored binary) → leave untouched.
           if codesign -dv "$F" 2>/dev/null | grep -q 'Authority=Developer ID Application'; then
             SKIPPED=$((SKIPPED+1)); continue
           fi
-          if codesign --force --sign "$APP_SHA" $KC_ARG "$F" >/dev/null 2>&1; then
+          # Executables MUST have hardened runtime for Apple notarization
+          # ("The executable does not have the hardened runtime enabled.").
+          # Runtime dylib/.so (bundle/shared lib) must NOT get hardened runtime —
+          # it would enable library validation and break Python dlopen of its own
+          # unsigned-ish extension reloading. Sign them plainly (Developer ID only).
+          RUNTIME_OPT=""
+          if echo "$FT" | grep -qiE 'executable'; then
+            RUNTIME_OPT="--options runtime --entitlements $ENTITLEMENTS"
+          fi
+          if codesign --force $RUNTIME_OPT --sign "$APP_SHA" $KC_ARG "$F" >/dev/null 2>&1; then
             SIGNED=$((SIGNED+1))
           else
             echo "  (warn) failed to sign: $F" >&2
