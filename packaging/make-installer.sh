@@ -56,6 +56,56 @@ case "$PLATFORM" in
       echo "  (bundled GUI: $APP)"
     fi
 
+    # ── Pre-sign the payload's mach-o binaries (developer-cert requirement) ──
+    # Apple notarization requires EVERY mach-o executable/dylib/.so inside the
+    # .pkg to carry a valid Developer ID signature. The bundled Python runtime
+    # ships unsigned .dylib/.so (from the standalone CPython + pip wheels) that
+    # would otherwise fail notarization with "The binary is not signed with a
+    # valid Developer ID certificate" (status=Invalid). We sign each unsigned
+    # mach-o under $PAYLOAD/python with the Developer ID Application identity,
+    # reusing the same identity the .app was signed with. seek-gui/ is EXCLUDED
+    # — electron-builder already signed it (helpers/frameworks must keep their
+    # original signatures).
+    # Only runs when a Developer ID Application identity is available; signature
+    # identity is auto-detected from the keychain search list (unix only).
+    if [[ "$(uname -s)" != "MINGW"* && "$(uname -s)" != "MSYS"* && "$(uname -s)" != "CYGWIN"* ]]; then
+      APP_SHA="$(security find-identity -v -p codesigning 2>/dev/null | grep 'Developer ID Application' | head -1 | sed -E 's/.*\) *([A-F0-9]+) .*/\1/')"
+      if [[ -n "$APP_SHA" ]]; then
+        echo "==> pre-signing runtime mach-o binaries with $APP_SHA"
+        SIGNED=0; SKIPPED=0; FAIL=0
+        # Use the default/first keychain in the search list so codesign finds the
+        # Developer ID Application. In CI this is /tmp/ci.keychain (set by the
+        # import step). If auto-detect yields empty, codesign falls back to its
+        # default search list (may still find the identity).
+        DEFAULT_KEYCHAIN="$(security default-keychain 2>/dev/null | awk -F'"' '{print $2}' | head -1)"
+        KC_ARG=""
+        [[ -n "$DEFAULT_KEYCHAIN" ]] && KC_ARG="--keychain $DEFAULT_KEYCHAIN"
+        # Collect file list into a temp file (portable; avoids process substitution
+        # which is bash-only and broken under `sh`). Paths with newlines are rare in
+        # a package payload; NUL-delimited list preserved via tr for safety.
+        FILELIST="$(mktemp)"
+        find "$PAYLOAD/python" -type f -print0 2>/dev/null | tr '\0' '\n' > "$FILELIST"
+        while IFS= read -r F; do
+          [[ -n "$F" ]] || continue
+          if ! file "$F" 2>/dev/null | grep -q 'Mach-O'; then continue; fi
+          # Already Developer-ID-signed (e.g. a vendored binary) → leave untouched.
+          if codesign -dv "$F" 2>/dev/null | grep -q 'Authority=Developer ID Application'; then
+            SKIPPED=$((SKIPPED+1)); continue
+          fi
+          if codesign --force --sign "$APP_SHA" $KC_ARG "$F" >/dev/null 2>&1; then
+            SIGNED=$((SIGNED+1))
+          else
+            echo "  (warn) failed to sign: $F" >&2
+            FAIL=$((FAIL+1))
+          fi
+        done < "$FILELIST"
+        rm -f "$FILELIST"
+        echo "   signed=$SIGNED skipped=$SKIPPED failed=$FAIL"
+      else
+        echo "  (skip pre-sign: no Developer ID Application identity found)"
+      fi
+    fi
+
     # Installer scripts: place the package into ~/.seek/install.
     SCRIPT_DIR="$PKG_ROOT/scripts"
     mkdir -p "$SCRIPT_DIR"
