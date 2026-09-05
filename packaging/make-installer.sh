@@ -99,15 +99,15 @@ EOF
     echo "==> Windows Inno Setup ($VERSION)"
     ISCC="$(command -v iscc || true)"
     if [[ -z "$ISCC" ]]; then
-      echo "!! iscc not found (Inno Setup 6 required). Skipping Windows build." >&2
-      exit 0
+      echo "!! iscc not found (Inno Setup 6 required). The Windows installer cannot be built." >&2
+      exit 1   # fail the build so CI doesn't skip the .exe silently
     fi
     STAGE="$(mktemp -d)"
     mkdir -p "$STAGE/app"
     cp -R "$RUNTIME/." "$STAGE/app/"
     # Bundle the GUI (electron-builder win-unpacked) into seek-gui\ under the app,
-    # so users get a desktop icon that launches the GUI which finds \.seek\install
-    # for the runtime. Same shape as macOS (runtime + seek-gui/).
+    # so users get a desktop icon that launches the GUI which finds the runtime
+    # next to it. Same shape as macOS (runtime + seek-gui/).
     GUI_WIN="$(ls -d "$ROOT"/gui/dist/win-unpacked 2>/dev/null | head -1 || true)"
     if [[ -n "$GUI_WIN" && -d "$GUI_WIN" ]]; then
       mkdir -p "$STAGE/app/seek-gui"
@@ -116,6 +116,10 @@ EOF
     else
       echo "  (no GUI bundled: win-unpacked not found)"
     fi
+    # iscc is a Windows exe: convert MSYS paths (/c/...) to Windows (C:\...).
+    mkdir -p "$DIST/artifacts"
+    STAGE_W="$(cygpath -w "$STAGE" 2>/dev/null || echo "$STAGE")"
+    ART_W="$(cygpath -w "$DIST/artifacts" 2>/dev/null || echo "$DIST/artifacts")"
     # Generate a minimal .iss pointing at the runtime.
     cat > "$STAGE/seek.iss" <<'ISS'
 [Setup]
@@ -124,6 +128,7 @@ AppVersion=__VERSION__
 DefaultDirName={localappdata}\seek
 DefaultGroupName=seek
 OutputBaseFilename=seek-__VERSION__-windows-x64
+OutputDir=__ART__
 Compression=lzma2
 SolidCompression=yes
 SourceDir=__STAGE__
@@ -143,12 +148,13 @@ begin
     end;
 end;
 ISS
-    # Fill in version + stage path (the .iss uses literal placeholder tokens).
+    # Fill in version + Windows paths (the .iss uses literal placeholder tokens).
     sed -i \
       -e "s#__VERSION__#$VERSION#g" \
-      -e "s#__STAGE__#$STAGE#g" \
+      -e "s#__STAGE__#$STAGE_W#g" \
+      -e "s#__ART__#$ART_W#g" \
       "$STAGE/seek.iss"
-    "$ISCC" "$STAGE/seek.iss" >/dev/null 2>&1 || echo "!! iscc build failed (see output)" >&2
+    "$ISCC" "$STAGE_W\\seek.iss" || echo "!! iscc build failed (see output)" >&2
     rm -rf "$STAGE"
     ;;
 

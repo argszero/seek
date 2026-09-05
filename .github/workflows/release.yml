@@ -106,10 +106,14 @@ jobs:
 
       - name: Assemble runtime
         run: bash packaging/build-runtime.sh
+      - name: Install Inno Setup (iscc)
+        shell: pwsh
+        run: |
+          # Inno Setup 6 via choco so ISCC.exe is on PATH for the installer build.
+          choco install innosetup -y --no-progress
       - name: Build installer (.exe)
         shell: pwsh
         run: |
-          # Inno Setup 6 (iscc) 已预装在 windows-latest；确保在 PATH
           Get-Command iscc -ErrorAction SilentlyContinue | Out-Null
           bash packaging/make-installer.sh windows
 
