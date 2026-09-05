@@ -152,26 +152,55 @@ chmod +x "$INSTALL/bin/"* 2>/dev/null || true
 EOF
     chmod +x "$SCRIPT_DIR/postinstall"
 
-    # Build the .pkg with the distribution currentUserHome domain so the package
-    # engine installs into ~/.seek/install/.
+    # Build a user-level .pkg that installs to ~/.seek/install/.
+    #
+    # Correct user-level install requires a DISTRIBUTION with <domains
+    # enable_currentUserHome="true"> so the payload is relocated to the installing
+    # user's HOME. A bare pkgbuild component would install to the literal (absolute)
+    # install-location instead. Two-stage build:
+    #   1) pkgbuild  → component.pkg with a ROOT-RELATIVE install-location
+    #      (/.seek/install). currentUserHome relocation turns that into
+    #      $HOME/.seek/install at install time.
+    #   2) productbuild → wraps the component into a distribution that declares
+    #      enable_currentUserHome="true" (and localSystem as a fallback).
+    # We sign the PRODUCT (final.pkg), not the component.
+    # ⚠️ Do NOT use `echo "$HOME" | sed -E 's#^/([^/]+).*#/\1#'` — that strips the
+    # username (turns /Users/argszero → /Users, yielding the bogus path
+    # /Users/.seek/install). Use the root-relative /.seek/install.
     WORK="/tmp/seek-installer-$$"
     mkdir -p "$WORK"
     cp "$SCRIPT_DIR/postinstall" "$WORK/postinstall"
-    PKG="$DIST/artifacts/seek-$VERSION-macos-$(uname -m).pkg"
+    COMPONENT="$WORK/component.pkg"
     pkgbuild --root "$PAYLOAD" \
-      --install-location "$(echo "$HOME" | sed -E 's#^/([^/]+).*#/\1#')/.seek/install" \
+      --install-location "/.seek/install" \
       --scripts "$WORK" \
       --identifier "com.argszero.seek" \
       --version "$VERSION" \
-      "$PKG" || {
-        # Fallback: install to /Applications if HOME detection fails.
+      "$COMPONENT" || {
+        # Fallback: install to /Applications if something is wrong.
         pkgbuild --root "$PAYLOAD" \
           --install-location "/Applications/seek" \
           --scripts "$WORK" \
           --identifier "com.argszero.seek" \
           --version "$VERSION" \
-          "$PKG"
+          "$COMPONENT"
       }
+
+    # Wrap into a user-level distribution (currentUserHome) so it installs into
+    # the current user's ~/.seek/install/.
+    # ⚠️ Must SYNTHESIZE the distribution from the component (productbuild
+    # --synthesize) so the <pkg-ref> matches the component's real id; a hand-
+    # written distribution silently produces an EMPTY product (13K, no payload).
+    # Then inject <domains enable_currentUserHome="true"> so the payload is
+    # relocated to the installing user's $HOME at install time.
+    productbuild --synthesize --package "$COMPONENT" "$WORK/distribution.xml" >/dev/null 2>&1
+    sed -i '' 's#<installer-gui-script\([^>]*\)>#<installer-gui-script\1>\
+    <domains enable_anywhere="false" enable_currentUserHome="true" enable_localSystem="true"/>#' \
+      "$WORK/distribution.xml"
+    PKG="$DIST/artifacts/seek-$VERSION-macos-$(uname -m).pkg"
+    productbuild --distribution "$WORK/distribution.xml" \
+      --package-path "$WORK" \
+      "$PKG"
     rm -rf "$PKG_ROOT" "$WORK"
 
     # ── Sign the .pkg (Developer ID Installer) + notarize + staple ──
