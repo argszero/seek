@@ -26,6 +26,7 @@ jobs:
           python-version: "3.13"
       - name: Backend venv
         working-directory: backend
+        shell: bash   # 统一用 bash：unset / uv / 多行脚本在 mac+win 都一致
         env:
           UV_PYTHON_PREFERENCE: "only-managed"   # 用 uv 管理的 standalone CPython，避免系统 framework 的断链
         run: |
@@ -81,6 +82,7 @@ jobs:
           python-version: "3.13"
       - name: Backend venv
         working-directory: backend
+        shell: bash   # 统一用 bash：unset / uv / 多行脚本在 mac+win 都一致
         env:
           UV_PYTHON_PREFERENCE: "only-managed"   # 用 uv 管理的 standalone CPython，避免系统 framework 的断链
         run: |
