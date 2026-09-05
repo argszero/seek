@@ -117,9 +117,11 @@ EOF
       echo "  (no GUI bundled: win-unpacked not found)"
     fi
     # iscc is a Windows exe: convert MSYS paths (/c/...) to Windows (C:\...).
+    # Use forward-slash (mixed) paths via cygpath -m — Inno Setup accepts them,
+    # and forward slashes aren't mangled by sed backslash escapes below.
     mkdir -p "$DIST/artifacts"
-    STAGE_W="$(cygpath -w "$STAGE" 2>/dev/null || echo "$STAGE")"
-    ART_W="$(cygpath -w "$DIST/artifacts" 2>/dev/null || echo "$DIST/artifacts")"
+    STAGE_W="$(cygpath -m "$STAGE" 2>/dev/null || echo "$STAGE")"
+    ART_W="$(cygpath -m "$DIST/artifacts" 2>/dev/null || echo "$DIST/artifacts")"
     # Generate a minimal .iss pointing at the runtime.
     cat > "$STAGE/seek.iss" <<'ISS'
 [Setup]
@@ -154,7 +156,7 @@ ISS
       -e "s#__STAGE__#$STAGE_W#g" \
       -e "s#__ART__#$ART_W#g" \
       "$STAGE/seek.iss"
-    "$ISCC" "$STAGE_W\\seek.iss" || echo "!! iscc build failed (see output)" >&2
+    "$ISCC" "$STAGE_W/seek.iss" || echo "!! iscc build failed (see output)" >&2
     rm -rf "$STAGE"
     ;;
 
