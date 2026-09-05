@@ -112,7 +112,12 @@ EOF
       # policy 只把 Application 标记 valid、会过滤掉 Installer，导致 "Could not find
       # appropriate signing identity" (EMRG 实测 + 本地复现确认)。Installer 身份只在
       # 无 policy 下可见、且需 keychain 在用户搜索列表（list-keychains -d user -s）。
-      INSTALLER_ID="$(security find-identity -v 2>/dev/null | grep 'Developer ID Installer' | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
+      # 优先用 CI 注入的 MACOS_INSTALLER_IDENTITY（双 p12 方案的明示 Installer 身份），
+      # 未配置时再从 keychain 自动检测（单 p12 方案）。
+      INSTALLER_ID="${MACOS_INSTALLER_IDENTITY:-}"
+      if [[ -z "$INSTALLER_ID" ]]; then
+        INSTALLER_ID="$(security find-identity -v 2>/dev/null | grep 'Developer ID Installer' | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
+      fi
       if [[ -n "$INSTALLER_ID" ]]; then
         productsign --sign "$INSTALLER_ID" "$PKG" "$PKG.signed"
         mv "$PKG.signed" "$PKG"
