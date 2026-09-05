@@ -81,20 +81,24 @@ fi
 # ── entry points ────────────────────────────────────────────────
 # Create runnable wrappers in runtime/bin that call `python -m seekd.__main__`.
 mkdir -p "$RUNTIME/bin"
-cat > "$RUNTIME/bin/seekd" <<EOF
+cat > "$RUNTIME/bin/seekd" <<'EOF'
 #!/usr/bin/env sh
-# seekd — start the seek daemon (self-contained runtime)
-exec "\$(dirname "\$0")/../python/bin/python3" -m seekd.__main__ main_daemon "\$@"
+# seekd — start the seek daemon (self-contained runtime).
+# NOTE: seekd.__main__ is the console entrypoint `main_daemon`; running it via
+# `python -m seekd.__main__` (no subcommand) is correct. Passing a subcommand
+# would be treated as an unknown argparse arg and the daemon would fail to start.
+exec "$(dirname "$0")/../python/bin/python3" -m seekd.__main__ "$@"
 EOF
-cat > "$RUNTIME/bin/seek" <<EOF
+cat > "$RUNTIME/bin/seek" <<'EOF'
 #!/usr/bin/env sh
-# seek — seek CLI (self-contained runtime)
-exec "\$(dirname "\$0")/../python/bin/python3" -m seekd.__main__ main_cli "\$@"
+# seek — seek CLI (self-contained runtime).
+# main_cli currently routes to main_daemon; `python -m seekd.__main__` is correct.
+exec "$(dirname "$0")/../python/bin/python3" -m seekd.__main__ "$@"
 EOF
-cat > "$RUNTIME/bin/seek-tui" <<EOF
+cat > "$RUNTIME/bin/seek-tui" <<'EOF'
 #!/usr/bin/env sh
 # seek-tui — terminal client
-exec "\$(dirname "\$0")/../python/bin/python3" -m seek_tui.__main__ "\$@"
+exec "$(dirname "$0")/../python/bin/python3" -m seek_tui.__main__ "$@"
 EOF
 chmod +x "$RUNTIME/bin/seekd" "$RUNTIME/bin/seek" "$RUNTIME/bin/seek-tui"
 
