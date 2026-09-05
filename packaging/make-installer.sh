@@ -99,8 +99,9 @@ EOF
     # Only when a signing identity is available on this runner (CI injects it via
     # MACOS_SIGNING_P12_BASE64 / PASSWORD + the App ID / notary secrets). Local
     # builds without certs skip everything defensively so dev flow is unchanged.
-    # The p12 we feed in (sha256:AB9EDC.. for Application) also carries the
-    # Developer ID Installer identity, so productsign picks it up automatically.
+    # The p12 we feed in (signing-installer.p12, sha256:AB9EDC..) carries BOTH the
+    # Developer ID Application and Developer ID Installer identities, so productsign
+    # picks the Installer up automatically from the same keychain.
     SIGNING_ID="${MACOS_SIGNING_IDENTITY:-}"
     if [[ -z "$SIGNING_ID" ]]; then
       SIGNING_ID="$(security find-identity -v -p codesigning 2>/dev/null | grep 'Developer ID Application' | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
@@ -112,8 +113,8 @@ EOF
       # policy 只把 Application 标记 valid、会过滤掉 Installer，导致 "Could not find
       # appropriate signing identity" (EMRG 实测 + 本地复现确认)。Installer 身份只在
       # 无 policy 下可见、且需 keychain 在用户搜索列表（list-keychains -d user -s）。
-      # 优先用 CI 注入的 MACOS_INSTALLER_IDENTITY（双 p12 方案的明示 Installer 身份），
-      # 未配置时再从 keychain 自动检测（单 p12 方案）。
+      # 单 p12 方案下 sign pkg 用的 Installer 身份已在同一 keychain，自动检测即可命中；
+      # 优先用 CI 注入的 MACOS_INSTALLER_IDENTITY 以备将来显式指定（当前未设置）。
       INSTALLER_ID="${MACOS_INSTALLER_IDENTITY:-}"
       if [[ -z "$INSTALLER_ID" ]]; then
         INSTALLER_ID="$(security find-identity -v 2>/dev/null | grep 'Developer ID Installer' | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
