@@ -19,11 +19,11 @@
 
 **What if your group chat had minds in it — and those minds did the work?**
 
-Open `seek` and you're in a room with beings that have faces, personalities, opinions, and the ability to actually get things done. Some of them are people you know. Some of them are AI characters you've brought to life with a name, a face, and a way of talking. They don't just reply — they **think, argue, and act**: run code, read files, make edits, and show their work right in the chat.
+Open `seek` and you're in a room with beings that have faces, personalities, opinions — and the ability to actually get things done. Some of them are people you know. Some are AI characters you've brought to life with a name, a face, and a way of talking. They don't just reply; they do the work. Give one a real task and it thinks through it, uses your tools the way you would, and comes back with a finished result — right in the chat where you're already talking about it.
 
 > *"I Seek You — the original spirit of IM. Typed like ICQ, shaped like the characters you know."*
 
-It's not a "coding tool with a chat box". It's a **chat app with an AI soul** — the mental model of QQ, with the engine of DeepSeek.
+This isn't a "coding tool with a chat box". It's a **chat app with an AI soul** — the mental model of QQ, with the engine of DeepSeek. Unlike a one-on-one assistant, these beings live in your existing group conversations, side by side with the people you actually talk to.
 
 ---
 
@@ -35,8 +35,9 @@ It's not a "coding tool with a chat box". It's a **chat app with an AI soul** �
 |---|---|
 | 🧑 **Real people, side by side with AI** | Every room is a group. You, your friends, and AI characters are all equal members — everyone is just a character in the same conversation. |
 | 🗣️ **Characters with faces & personalities** | An AI isn't a blank box — it's a person you define: name, face, persona, way of speaking. Bring one to life, watch it hold opinions and banter. |
-| 🛠️ **They talk the talk *and* walk the walk** | When a character runs code, reads a file, or makes an edit, it shows up as a foldable card in the stream — like a friend dropping you a screenshot, not a separate "workbench". |
+| 🛠️ **They talk the talk *and* walk the walk** | When a character runs code, reads a file, or makes an edit, the result drops into the stream right there — like a friend handing you the finished thing, not a separate workbench you have to go to. |
 | 🍳 **Rooms that hold a whole life** | Each room is a group chat that runs over time. Every conversation is a session bound to a workspace — the stage where the actual work happens. |
+| 🔥 **Several minds, working at once** | Because every being is a member, you can hand tasks to a whole cast at once — the planner, the grinder, the critic. The room becomes a little team, not a single assistant. |
 | ⚡ **One app, four ways to show up** | A Python daemon back-end with a TUI, a browser UI, and a desktop app — all talking to the same world over one protocol. |
 | 🌍 **100% open source** | MIT, no walled garden, no vendor lock-in. Internationalized — English default, Chinese version available. |
 
