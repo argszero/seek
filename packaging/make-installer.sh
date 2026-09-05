@@ -145,10 +145,40 @@ PLIST
 set -e
 HOME="${HOME:-/Users/$(whoami)}"
 INSTALL="$HOME/.seek/install"
+BIN="$INSTALL/bin"
 mkdir -p "$INSTALL"
 # The distribution currentUserHome domain installs payload into ~/.seek/install
 # already when --install-location is used; this is a safety net for symlinks.
-chmod +x "$INSTALL/bin/"* 2>/dev/null || true
+chmod +x "$BIN/"* 2>/dev/null || true
+
+# ── Put the seek binaries on PATH (idempotent; appended to the user's shell rc) ──
+# macOS default shell is zsh; also patch bashrc for users who switched. The line is
+# prefixed so ~/.seek/install/bin wins over any system seek of the same name.
+PATH_LINE='export PATH="$HOME/.seek/install/bin:$PATH"'
+add_path_line() {
+  RC="$1"
+  [ -f "$RC" ] || return 0
+  grep -qF 'seek/install/bin' "$RC" 2>/dev/null && return 0
+  printf '\n# added by seek installer\nexport PATH="$HOME/.seek/install/bin:$PATH"\n' >> "$RC"
+}
+add_path_line "$HOME/.zshrc"
+add_path_line "$HOME/.zprofile"
+add_path_line "$HOME/.bashrc"
+add_path_line "$HOME/.bash_profile"
+# Ensure a default non-interactive zsh gets the path even if .zshrc is missing.
+touch "$HOME/.zshrc" 2>/dev/null || true
+add_path_line "$HOME/.zshrc"
+
+# ── Make the GUI visible in Launchpad / Finder via ~/Applications ──
+# macOS shows ~/Applications in the Launchpad grid, so symlinking seek.app there
+# makes it appear without root. (A hard copy would also work but costs ~100MB and
+# would desync the app on later updates; a symlink stays current automatically.)
+if [ -d "$INSTALL/seek-gui/seek.app" ]; then
+  mkdir -p "$HOME/Applications"
+  ln -sfn "$INSTALL/seek-gui/seek.app" "$HOME/Applications/seek.app" 2>/dev/null || true
+  # Refresh the Dock / Launchpad so the new app icon shows up without a logout.
+  /usr/bin/killall Dock 2>/dev/null || true
+fi
 EOF
     chmod +x "$SCRIPT_DIR/postinstall"
 
