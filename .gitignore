@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.coverage
+
+# Node / frontend builds
+node_modules/
+webui/dist/
+gui/dist/
+webui/.vite/
+
+# top-level packaging/installer build output
+dist/
+
+# seek runtime / data dirs
+.seek/

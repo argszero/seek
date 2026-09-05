@@ -1,0 +1,28 @@
+[project]
+name = "seek-tui"
+version = "0.1.0"
+description = "seek TUI — the terminal client for the seek AI-native IM (independent of the backend; talks over WebSocket)"
+license = { file = "../LICENSE" }
+authors = [{ name = "argszero" }]
+requires-python = ">=3.11"
+
+dependencies = [
+    "websockets>=17.0.1",
+]
+
+[project.scripts]
+seek-tui = "seek_tui.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build]
+include = ["seek_tui/**/*.py", "LICENSE", "README.md"]
+
+[dependency-groups]
+dev = ["pytest>=9.1.1", "pytest-asyncio>=0.24"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
