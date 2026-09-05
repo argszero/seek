@@ -27,6 +27,8 @@
     ],
     "mac": {
       "category": "public.app-category.social-networking",
+      "hardenedRuntime": true,
+      "notarize": false,
       "target": [
         { "target": "dir", "arch": ["arm64"] }
       ]
