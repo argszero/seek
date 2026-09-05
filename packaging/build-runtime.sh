@@ -29,8 +29,12 @@ VERSION="$(grep -m1 '^version' "$ROOT/backend/pyproject.toml" | sed -E 's/.*= *"
 # uv resolves it to a standalone distribution. We detach it from the venv by
 # copying the WHOLE base (bin+lib+include+share) so the produced runtime owns its
 # interpreter and never references a uv cache path.
-PYTHON_BIN="$ROOT/backend/.venv/bin/python"
-if [[ ! -x "$PYTHON_BIN" ]]; then
+# Find the venv's python: unix venvs use bin/python, Windows venvs use Scripts\python.exe.
+PYTHON_BIN=""
+for cand in "$ROOT/backend/.venv/bin/python" "$ROOT/backend/.venv/Scripts/python.exe"; do
+  if [[ -x "$cand" ]]; then PYTHON_BIN="$cand"; break; fi
+done
+if [[ -z "$PYTHON_BIN" ]]; then
   echo "!! backend/.venv not found — run: cd backend && uv sync" >&2
   exit 1
 fi
@@ -38,7 +42,7 @@ fi
 # Resolve the interpreter's real prefix (where bin/python lives + lib/python3.x).
 # For a venv, sys.prefix points at the venv; the *base* interpreter lives under
 # sys._base_executable. We use the base executable path to find a standalone base.
-BASE_PY="$("$ROOT/backend/.venv/bin/python" -c "import sys; print(getattr(sys, '_base_executable', sys.executable))" 2>/dev/null || echo "$PYTHON_BIN")"
+BASE_PY="$("$PYTHON_BIN" -c "import sys; print(getattr(sys, '_base_executable', sys.executable))" 2>/dev/null || echo "$PYTHON_BIN")"
 if [[ ! -x "$BASE_PY" ]]; then
   echo "!! could not resolve a base interpreter from backend/.venv" >&2
   exit 1
@@ -60,10 +64,16 @@ echo "==> copying base interpreter $BASE_PREFIX"
 cp -RL "$BASE_PREFIX" "$RUNTIME/python"
 
 # ── site-packages: overlay the backend venv deps + seekd sources ─
-SP="$RUNTIME/python/lib/python$PYVER/site-packages"
+# unix venv/python use lib/<pyver>/site-packages; Windows uses Lib/site-packages.
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*|WINNT*) SPLIB="Lib" ;;
+  *) SPLIB="lib" ;;
+esac
+SP="$RUNTIME/python/$SPLIB/python$PYVER/site-packages"
+VENV_SP="$ROOT/backend/.venv/$SPLIB/python$PYVER/site-packages"
 mkdir -p "$SP"
 echo "==> overlaying backend venv site-packages"
-cp -RL "$ROOT/backend/.venv/lib/python$PYVER/site-packages"/. "$SP/" 2>/dev/null || true
+cp -RL "$VENV_SP"/. "$SP/" 2>/dev/null || true
 
 # Because seekd is installed editable in the dev venv, its `.pth` points back to
 # this machine. Replace that with a real copy of the seekd package so the runtime

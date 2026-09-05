@@ -26,7 +26,11 @@ jobs:
           python-version: "3.13"
       - name: Backend venv
         working-directory: backend
-        run: uv sync
+        env:
+          UV_PYTHON_PREFERENCE: "only-managed"   # 用 uv 管理的 standalone CPython，避免系统 framework 的断链
+        run: |
+          uv python install 3.13
+          uv sync --project backend
 
       - uses: actions/setup-node@v5
         with:
@@ -76,7 +80,11 @@ jobs:
           python-version: "3.13"
       - name: Backend venv
         working-directory: backend
-        run: uv sync
+        env:
+          UV_PYTHON_PREFERENCE: "only-managed"   # 用 uv 管理的 standalone CPython，避免系统 framework 的断链
+        run: |
+          uv python install 3.13
+          uv sync --project backend
 
       - uses: actions/setup-node@v5
         with:
