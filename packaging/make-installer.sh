@@ -78,21 +78,73 @@ EOF
     WORK="/tmp/seek-installer-$$"
     mkdir -p "$WORK"
     cp "$SCRIPT_DIR/postinstall" "$WORK/postinstall"
+    PKG="$DIST/artifacts/seek-$VERSION-macos-$(uname -m).pkg"
     pkgbuild --root "$PAYLOAD" \
       --install-location "$(echo "$HOME" | sed -E 's#^/([^/]+).*#/\1#')/.seek/install" \
       --scripts "$WORK" \
       --identifier "com.argszero.seek" \
       --version "$VERSION" \
-      "$DIST/artifacts/seek-$VERSION-macos-$(uname -m).pkg" || {
+      "$PKG" || {
         # Fallback: install to /Applications if HOME detection fails.
         pkgbuild --root "$PAYLOAD" \
           --install-location "/Applications/seek" \
           --scripts "$WORK" \
           --identifier "com.argszero.seek" \
           --version "$VERSION" \
-          "$DIST/artifacts/seek-$VERSION-macos-$(uname -m).pkg"
+          "$PKG"
       }
     rm -rf "$PKG_ROOT" "$WORK"
+
+    # ── Sign the .pkg (Developer ID Installer) + notarize + staple ──
+    # Only when a signing identity is available on this runner (CI injects it via
+    # MACOS_SIGNING_P12_BASE64 / PASSWORD + the App ID / notary secrets). Local
+    # builds without certs skip everything defensively so dev flow is unchanged.
+    # The p12 we feed in (sha256:AB9EDC.. for Application) also carries the
+    # Developer ID Installer identity, so productsign picks it up automatically.
+    SIGNING_ID="${MACOS_SIGNING_IDENTITY:-}"
+    if [[ -z "$SIGNING_ID" ]]; then
+      SIGNING_ID="$(security find-identity -v -p codesigning 2>/dev/null | grep 'Developer ID Application' | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
+    fi
+    if [[ -n "$SIGNING_ID" ]]; then
+      echo "==> signing pkg with: $SIGNING_ID"
+      # productsign 需要 Developer ID Installer 身份（不是 Application 身份）——
+      # ⚠️ 必须用无 policy 的 `find-identity -v`（不能用 -p codesigning）：codesigning
+      # policy 只把 Application 标记 valid、会过滤掉 Installer，导致 "Could not find
+      # appropriate signing identity" (EMRG 实测 + 本地复现确认)。Installer 身份只在
+      # 无 policy 下可见、且需 keychain 在用户搜索列表（list-keychains -d user -s）。
+      INSTALLER_ID="$(security find-identity -v 2>/dev/null | grep 'Developer ID Installer' | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
+      if [[ -n "$INSTALLER_ID" ]]; then
+        productsign --sign "$INSTALLER_ID" "$PKG" "$PKG.signed"
+        mv "$PKG.signed" "$PKG"
+        pkgutil --check-signature "$PKG"
+      else
+        echo "  (skip pkg signing: no Developer ID Installer identity found)"
+      fi
+
+      # Notarize + staple (needs the App ID / notary secrets).
+      if [[ -n "${APPLE_ID:-}" && -n "${MACOS_NOTARY_APP_PASSWORD:-}" && -n "${MACOS_NOTARY_TEAM_ID:-}" ]]; then
+        echo "==> notarizing pkg"
+        NOTARY_OUT="$(xcrun notarytool submit "$PKG" \
+          --apple-id "$APPLE_ID" \
+          --password "$MACOS_NOTARY_APP_PASSWORD" \
+          --team-id "$MACOS_NOTARY_TEAM_ID" \
+          --wait --timeout 20m --output-format json 2>&1)"
+        echo "$NOTARY_OUT"
+        STATUS="$(printf '%s' "$NOTARY_OUT" \
+          | python3 -c "import sys,json;print(json.load(sys.stdin).get('status',''))" 2>/dev/null || true)"
+        if [[ "$STATUS" != "Accepted" ]]; then
+          echo "!! notarization did not pass (status=$STATUS)" >&2
+          echo "$NOTARY_OUT" >&2
+          exit 1
+        fi
+        echo "==> stapling ticket"
+        xcrun stapler staple "$PKG"
+        xcrun stapler validate "$PKG"
+        spctl -a -vv --type install "$PKG"
+      fi
+    else
+      echo "  (skip pkg signing: no Developer ID Application identity found)"
+    fi
     ;;
 
   windows|win32)

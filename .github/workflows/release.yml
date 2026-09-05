@@ -16,10 +16,54 @@ jobs:
   # ─────────────────────────────────────────────────────────────
   # macOS 安装包 (.pkg)：装到 ~/.seek/install，含 runtime + GUI app
   # ─────────────────────────────────────────────────────────────
+  # ─────────────────────────────────────────────────────────────
+  # macOS 安装包 (.pkg)：装到 ~/.seek/install，含 runtime + GUI app
+  # ─────────────────────────────────────────────────────────────
   macos:
     runs-on: macos-latest
+    env:
+      # secrets 不能在 if/step 中直接引用（GitHub Actions 硬限制）——先提升为 job 级 env。
+      # 未配置时求值为空字符 → 各 step 用 'if: ... != ""' 守卫降级（本地/无证书不阻塞发布）。
+      MACOS_SIGNING_P12_BASE64: ${{ secrets.MACOS_SIGNING_P12_BASE64 }}
+      MACOS_SIGNING_P12_PASSWORD: ${{ secrets.MACOS_SIGNING_P12_PASSWORD }}
+      MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      MACOS_NOTARY_APP_PASSWORD: ${{ secrets.MACOS_NOTARY_APP_PASSWORD }}
+      MACOS_NOTARY_TEAM_ID: ${{ secrets.MACOS_NOTARY_TEAM_ID }}
     steps:
       - uses: actions/checkout@v5
+
+      # ── 导入签名证书（macOS only；Secret 未配则跳过降级）──
+      # 复刻 EMRG 已验证方案：p12 同时含 Developer ID Application + Installer 两身份
+      # (signing-installer.p12)。set-key-partition-list 用 -S apple-tool:,apple:（不可加
+      # codesign: 分区，否则 SecItemCopyMatching item not found，EMRG v0.2.7 教训）。
+      - name: Import signing certificate (macOS only)
+        if: runner.os == 'macOS' && env.MACOS_SIGNING_P12_BASE64 != ''
+        shell: bash
+        run: |
+          echo "$MACOS_SIGNING_P12_BASE64" | base64 --decode > /tmp/signing.p12
+          security create-keychain -p 'ci-temp' /tmp/ci.keychain
+          security default-keychain -s /tmp/ci.keychain
+          security set-keychain-settings -lut 21600 /tmp/ci.keychain
+          security unlock-keychain -p 'ci-temp' /tmp/ci.keychain
+          IMPORT_OUTPUT="$(security import /tmp/signing.p12 -k /tmp/ci.keychain -P "$MACOS_SIGNING_P12_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/productsign 2>&1)"
+          echo "$IMPORT_OUTPUT"
+          if [[ ! "$IMPORT_OUTPUT" =~ identit(y|ies)\ imported ]]; then
+            echo "::error::MACOS_SIGNING_P12_BASE64 未包含可签名私钥（security import 仅导入证书链）。请从 Keychain Access 导出含私钥的 p12（证书右键 → 导出 → 勾选\"包含私钥\"），重新 base64 后更新 GitHub Secret。import 输出：${IMPORT_OUTPUT}"
+            exit 1
+          fi
+          # 双证书存在性校验（Application 签 .app，Installer 签 pkg，缺一不可）。
+          # 必须用输出判空而非退出码：find-certificate 无匹配证书时也返回 exit 0。
+          for CERT_NAME in "Developer ID Application" "Developer ID Installer"; do
+            if [ -z "$(security find-certificate -c "$CERT_NAME" -a /tmp/ci.keychain 2>/dev/null)" ]; then
+              echo "::error::keychain 缺少 $CERT_NAME 证书（签名必需）。请导出含 Application + Installer 两证书+私钥的 p12 到 MACOS_SIGNING_P12_BASE64。"
+              exit 1
+            fi
+          done
+          security set-key-partition-list -S apple-tool:,apple: -s -k 'ci-temp' /tmp/ci.keychain
+          security list-keychains -d user -s /tmp/ci.keychain $(security list-keychains -d user | tr -d '"')
+          security find-identity -v -p codesigning /tmp/ci.keychain
 
       - uses: astral-sh/setup-uv@v5
         with:
@@ -44,9 +88,17 @@ jobs:
           npm run build
       - name: Build GUI app (electron-builder)
         working-directory: gui
-        env:
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"   # 无签名证书 → 跳过签名
+        shell: bash
         run: |
+          # macOS 签名：仅在 macOS + 有证书时导出 CSC_LINK/CSC_KEY_PASSWORD，激活
+          # electron-builder 自动 codesign .app（含 hardened runtime）。
+          # ⚠️ 不可在 step env 里设空字符串：electron-builder 对空 CSC_LINK 仍走签名分支
+          # （path.resolve("") = 工作目录 → "not a file"，EMRG v0.2.7 教训）。未设置 = 不签名。
+          # ⚠️ 不可设 CSC_IDENTITY_AUTO_DISCOVERY=false（会禁用签 .app，公证必然失败）。
+          if [ "$RUNNER_OS" = "macOS" ] && [ -n "${MACOS_SIGNING_P12_BASE64:-}" ]; then
+            export CSC_LINK="file:///tmp/signing.p12"
+            export CSC_KEY_PASSWORD="$MACOS_SIGNING_P12_PASSWORD"
+          fi
           npm install        # package.json 有 electron-builder，用 install 让 lockfile 同步
           npx electron-builder --dir   # → gui/dist/mac-arm64/seek.app
 
