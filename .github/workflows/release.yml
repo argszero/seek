@@ -118,14 +118,17 @@ jobs:
         working-directory: gui
         shell: bash
         run: |
-          # macOS 签名：仅在 macOS + 有证书时导出 CSC_LINK/CSC_KEY_PASSWORD，激活
-          # electron-builder 自动 codesign .app（含 hardened runtime）。
-          # ⚠️ 不可在 step env 里设空字符串：electron-builder 对空 CSC_LINK 仍走签名分支
-          # （path.resolve("") = 工作目录 → "not a file"，EMRG v0.2.7 教训）。未设置 = 不签名。
+          # macOS 签名：用 CSC_KEYCHAIN 指向已授权 keychain（/tmp/ci.keychain，Import step
+          # 已导入 Application p12 + set-key-partition-list 授权），绕过 electron-builder
+          # 自己创建的临时 keychain。
+          # ⚠️ 不可用 CSC_LINK：electron-builder 收到 CSC_LINK 会 createKeychain 一个
+          # 随机密码临时 keychain，然后 importCerts 用 CSC_KEY_PASSWORD 去 set-key-partition-list
+          # 解锁它 → "SecKeychainUnlock: passphrase is not correct"（electron-builder 24.13.3 bug，
+          # 本地复现确认、EMRG 也踩过）。用 CSC_KEYCHAIN 则不创建临时 keychain，直接用已授权 keychain。
           # ⚠️ 不可设 CSC_IDENTITY_AUTO_DISCOVERY=false（会禁用签 .app，公证必然失败）。
           if [ "$RUNNER_OS" = "macOS" ] && [ -n "${MACOS_SIGNING_P12_BASE64:-}" ]; then
-            export CSC_LINK="file:///tmp/signing.p12"
-            export CSC_KEY_PASSWORD="$MACOS_SIGNING_P12_PASSWORD"
+            export CSC_KEYCHAIN="/tmp/ci.keychain"
+            export CSC_IDENTITY_AUTO_DISCOVERY="true"
           fi
           npm install        # package.json 有 electron-builder，用 install 让 lockfile 同步
           npx electron-builder --dir   # → gui/dist/mac-arm64/seek.app
