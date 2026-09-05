@@ -141,6 +141,17 @@ EOF
         if [[ "$STATUS" != "Accepted" ]]; then
           echo "!! notarization did not pass (status=$STATUS)" >&2
           echo "$NOTARY_OUT" >&2
+          # 导出 Apple 公证的详细失败原因（Invalid 通常指包内某组件签名/hardened runtime 问题）。
+          # notarytool log 需要同套 notary 凭据；失败时打印明文日志便于 CI 内定位,不阻断后续重跑。
+          LOG_ID="$(printf '%s' "$NOTARY_OUT" \
+            | python3 -c "import sys,json;print(json.load(sys.stdin).get('id',''))" 2>/dev/null || true)"
+          if [[ -n "$LOG_ID" ]]; then
+            echo "==> notarytool log for submission $LOG_ID" >&2
+            xcrun notarytool log "$LOG_ID" \
+              --apple-id "$APPLE_ID" \
+              --password "$MACOS_NOTARY_APP_PASSWORD" \
+              --team-id "$MACOS_NOTARY_TEAM_ID" 2>&1 >&2 || echo "(log fetch failed)" >&2
+          fi
           exit 1
         fi
         echo "==> stapling ticket"
