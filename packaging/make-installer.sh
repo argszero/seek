@@ -193,9 +193,13 @@ EOF
     # written distribution silently produces an EMPTY product (13K, no payload).
     # Then inject <domains enable_currentUserHome="true"> so the payload is
     # relocated to the installing user's $HOME at install time.
+    # ⚠️ enable_localSystem MUST be "false": with currentUserHome true and
+    # enable_localSystem true, the macOS installer can't resolve the target and
+    # refuses with "This package is incompatible with this version of macOS"
+    # (EMRG's user-level pkg uses enable_localSystem="false" and installs fine).
     productbuild --synthesize --package "$COMPONENT" "$WORK/distribution.xml" >/dev/null 2>&1
     sed -i '' 's#<installer-gui-script\([^>]*\)>#<installer-gui-script\1>\
-    <domains enable_anywhere="false" enable_currentUserHome="true" enable_localSystem="true"/>#' \
+    <domains enable_anywhere="false" enable_currentUserHome="true" enable_localSystem="false"/>#' \
       "$WORK/distribution.xml"
     PKG="$DIST/artifacts/seek-$VERSION-macos-$(uname -m).pkg"
     productbuild --distribution "$WORK/distribution.xml" \
