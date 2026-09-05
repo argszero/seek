@@ -105,19 +105,35 @@ EOF
     STAGE="$(mktemp -d)"
     mkdir -p "$STAGE/app"
     cp -R "$RUNTIME/." "$STAGE/app/"
+    # Bundle the GUI (electron-builder win-unpacked) into seek-gui\ under the app,
+    # so users get a desktop icon that launches the GUI which finds \.seek\install
+    # for the runtime. Same shape as macOS (runtime + seek-gui/).
+    GUI_WIN="$(ls -d "$ROOT"/gui/dist/win-unpacked 2>/dev/null | head -1 || true)"
+    if [[ -n "$GUI_WIN" && -d "$GUI_WIN" ]]; then
+      mkdir -p "$STAGE/app/seek-gui"
+      cp -R "$GUI_WIN/." "$STAGE/app/seek-gui/"
+      echo "  (bundled GUI: $GUI_WIN)"
+    else
+      echo "  (no GUI bundled: win-unpacked not found)"
+    fi
     # Generate a minimal .iss pointing at the runtime.
-    cat > "$STAGE/seek.iss" <<EOF
+    cat > "$STAGE/seek.iss" <<'ISS'
 [Setup]
 AppName=seek
-AppVersion=$VERSION
-DefaultDirName={autopf}\\seek
+AppVersion=__VERSION__
+DefaultDirName={localappdata}\seek
 DefaultGroupName=seek
-OutputBaseFilename=seek-$VERSION-windows-x64
+OutputBaseFilename=seek-__VERSION__-windows-x64
 Compression=lzma2
 SolidCompression=yes
-SourceDir=$STAGE
+SourceDir=__STAGE__
 [Files]
-Source: "app\\*"; DestDir: "{app}"; Flags: recursesubdirs
+Source: "app\*"; DestDir: "{app}"; Flags: recursesubdirs
+[Icons]
+Name: "{group}\seek"; Filename: "{app}\seek-gui\seek.exe"
+Name: "{autodesktop}\seek"; Filename: "{app}\seek-gui\seek.exe"
+[Run]
+Filename: "{app}\seek-gui\seek.exe"; Description: "Launch seek"; Flags: nowait postinstall skipifsilent
 [Code]
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
@@ -126,7 +142,12 @@ begin
       // ensure bin scripts are executable (not meaningful on Windows but harmless)
     end;
 end;
-EOF
+ISS
+    # Fill in version + stage path (the .iss uses literal placeholder tokens).
+    sed -i \
+      -e "s#__VERSION__#$VERSION#g" \
+      -e "s#__STAGE__#$STAGE#g" \
+      "$STAGE/seek.iss"
     "$ISCC" "$STAGE/seek.iss" >/dev/null 2>&1 || echo "!! iscc build failed (see output)" >&2
     rm -rf "$STAGE"
     ;;

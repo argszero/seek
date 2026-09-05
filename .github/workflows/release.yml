@@ -1,0 +1,116 @@
+name: Release
+
+# 打 tag (v*) 时自动构建各平台自包含安装包（TUI + GUI + WEBUI 全可用）并发布到 GitHub Release。
+# 也支持手动触发 (workflow_dispatch) 用于预演。
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  # ─────────────────────────────────────────────────────────────
+  # macOS 安装包 (.pkg)：装到 ~/.seek/install，含 runtime + GUI app
+  # ─────────────────────────────────────────────────────────────
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+      - name: Backend venv
+        working-directory: backend
+        run: uv sync
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+      - name: Build WebUI
+        working-directory: webui
+        run: |
+          npm ci
+          npm run build
+      - name: Build GUI app (electron-builder)
+        working-directory: gui
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"   # 无签名证书 → 跳过签名
+        run: |
+          npm install        # package.json 有 electron-builder，用 install 让 lockfile 同步
+          npx electron-builder --dir   # → gui/dist/mac-arm64/seek.app
+
+      - name: Assemble runtime
+        run: bash packaging/build-runtime.sh
+      - name: Build installer (.pkg)
+        run: bash packaging/make-installer.sh darwin
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: seek-macos
+          path: dist/artifacts/*.pkg
+
+      - name: Publish to Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: dist/artifacts/*
+          generate_release_notes: true
+
+  # ─────────────────────────────────────────────────────────────
+  # Windows 安装包 (.exe)：Inno Setup，含 runtime + GUI exe
+  # ─────────────────────────────────────────────────────────────
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+      - name: Backend venv
+        working-directory: backend
+        run: uv sync
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+      - name: Build WebUI
+        working-directory: webui
+        run: |
+          npm ci
+          npm run build
+      - name: Build GUI app (electron-builder)
+        working-directory: gui
+        run: |
+          npm install
+          npx electron-builder --dir   # → gui/dist/win-unpacked/seek.exe
+
+      - name: Assemble runtime
+        run: bash packaging/build-runtime.sh
+      - name: Build installer (.exe)
+        shell: pwsh
+        run: |
+          # Inno Setup 6 (iscc) 已预装在 windows-latest；确保在 PATH
+          Get-Command iscc -ErrorAction SilentlyContinue | Out-Null
+          bash packaging/make-installer.sh windows
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: seek-windows
+          path: dist/artifacts/*.exe
+
+      - name: Publish to Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: dist/artifacts/*
+          generate_release_notes: true

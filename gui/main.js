@@ -28,24 +28,53 @@ if (!app.requestSingleInstanceLock()) {
   main();
 }
 
-/** 找到可执行的 seekd 二进制路径（打包内优先，再 PATH）。 */
+/** 找到可执行的 seekd 二进制路径（安装目录优先，再打包内/开发）。 */
 function findSeekdBin() {
   if (process.env.SEEKDAEMON_BIN && fs.existsSync(process.env.SEEKDAEMON_BIN)) {
     return process.env.SEEKDAEMON_BIN;
   }
-  const candidates = [
-    // 打包：Electron app 资源内的 runtime 入口
+  const bases = [
+    // 安装器放到用户级的 runtime（macOS: ~/.seek/install）
+    path.join(os.homedir(), ".seek", "install", "bin", "seekd"),
+    // 安装器放到 GUI 同级（Windows: {app}\seek-gui 的上级是 {app}\bin\seekd）
+    path.resolve(process.resourcesPath || "", "..", "..", "bin", "seekd"),
+    // 打包：Electron app 资源内的 runtime（若未来把 runtime 打进 app）
     path.join(process.resourcesPath || "", "runtime", "bin", "seekd"),
     path.join(process.resourcesPath || "", "app", "bin", "seekd"),
-    // 安装器放到用户级的 runtime
-    path.join(os.homedir(), ".seek", "install", "bin", "seekd"),
     // 开发：backend venv / 自包 venv console script
     path.join(__dirname, "..", "..", "backend", ".venv", "bin", "seekd"),
   ];
-  for (const c of candidates) {
-    if (fs.existsSync(c)) return c;
+  // On Windows the runtime ships a .cmd wrapper; prefer it so we can spawn it.
+  const exts = process.platform === "win32" ? ["", ".cmd", ".exe"] : [""];
+  for (const base of bases) {
+    for (const ext of exts) {
+      const c = base + ext;
+      if (fs.existsSync(c)) return c;
+    }
   }
-  return "seekd"; // let PATH resolve
+  return process.platform === "win32" ? "seekd.cmd" : "seekd"; // let PATH resolve
+}
+
+/** 找到 webui/dist（安装目录优先，再开发目录）。据此加载浏览器 UI。 */
+function findWebuiDist() {
+  if (process.env.SEEK_WEBUI_DIST && fs.existsSync(process.env.SEEK_WEBUI_DIST)) {
+    return process.env.SEEK_WEBUI_DIST;
+  }
+  const candidates = [
+    // 安装器放到用户级的 runtime（macOS: ~/.seek/install）
+    path.join(os.homedir(), ".seek", "install", "webui"),
+    // 安装器放到 GUI 同级（Windows: {app}\seek-gui 的上级是 {app}\webui）
+    path.resolve(process.resourcesPath || "", "..", "..", "webui"),
+    // 打包：Electron app 资源内（若未来把 webui 打进 app）
+    path.join(process.resourcesPath || "", "webui"),
+    path.join(process.resourcesPath || "", "app", "webui"),
+    // 开发：webui/dist
+    path.join(__dirname, "..", "webui", "dist"),
+  ];
+  for (const c of candidates) {
+    if (fs.existsSync(path.join(c, "index.html"))) return c;
+  }
+  return path.join(__dirname, "..", "webui", "dist"); // fall back to dev
 }
 
 function main() {
@@ -81,6 +110,8 @@ function main() {
     daemonProc = spawn(bin, ["--host", DAEMON_HOST, "--port", String(DAEMON_PORT)], {
       stdio: "ignore",
       detached: false,
+      // On Windows the runtime ships a .cmd wrapper; spawn it via the shell.
+      shell: process.platform === "win32",
     });
     daemonProc.on("error", (e) => {
       // eslint-disable-next-line no-console
@@ -102,7 +133,7 @@ function main() {
 
   // ── 窗口 ────────────────────────────────────────────────
   function createWindow() {
-    const dist = path.join(__dirname, "..", "webui", "dist");
+    const dist = findWebuiDist();
     win = new BrowserWindow({
       width: 1200,
       height: 800,

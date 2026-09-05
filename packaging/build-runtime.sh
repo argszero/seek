@@ -80,8 +80,45 @@ fi
 
 # ── entry points ────────────────────────────────────────────────
 # Create runnable wrappers in runtime/bin that call `python -m seekd.__main__`.
+# On Windows the standard library interpreter is python.exe (no `python3`), and
+# sh shebang launchers are not executable, so we emit .cmd wrappers instead.
 mkdir -p "$RUNTIME/bin"
-cat > "$RUNTIME/bin/seekd" <<'EOF'
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*|WINNT*)
+    PY="python.exe"
+    mkdir -p "$RUNTIME/bin"
+    cat > "$RUNTIME/bin/seekd.cmd" <<'EOF'
+@echo off
+rem seekd — start the seek daemon (self-contained runtime)
+"%~dp0..\python\bin\python.exe" -m seekd.__main__ %*
+EOF
+    cat > "$RUNTIME/bin/seek.cmd" <<'EOF'
+@echo off
+rem seek — seek CLI (self-contained runtime)
+"%~dp0..\python\bin\python.exe" -m seekd.__main__ %*
+EOF
+    cat > "$RUNTIME/bin/seek-tui.cmd" <<'EOF'
+@echo off
+rem seek-tui — terminal client
+"%~dp0..\python\bin\python.exe" -m seek_tui.__main__ %*
+EOF
+    # Also emit sh launchers so Git-Bash / WSL users can run them too.
+    cat > "$RUNTIME/bin/seekd" <<'EOF'
+#!/usr/bin/env sh
+exec "$(dirname "$0")/../python/bin/python3" -m seekd.__main__ "$@"
+EOF
+    cat > "$RUNTIME/bin/seek" <<'EOF'
+#!/usr/bin/env sh
+exec "$(dirname "$0")/../python/bin/python3" -m seekd.__main__ "$@"
+EOF
+    cat > "$RUNTIME/bin/seek-tui" <<'EOF'
+#!/usr/bin/env sh
+exec "$(dirname "$0")/../python/bin/python3" -m seek_tui.__main__ "$@"
+EOF
+    chmod +x "$RUNTIME/bin/seekd" "$RUNTIME/bin/seek" "$RUNTIME/bin/seek-tui"
+    ;;
+  *)
+    cat > "$RUNTIME/bin/seekd" <<'EOF'
 #!/usr/bin/env sh
 # seekd — start the seek daemon (self-contained runtime).
 # NOTE: seekd.__main__ is the console entrypoint `main_daemon`; running it via
@@ -89,18 +126,20 @@ cat > "$RUNTIME/bin/seekd" <<'EOF'
 # would be treated as an unknown argparse arg and the daemon would fail to start.
 exec "$(dirname "$0")/../python/bin/python3" -m seekd.__main__ "$@"
 EOF
-cat > "$RUNTIME/bin/seek" <<'EOF'
+    cat > "$RUNTIME/bin/seek" <<'EOF'
 #!/usr/bin/env sh
 # seek — seek CLI (self-contained runtime).
 # main_cli currently routes to main_daemon; `python -m seekd.__main__` is correct.
 exec "$(dirname "$0")/../python/bin/python3" -m seekd.__main__ "$@"
 EOF
-cat > "$RUNTIME/bin/seek-tui" <<'EOF'
+    cat > "$RUNTIME/bin/seek-tui" <<'EOF'
 #!/usr/bin/env sh
 # seek-tui — terminal client
 exec "$(dirname "$0")/../python/bin/python3" -m seek_tui.__main__ "$@"
 EOF
-chmod +x "$RUNTIME/bin/seekd" "$RUNTIME/bin/seek" "$RUNTIME/bin/seek-tui"
+    chmod +x "$RUNTIME/bin/seekd" "$RUNTIME/bin/seek" "$RUNTIME/bin/seek-tui"
+    ;;
+esac
 
 # ── webui/dist (browser bundle) ─────────────────────────────────
 if [[ -d "$ROOT/webui/dist" ]]; then
