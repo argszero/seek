@@ -179,6 +179,12 @@ add_path_line "$HOME/.zshrc"
 # folder from the install dir so the runtime stays a lean single copy.
 if [ -d "$INSTALL/seek-gui/seek.app" ]; then
   mkdir -p "$HOME/Applications"
+  # Blow away any prior seek.app first. If a previous version installed a
+  # *symlink* into ~/Applications (v0.1.4 and earlier used ln -s), a bare
+  # `ditto` onto it can follow/overlay the link and leave an inconsistent
+  # bundle behind. A clean rm + fresh copy guarantees a real, independent
+  # seek.app that LaunchServices indexes as a genuine app (not "只有快捷方式").
+  rm -rf "$HOME/Applications/seek.app"
   ditto "$INSTALL/seek-gui/seek.app" "$HOME/Applications/seek.app" 2>/dev/null || \
     true
   # Remove the redundant app copy that shipped with the runtime, so ~/.seek/install

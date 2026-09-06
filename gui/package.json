@@ -1,6 +1,6 @@
 {
   "name": "seek-gui",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "seek GUI — Electron shell for the seek daemon. Loads webui/dist and talks to the daemon over the CONTRACT.md protocol.",
   "main": "main.js",
   "scripts": {

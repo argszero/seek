@@ -1,6 +1,6 @@
 [project]
 name = "seek-tui"
-version = "0.1.5"
+version = "0.1.6"
 description = "seek TUI — the terminal client for the seek AI-native IM (independent of the backend; talks over WebSocket)"
 license = { file = "../LICENSE" }
 authors = [{ name = "argszero" }]

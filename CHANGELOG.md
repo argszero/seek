@@ -5,6 +5,13 @@ All notable changes to **seek** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.6] - 2026-09-06
+
+### Fixed
+
+- **TUI crash on launch**: the terminal client nested a second `asyncio.run()` inside the one `curses.wrapper` already started, raising `RuntimeError: asyncio.run() cannot be called from a running event loop` and aborting `seek` on startup. The TUI now uses a single event loop for connecting to the daemon and rendering.
+- **GUI showed as a shortcut, not an app**: the installer's real-copy step could `ditto` onto a symlink left by an older version in `~/Applications/seek.app`, leaving an inconsistent bundle. It now removes any prior `~/Applications/seek.app` before copying a clean, independent app so Launchpad reliably indexes the GUI.
+
 ## [0.1.5] - 2026-09-06
 
 ### Changed
