@@ -1,8 +1,8 @@
 """seek_tui.__main__ — entrypoint for the seek TUI client.
 
 Usage:
-    python -m seek_tui            # connect to ws://127.0.0.1:8123
-    seek-tui --port 8123          # via the installed script
+    python -m seek_tui            # connect to ws://127.0.0.1:37291
+    seek-tui --port 37291         # via the installed script
 
 The TUI is a curses single-column dialog driven by the seek WebSocket protocol
 (CONTRACT.md). It is independent of the backend: it never imports server code.
@@ -23,7 +23,7 @@ from seek_tui.protocol import SeekClient
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="seek-tui", description="seek terminal client")
     parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8123)
+    parser.add_argument("--port", type=int, default=37291)
     args = parser.parse_args(argv)
 
     async def _connect() -> None:

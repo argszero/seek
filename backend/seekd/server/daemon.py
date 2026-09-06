@@ -28,13 +28,14 @@ from seekd.store.jsonstore import SeekStore
 class Seekd:
     """Owns the WebSocket listener, the static WEBUI server, and the store."""
 
-    def __init__(self, host: str = "127.0.0.1", port: int = 8123,
+    def __init__(self, host: str = "127.0.0.1", port: int = 37291,
                  webui_dist: str | None = None, store: SeekStore | None = None,
                  session_runner: "SessionRunner | None" = None,
-                 model: str = "", llm_config: Any | None = None) -> None:
+                 model: str = "", llm_config: Any | None = None,
+                 webui_port: int = 37292) -> None:
         self.host = host
         self.port = port
-        self.webui_server = WebUiServer(webui_dist)
+        self.webui_server = WebUiServer(webui_dist, self.host, webui_port)
         self.store = store or SeekStore()
         self.session_runner = session_runner
         self.model_key = model

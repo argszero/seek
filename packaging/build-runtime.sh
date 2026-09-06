@@ -114,13 +114,9 @@ rem seekd — start the seek daemon (self-contained runtime)
 EOF
     cat > "$RUNTIME/bin/seek.cmd" <<'EOF'
 @echo off
-rem seek — seek CLI (self-contained runtime)
-"%~dp0..\python\Scripts\python.exe" -m seekd.__main__ %*
-EOF
-    cat > "$RUNTIME/bin/seek-tui.cmd" <<'EOF'
-@echo off
-rem seek-tui — terminal client
-"%~dp0..\python\Scripts\python.exe" -m seek_tui.__main__ %*
+rem seek — seek launcher. Starts the daemon in background if not running, waits
+rem for WEBUI, then launches the TUI (or GUI with `seek --gui`).
+"%~dp0..\python\Scripts\python.exe" -m seekd.launcher %*
 EOF
     # Also emit sh launchers so Git-Bash / WSL users can run them too.
     cat > "$RUNTIME/bin/seekd" <<'EOF'
@@ -129,13 +125,9 @@ exec "$(dirname "$0")/../python/Scripts/python.exe" -m seekd.__main__ "$@"
 EOF
     cat > "$RUNTIME/bin/seek" <<'EOF'
 #!/usr/bin/env sh
-exec "$(dirname "$0")/../python/Scripts/python.exe" -m seekd.__main__ "$@"
+exec "$(dirname "$0")/../python/Scripts/python.exe" -m seekd.launcher "$@"
 EOF
-    cat > "$RUNTIME/bin/seek-tui" <<'EOF'
-#!/usr/bin/env sh
-exec "$(dirname "$0")/../python/Scripts/python.exe" -m seek_tui.__main__ "$@"
-EOF
-    chmod +x "$RUNTIME/bin/seekd" "$RUNTIME/bin/seek" "$RUNTIME/bin/seek-tui"
+    chmod +x "$RUNTIME/bin/seekd" "$RUNTIME/bin/seek"
     ;;
   *)
     cat > "$RUNTIME/bin/seekd" <<'EOF'
@@ -148,17 +140,12 @@ exec "$(dirname "$0")/../python/bin/python3" -m seekd.__main__ "$@"
 EOF
     cat > "$RUNTIME/bin/seek" <<'EOF'
 #!/usr/bin/env sh
-# seek — seek CLI (self-contained runtime).
-# main_cli currently routes to main_daemon; `python -m seekd.__main__` is correct.
-exec "$(dirname "$0")/../python/bin/python3" -m seekd.__main__ "$@"
+# seek — seek launcher. Makes sure the daemon is running (spawning it in the
+# background on first use), waits for the WEBUI to be reachable, then launches
+# the TUI client (or the GUI with `seek --gui`).
+exec "$(dirname "$0")/../python/bin/python3" -m seekd.launcher "$@"
 EOF
-    cat > "$RUNTIME/bin/seek-tui" <<'EOF'
-#!/usr/bin/env sh
-# seek-tui — terminal client
-exec "$(dirname "$0")/../python/bin/python3" -m seek_tui.__main__ "$@"
-EOF
-    chmod +x "$RUNTIME/bin/seekd" "$RUNTIME/bin/seek" "$RUNTIME/bin/seek-tui"
-    ;;
+    chmod +x "$RUNTIME/bin/seekd" "$RUNTIME/bin/seek"
 esac
 
 # ── webui/dist (browser bundle) ─────────────────────────────────

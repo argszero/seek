@@ -2,7 +2,7 @@
 /**
  * daemon_client.js — GUImain 进程侧：连接 seekd daemon 的 WebSocket 客户端。
  *
- * 职责：连 daemon(WS 8123)，按其 CONTRACT.md 协议收发。renderer 通过 IPC 发来请求，
+ * 职责：连 daemon(WS 37291)，按其 CONTRACT.md 协议收发。renderer 通过 IPC 发来请求，
  * main 转发给 daemon；daemon 的事件（message:new / turn:* / models ...）经本模块
  * 转发回 renderer。GUI 与 WEBUI 共享同一协议，只是传输层不同。
  */
@@ -20,7 +20,7 @@ class SeekDaemonClient extends EventEmitter {
    * @param {(msg: object) => void} opts.onEvent  收到 daemon 事件（非应答）回调
    * @param {(ready: boolean) => void} opts.onState 连接状态变化回调
    */
-  constructor({ host = "127.0.0.1", port = 8123, onEvent, onState }) {
+  constructor({ host = "127.0.0.1", port = 37291, onEvent, onState }) {
     super();
     this.host = host;
     this.port = port;

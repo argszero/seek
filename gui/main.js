@@ -4,7 +4,7 @@
  *
  * 职责：
  *   - 创建窗口，加载 webui/dist（React SPA，与 WEBUI 共享同一 UI）。
- *   - 连接 seekd daemon(WS 8123)，作为 renderer 与 daemon 之间的 IPC↔WS 转发桥。
+ *   - 连接 seekd daemon(WS 37291)，作为 renderer 与 daemon 之间的 IPC↔WS 转发桥。
  *   - 安全：contextIsolation + nodeIntegration:false + sandbox（renderer 零网络权限）。
  *
  * renderer 通过 preload 暴露的 ``window.seekBridge`` 与 main 通信；main 经
@@ -19,7 +19,8 @@ const { spawn } = require("child_process");
 const { SeekDaemonClient } = require("./daemon_client");
 
 const DAEMON_HOST = process.env.SEEK_DAEMON_HOST || "127.0.0.1";
-const DAEMON_PORT = Number(process.env.SEEK_DAEMON_PORT || 8123);
+const DAEMON_PORT = Number(process.env.SEEK_DAEMON_PORT || 37291);
+const WEBUI_PORT = Number(process.env.SEEK_WEBUI_PORT || 37292);
 
 // 单实例锁（第二个实例退出并 focus 已有窗口）
 if (!app.requestSingleInstanceLock()) {
@@ -105,9 +106,13 @@ function main() {
     if (daemonProc) return;
     spawnAttempted = true;
     const bin = findSeekdBin();
+    const webuiDist = findWebuiDist();
     // eslint-disable-next-line no-console
     console.log(`[seek-gui] spawning daemon: ${bin}`);
-    daemonProc = spawn(bin, ["--host", DAEMON_HOST, "--port", String(DAEMON_PORT)], {
+    const args = ["--host", DAEMON_HOST, "--port", String(DAEMON_PORT),
+                  "--webui-port", String(WEBUI_PORT)];
+    if (webuiDist) args.push("--webui-dist", webuiDist);
+    daemonProc = spawn(bin, args, {
       stdio: "ignore",
       detached: false,
       // On Windows the runtime ships a .cmd wrapper; spawn it via the shell.

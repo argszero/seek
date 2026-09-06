@@ -16,7 +16,9 @@ def main_daemon(argv: list[str] | None = None) -> int:
     """Start the seek daemon."""
     parser = argparse.ArgumentParser(prog="seekd", description="start the seek daemon")
     parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8123)
+    parser.add_argument("--port", type=int, default=37291)
+    parser.add_argument("--webui-port", type=int, default=37292,
+                        help="port for the embedded WEBUI static server")
     parser.add_argument("--webui-dist", default=None, help="path to webui/dist to serve")
     args = parser.parse_args(argv)
 
@@ -41,7 +43,7 @@ def main_daemon(argv: list[str] | None = None) -> int:
 
     daemon = Seekd(host=args.host, port=args.port, webui_dist=args.webui_dist,
                    store=store, session_runner=session_runner, model=cfg.model,
-                   llm_config=cfg)
+                   llm_config=cfg, webui_port=args.webui_port)
     try:
         import asyncio
 

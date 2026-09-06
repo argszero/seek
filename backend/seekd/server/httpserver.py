@@ -30,7 +30,7 @@ class WebUiServer:
     """Runs a simple HTTP server over the webui/dist directory in a thread."""
 
     def __init__(self, webui_dist: str | None = None, host: str = "127.0.0.1",
-                 port: int = 8124) -> None:
+                 port: int = 37292) -> None:
         self.host = host
         self.port = port
         self.dist = Path(webui_dist) if webui_dist else Path.cwd() / "webui" / "dist"

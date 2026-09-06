@@ -19,7 +19,7 @@ export default function App() {
 
   // 初始化桥接（连接 daemon 并拉取世界状态）
   useEffect(() => {
-    initBridge("ws://127.0.0.1:8123");
+    initBridge("ws://127.0.0.1:37291");
   }, []);
 
   // 连接状态提示

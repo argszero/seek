@@ -154,14 +154,14 @@ export function createElectronBridge(): SeekBridge {
 }
 
 /** 唯一建桥入口：GUI(Electron) 用 IPC 桥，WEBUI 用 WebSocket 适配层。 */
-export function createBridge(url = "ws://127.0.0.1:8123"): SeekBridge {
+export function createBridge(url = "ws://127.0.0.1:37291"): SeekBridge {
   const isElectron = typeof window !== "undefined" &&
     Boolean((window as unknown as Record<string, unknown>).seekBridge);
   return isElectron ? createElectronBridge() : createWebUiBridge(url);
 }
 
 /** WEBUI 用 WebSocket 适配层。 */
-export function createWebUiBridge(url = "ws://127.0.0.1:8123"): SeekBridge {
+export function createWebUiBridge(url = "ws://127.0.0.1:37291"): SeekBridge {
   let ws: WebSocket | null = null;
   let ready = false;
   const handlers = new Set<RequestHandler>();

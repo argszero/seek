@@ -28,7 +28,7 @@ class SeekClient:
             ...  # message:new, session:messages, turn:start, etc.
     """
 
-    def __init__(self, host: str = "127.0.0.1", port: int = 8123, timeout: float = 15.0) -> None:
+    def __init__(self, host: str = "127.0.0.1", port: int = 37291, timeout: float = 15.0) -> None:
         self.uri = f"ws://{host}:{port}"
         self.timeout = timeout
         self._ws: object | None = None
