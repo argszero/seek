@@ -31,6 +31,10 @@ import sys
 import time
 from pathlib import Path
 
+from seekd.logutil import setup_logger
+
+log = setup_logger("seek", "launcher.log")
+
 DEFAULT_DAEMON_PORT = 37291
 DEFAULT_WEBUI_PORT = 37292
 DEFAULT_HOST = "127.0.0.1"
@@ -116,6 +120,7 @@ def _spawn_daemon(host: str, daemon_port: int, webui_port: int) -> None:
            "--webui-port", str(webui_port)]
     if webui is not None:
         cmd += ["--webui-dist", str(webui)]
+    log.info("spawning daemon: %s", " ".join(cmd))
     # Detach so the daemon outlives this launcher; stdio to DEVNULL keeps the
     # terminal clean. SEEK_HOME is inherited so ~/.seek is used.
     try:
@@ -127,6 +132,7 @@ def _spawn_daemon(host: str, daemon_port: int, webui_port: int) -> None:
             start_new_session=True,
         )
     except Exception as e:  # pragma: no cover - defensive
+        log.exception("failed to start daemon %s", bin_path)
         print(f"[seek] failed to start daemon: {e}", file=sys.stderr)
 
 
@@ -174,13 +180,20 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     # 1. Ensure the daemon is running.
-    if not _daemon_running(args.host, args.port):
+    running = _daemon_running(args.host, args.port)
+    log.info("seek launch: daemon_running=%s gui=%s (cwd=%s)",
+             running, args.gui, Path.cwd())
+    if not running:
         _spawn_daemon(args.host, args.port, args.webui_port)
 
     # 2. For the TUI, wait until WEBUI is up — guarantees the daemon is healthy
     #    and the app is fully usable the moment the TUI connects.
     if not args.gui:
-        _wait_webui(args.host, args.webui_port, args.port)
+        ok = _wait_webui(args.host, args.webui_port, args.port)
+        log.info("webui ready=%s after spawn", ok)
+        if not ok:
+            print("[seek] daemon did not become ready — see ~/.seek/logs/seekd.log",
+                  file=sys.stderr)
 
     # 3. Launch the client.
     if args.gui:

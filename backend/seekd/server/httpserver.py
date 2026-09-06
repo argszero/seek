@@ -9,8 +9,14 @@ from __future__ import annotations
 
 import functools
 import http.server
+import logging
 import threading
 from pathlib import Path
+
+from seekd.logutil import setup_logger
+
+log = setup_logger("seekd", "seekd.log")
+_webui_log = logging.getLogger("seekd.webui")
 
 
 class _Handler(http.server.SimpleHTTPRequestHandler):
@@ -18,6 +24,10 @@ class _Handler(http.server.SimpleHTTPRequestHandler):
 
     def __init__(self, *args, directory: Path, **kwargs) -> None:
         super().__init__(*args, directory=str(directory), **kwargs)
+
+    def log_message(self, fmt: str, *args) -> None:
+        """Route the base handler's request lines into our file logger."""
+        _webui_log.info("%s - %s", self.address_string(), fmt % args)
 
     def send_head(self):
         path = self.translate_path(self.path)
@@ -38,11 +48,17 @@ class WebUiServer:
         self._thread: threading.Thread | None = None
 
     def start(self) -> None:
-        if self.dist.is_dir() and (self.dist / "index.html").exists():
+        if not self.dist.is_dir() or not (self.dist / "index.html").exists():
+            log.warning("webui dist not found at %s — WEBUI will be unavailable", self.dist)
+            return
+        try:
             handler = functools.partial(_Handler, directory=self.dist)
             self._server = http.server.HTTPServer((self.host, self.port), handler)
             self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
             self._thread.start()
+            log.info("webui serving %s at http://%s:%d", self.dist, self.host, self.port)
+        except OSError as e:
+            log.error("webui failed to bind %s:%d: %s", self.host, self.port, e)
 
     def url(self) -> str | None:
         if self._server:

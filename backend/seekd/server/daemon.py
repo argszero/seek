@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import signal
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,8 +22,12 @@ import websockets
 
 from seekd.core.ids import new_id, now_iso
 from seekd.core.models import Character, Message, Room, ScheduledTask, Session
+from seekd.logutil import setup_logger
 from seekd.server.httpserver import WebUiServer
 from seekd.store.jsonstore import SeekStore
+
+log = setup_logger("seekd", "seekd.log")
+
 
 
 class Seekd:
@@ -54,17 +59,27 @@ class Seekd:
     async def _handle(self, ws) -> None:
         """Route one client connection. Requests are handled per message."""
         self.clients.add(ws)
+        peer = getattr(ws, "remote_address", None)
+        log.info("client connected: %s (total=%d)", peer, len(self.clients))
         try:
             async for raw in ws:
                 try:
                     req = json.loads(raw)
-                except json.JSONDecodeError:
+                except json.JSONDecodeError as e:
+                    log.warning("invalid JSON from %s: %s", peer, e)
                     await self._send(ws, {"type": "error", "message": "invalid JSON"})
                     continue
-                await self._dispatch(ws, req)
-        except websockets.ConnectionClosed:
-            # Client disconnected (normal close or abrupt). Not an error.
-            pass
+                try:
+                    await self._dispatch(ws, req)
+                except Exception as e:  # noqa: BLE001
+                    # Never let one bad request kill the connection.
+                    log.exception("error handling %r from %s", req.get("type"), peer)
+                    await self._send(ws, {"type": "error", "requestId": req.get("requestId"),
+                                          "message": f"internal error: {e}"})
+        except websockets.ConnectionClosed as e:
+            log.info("client disconnected: %s (code=%s)", peer, getattr(e, "code", "?"))
+        except Exception as e:  # noqa: BLE001
+            log.exception("connection loop error for %s", peer)
         finally:
             self.clients.discard(ws)
 
@@ -121,6 +136,7 @@ class Seekd:
         elif rtype == "readWorkspaceFile":
             await self._read_workspace_file(ws, req)
         else:
+            log.warning("unknown request type %r from %s", rtype, getattr(ws, "remote_address", "?"))
             await self._send(ws, {
                 "type": "error",
                 "requestId": request_id,
@@ -677,7 +693,8 @@ class Seekd:
         for client in list(self.clients):
             try:
                 await client.send(data)
-            except Exception:
+            except Exception as e:  # noqa: BLE001
+                log.warning("broadcast failed, dropping client: %s", e)
                 self.clients.discard(client)
 
     async def _send(self, ws, payload: dict) -> None:
@@ -685,9 +702,13 @@ class Seekd:
 
     async def run(self) -> None:
         """Start the WebSocket listener and the WEBUI static server."""
+        log.info("seekd starting: ws://%s:%d webui_dist=%s",
+                 self.host, self.port, self.webui_server.dist)
         self.webui_server.start()
+        log.info("webui server: %s", self.webui_server.url() or "(not started)")
         self._scheduler_task = asyncio.create_task(self._scheduler_loop())
         async with websockets.serve(self._handle, self.host, self.port):
+            log.info("websocket listener up on %s:%d", self.host, self.port)
             stop = asyncio.Event()
             loop = asyncio.get_running_loop()
             try:
@@ -697,4 +718,5 @@ class Seekd:
                 # Not on the main thread or non-POSIX: rely on KeyboardInterrupt.
                 pass
             await stop.wait()
+            log.info("seekd shutting down")
             self._scheduler_task.cancel()

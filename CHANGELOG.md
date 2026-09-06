@@ -5,6 +5,21 @@ All notable changes to **seek** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.7] - 2026-09-06
+
+### Added
+
+- **File logging for every component** — no more silent failures:
+  - daemon (WebSocket) + embedded WEBUI → `~/.seek/logs/seekd.log` (HTTP request lines under the `seekd.webui` logger), created even when the daemon is spawned detached with stdio discarded
+  - launcher (`seek`) → `~/.seek/logs/launcher.log` (daemon probe/spawn/readiness)
+  - GUI (Electron main process) → `~/.seek/logs/gui.log` — every `console.*` output, lifecycle event, render-process crash and uncaught exception lands here even when launched from Finder/Launchpad with no terminal
+  - TUI → `<launching-directory>/.seek/logs/tui.log` — the directory the user ran `seek` from is the session's working directory, so the log travels with the project
+  - All files rotate at 1 MB × 3 backups.
+
+### Fixed
+
+- **TUI still crashed on launch** (regression in 0.1.6): `curses.wrapper` always calls its callback as `func(stdscr, …)`, but the 0.1.6 fix declared the callback as `func(client, scr)` — so the curses window object was passed where the client was expected, failing with `'_curses.window' object has no attribute 'connect'`. The callback now captures the client by closure and receives only `stdscr`, eliminating the argument-order coupling. Regression tests (`tui/tests/test_main.py`) pin the wiring.
+
 ## [0.1.6] - 2026-09-06
 
 ### Fixed

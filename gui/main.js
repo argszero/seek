@@ -17,6 +17,11 @@ const fs = require("fs");
 const os = require("os");
 const { spawn } = require("child_process");
 const { SeekDaemonClient } = require("./daemon_client");
+const { installLogging } = require("./log");
+
+// File logging FIRST — before anything can fail silently. Every console.* call
+// (and process crash) from here on is appended to ~/.seek/logs/gui.log.
+installLogging();
 
 const DAEMON_HOST = process.env.SEEK_DAEMON_HOST || "127.0.0.1";
 const DAEMON_PORT = Number(process.env.SEEK_DAEMON_PORT || 37291);
@@ -24,6 +29,7 @@ const WEBUI_PORT = Number(process.env.SEEK_WEBUI_PORT || 37292);
 
 // 单实例锁（第二个实例退出并 focus 已有窗口）
 if (!app.requestSingleInstanceLock()) {
+  console.warn("[seek-gui] another instance already holds the lock — quitting");
   app.quit();
 } else {
   main();
@@ -93,6 +99,7 @@ function main() {
       port: DAEMON_PORT,
       onEvent: (msg) => sendToRenderer(msg),
       onState: (r) => {
+        console.log("[seek-gui] daemon state ->", r);
         ready = r;
         if (!r && !spawnAttempted) spawnDaemon();
         sendToRenderer({ type: "__state", ready: r });
@@ -139,6 +146,7 @@ function main() {
   // ── 窗口 ────────────────────────────────────────────────
   function createWindow() {
     const dist = findWebuiDist();
+    console.log("[seek-gui] createWindow, dist =", dist);
     win = new BrowserWindow({
       width: 1200,
       height: 800,
@@ -153,13 +161,16 @@ function main() {
     const index = path.join(dist, "index.html");
     if (fs.existsSync(index)) {
       win.loadFile(index);
+      console.log("[seek-gui] loaded", index);
     } else {
       // dist 未构建 → 加载一个占位提示（不崩溃）。
+      console.warn("[seek-gui] webui dist missing at", index);
       win.loadURL("data:text/html;charset=utf-8," +
         encodeURIComponent("<h2>webui/dist 未构建</h2>" +
           "<p>请在 webui/ 目录运行 <code>npm run build</code> 后再启动 GUI。</p>"));
     }
-    win.webContents.on("render-process-gone", () => {
+    win.webContents.on("render-process-gone", (_e, details) => {
+      console.error("[seek-gui] render process gone:", details && details.reason);
       if (fs.existsSync(path.join(dist, "index.html"))) {
         win.loadFile(path.join(dist, "index.html"));
       }
@@ -183,6 +194,7 @@ function main() {
 
   // ── 应用生命周期 ────────────────────────────────────────
   app.whenReady().then(() => {
+    console.log("[seek-gui] app ready");
     registerIpc();
     createWindow();
     ensureClient();
@@ -192,6 +204,7 @@ function main() {
   });
 
   app.on("second-instance", () => {
+    console.log("[seek-gui] second instance — focusing existing window");
     if (win) {
       if (win.isMinimized()) win.restore();
       win.focus();
@@ -199,6 +212,7 @@ function main() {
   });
 
   app.on("window-all-closed", () => {
+    console.log("[seek-gui] all windows closed");
     if (client) client.close();
     if (daemonProc) {
       try { daemonProc.kill("SIGTERM"); } catch { /* ignore */ }
@@ -206,9 +220,6 @@ function main() {
     }
     if (process.platform !== "darwin") app.quit();
   });
-
-  process.on("uncaughtException", (e) => {
-    // eslint-disable-next-line no-console
-    console.error("[seek-gui] uncaughtException", e);
-  });
+  // process-level crash handling (uncaughtException/unhandledRejection) is
+  // installed once in ./log.js so the trace lands in ~/.seek/logs/gui.log.
 }

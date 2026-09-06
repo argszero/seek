@@ -50,6 +50,15 @@ def main_daemon(argv: list[str] | None = None) -> int:
         asyncio.run(daemon.run())
     except KeyboardInterrupt:
         pass
+    except Exception as e:  # noqa: BLE001
+        # The daemon is spawned detached with stdio=DEVNULL, so a bare stderr
+        # print is lost. Log the full traceback to ~/.seek/logs/seekd.log.
+        from seekd.logutil import setup_logger
+
+        logger = setup_logger("seekd", "seekd.log")
+        logger.exception("seekd fatal error")
+        print(f"seekd: fatal error (see ~/.seek/logs/seekd.log): {e}", file=sys.stderr)
+        return 1
     return 0
 
 
