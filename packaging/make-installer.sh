@@ -169,13 +169,21 @@ add_path_line "$HOME/.bash_profile"
 touch "$HOME/.zshrc" 2>/dev/null || true
 add_path_line "$HOME/.zshrc"
 
-# ── Make the GUI visible in Launchpad / Finder via ~/Applications ──
-# macOS shows ~/Applications in the Launchpad grid, so symlinking seek.app there
-# makes it appear without root. (A hard copy would also work but costs ~100MB and
-# would desync the app on later updates; a symlink stays current automatically.)
+# ── Install the GUI app into ~/Applications (real copy, not a symlink) ──
+# macOS Launchpad/LaunchServices do NOT reliably index a *symlinked* .app in
+# ~/Applications (kMDItemCFBundleIdentifier stays null even after lsregister +
+# killall Dock). A real copy is always shown in Launchpad and Finder. The copy
+# lives in ~/Applications/seek.app and finds the runtime via the absolute paths
+# in seekd/main.js (~/.seek/install/bin/seekd, ~/.seek/install/webui), so it
+# does not need to sit next to it. After copying, remove the bundled seek-gui
+# folder from the install dir so the runtime stays a lean single copy.
 if [ -d "$INSTALL/seek-gui/seek.app" ]; then
   mkdir -p "$HOME/Applications"
-  ln -sfn "$INSTALL/seek-gui/seek.app" "$HOME/Applications/seek.app" 2>/dev/null || true
+  ditto "$INSTALL/seek-gui/seek.app" "$HOME/Applications/seek.app" 2>/dev/null || \
+    true
+  # Remove the redundant app copy that shipped with the runtime, so ~/.seek/install
+  # holds only the runtime (no second .app taking ~100MB).
+  rm -rf "$INSTALL/seek-gui"
   # Refresh the Dock / Launchpad so the new app icon shows up without a logout.
   /usr/bin/killall Dock 2>/dev/null || true
 fi

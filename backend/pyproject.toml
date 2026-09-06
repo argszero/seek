@@ -1,6 +1,6 @@
 [project]
 name = "seekd"
-version = "0.1.4"
+version = "0.1.5"
 description = "seek daemon — the AI-native IM backend (webSocket IPC, group-chat orchestration, agents)"
 license = { file = "../LICENSE" }
 authors = [{ name = "argszero" }]
