@@ -5,6 +5,22 @@ All notable changes to **seek** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.8] - 2026-09-06
+
+### Fixed
+
+- **Virtual members never replied to messages** (regression present since the
+  first public release): the daemon's `_run_turn` guard read
+  `if self._turn_cancel: return` — `_turn_cancel` is an `asyncio.Event`
+  instance, and an event object is always truthy, so every group-chat turn
+  returned at the very first line without ever invoking the session runner.
+  A `sendMessage` therefore showed `turn:start` followed instantly by
+  `turn:idle` and no virtual character ever spoke, with no error surfaced.
+  The guard now tests `.is_set()` (skip only when a cancel signal was raised
+  before the task ran). A regression test wires a fake session runner and
+  asserts `handle_user_message` is invoked and the reply is broadcast
+  (`tests/test_daemon.py::test_send_message_with_runner_runs_turn`).
+
 ## [0.1.7] - 2026-09-06
 
 ### Added
