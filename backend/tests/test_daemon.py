@@ -486,6 +486,58 @@ def test_send_message_without_runner_emits_turn_lifecycle(tmp_path):
     asyncio.run(run())
 
 
+def test_send_message_with_runner_runs_turn(tmp_path):
+    """Regression: with a session_runner wired, sendMessage must actually run
+    the group turn and broadcast the virtual member's reply.
+
+    The guard in ``_run_turn`` used to read ``if self._turn_cancel:`` — an
+    ``asyncio.Event`` object is always truthy, so every turn returned before
+    calling the runner and no virtual member ever replied (observed on a real
+    install: ``turn:start`` followed instantly by ``turn:idle``, no message).
+    """
+    from seekd.core.ids import new_id, now_iso
+    from seekd.core.models import Message
+
+    store = SeekStore(root=tmp_path)
+    store.save_room(Room(id="room-1", name="读研", member_ids=["s-1"]))
+    store.save_session(Session(id="sess-1", room_id="room-1", name="会话",
+                               workspace="", created_at=now_iso(), updated_at=now_iso()))
+
+    class FakeRunner:
+        def __init__(self):
+            self.calls = 0
+
+        async def handle_user_message(self, session_id, text, is_current=None, emit=None):
+            self.calls += 1
+            assert session_id == "sess-1"
+            return [Message(id=new_id(), speaker="s-1", time=now_iso(),
+                            kind="text", text="hello back")]
+
+    runner = FakeRunner()
+    d = Seekd(host="127.0.0.1", port=8235, store=store, session_runner=runner)
+    async def run():
+        async with websockets.serve(d._handle, "127.0.0.1", 8235):
+            url = "ws://127.0.0.1:8235"
+            types = []
+            reply = None
+            async with websockets.connect(url) as ws:
+                await ws.send(json.dumps({"type": "sendMessage",
+                                          "sessionId": "sess-1", "text": "hi"}))
+                for _ in range(10):
+                    m = json.loads(await ws.recv())
+                    types.append(m["type"])
+                    if m["type"] == "message:new" and m["message"].get("speaker") == "s-1":
+                        reply = m["message"]
+                    if m["type"] == "turn:idle":
+                        break
+            assert runner.calls == 1, f"runner never invoked; types={types}"
+            assert reply is not None, f"no virtual-member reply broadcast; types={types}"
+            assert reply["text"] == "hello back"
+            assert "turn:start" in types
+            assert "turn:idle" in types
+    asyncio.run(run())
+
+
 def test_workspace_files_list_read_and_traversal(tmp_path):
     """listWorkspaceFiles/readWorkspaceFile work on the session workspace,
     and path traversal (``..``) is rejected."""

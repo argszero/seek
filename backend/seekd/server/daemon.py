@@ -347,7 +347,11 @@ class Seekd:
 
     async def _run_turn(self, sid: str, text: str, is_current) -> None:
         """Persist + broadcast a group-chat turn (called inside a task)."""
-        if self._turn_cancel:  # already cancelled before it ran
+        # Skip only if a cancel signal was raised before this task actually ran.
+        # NB: must test `.is_set()` — the Event object itself is always truthy,
+        # so a bare `if self._turn_cancel:` made every turn return here and no
+        # virtual member ever replied.
+        if self._turn_cancel is not None and self._turn_cancel.is_set():
             return
 
         async def emit(msg: Message) -> None:
