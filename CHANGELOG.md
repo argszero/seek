@@ -5,6 +5,30 @@ All notable changes to **seek** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Built-in world**: installation now seeds a fixed world — the virtual
+  character `seek` and the built-in room `seek` (members: you + seek, plus a
+  default session). The room's members are immutable (the daemon rejects
+  add/remove on `room-seek`). Idempotent upgrade: existing worlds keep all
+  user data and just gain the built-ins.
+- **`deleteSession` request + `session:deleted` event** (CONTRACT) — the
+  terminal client can permanently delete a session.
+- **TUI rewritten to an EMRG-parity raw-ANSI client** (the python-tui engine
+  and interaction widgets are ported from EMRG, MIT, same author):
+  - full line editor (arrows/Home/End, Ctrl+A/E/U/W/K, multi-line, ↑↓ history,
+    paste mode), `/` command menu with live filtering + Tab/↑↓ completion,
+    interactive pickers for sessions/delete/model/task, status bar with
+    elapsed timer, expandable tool cards, Esc-to-interrupt, auto-reconnect
+  - commands scoped to seek: `/help /new /sessions /resume /rename /delete
+    /clear /model /trigger /version` (no EMRG-only /rant /memory /skills
+    /image /compact /rewind)
+  - the client is pinned to the built-in `seek` room and switches between its
+    sessions; a fresh session is created when none exists or after the
+    current one is deleted
+
 ## [0.1.8] - 2026-09-06
 
 ### Fixed
