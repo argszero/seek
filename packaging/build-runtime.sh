@@ -81,10 +81,36 @@ echo "==> copying base interpreter $BASE_PREFIX"
 cp -RL "$BASE_PREFIX" "$RUNTIME/python"
 
 # ── site-packages: overlay the backend venv deps + seekd sources ─
+# Locate a venv's real site-packages. Layout varies: uv unix venvs use
+# lib/python3.x/site-packages; uv/CPython Windows venvs may use
+# Lib/python3.x/site-packages or a bare Lib/site-packages — probe all.
+find_venv_sp() {
+  local vroot="$1"
+  local cand
+  for cand in \
+      "$vroot/lib/python$PYVER/site-packages" \
+      "$vroot/Lib/python$PYVER/site-packages" \
+      "$vroot/lib/site-packages" \
+      "$vroot/Lib/site-packages"; do
+    if [[ -d "$cand" ]]; then echo "$cand"; return 0; fi
+  done
+  return 1
+}
+
 SP="$RUNTIME/python/$SPLIB/python$PYVER/site-packages"
-VENV_SP="$ROOT/backend/.venv/$SPLIB/python$PYVER/site-packages"
+VENV_SP="$(find_venv_sp "$ROOT/backend/.venv" || echo "")"
+if [[ -z "$VENV_SP" ]]; then
+  echo "!! backend venv site-packages not found under $ROOT/backend/.venv" >&2
+  exit 1
+fi
+# The runtime target dir must mirror the venv's OWN site-packages location:
+# Windows (uv) venvs keep site-packages directly under Lib/, unix under
+# lib/python3.x/ — on Windows the whole venv is copied as the interpreter base,
+# so overlaying into a guessed python3.x/ subdir would land OUTSIDE sys.path.
+SP_REL="${VENV_SP#"$ROOT/backend/.venv/"}"
+SP="$RUNTIME/python/$SP_REL"
 mkdir -p "$SP"
-echo "==> overlaying backend venv site-packages"
+echo "==> overlaying backend venv site-packages (from $VENV_SP)"
 cp -RL "$VENV_SP"/. "$SP/" 2>/dev/null || true
 
 # The TUI (seek_tui) lives in its own venv (tui/.venv) with its own deps
@@ -92,20 +118,19 @@ cp -RL "$VENV_SP"/. "$SP/" 2>/dev/null || true
 # site-packages too, otherwise the shipped TUI crashes on `import rich`.
 # Both venvs resolve the same managed CPython (3.13), so a flat merge into one
 # site-packages is safe; shared pins (websockets) resolve to the same version.
-TUI_VENV_SP="$ROOT/tui/.venv/$SPLIB/python$PYVER/site-packages"
-if [[ -d "$TUI_VENV_SP" ]]; then
-  echo "==> overlaying tui venv site-packages (rich + seek_tui deps)"
+TUI_VENV_SP="$(find_venv_sp "$ROOT/tui/.venv" || echo "")"
+if [[ -n "$TUI_VENV_SP" ]]; then
+  echo "==> overlaying tui venv site-packages (rich + seek_tui deps) (from $TUI_VENV_SP)"
   cp -RL "$TUI_VENV_SP"/. "$SP/" 2>/dev/null || true
-  # seek_tui is installed editable in the dev venv; its .pth points back to
-  # this machine. Drop it — the real package is vendored below.
-  rm -f "$SP"/_editable_impl_seek_tui.pth
-  rm -f "$SP"/_editable_impl_seek_tui-*.pth
+else
+  echo "!! tui venv site-packages not found under $ROOT/tui/.venv — shipped TUI will lack rich (sanity check will catch it)" >&2
 fi
 
-# Because seekd is installed editable in the dev venv, its `.pth` points back to
-# this machine. Replace that with a real copy of the seekd package so the runtime
-# is standalone.
-rm -f "$SP"/_editable_impl_seekd.pth
+# Drop EVERY editable-install .pth in the copied tree: seekd and seek_tui are
+# installed editable in the dev venvs, so their .pth files point back to this
+# machine (e.g. D:\a\seek\seek\backend on a Windows runner) and must never ship.
+# The real packages are vendored below as plain directories.
+find "$RUNTIME/python" -name '_editable_impl_*.pth' -delete 2>/dev/null || true
 echo "==> vendoring seekd package into runtime site-packages"
 cp -R "$ROOT/backend/seekd" "$SP/seekd"
 # The TUI is a separate package (seek_tui); vendor it too so the runtime ships a
