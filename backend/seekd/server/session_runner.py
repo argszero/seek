@@ -153,5 +153,16 @@ class SessionRunner:
 
     @staticmethod
     def _as_history(m: Message) -> dict:
-        sp = "user" if m.speaker == "user" else m.speaker
-        return {"speaker": sp, "text": m.text}
+        """Serialize a session message for the orchestrator history.
+
+        Keep the full shape so the turn prompt can render, per speaking member:
+        the room's text history (everyone's ``kind == "text"``) plus that
+        member's OWN ``kind == "tool"`` cards (cmd + output). Tool cards of
+        *other* members stay private and are never shown.
+        """
+        entry: dict = {"speaker": m.speaker, "kind": m.kind, "text": m.text}
+        if m.kind == "tool":
+            entry["cmd"] = m.cmd
+            entry["output"] = m.output
+            entry["status"] = m.status
+        return entry

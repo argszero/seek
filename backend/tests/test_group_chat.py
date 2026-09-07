@@ -1,6 +1,7 @@
 """Tests for seekd.orchestrator.group_chat pure algorithms."""
 
 from seekd.orchestrator.group_chat import (
+    build_group_turn_prompt,
     is_pass_content,
     messages_since_member_last_spoke,
     order_round_speakers,
@@ -59,3 +60,24 @@ def test_messages_since_member_last_spoke():
     after = messages_since_member_last_spoke(history, "m1")
     # only the last user message remains after m1 spoke
     assert [m["text"] for m in after] == ["again"]
+
+
+def test_turn_prompt_shows_own_tool_hides_others():
+    # History: room text (everyone), m1's own tool card, m2's tool card.
+    history = [
+        {"speaker": "user", "kind": "text", "text": "帮我看下数据"},
+        {"speaker": "m1", "kind": "tool", "cmd": "read_file", "output": "{'a':1}", "status": "success", "text": ""},
+        {"speaker": "m2", "kind": "tool", "cmd": "search", "output": "secret m2 output", "status": "success", "text": ""},
+        {"speaker": "m1", "kind": "text", "text": "读取完成"},
+    ]
+    # viewer = m1: sees room text + its own tool, NOT m2's tool.
+    p1 = build_group_turn_prompt("M1", "room", ["M2"], history, viewer_id="m1")
+    assert "帮我看下数据" in p1
+    assert "read_file" in p1 and "读取完成" in p1
+    assert "secret m2 output" not in p1
+
+    # viewer = m2: sees only its own tool, NOT m1's.
+    p2 = build_group_turn_prompt("M2", "room", ["M1"], history, viewer_id="m2")
+    assert "帮我看下数据" in p2
+    assert "search" in p2
+    assert "{'a':1}" not in p2

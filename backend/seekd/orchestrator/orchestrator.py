@@ -93,7 +93,7 @@ class Orchestrator:
                 new_messages = live_history[-SHARED_ROOM_HISTORY_LIMIT:]
                 system_prompt = build_group_member_system_prompt(
                     member.name, member.persona, group_name, group_desc, peer_tuples)
-                prompt = build_group_turn_prompt(member.name, group_name, peer_names, new_messages)
+                prompt = build_group_turn_prompt(member.name, group_name, peer_names, new_messages, viewer_id=member.id)
 
                 spoken = await self._run_turn(member, system_prompt, prompt)
 

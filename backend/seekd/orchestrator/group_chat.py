@@ -188,7 +188,27 @@ def format_group_history(history: list[dict], viewer_id: str, limit: int = GROUP
 
 def _format_group_line(msg: dict, viewer_id: str) -> str:
     sp = msg.get("speaker")
+    kind = msg.get("kind", "text")
     content = msg.get("text", "")
+
+    # A member's own tool cards are part of *its* history; other members' tool
+    # cards stay private (host decision: everyone sees room text history, plus
+    # their own tool history).
+    if kind == "tool":
+        # Only the tool's owner sees it; everyone else skips it.
+        is_self = isinstance(sp, str) and sp == viewer_id
+        if not is_self:
+            return ""
+        cmd = msg.get("cmd", "")
+        out = msg.get("output", "")
+        status = msg.get("status", "")
+        line = f"[tool] {sp}: {cmd}"
+        if status:
+            line += f" ({status})"
+        if out:
+            line += f"\n  {out}"
+        return line
+
     if sp == "user":
         return f"User: {content}"
     if isinstance(sp, dict):
@@ -205,12 +225,20 @@ def build_group_turn_prompt(
     group_name: str,
     peers: list[str],
     new_messages: list[dict],
+    viewer_id: str | None = None,
 ) -> str:
     lines = [format_group_chat_tag(group_name, peers)]
-    if not new_messages:
+    # A member sees (a) the room's text history for everyone, and (b) its OWN
+    # tool cards. Other members' tool cards stay private. The viewer is matched
+    # by the speaker id from the history entries (``member.id``), so the caller
+    # passes ``viewer_id``.
+    if viewer_id is None:
+        viewer_id = member_name  # fallback: match by name for legacy callers
+    visible = [m for m in new_messages if _format_group_line(m, viewer_id).strip()]
+    if not visible:
         lines.append("No new messages in the room since your last turn.")
     else:
-        lines.append(f"New messages in the room (oldest first):\n{format_group_history(new_messages, member_name)}")
+        lines.append(f"New messages in the room (oldest first):\n{format_group_history(visible, viewer_id)}")
     lines.append("")
     lines.append(
         f"It's your turn, {member_name}. Reply in character with a single SendMessage if you have something worth adding, or send \"(pass)\" if you don't.")
