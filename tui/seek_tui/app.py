@@ -1077,6 +1077,14 @@ class SeekApp:
                     return False
                 if text.startswith("/"):
                     await self._run_command(text)
+                    # Slash commands must also clear the input: leaving the
+                    # text in place made the next typed message concatenate
+                    # onto the leftover command (e.g. "/new你好…" → parsed as
+                    # an unknown command, message never sent).
+                    self.inp.text = ""
+                    self.inp.cursor = 0
+                    self.inp.dirty = True
+                    self.term.render()
                     return True
                 await self._send_user_message(self.inp.text)
             self.inp.text = ""
