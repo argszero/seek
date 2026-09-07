@@ -24,7 +24,6 @@ Design notes
 from __future__ import annotations
 
 import argparse
-import http.client
 import os
 import subprocess
 import sys
@@ -100,18 +99,6 @@ def _daemon_running(host: str, port: int, timeout: float = 0.8) -> bool:
         return False
 
 
-def _webui_reachable(host: str, port: int, timeout: float = 0.8) -> bool:
-    """Check that the embedded WEBUI static server responds (HTTP 200)."""
-    try:
-        conn = http.client.HTTPConnection(host, port, timeout=timeout)
-        conn.request("GET", "/")
-        resp = conn.getresponse()
-        conn.close()
-        return resp.status == 200
-    except Exception:
-        return False
-
-
 def _spawn_daemon(host: str, daemon_port: int, webui_port: int) -> None:
     """Start ``seekd`` in the background (detached), then wait for WEBUI."""
     bin_path = _seekd_bin()
@@ -136,17 +123,21 @@ def _spawn_daemon(host: str, daemon_port: int, webui_port: int) -> None:
         print(f"[seek] failed to start daemon: {e}", file=sys.stderr)
 
 
-def _wait_webui(host: str, webui_port: int, daemon_port: int, tries: int = 40) -> bool:
-    """Poll until the WEBUI HTTP server is reachable or the wait expires."""
+def _wait_daemon(host: str, port: int, tries: int = 20, interval: float = 0.25) -> bool:
+    """Poll until the daemon WebSocket port accepts connections.
+
+    The TUI only needs the daemon's WS port — the embedded WEBUI (served by the
+    same process) is NOT a prerequisite for the TUI, and an externally started
+    daemon may legitimately run without ``--webui-dist``. Previously this waited
+    on the WEBUI HTTP port instead, so every ``seek`` against such a daemon
+    stalled the full 40×0.5s poll loop while printing a misleading
+    "daemon did not become ready" (the daemon was fine; only WEBUI was absent).
+    """
     for _ in range(tries):
-        if _webui_reachable(host, webui_port):
+        if _daemon_running(host, port):
             return True
-        # Give up early if the daemon died (port probe fails too).
-        if not _daemon_running(host, daemon_port):
-            time.sleep(0.25)
-            continue
-        time.sleep(0.5)
-    return _webui_reachable(host, webui_port)
+        time.sleep(interval)
+    return _daemon_running(host, port)
 
 
 def _launch_tui(host: str, port: int) -> int:
@@ -186,11 +177,12 @@ def main(argv: list[str] | None = None) -> int:
     if not running:
         _spawn_daemon(args.host, args.port, args.webui_port)
 
-    # 2. For the TUI, wait until WEBUI is up — guarantees the daemon is healthy
-    #    and the app is fully usable the moment the TUI connects.
-    if not args.gui:
-        ok = _wait_webui(args.host, args.webui_port, args.port)
-        log.info("webui ready=%s after spawn", ok)
+    # 2. The TUI only needs the daemon's WebSocket. If the daemon was already
+    #    running (reused), there is nothing to wait for. If we just spawned one,
+    #    poll until its WS port answers — WEBUI readiness is not a TUI gate.
+    if not args.gui and not running:
+        ok = _wait_daemon(args.host, args.port)
+        log.info("daemon ready=%s after spawn", ok)
         if not ok:
             print("[seek] daemon did not become ready — see ~/.seek/logs/seekd.log",
                   file=sys.stderr)
