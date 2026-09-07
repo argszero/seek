@@ -32,6 +32,7 @@ export type ServerEvent =
   | { type: "models"; models: Model[]; current: string }
   | { type: "settings"; settings: SettingsData }
   | { type: "model:changed"; model: string; apiModel: string; contextWindow?: number | null }
+  | { type: "daemon:stopping"; reason?: string }
   | { type: "error"; requestId?: string; message: string };
 
 // ---- 客户端 → 后端请求 ----
@@ -58,7 +59,8 @@ export type ClientRequest =
   | { type: "triggerTask"; sessionId: string }
   | { type: "listWorkspaceFiles"; sessionId: string }
   | { type: "readWorkspaceFile"; sessionId: string; name: string }
-  | { type: "cancel" };
+  | { type: "cancel" }
+  | { type: "stop" };
 export type RequestHandler = (ev: ServerEvent) => void;
 
 export interface SeekBridge {

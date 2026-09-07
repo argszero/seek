@@ -65,6 +65,12 @@ def _make_app() -> SeekApp:
     app.history_index = -1
     app.history_saved_input = ""
     app._pending_new_session = False
+    import asyncio as _aio
+    app._resize_event = _aio.Event()
+    app._exit_event = _aio.Event()
+    app._stop_requested = False
+    app._running = True
+    app._welcomed = False
     return app
 
 
@@ -110,3 +116,31 @@ def test_enter_unknown_command_dismisses_dropdown_only():
     assert app._autocomplete_active is False  # dropdown dismissed
     assert app.inp.text == "/bogus"           # but input kept, nothing sent
     assert not app.client.sent
+
+
+def test_slash_stop_sends_stop_request():
+    """/stop asks the daemon to stop and marks the app as stopping."""
+    app = _make_app()
+    app.inp.text = "/stop"
+    asyncio.run(app._handle_key(b"\r"))
+    assert app._stop_requested is True
+    assert ("stop", {}) in app.client.sent
+    assert app.inp.text == ""   # input cleared like every other command
+
+
+def test_daemon_stopping_event_exits_without_reconnect():
+    """daemon:stopping sets the exit event so run() leaves cleanly."""
+    app = _make_app()
+    asyncio.run(app._on_event({"type": "daemon:stopping", "reason": "request from 127.0.0.1"}))
+    assert app._exit_event.is_set()
+    assert app._running is False
+    assert app._stop_requested is True
+
+
+def test_slash_stop_twice_is_idempotent():
+    """A second /stop while already stopping sends nothing new."""
+    app = _make_app()
+    app._stop_requested = True
+    app.inp.text = "/stop"
+    asyncio.run(app._handle_key(b"\r"))
+    assert app.client.sent == []   # no duplicate stop request

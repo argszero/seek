@@ -32,6 +32,8 @@ interface StoreState {
   settings: SettingsData | null; // LLM 设置（getSettings 结果）
   workspaceFiles: Record<string, WorkspaceFileEntry[]>; // sessionId → 工作区文件列表
   workspaceFileContent: Record<string, string>; // `${sessionId}:${name}` → 文本内容
+  daemonStopped: boolean; // daemon 正在停止（daemon:stopping 广播）
+  daemonStopReason: string;
 }
 
 const emptyWorld: WorldState = {
@@ -63,6 +65,8 @@ let state: StoreState = {
   settings: null,
   workspaceFiles: {},
   workspaceFileContent: {},
+  daemonStopped: false,
+  daemonStopReason: "",
 };
 
 const listeners = new Set<() => void>();
@@ -287,6 +291,12 @@ function handleEvent(ev: ServerEvent) {
       console.warn("seek error:", ev.message);
       emit();
       break;
+    case "daemon:stopping":
+      // 任一入口的 stop（`seek stop` / TUI /stop / 本页按钮）都会走到这里；
+      // 效果一致：界面转入「已停止」状态。GUI 宿主还会额外退出整个 app。
+      state = { ...state, daemonStopped: true, daemonStopReason: ev.reason ?? "" };
+      emit();
+      break;
     default:
       break;
   }
@@ -397,6 +407,11 @@ export function saveSettings(payload: {
   modelDetails?: SettingsData["modelDetails"];
 }) {
   bridge?.send({ type: "saveSettings", ...payload });
+}
+
+// ---- stop（daemon 全局停机；与 `seek stop` / TUI /stop 同一协议路径）----
+export function stopSeek() {
+  bridge?.send({ type: "stop" });
 }
 
 export function closeSession(sessionId: string) {

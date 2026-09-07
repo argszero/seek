@@ -97,7 +97,8 @@ def test_seek_command_help_is_emrg_subset():
                       "/compact", "/rewind"):
         assert forbidden not in SEEK_COMMAND_HELP
     for required in ("/help", "/sessions", "/resume", "/rename",
-                     "/delete", "/clear", "/model", "/new", "/version"):
+                     "/delete", "/clear", "/model", "/new", "/version",
+                     "/stop"):
         assert required in SEEK_COMMAND_HELP
 
 
@@ -108,7 +109,7 @@ def test_command_dropdown_uses_seek_commands():
     assert dd._matching == ["/model"]
     assert dd.selected_command == "/model"
     dd2 = CommandDropdown(prefix="/s")
-    assert set(dd2._matching) == {"/sessions"}
+    assert set(dd2._matching) == {"/sessions", "/stop"}
 
 
 def test_chat_history_adds_user_markdown_row():

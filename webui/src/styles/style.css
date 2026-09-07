@@ -442,6 +442,8 @@ body.resizing { user-select: none; cursor: col-resize; }
 .settings__btn { height: 36px; padding: 0 20px; border-radius: 9px; border: 0; cursor: pointer; color: #fff; background: var(--cursor-accent); font-size: 14px; }
 .settings__btn--ghost { background: transparent; border: 1px solid var(--cursor-stroke-tertiary); color: var(--cursor-text-secondary); }
 .settings__btn--primary { box-shadow: 0 1px 3px rgba(0,0,0,.2); }
+.settings__btn--danger { background: transparent; border: 1px solid var(--cursor-fill-danger, #e5484d); color: var(--cursor-fill-danger, #e5484d); }
+.settings__btn--danger:hover { background: rgba(229,72,77,.1); }
 .settings__btn:disabled { opacity: .5; cursor: not-allowed; }
 .field__hint { font-size: 12px; color: var(--cursor-text-tertiary); margin-top: -6px; }
 .role-card {

@@ -148,6 +148,17 @@ Requests carry a `requestId` the client generates (so a client can identify its 
 | `listWorkspaceFiles` | List a session's workspace dir (top-level) | `{ sessionId }` |
 | `readWorkspaceFile` | Read a file inside a session's workspace | `{ sessionId, name }` |
 | `cancel` | Cancel the current running turn | `{}` |
+| `stop` | Stop the daemon and every seek process (all clients + tool subprocess trees) | `{}` |
+
+**`stop` semantics** — every entry point funnels through this one request, so the
+effect is identical from `seek stop` (bash/CLI), the TUI `/stop` command, or the
+settings-page button (WEBUI and the Electron GUI share that UI). The daemon
+broadcasts `daemon:stopping`, cancels any running turn, then stops every tool
+subprocess tree it spawned (process-group based: each tool child runs in its own
+process group, so a `TERM`→`KILL` to that group takes down the shell *and* any
+grandchildren like python/git) before exiting. Clients react to
+`daemon:stopping` by exiting themselves (TUI quits, GUI `app.quit()`, WEBUI shows
+a stopped state) — they never reconnect during a stop.
 
 ---
 
@@ -168,6 +179,7 @@ Requests carry a `requestId` the client generates (so a client can identify its 
 | `models` | Available models list (current first) | `{ models: Model[], current }` |
 | `settings` | Current LLM settings (settings page) | `{ settings: { apiKey, baseUrl, model, currentModel, modelDetails } }` |
 | `model:changed` | The default model was switched | `{ model, apiModel, contextWindow }` |
+| `daemon:stopping` | Broadcast just before the daemon shuts down (every client should exit; the GUI quits its app) | `{ reason }` |
 | `session:created` | A session was created (including renames) | `{ session }` |
 | `session:deleted` | A session was deleted | `{ sessionId }` |
 | `room:created` | A room was created | `{ room }` |

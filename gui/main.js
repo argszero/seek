@@ -97,7 +97,17 @@ function main() {
     client = new SeekDaemonClient({
       host: DAEMON_HOST,
       port: DAEMON_PORT,
-      onEvent: (msg) => sendToRenderer(msg),
+      onEvent: (msg) => {
+        if (msg && msg.type === "daemon:stopping") {
+          // The daemon is shutting down (stop from any client: `seek stop`,
+          // TUI /stop, or the settings button) — the GUI goes down with it so
+          // no window is left pointing at a dead backend.
+          console.log("[seek-gui] daemon stopping:", msg.reason);
+          app.quit();
+          return;
+        }
+        sendToRenderer(msg);
+      },
       onState: (r) => {
         console.log("[seek-gui] daemon state ->", r);
         ready = r;

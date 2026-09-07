@@ -10,6 +10,7 @@ import {
   setModel,
   saveSettings,
   getSettings,
+  stopSeek,
 } from "../seek/store";
 
 type Tab = "model" | "appearance" | "language" | "tasks" | "roles" | "about";
@@ -229,10 +230,38 @@ function RolesSettings() {
 }
 
 function AboutSettings() {
+  const state = useStore();
+  const [confirming, setConfirming] = useState(false);
   return (
     <div>
       <h2 className="settings__h">关于</h2>
       <p className="settings__placeholder">Seek — AI-native IM。</p>
+      <h2 className="settings__h">停止服务</h2>
+      <div className="settings-group">
+        <div className="field">
+          <label className="field__label">停止 seek</label>
+          {state.daemonStopped ? (
+            <div className="settings__hint">seek 已停止{state.daemonStopReason ? `（${state.daemonStopReason}）` : ""}。可从命令行重新运行 <code>seek</code> 启动。</div>
+          ) : (
+            <div>
+              <button
+                className="settings__btn settings__btn--danger"
+                data-stop-seek="1"
+                onClick={() => {
+                  if (!confirming) {
+                    setConfirming(true);
+                    return;
+                  }
+                  stopSeek();
+                }}
+              >
+                {confirming ? "再次点击确认停止（含所有 seek 进程）" : "停止 seek daemon"}
+              </button>
+            </div>
+          )}
+        </div>
+        <div className="settings__hint">停止会关闭 daemon、TUI、GUI 以及 seek 启动的所有子进程；效果与命令行 <code>seek stop</code>、TUI <code>/stop</code> 一致。</div>
+      </div>
     </div>
   );
 }

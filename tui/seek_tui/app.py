@@ -61,6 +61,7 @@ SEEK_COMMAND_HELP: dict[str, str] = {
     "/clear":    "Clear current session history and start fresh",
     "/model":    "Switch LLM model (/model <name>, no args = picker)",
     "/trigger":  "List scheduled tasks (no args = picker)",
+    "/stop":     "Stop the seek daemon — closes this TUI, the GUI and the WEBUI",
     "/version":  "Show seek version and session info",
 }
 
@@ -214,6 +215,10 @@ class SeekApp:
         self._elapsed_task: asyncio.Task | None = None
         self._resize_event = asyncio.Event()
         self._stdin_queue: asyncio.Queue = asyncio.Queue()
+        # daemon-wide stop: set when the daemon announces daemon:stopping (or
+        # we asked for it via /stop) so the UI exits without reconnecting.
+        self._exit_event = asyncio.Event()
+        self._stop_requested = False
 
         # input editing state
         self.history: list[str] = []
@@ -359,14 +364,20 @@ class SeekApp:
             while self._running:
                 stdin_ft = asyncio.ensure_future(self._stdin_queue.get())
                 resize_ft = asyncio.ensure_future(self._resize_event.wait())
+                exit_ft = asyncio.ensure_future(self._exit_event.wait())
                 done, pending = await asyncio.wait(
-                    [stdin_ft, resize_ft], return_when=asyncio.FIRST_COMPLETED)
+                    [stdin_ft, resize_ft, exit_ft],
+                    return_when=asyncio.FIRST_COMPLETED)
                 for ft in pending:
                     ft.cancel()
                     try:
                         await ft
                     except (asyncio.CancelledError, Exception):
                         pass
+                if self._exit_event.is_set():
+                    # The daemon is stopping (or we stopped it): leave cleanly.
+                    self._running = False
+                    break
                 if self._resize_event.is_set():
                     self._resize_event.clear()
                     try:
@@ -526,8 +537,9 @@ class SeekApp:
                                       event.get("type"))
             except Exception as e:
                 log.warning("server read loop ended: %s", e)
-            if not self._running:
-                break
+            if (not self._running or self._exit_event.is_set()
+                    or self._stop_requested):
+                break   # quitting, or the daemon is stopping — do not reconnect
             await self._reconnect()
 
     async def _reconnect(self) -> None:
@@ -677,6 +689,18 @@ class SeekApp:
                 self._elapsed_task = None
             self.status.elapsed = ""
             self._system(f"⚠ {msg}", center=self._status_center())
+            return
+
+        if etype == "daemon:stopping":
+            # The daemon is shutting down (stop request / signal) — every
+            # client goes down with it. Exit without reconnecting.
+            reason = event.get("reason", "")
+            self._system(f"■ seek daemon stopping{f' ({reason})' if reason else ''} — bye",
+                         center="stopped")
+            self.term.render()
+            self._stop_requested = True
+            self._exit_event.set()
+            self._running = False
             return
 
     # ── selector list handlers ────────────────────────────────────────────
@@ -1207,6 +1231,20 @@ class SeekApp:
                 await self.client.send("listTasks")
                 self.status.update(center="loading tasks…")
                 self.term.render()
+        elif cmd == "/stop":
+            if self._stop_requested or self._exit_event.is_set():
+                self._system("Seek is already stopping…")
+                return
+            self._stop_requested = True
+            self._system("Stopping seek daemon and all clients…",
+                         center="stopping…")
+            self.term.render()
+            # The daemon broadcasts daemon:stopping (handled in _on_event) and
+            # closes the connection as it exits; we leave on that event. Note:
+            # while a turn is running the daemon reads this connection only
+            # after the turn ends (single-WS serialization), so /stop during a
+            # turn takes effect once the turn finishes.
+            await self.client.send("stop")
         else:
             self._system(f"Unknown command: {cmd}  (/help for commands)")
 
