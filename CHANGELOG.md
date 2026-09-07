@@ -5,6 +5,19 @@ All notable changes to **seek** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.12] - 2026-09-07
+
+### Fixed
+
+- **GUI opened showing an empty world as if disconnected** — the main process
+  connected to the daemon right in `app.whenReady`, so the initial
+  `__state:true` broadcast raced ahead of the renderer registering its
+  listener (the ~230 KB webui bundle boots after the ws is already open) and
+  was lost forever. The UI then sat on "disconnected" with no sessions/members
+  even though the bridge (and the daemon-side connection) was actually up. The
+  daemon connection is now established on `did-finish-load`, once the
+  renderer's listeners are guaranteed to be in place.
+
 ## [0.1.11] - 2026-09-07
 
 ### Added

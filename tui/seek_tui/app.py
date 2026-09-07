@@ -43,7 +43,7 @@ from seek_tui.widgets import (
 
 log = logging.getLogger("seek_tui")
 
-VERSION = "0.1.11"
+VERSION = "0.1.12"
 ROOM_SEEK_ID = "room-seek"
 ROOM_SEEK_NAME = "seek"
 CHAR_SEEK_ID = "seek"     # built-in virtual member
