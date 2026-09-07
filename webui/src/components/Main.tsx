@@ -3,6 +3,7 @@ import { activeSession, activeRoom } from "../seek/store";
 import { escapeHtml } from "../seek/render";
 import { Transcript } from "./Transcript";
 import { Composer } from "./Composer";
+import { StatusBar } from "./StatusBar";
 
 interface MainProps {
   onOpenRightbar: (tab: "members" | "workbench") => void;
@@ -43,6 +44,7 @@ export function Main({ onOpenRightbar }: MainProps) {
 
       <Transcript />
       <Composer />
+      <StatusBar />
     </main>
   );
 }

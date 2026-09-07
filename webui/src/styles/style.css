@@ -230,6 +230,31 @@ body {
 }
 .composer__stop { background: var(--cursor-fill-danger); display: none; }
 
+/* 状态栏（对齐 TUI status line：会话名/短id/模型 + 房间 + 消息数/工作路径） */
+.statusbar {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 12px;
+  height: 26px; padding: 0 20px; font-size: 11px; line-height: 1;
+  color: var(--cursor-text-tertiary); user-select: none;
+  border-top: 1px solid var(--cursor-stroke-tertiary);
+  background: var(--cursor-bg-chrome);
+}
+.statusbar__left {
+  display: inline-flex; align-items: baseline; gap: 6px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.statusbar__center {
+  flex: 1; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.statusbar__right {
+  display: inline-flex; align-items: baseline; gap: 10px; min-width: 0;
+  white-space: nowrap; overflow: hidden;
+}
+.statusbar__dim { opacity: .75; }
+.statusbar__ws {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  max-width: 300px; overflow: hidden; text-overflow: ellipsis;
+}
+
 /* 右栏（默认收起，宽度可拖动） */
 .rightbar {
   flex: 0 0 0; width: 0;
