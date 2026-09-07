@@ -76,6 +76,56 @@ async def _recv_until(url, req, want_type, limit=10):
         raise AssertionError(f"did not get {want_type} in {limit} reads")
 
 
+def test_delete_session(tmp_path):
+    d = _start(tmp_path, port=8236)
+    async def run():
+        async with websockets.serve(d._handle, "127.0.0.1", 8236):
+            url = "ws://127.0.0.1:8236"
+            created = await _roundtrip(url, {"type": "createSession",
+                                             "roomId": "room-1", "name": "会话"})
+            sid = created["session"]["id"]
+            assert d.store.get_session(sid) is not None
+            deleted = await _roundtrip(url, {"type": "deleteSession", "sessionId": sid})
+            assert deleted["type"] == "session:deleted"
+            assert deleted["sessionId"] == sid
+            assert d.store.get_session(sid) is None
+            # Deleting a missing session errors, does not crash.
+            err = await _roundtrip(url, {"type": "deleteSession", "sessionId": "nope"})
+            assert err["type"] == "error"
+    asyncio.run(run())
+
+
+def test_builtin_room_members_not_modifiable(tmp_path):
+    """The built-in room (you+seek) rejects member add/remove over the wire."""
+    from seekd.core.seed import ROOM_SEEK_ID
+    from seekd.core.ids import new_id, now_iso
+    from seekd.core.models import Avatar, Character, Room
+    store = SeekStore(root=tmp_path)
+    store.save_room(Room(id=ROOM_SEEK_ID, name="seek",
+                         member_ids=["you", "seek"], created_at=now_iso()))
+    store.save_room(Room(id="room-x", name="自由房", member_ids=[], created_at=now_iso()))
+    cid = new_id()
+    store.save_character(Character(id=cid, kind="virtual", name="新角色", persona="",
+                                   avatar=Avatar(type="letter", text="新", bg="", fg=""),
+                                   created_at=now_iso(), updated_at=now_iso()))
+    d = Seekd(host="127.0.0.1", port=8237, store=store)
+    async def run():
+        async with websockets.serve(d._handle, "127.0.0.1", 8237):
+            url = "ws://127.0.0.1:8237"
+            # Adding to the built-in room is rejected (character exists)…
+            r = await _roundtrip(url, {"type": "addRoomMember", "roomId": ROOM_SEEK_ID,
+                                       "characterId": cid})
+            assert r["type"] == "error" and "built-in" in r["message"]
+            # …while a normal room still works.
+            r2 = await _roundtrip(url, {"type": "addRoomMember", "roomId": "room-x",
+                                        "characterId": cid})
+            assert r2["type"] == "room:updated"
+            r3 = await _roundtrip(url, {"type": "removeRoomMember", "roomId": ROOM_SEEK_ID,
+                                        "characterId": "you"})
+            assert r3["type"] == "error" and "built-in" in r3["message"]
+    asyncio.run(run())
+
+
 def test_unknown_request(tmp_path):
     d = _start(tmp_path, port=8204)
     async def run():

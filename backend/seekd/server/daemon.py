@@ -114,6 +114,8 @@ class Seekd:
             await self._open_session(ws, req)
         elif rtype == "renameSession":
             await self._rename_session(ws, req)
+        elif rtype == "deleteSession":
+            await self._delete_session(ws, req)
         elif rtype == "clearSession":
             await self._clear_session(ws, req)
         elif rtype == "sendMessage":
@@ -297,6 +299,18 @@ class Seekd:
         session.updated_at = now_iso()
         self.store.save_session(session)
         await self._send(ws, {"type": "session:cleared", "sessionId": sid})
+
+    async def _delete_session(self, ws, req: dict) -> None:
+        """Delete a session permanently (its messages and file are gone)."""
+        sid = req.get("sessionId")
+        session = self.store.get_session(sid) if sid else None
+        if session is None:
+            await self._send(ws, {"type": "error", "requestId": req.get("requestId"),
+                                  "message": "session not found"})
+            return
+        self.store.delete_session(sid)
+        await self._send(ws, {"type": "session:deleted", "sessionId": sid})
+        await self._broadcast({"type": "session:deleted", "sessionId": sid})
 
     async def _send_message(self, ws, req: dict) -> None:
         sid = req.get("sessionId")

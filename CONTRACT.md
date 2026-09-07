@@ -137,6 +137,7 @@ Requests carry a `requestId` the client generates (so a client can identify its 
 | `openSession` | Open an existing session | `{ sessionId }` |
 | `sendMessage` | User sends a message into a session | `{ sessionId, text, requestId }` |
 | `renameSession` | Rename a session | `{ sessionId, title }` |
+| `deleteSession` | Permanently delete a session | `{ sessionId }` |
 | `clearSession` | Clear a session history | `{ sessionId }` |
 | `switchModel` | Set the default model | `{ modelKey }` |
 | `listModels` | List available models | `{}` |
@@ -168,6 +169,7 @@ Requests carry a `requestId` the client generates (so a client can identify its 
 | `settings` | Current LLM settings (settings page) | `{ settings: { apiKey, baseUrl, model, currentModel, modelDetails } }` |
 | `model:changed` | The default model was switched | `{ model, apiModel, contextWindow }` |
 | `session:created` | A session was created (including renames) | `{ session }` |
+| `session:deleted` | A session was deleted | `{ sessionId }` |
 | `room:created` | A room was created | `{ room }` |
 | `room:updated` | A room changed (members added) | `{ room }` |
 | `character:created` | A character was created | `{ character }` |
