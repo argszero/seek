@@ -5,6 +5,28 @@ All notable changes to **seek** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.11] - 2026-09-07
+
+### Added
+
+- **Global `stop` command** — stop seek the same way from every entry point:
+  `seek stop` in a shell, `/stop` in the TUI, or the **Stop seek** button on
+  the settings page (WEBUI and GUI). All funnel into one CONTRACT `stop`
+  request: the daemon broadcasts `daemon:stopping`, cancels the running turn
+  and scheduled tasks, then cleanly terminates **every process it spawned** —
+  tool subprocesses run in their own process groups, so stopping the group
+  takes down the shell *and* its grandchildren (e.g. a long `git`/`python`
+  started by the bash tool), no process-tree enumeration needed. Clients
+  react to the broadcast by exiting themselves. Idempotent: `seek stop` with
+  no daemon running just prints a note and exits 0.
+
+### Fixed
+
+- **TUI startup no longer stalls ~20 s** — `seek` used to wait for the WEBUI
+  static server to be ready even when launching the TUI (or when reusing an
+  already-running daemon). It now only waits for the daemon's WebSocket port:
+  reusing a running daemon starts instantly, a cold start is ready in ≤5 s.
+
 ## [0.1.10] - 2026-09-07
 
 ### Fixed
