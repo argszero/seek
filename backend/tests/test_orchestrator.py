@@ -74,3 +74,28 @@ def test_turn_cap():
     assert out[1]["text"] == "b"
     # Each round emits at most 2 messages; total is bounded by GROUP_MAX_ROUNDS.
     assert len(out) <= 2 * 3
+
+
+def test_member_gets_full_history_not_empty_after_own_turn():
+    # Regression: the room is a long-lived continuation (no shared/ordinary
+    # distinction). A member that just spoke must STILL get the full recent
+    # history in its turn prompt, not "messages since I last spoke" (which
+    # collapses to empty right after it spoke → permanent amnesia).
+    seen_prompts = []
+
+    async def run_turn(member, system, prompt):
+        seen_prompts.append(prompt)
+        # Speak once so live history grows, then stay quiet.
+        return ["ok"] if len(seen_prompts) == 1 else ["(pass)"]
+
+    o = Orchestrator(run_turn)
+    m = [FakeMember(id="m1", name="小明")]
+    history = [{"speaker": "user", "text": "第一条"}, {"speaker": "m1", "text": "回应"}]
+    _run(o.run(session_id="s", members=m, history=history, group_name="x"))
+
+    # The prompt should contain the seeded history, and must NOT say "No new
+    # messages in the room since your last turn." (the amnesia symptom).
+    first = seen_prompts[0]
+    assert "第一条" in first
+    assert "回应" in first
+    assert "No new messages" not in first

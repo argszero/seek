@@ -17,10 +17,10 @@ from seekd.orchestrator.group_chat import (
     GROUP_MAX_MEMBER_TURNS,
     GROUP_MAX_MESSAGES_PER_TURN,
     GROUP_MAX_ROUNDS,
+    SHARED_ROOM_HISTORY_LIMIT,
     build_group_member_system_prompt,
     build_group_turn_prompt,
     is_pass_content,
-    messages_since_member_last_spoke,
     order_round_speakers,
     resolve_responders,
 )
@@ -84,7 +84,13 @@ class Orchestrator:
 
                 peer_names = [m.name for m in members if m.id != member_id]
                 peer_tuples = [(m.id, m.name) for m in members if m.id != member_id]
-                new_messages = messages_since_member_last_spoke(live_history, member_id)
+                # Every room is a long-lived continuation (host decision: no
+                # shared/ordinary distinction). Give each member the full recent
+                # history (last ~24 lines) so they can actually recall the
+                # thread instead of only "messages since I last spoke" — which
+                # collapses to empty right after a member spoke, making the room
+                # permanently amnesiac.
+                new_messages = live_history[-SHARED_ROOM_HISTORY_LIMIT:]
                 system_prompt = build_group_member_system_prompt(
                     member.name, member.persona, group_name, group_desc, peer_tuples)
                 prompt = build_group_turn_prompt(member.name, group_name, peer_names, new_messages)

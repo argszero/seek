@@ -114,7 +114,14 @@ def resolve_responders(
 
 
 def messages_since_member_last_spoke(history: list[dict], member_id: str) -> list[dict]:
-    """New messages after the member's last turn (grok-bot ``messagesSinceMemberLastSpoke``)."""
+    """New messages after the member's last turn (grok-bot ``messagesSinceMemberLastSpoke``).
+
+    LEGACY — no longer used on the main path. The host decided every room is a
+    long-lived continuation (no shared/ordinary room distinction), so the
+    orchestrator now always supplies the full recent history via
+    ``SHARED_ROOM_HISTORY_LIMIT`` instead of "messages since I last spoke".
+    Keeping this function only for reference/back-compat tests.
+    """
     for i in range(len(history) - 1, -1, -1):
         sp = history[i].get("speaker")
         if sp == member_id or (isinstance(sp, dict) and sp.get("id") == member_id):
