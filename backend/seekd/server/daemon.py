@@ -22,6 +22,7 @@ import websockets
 
 from seekd.core.ids import new_id, now_iso
 from seekd.core.models import Character, Message, Room, ScheduledTask, Session
+from seekd.core.seed import ROOM_SEEK_ID, is_builtin_room
 from seekd.logutil import setup_logger
 from seekd.server.httpserver import WebUiServer
 from seekd.store.jsonstore import SeekStore
@@ -218,6 +219,12 @@ class Seekd:
             await self._send(ws, {"type": "error", "requestId": req.get("requestId"),
                                   "message": "room or character not found"})
             return
+        if is_builtin_room(rid):
+            # The built-in room (you + seek) is fixed at install; members are
+            # not user-modifiable (host decision 2026-09-07).
+            await self._send(ws, {"type": "error", "requestId": req.get("requestId"),
+                                  "message": "built-in room members are not modifiable"})
+            return
         if cid not in room.member_ids:
             room.member_ids.append(cid)
             self.store.save_room(room)
@@ -232,6 +239,10 @@ class Seekd:
         if room is None:
             await self._send(ws, {"type": "error", "requestId": req.get("requestId"),
                                   "message": "room not found"})
+            return
+        if is_builtin_room(rid):
+            await self._send(ws, {"type": "error", "requestId": req.get("requestId"),
+                                  "message": "built-in room members are not modifiable"})
             return
         if cid and cid in room.member_ids:
             room.member_ids = [m for m in room.member_ids if m != cid]

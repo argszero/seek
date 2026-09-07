@@ -29,10 +29,11 @@ def main_daemon(argv: list[str] | None = None) -> int:
     from seekd.config import load_config as _load_config
 
     store = SeekStore()
-    # First-run bootstrap: on an empty store, seed `you` + a default room/session
-    # so the app opens to a usable world. Idempotent (no-op once a world exists).
+    # First-run bootstrap: on an empty store, seed the built-in world
+    # (you + seek in the seek room). On an existing world, fill in any missing
+    # built-ins (idempotent, never clobbers user data).
     if ensure_seeded(store):
-        print("seek: seeded a fresh world (you + default room/session)")
+        print("seek: ensured built-in world (you + seek in room 'seek')")
     session_runner = None
     cfg = _load_config()
     if cfg.api_key:
