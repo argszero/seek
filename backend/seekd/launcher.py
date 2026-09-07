@@ -24,6 +24,7 @@ Design notes
 from __future__ import annotations
 
 import argparse
+import asyncio
 import os
 import subprocess
 import sys
@@ -162,13 +163,66 @@ def _launch_gui() -> int:
     return 1
 
 
+def _cmd_stop(host: str, port: int) -> int:
+    """``seek stop`` — stop the daemon and every seek process it spawned.
+
+    This is the bash entry point of the stop feature; the TUI (``/stop``) and
+    the GUI/WEBUI (settings button) reach the exact same daemon-side shutdown
+    through the CONTRACT ``stop`` request. Idempotent: with no daemon running
+    it prints a note and exits 0.
+    """
+    if not _daemon_running(host, port):
+        print("seek: no daemon running (nothing to stop)")
+        return 0
+
+    async def _ask() -> int:
+        import json
+
+        import websockets
+
+        try:
+            async with websockets.connect(f"ws://{host}:{port}", open_timeout=3) as ws:
+                await ws.send(json.dumps({"type": "stop"}))
+                # Read until the daemon closes the connection as it exits
+                # (it broadcasts `daemon:stopping` to clients first).
+                while True:
+                    try:
+                        await asyncio.wait_for(ws.recv(), timeout=5)
+                    except asyncio.TimeoutError:
+                        break
+                    except websockets.ConnectionClosed:
+                        break
+        except Exception as e:  # noqa: BLE001
+            print(f"seek: failed to contact daemon: {e}", file=sys.stderr)
+            return 1
+        return 0
+
+    if asyncio.run(_ask()) != 0:
+        return 1
+    # Wait for the daemon's WS port to go quiet (it fully exited).
+    for _ in range(60):
+        if not _daemon_running(host, port):
+            print("seek: daemon stopped")
+            return 0
+        time.sleep(0.2)
+    print("seek: stop request sent — daemon still shutting down "
+          "(see ~/.seek/logs/seekd.log)", file=sys.stderr)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="seek", description="seek launcher")
+    parser.add_argument("command", nargs="?", choices=["stop"],
+                        help="'stop' stops the daemon and all seek processes "
+                             "(omit to launch the client)")
     parser.add_argument("--gui", action="store_true", help="open the GUI instead of the TUI")
     parser.add_argument("--host", default=DEFAULT_HOST)
     parser.add_argument("--port", type=int, default=DEFAULT_DAEMON_PORT)
     parser.add_argument("--webui-port", type=int, default=DEFAULT_WEBUI_PORT)
     args = parser.parse_args(argv)
+
+    if args.command == "stop":
+        return _cmd_stop(args.host, args.port)
 
     # 1. Ensure the daemon is running.
     running = _daemon_running(args.host, args.port)

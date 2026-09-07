@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 
+from seekd.server.proc_guard import adopt, unadopt
 from seekd.tools.base import Tool, ToolResult, ToolSpec
 
 MAX_OUTPUT_CHARS = 100_000
@@ -41,7 +42,22 @@ class BashTool(Tool):
         workdir = arguments.get("workdir")
         if not cmd:
             return ToolResult(name="bash", content="Error: no command provided", error=True)
+        # Give the child its own process group (exec'd before the shell starts)
+        # so a daemon stop can signal the whole subtree below it — grandchildren
+        # inherit the group. POSIX-only; Windows falls back to tree-kill via
+        # taskkill in proc_guard.
+        popen_kw = {"process_group": 0} if os.name == "posix" else {}
         try:
+            proc = await asyncio.create_subprocess_shell(
+                cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=workdir,
+                **popen_kw,
+            )
+        except TypeError:
+            # Older interpreter without process_group support: run ungrouped
+            # (proc_guard still records + kills the direct child).
             proc = await asyncio.create_subprocess_shell(
                 cmd,
                 stdout=asyncio.subprocess.PIPE,
@@ -50,16 +66,22 @@ class BashTool(Tool):
             )
         except OSError as e:
             return ToolResult(name="bash", content=f"Error: {e}", error=True)
+        # Adopt the child so a daemon stop can kill its whole tree (incl. any
+        # grandchildren the shell spawned); unadopt when it finishes normally.
+        adopt(proc.pid)
         try:
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
         except asyncio.TimeoutError:
-            proc.kill()
+            # proc.kill() alone would orphan grandchildren; stop the group.
+            _signal_quiet(proc.pid)
             await proc.wait()
             return ToolResult(
                 name="bash",
                 content=f"Command timed out after {timeout}s: {cmd[:100]}",
                 error=True,
             )
+        finally:
+            unadopt(proc.pid)
 
         out = stdout.decode("utf-8", errors="replace").rstrip()
         err = stderr.decode("utf-8", errors="replace").rstrip()
@@ -72,6 +94,22 @@ class BashTool(Tool):
             parts.append("(no output)")
         return ToolResult(name="bash", content="\n".join(parts),
                           error=proc.returncode not in (0, None))
+
+
+def _signal_quiet(pid: int) -> None:
+    """TERM then KILL the process group of an adopted child (timeout path)."""
+    import signal as _sig
+
+    from seekd.server.proc_guard import _POSIX as _posix
+
+    try:
+        if _posix:
+            os.killpg(pid, _sig.SIGTERM)
+            os.killpg(pid, _sig.SIGKILL)
+        else:
+            os.kill(pid, _sig.SIGTERM)
+    except OSError:
+        pass
 
 
 def _truncate(s: str, limit: int = MAX_OUTPUT_CHARS) -> str:

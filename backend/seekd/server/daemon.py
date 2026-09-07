@@ -24,6 +24,7 @@ from seekd.core.ids import new_id, now_iso
 from seekd.core.models import Character, Message, Room, ScheduledTask, Session
 from seekd.core.seed import ROOM_SEEK_ID, is_builtin_room
 from seekd.logutil import setup_logger
+from seekd.server import proc_guard
 from seekd.server.httpserver import WebUiServer
 from seekd.store.jsonstore import SeekStore
 
@@ -55,6 +56,14 @@ class Seekd:
         self._turn_session: str | None = None
         self._turn_cancel: asyncio.Event | None = None
         self._scheduler_task: asyncio.Task | None = None
+        # Graceful-shutdown coordination. `stop` requests (CONTRACT §3) and
+        # SIGTERM/SIGINT both set _stop_event; run() then performs the
+        # shutdown sequence (_shutdown). Kept as instance state so a `stop`
+        # request can drive shutdown even when run() is not active (tests).
+        self._run_active = False
+        self._stopping = False
+        self._stop_event = asyncio.Event()
+        self._stop_reason = "signal"
 
     # ---- connection handling ---------------------------------------------
     async def _handle(self, ws) -> None:
@@ -138,6 +147,8 @@ class Seekd:
             await self._list_workspace_files(ws, req)
         elif rtype == "readWorkspaceFile":
             await self._read_workspace_file(ws, req)
+        elif rtype == "stop":
+            await self._request_stop(ws, req)
         else:
             log.warning("unknown request type %r from %s", rtype, getattr(ws, "remote_address", "?"))
             await self._send(ws, {
@@ -717,6 +728,63 @@ class Seekd:
                 if self._turn_task is None or self._turn_task.done():
                     await self._start_turn(t.id, prompt)
 
+    # ---- shutdown -----------------------------------------------------------
+    async def _request_stop(self, ws, req: dict) -> None:
+        """Handle CONTRACT §3 `stop`: shut down the daemon and its whole tree.
+
+        Every client (CLI ``seek stop``, TUI ``/stop``, GUI/WEBUI button) funnels
+        through this one path, so the effect is identical from any entry point:
+        broadcast ``daemon:stopping``, cancel the running turn + scheduler, then
+        stop every adopted tool subprocess tree before exiting.
+        """
+        peer = getattr(ws, "remote_address", "?")
+        log.info("stop requested by %s", peer)
+        self._stop_reason = f"request from {peer}"
+        if self._run_active:
+            self._stop_event.set()   # run() performs the sequence below
+        else:
+            # run() not active (handler served standalone, e.g. tests): drive
+            # the shutdown directly as a task.
+            asyncio.create_task(self._shutdown(self._stop_reason))
+
+    async def _shutdown(self, reason: str) -> None:
+        """Gracefully stop the daemon: clients first, then turn, then children."""
+        if self._stopping:
+            return
+        self._stopping = True
+        log.info("seekd shutting down: %s", reason)
+        try:
+            await self._broadcast({"type": "daemon:stopping", "reason": reason})
+        except Exception as e:  # noqa: BLE001
+            log.warning("broadcast daemon:stopping failed: %s", e)
+        # Close every client connection so the server can exit promptly (a
+        # browser tab, unlike the CLI/TUI, does not close on its own).
+        for client in list(self.clients):
+            try:
+                await client.close(code=1001, reason="daemon stopping")
+            except Exception:  # noqa: BLE001
+                pass
+        self.clients.clear()
+        # Interrupt any running group-chat turn (its bash children are adopted
+        # and released below; a cancelled LLM call is abandoned here).
+        if self._turn_task is not None and not self._turn_task.done():
+            if self._turn_cancel is not None:
+                self._turn_cancel.set()
+            self._turn_task.cancel()
+            try:
+                await self._turn_task
+            except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                pass
+        # Stop the scheduled-task loop.
+        if self._scheduler_task is not None and not self._scheduler_task.done():
+            self._scheduler_task.cancel()
+            try:
+                await self._scheduler_task
+            except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                pass
+        # Take down every adopted tool subprocess tree (TERM → grace → KILL).
+        await proc_guard.release_all()
+
     async def _broadcast(self, payload: dict) -> None:
         data = json.dumps(payload, ensure_ascii=False)
         for client in list(self.clients):
@@ -729,6 +797,15 @@ class Seekd:
     async def _send(self, ws, payload: dict) -> None:
         await ws.send(json.dumps(payload, ensure_ascii=False))
 
+    def _on_signal(self, sig: int) -> None:
+        """SIGTERM/SIGINT → graceful shutdown (same path as a `stop` request)."""
+        try:
+            name = signal.Signals(sig).name
+        except (ValueError, AttributeError):  # pragma: no cover
+            name = str(sig)
+        self._stop_reason = f"signal {name}"
+        self._stop_event.set()
+
     async def run(self) -> None:
         """Start the WebSocket listener and the WEBUI static server."""
         log.info("seekd starting: ws://%s:%d webui_dist=%s",
@@ -736,16 +813,21 @@ class Seekd:
         self.webui_server.start()
         log.info("webui server: %s", self.webui_server.url() or "(not started)")
         self._scheduler_task = asyncio.create_task(self._scheduler_loop())
-        async with websockets.serve(self._handle, self.host, self.port):
-            log.info("websocket listener up on %s:%d", self.host, self.port)
-            stop = asyncio.Event()
-            loop = asyncio.get_running_loop()
-            try:
-                for sig in (signal.SIGINT, signal.SIGTERM):
-                    loop.add_signal_handler(sig, stop.set)
-            except (NotImplementedError, ValueError, RuntimeError):
-                # Not on the main thread or non-POSIX: rely on KeyboardInterrupt.
-                pass
-            await stop.wait()
-            log.info("seekd shutting down")
-            self._scheduler_task.cancel()
+        self._run_active = True
+        try:
+            async with websockets.serve(self._handle, self.host, self.port):
+                log.info("websocket listener up on %s:%d", self.host, self.port)
+                loop = asyncio.get_running_loop()
+                try:
+                    for sig in (signal.SIGINT, signal.SIGTERM):
+                        loop.add_signal_handler(sig, self._on_signal, sig)
+                except (NotImplementedError, ValueError, RuntimeError):
+                    # Not on the main thread or non-POSIX: a `stop` WS request
+                    # (or, for foreground runs, KeyboardInterrupt) still works.
+                    pass
+                await self._stop_event.wait()
+                # Shutdown while the listener is still open so the
+                # `daemon:stopping` broadcast can reach clients first.
+                await self._shutdown(self._stop_reason)
+        finally:
+            self._run_active = False

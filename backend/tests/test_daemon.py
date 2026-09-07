@@ -622,3 +622,97 @@ def test_workspace_files_list_read_and_traversal(tmp_path):
                                           "sessionId": sid, "name": "../outside.txt"})
             assert trap["type"] == "error", trap
     asyncio.run(run())
+
+
+# ---- stop / graceful shutdown (CONTRACT §3 `stop`, §4 `daemon:stopping`) ----
+
+def test_stop_broadcasts_stopping_and_shuts_down(tmp_path):
+    """A `stop` request broadcasts daemon:stopping and runs the shutdown path."""
+    d = _start(tmp_path, port=8210)
+    log_lines: list[str] = []
+    orig_shutdown = d._shutdown
+
+    async def fake_shutdown(reason: str) -> None:
+        log_lines.append(reason)
+        await orig_shutdown(reason)   # real path: broadcast + cleanup (light here)
+
+    d._shutdown = fake_shutdown
+
+    async def run():
+        async with websockets.serve(d._handle, "127.0.0.1", 8210):
+            async with websockets.connect("ws://127.0.0.1:8210") as ws:
+                await ws.send(json.dumps({"type": "stop"}))
+                # the requesting client first hears the broadcast…
+                evt = json.loads(await asyncio.wait_for(ws.recv(), 5))
+                assert evt["type"] == "daemon:stopping"
+                assert "request from" in evt["reason"]
+                # …and the shutdown sequence runs (standalone serve mode).
+                for _ in range(100):
+                    if log_lines:
+                        break
+                    await asyncio.sleep(0.02)
+                assert log_lines and "request from" in log_lines[0]
+
+    asyncio.run(run())
+
+
+def test_stop_sets_event_when_run_active(tmp_path):
+    """Under run(), a stop request only sets the event; run() does the rest."""
+    d = _start(tmp_path, port=8211)
+    d._run_active = True
+    d._stop_event = asyncio.Event()
+
+    async def run():
+        async with websockets.serve(d._handle, "127.0.0.1", 8211):
+            async with websockets.connect("ws://127.0.0.1:8211") as ws:
+                await ws.send(json.dumps({"type": "stop"}))
+                # wait for the event to be set by _request_stop
+                await asyncio.wait_for(d._stop_event.wait(), 5)
+                assert "request from" in d._stop_reason
+                # no shutdown scheduled by the handler itself
+                await asyncio.sleep(0.1)
+                assert d._stopping is False
+
+    asyncio.run(run())
+
+
+def test_shutdown_releases_adopted_children(tmp_path):
+    """_shutdown kills bash-tool-style child trees registered via proc_guard."""
+    import os
+    import time
+
+    from seekd.server import proc_guard
+
+    proc_guard._pids.clear()
+    d = _start(tmp_path, port=8212)
+
+    async def run():
+        # simulate a running bash tool: a shell + grandchild sleep in their
+        # own process group, adopted exactly as the bash tool adopts children
+        marker = f"/tmp/seek_daemon_shutdown_{os.getpid()}.pid"
+        proc = await asyncio.create_subprocess_shell(
+            f"sleep 60 & echo $! > {marker}; wait",
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+            process_group=0,
+        )
+        proc_guard.adopt(proc.pid)
+        await asyncio.sleep(0.2)
+        with open(marker) as f:
+            grand = int(f.read().strip())
+        os.unlink(marker)
+
+        def alive(pid: int) -> bool:
+            try:
+                os.kill(pid, 0)
+                return True
+            except OSError:
+                return False
+
+        assert alive(proc.pid) and alive(grand)
+        await d._shutdown("test")
+        assert not alive(proc.pid), "adopted shell survived shutdown"
+        assert not alive(grand), "tool grandchild survived shutdown"
+        assert not proc_guard._pids
+
+    asyncio.run(run())
