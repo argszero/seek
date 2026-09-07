@@ -74,6 +74,7 @@ jobs:
           done
 
           security set-key-partition-list -S apple-tool:,apple: -s -k 'ci-temp' /tmp/ci.keychain
+          # shellcheck disable=SC2046   # 有意 word-split：把现有 user keychains 追回列表，否则 CI 会丢失系统 keychain
           security list-keychains -d user -s /tmp/ci.keychain $(security list-keychains -d user | tr -d '"')
           security find-identity -v -p codesigning /tmp/ci.keychain
 
