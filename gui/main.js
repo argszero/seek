@@ -185,6 +185,15 @@ function main() {
         win.loadFile(path.join(dist, "index.html"));
       }
     });
+    // Connect to the daemon only once the page finished loading. The renderer
+    // registers its `onStateChange` listener while the bundle boots; connecting
+    // earlier (e.g. right in `whenReady`) lets the initial `__state:true`
+    // broadcast race ahead of that registration and get lost forever — the UI
+    // then sits on "disconnected" with an empty world even though the bridge
+    // (and the daemon-side connection) is actually up.
+    win.webContents.on("did-finish-load", () => {
+      ensureClient();
+    });
     win.on("closed", () => { win = null; });
   }
 
@@ -206,8 +215,7 @@ function main() {
   app.whenReady().then(() => {
     console.log("[seek-gui] app ready");
     registerIpc();
-    createWindow();
-    ensureClient();
+    createWindow(); // ensureClient() is triggered by did-finish-load
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
     });
