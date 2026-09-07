@@ -87,6 +87,21 @@ mkdir -p "$SP"
 echo "==> overlaying backend venv site-packages"
 cp -RL "$VENV_SP"/. "$SP/" 2>/dev/null || true
 
+# The TUI (seek_tui) lives in its own venv (tui/.venv) with its own deps
+# (rich etc.) that the daemon itself does not need. Overlay that venv's
+# site-packages too, otherwise the shipped TUI crashes on `import rich`.
+# Both venvs resolve the same managed CPython (3.13), so a flat merge into one
+# site-packages is safe; shared pins (websockets) resolve to the same version.
+TUI_VENV_SP="$ROOT/tui/.venv/$SPLIB/python$PYVER/site-packages"
+if [[ -d "$TUI_VENV_SP" ]]; then
+  echo "==> overlaying tui venv site-packages (rich + seek_tui deps)"
+  cp -RL "$TUI_VENV_SP"/. "$SP/" 2>/dev/null || true
+  # seek_tui is installed editable in the dev venv; its .pth points back to
+  # this machine. Drop it — the real package is vendored below.
+  rm -f "$SP"/_editable_impl_seek_tui.pth
+  rm -f "$SP"/_editable_impl_seek_tui-*.pth
+fi
+
 # Because seekd is installed editable in the dev venv, its `.pth` points back to
 # this machine. Replace that with a real copy of the seekd package so the runtime
 # is standalone.
@@ -159,11 +174,23 @@ fi
 
 # ── sanity: the runtime interpreter must run standalone ─────────
 echo "==> smoking runtime interpreter (must run without dev machine)"
-if "$RUNTIME/$RV_PY" -c "import seekd, httpx, yaml, websockets; print('runtime OK')" >/dev/null 2>&1; then
+RUNTIME_OK=1
+if ! "$RUNTIME/$RV_PY" -c "import seekd, httpx, yaml, websockets" >/dev/null 2>&1; then
+  RUNTIME_OK=0
+fi
+# The TUI needs its own deps (rich) — smoke-import the app class to catch a
+# missing rich / markdown-it-py etc. before this runtime ships in an installer.
+if [[ -d "$SP/seek_tui" ]] && ! "$RUNTIME/$RV_PY" -c "from seek_tui.app import SeekApp" >/dev/null 2>&1; then
+  RUNTIME_OK=0
+fi
+if (( RUNTIME_OK )); then
   echo "   runtime imports OK"
 else
   echo "!! runtime failed self-check" >&2
   "$RUNTIME/$RV_PY" -c "import seekd, httpx, yaml, websockets" 2>&1 | head -5 || true
+  if [[ -d "$SP/seek_tui" ]]; then
+    "$RUNTIME/$RV_PY" -c "from seek_tui.app import SeekApp" 2>&1 | head -5 || true
+  fi
   exit 1
 fi
 

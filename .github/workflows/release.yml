@@ -90,6 +90,15 @@ jobs:
           unset VIRTUAL_ENV   # CI 预置的 VIRTUAL_ENV 会把 venv 重定向到 repo 根
           uv python install 3.13
           uv sync --project .
+      - name: TUI venv
+        working-directory: tui
+        shell: bash
+        env:
+          UV_PYTHON_PREFERENCE: "only-managed"
+        run: |
+          unset VIRTUAL_ENV
+          uv python install 3.13
+          uv sync --project .
 
       - uses: actions/setup-node@v5
         with:
@@ -155,6 +164,15 @@ jobs:
           UV_PYTHON_PREFERENCE: "only-managed"   # 用 uv 管理的 standalone CPython，避免系统 framework 的断链
         run: |
           unset VIRTUAL_ENV   # CI 预置的 VIRTUAL_ENV 会把 venv 重定向到 repo 根
+          uv python install 3.13
+          uv sync --project .
+      - name: TUI venv
+        working-directory: tui
+        shell: bash
+        env:
+          UV_PYTHON_PREFERENCE: "only-managed"
+        run: |
+          unset VIRTUAL_ENV
           uv python install 3.13
           uv sync --project .
 
