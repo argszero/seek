@@ -5,6 +5,17 @@ All notable changes to **seek** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.10] - 2026-09-07
+
+### Fixed
+
+- **Packaged TUI crashed on startup** (`ModuleNotFoundError: No module named
+  'rich'`) — the installer runtime only bundled the backend venv's
+  site-packages, but the TUI's own deps (`rich` etc.) live in the separate
+  `tui` venv. `packaging/build-runtime.sh` now overlays the TUI venv too and
+  smoke-imports `seek_tui.app` before shipping, so a missing TUI dependency
+  fails the build instead of reaching users.
+
 ## [0.1.9] - 2026-09-07
 
 ### Added
