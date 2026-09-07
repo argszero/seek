@@ -5,6 +5,18 @@ All notable changes to **seek** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.13] - 2026-09-07
+
+### Added
+
+- **Status bar in the GUI chat view** — a slim bar under the input, aligned
+  with the TUI status line, showing the current session's context: the
+  session label (name, or a short id when untitled) · short session id ·
+  current `[model]`, the room in the center, and the message count + the
+  session's **workspace path** on the right (full session id and workspace
+  are available on hover; long paths ellipsize). While no session is open it
+  shows a hint to start or open one.
+
 ## [0.1.12] - 2026-09-07
 
 ### Fixed
