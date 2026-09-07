@@ -5,7 +5,7 @@ All notable changes to **seek** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.9] - 2026-09-07
 
 ### Added
 
@@ -28,6 +28,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - the client is pinned to the built-in `seek` room and switches between its
     sessions; a fresh session is created when none exists or after the
     current one is deleted
+
+### Fixed
+
+- **TUI: slash commands left the input dirty** — pressing Enter on a
+  `/`-command returned early without clearing the composer, so the next typed
+  message concatenated onto the leftover command (`/new你好…`) and was parsed
+  as an unknown command, never reaching the daemon. Commands now clear the
+  input like plain messages (regression-tested).
 
 ## [0.1.8] - 2026-09-06
 
@@ -94,9 +102,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Installer now adds `~/.seek/install/bin` to the user's `PATH` on install (so `seek` / `seek-tui` / `seekd` are on the command line with no manual setup).
 - Installer now links `seek.app` into `~/Applications`, so the GUI shows up in Launchpad / Finder without root.
-
-## [Unreleased]
-
-### Added
-
-- Initial public release scaffold.
