@@ -9,7 +9,7 @@ import websockets
 from seekd.core.models import Room, ScheduledTask, Session
 from seekd.config import LlmConfig
 from seekd.server.daemon import Seekd
-from seekd.store.jsonstore import SeekStore
+from seekd.store.store import SeekStore
 
 
 def _start(tmp_path: Path, port: int, model: str = "", llm_config: LlmConfig | None = None):
@@ -346,15 +346,23 @@ def test_trigger_task_injects_prompt(tmp_path):
             ws = tmp_path / "ws"
             ws.mkdir()
             (ws / "task_prompt.md").write_text("请总结本周进度,{{ workspace }}", encoding="utf-8")
+            # The task session lives in a room that must have members so the
+            # shared prompt has a seek.db to persist into (v3).
+            rm = d.store.get_room("room-1")
+            rm.member_ids = ["m"]
+            d.store.save_room(rm)
             d.store.save_session(Session(id=sid, room_id="room-1", name="任务会话", workspace=str(ws)))
+            d.store.ensure_member_dirs(sid, ["m"])
             d.store.save_task(ScheduledTask(id=sid, enabled=True, interval=3600))
             r = await _recv_until(url, {"type": "triggerTask", "sessionId": sid}, "ok")
             assert r["type"] == "ok"
-            # The system prompt message should have been injected & persisted.
-            sess = d.store.get_session(sid)
-            assert sess.messages, "expected an injected task prompt message"
+            # The system prompt message should have been injected & persisted
+            # into the member transcripts (v3: messages live in seek.db).
+            msgs = d.store.get_session_messages(sid)
+            texts = [m.text for m in msgs]
+            assert any("请总结本周进度" in t for t in texts), texts
             # Variable substitution: {{ workspace }} → the workspace path.
-            assert str(ws) in sess.messages[-1].text
+            assert any(str(ws) in t for t in texts), texts
     asyncio.run(run())
 
 

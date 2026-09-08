@@ -31,7 +31,7 @@ from pathlib import Path
 
 from seekd.core.ids import new_id, now_iso
 from seekd.core.models import Avatar, Character, Room, Session
-from seekd.store.jsonstore import SeekStore
+from seekd.store.store import SeekStore
 
 # Fixed ids for the built-in identities, so clients can recognise them reliably
 # (same pattern as the existing YOU_ID="you").
@@ -131,9 +131,12 @@ def ensure_seeded(store: SeekStore) -> bool:
         if not sessions:
             ws = str(default_workspace_path())
             session = Session(id=new_id(), room_id=ROOM_SEEK_ID, name="",
-                              workspace=ws, messages=[], created_at=now,
+                              workspace=ws, created_at=now,
                               updated_at=now)
             store.save_session(session)
+            # Scaffold the seeded session's member dirs (you + seek) so the AI
+            # has a ready seek.db + memory to talk into.
+            store.ensure_member_dirs(session.id, [YOU_ID, SEEK_ID])
             created = True
 
         # Ensure the default workspace directory exists (harmless if present).

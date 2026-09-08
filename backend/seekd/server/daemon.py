@@ -26,7 +26,8 @@ from seekd.core.seed import ROOM_SEEK_ID, is_builtin_room
 from seekd.logutil import setup_logger
 from seekd.server import proc_guard
 from seekd.server.httpserver import WebUiServer
-from seekd.store.jsonstore import SeekStore
+from seekd.store.store import SeekStore
+from seekd.store.transcript import TranscriptStore
 
 log = setup_logger("seekd", "seekd.log")
 
@@ -183,6 +184,10 @@ class Seekd:
                           workspace=req.get("workspace", ""), created_at=now,
                           updated_at=now)
         self.store.save_session(session)
+        # Scaffold each in-room member's per-session dir (seek.db + memory/).
+        room = self.store.get_room(room_id)
+        if room is not None:
+            self.store.ensure_member_dirs(sid, room.member_ids)
         await self._send(ws, {"type": "session:created", "session": session.to_dict()})
 
     async def _create_room(self, ws, req: dict) -> None:
@@ -282,8 +287,9 @@ class Seekd:
                                   "message": "session not found"})
             return
         self.active[id(ws)] = sid
+        messages = [m.to_dict() for m in self.store.get_session_messages(sid)]
         await self._send(ws, {"type": "session:messages", "sessionId": sid,
-                              "messages": [m.to_dict() for m in session.messages],
+                              "messages": messages,
                               "appendOnly": False})
 
     async def _rename_session(self, ws, req: dict) -> None:
@@ -306,7 +312,9 @@ class Seekd:
             await self._send(ws, {"type": "error", "requestId": req.get("requestId"),
                                   "message": "session not found"})
             return
-        session.messages = []
+        # Clear every member's transcript for this session (v3: messages live in
+        # each member's seek.db, not inline on the session).
+        self.store.clear_session_transcripts(sid)
         session.updated_at = now_iso()
         self.store.save_session(session)
         await self._send(ws, {"type": "session:cleared", "sessionId": sid})
@@ -331,10 +339,18 @@ class Seekd:
             await self._send(ws, {"type": "error", "requestId": req.get("requestId"),
                                   "message": "session not found"})
             return
-        # Persist the user message first, then run the group turn if wired.
+        # Persist the user message into every in-room member's seek.db (shared
+        # speech), then run the group turn if wired. The runner reads the shared
+        # history from the member dbs, so persisting here is enough.
         user_msg = Message(id=new_id(), speaker="user", time=now_iso(),
                            kind="text", text=text)
-        self.store.append_message(sid, user_msg)
+        self.store.append_shared_entry(sid, {
+            "id": user_msg.id,
+            "kind": "send-message",
+            "author": {"id": "you", "name": "我", "kind": "human"},
+            "message": {"type": "text", "content": text},
+            "timestampMs": user_msg.time,
+        })
         await self._broadcast({"type": "message:new", "sessionId": sid, "message": user_msg.to_dict()})
         await self._send(ws, {"type": "ok", "requestId": req.get("requestId")})
         if self.session_runner is None:
@@ -587,7 +603,7 @@ class Seekd:
             return
         message = Message(id=new_id(), speaker="system", time=now_iso(),
                           kind="text", text=prompt)
-        self.store.append_message(sid, message)
+        self._persist_shared(sid, message)
         await self._broadcast({"type": "message:new", "sessionId": sid, "message": message.to_dict()})
         self._update_task_after_run(sid)
         await self._start_turn(sid, prompt)
@@ -677,6 +693,21 @@ class Seekd:
         await self._send(ws, {"type": "workspaceFile", "sessionId": sid,
                               "name": target.name, "content": content})
 
+    def _persist_shared(self, sid: str, msg: Message) -> None:
+        """Persist a shared message (system/user) into every member's seek.db.
+
+        A system message (e.g. a task prompt) is shared speech like any other.
+        """
+        entry = {
+            "id": msg.id,
+            "kind": "send-message",
+            "author": {"id": msg.speaker, "name": msg.speaker,
+                       "kind": "system" if msg.speaker == "system" else "human"},
+            "message": {"type": "text", "content": msg.text},
+            "timestampMs": msg.time,
+        }
+        self.store.append_shared_entry(sid, entry)
+
     def _update_task_after_run(self, sid: str) -> None:
         """Mark a task as run and schedule its next run."""
         t = self.store.get_task(sid)
@@ -721,7 +752,13 @@ class Seekd:
                     continue
                 message = Message(id=new_id(), speaker="system", time=now_iso(),
                                   kind="text", text=prompt)
-                self.store.append_message(t.id, message)
+                self.store.append_shared_entry(t.id, {
+                    "id": message.id,
+                    "kind": "send-message",
+                    "author": {"id": "system", "name": "system", "kind": "system"},
+                    "message": {"type": "text", "content": prompt},
+                    "timestampMs": message.time,
+                })
                 await self._broadcast({"type": "message:new", "sessionId": t.id, "message": message.to_dict()})
                 self._update_task_after_run(t.id)
                 # If not currently running a turn, kick one off.

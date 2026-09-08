@@ -23,7 +23,7 @@ def main_daemon(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     from seekd.server.daemon import Seekd
-    from seekd.store.jsonstore import SeekStore
+    from seekd.store.store import SeekStore
     from seekd.core.seed import ensure_seeded
 
     from seekd.config import load_config as _load_config

@@ -6,7 +6,7 @@ from seekd.core.models import Room
 from seekd.core.seed import (SEEK_ID, SEEK_NAME, ROOM_SEEK_ID, ROOM_SEEK_NAME,
                              YOU_ID, ensure_seeded, default_workspace_path,
                              is_builtin_character, is_builtin_room)
-from seekd.store.jsonstore import SeekStore
+from seekd.store.store import SeekStore
 
 
 def _find_room(store: SeekStore, rid: str):

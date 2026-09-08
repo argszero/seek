@@ -39,13 +39,14 @@ def test_message_tool_kind():
     assert m2.status == "success"
 
 
-def test_session_roundtrip_messages():
-    m = Message(id="m1", speaker="system", time="t", kind="system", text="hi")
+def test_session_roundtrip_no_messages():
+    # v3: Session carries no inline messages (they live in each member's seek.db).
     s = Session(id="s1", room_id="r1", name="x", workspace="w",
-                messages=[m], created_at="t", updated_at="t")
+                created_at="t", updated_at="t")
     d = s.to_dict()
     assert d["roomId"] == "r1"
-    assert d["messages"][0]["kind"] == "system"
+    assert d["createdAt"] == "t"
+    assert "messages" not in d
     s2 = Session.from_dict(d)
-    assert len(s2.messages) == 1
-    assert s2.messages[0].text == "hi"
+    assert s2.room_id == "r1"
+    assert not hasattr(s2, "messages")

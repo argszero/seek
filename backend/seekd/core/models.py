@@ -169,20 +169,23 @@ class Message:
 
 @dataclass(slots=True)
 class Session:
-    """One conversation inside a room, bound to a workspace."""
+    """One conversation inside a room, bound to a workspace.
+
+    A session no longer carries an inline ``messages`` list (v3). Each member's
+    conversation lives in that member's own ``seek.db`` (see ``store.transcript``);
+    the session handles only metadata (id/roomId/name/workspace/timestamps).
+    """
 
     id: str
     room_id: str
     name: str = ""
     workspace: str = ""
-    messages: list[Message] = field(default_factory=list)
     created_at: str = ""
     updated_at: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {"id": self.id, "roomId": self.room_id, "name": self.name,
                 "workspace": self.workspace,
-                "messages": [m.to_dict() for m in self.messages],
                 "createdAt": self.created_at, "updatedAt": self.updated_at}
 
     @classmethod
@@ -190,9 +193,6 @@ class Session:
         raw = _pick(cls, d, "messages")
         if "roomId" in d:
             raw["room_id"] = d["roomId"]
-        if isinstance(d.get("messages"), list):
-            raw["messages"] = [Message.from_dict(m) for m in d["messages"]
-                               if isinstance(m, dict)]
         if "createdAt" in d:
             raw["created_at"] = d["createdAt"]
         if "updatedAt" in d:
