@@ -5,6 +5,30 @@ All notable changes to **seek** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.14] - 2026-09-08
+
+### Changed
+
+- **Session & memory storage rebuilt (v3)** — the flat JSON store is replaced
+  with a hierarchical, per-character model. Each member of a room owns its own
+  `seek.db` (a SQLite transcript: the room's shared speech plus that member's
+  own private tool calls), and its own `memory/` directory (a `MEMORY.md` index
+  + detail files the character organizes freely).
+  - **Tool privacy is now physical**: another member's tool calls are never
+    written into your `seek.db`, so there is no per-viewer filtering.
+  - **Memory is the character's own asset**: new `memory_read` / `memory_write` /
+    `memory_search` / `memory_delete` tools, bound to the calling character and
+    restricted to its two memory directories; and `transcript_query` to recall
+    from its own full transcript.
+  - **Context window rule**: only the recent window is fed to the LLM each turn;
+    the full transcript stays in `seek.db`. The system prompt now injects each
+    member's two memory directories + both indexes + the window rule, and
+    directs it to write anything that matters long-term.
+
+This is an internal backend change. The frontend protocol is unchanged: opening
+a session still returns a `session:messages` stream (now aggregated from the
+member `seek.db`s), and message broadcast still emits `message:new`.
+
 ## [0.1.13] - 2026-09-07
 
 ### Added
