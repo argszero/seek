@@ -5,6 +5,20 @@ All notable changes to **seek** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.15] - 2026-09-09
+
+### Fixed
+
+- **WEBUI crash on open-session → pick a room** — with the v3 storage rewrite the
+  daemon's `Session.to_dict()` no longer ships an inline `messages` field (the
+  list arrives via the `session:messages` event). Several UI accessors read
+  `session.messages.length` directly (`PlusMenu` open-session step, `Sidebar`
+  preview, `StatusBar`), which threw
+  `Cannot read properties of undefined (reading 'length')` when opening a
+  session and selecting a room. The store now normalizes every incoming session
+  to `messages: []` before it reaches the renderer, so all UI accessors are
+  safe.
+
 ## [0.1.14] - 2026-09-08
 
 ### Changed
