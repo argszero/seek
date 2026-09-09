@@ -56,6 +56,8 @@ export interface Session {
   roomId: string;
   name: string;
   workspace: string;
+  // v3: daemon no longer ships messages inline (Session.to_dict drops it); they
+  // arrive via the `session:messages` event. Store.ts normalizes this to [].
   messages: Message[];
   createdAt: string;
   updatedAt: string;

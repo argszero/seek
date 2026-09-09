@@ -134,10 +134,18 @@ export function initBridge(url?: string) {
 }
 
 // ---- 事件处理 ----
+// v3: daemon 的 Session.to_dict() 不再内联 messages；消息经 session:messages 单独推送。
+// 保证 store 内每个 session 都有 messages: []，避免 UI 读取 .messages.length 时崩溃。
+function ensureMessages(s: Session): Session {
+  return s.messages ? s : { ...s, messages: [] };
+}
+
 function applyMessageToSession(sessionId: string, message: Message) {
-  const sessions = state.world.sessions.map((s) =>
-    s.id === sessionId ? { ...s, messages: [...s.messages, message], updatedAt: message.time } : s,
-  );
+  const sessions = state.world.sessions.map((s) => {
+    if (s.id !== sessionId) return s;
+    const base = ensureMessages(s);
+    return { ...base, messages: [...base.messages, message], updatedAt: message.time };
+  });
   state = { ...state, world: { ...state.world, sessions } };
 }
 
@@ -156,7 +164,7 @@ function handleEvent(ev: ServerEvent) {
         world: {
           characters: ev.characters,
           rooms: ev.rooms,
-          sessions: ev.sessions,
+          sessions: ev.sessions.map(ensureMessages),
           activeSessionId: state.activeSessionId, // 保留已有
           model: ev.model || state.world.model,
         },
@@ -174,7 +182,7 @@ function handleEvent(ev: ServerEvent) {
       emit();
       break;
     case "sessions":
-      state = { ...state, world: { ...state.world, sessions: ev.sessions } };
+      state = { ...state, world: { ...state.world, sessions: ev.sessions.map(ensureMessages) } };
       emit();
       break;
     case "session:messages": {
@@ -183,10 +191,11 @@ function handleEvent(ev: ServerEvent) {
       break;
     }
     case "session:created": {
-      const exists = state.world.sessions.some((s) => s.id === ev.session.id);
+      const created = ensureMessages(ev.session);
+      const exists = state.world.sessions.some((s) => s.id === created.id);
       const sessions = exists
-        ? state.world.sessions.map((s) => (s.id === ev.session.id ? ev.session : s))
-        : [...state.world.sessions, ev.session];
+        ? state.world.sessions.map((s) => (s.id === created.id ? created : s))
+        : [...state.world.sessions, created];
       state = { ...state, world: { ...state.world, sessions } };
       emit();
       break;
