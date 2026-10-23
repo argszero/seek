@@ -402,6 +402,8 @@ A **chain** is the set of agent turns causally descended from one message. Its r
 
 **An agent may address another agent only inside a chain whose root already exists. It never opens a conversation with another agent.**
 
+**Opening a room is not the same act as opening a conversation, and only the first is settled** (ruled 2026-10-23: a bot may create a room on its own, including a room holding nothing but itself and one other bot). Creating the container costs nothing and decides nothing; what is still open is whether the *first* message inside such a room may be addressed to another bot, because that would be a new root and the rule above forbids it. The question is recorded in `decisions.md` under "Not decided yet" rather than answered here.
+
 Note what this buys: it is not a rate limit but a bound on the *set* of chains. Total agent-to-agent traffic is `(human and scheduled initiations) × (depth cap)`. There is no term for "two agents deciding they have something to say to each other", because that term does not exist. Coming to find someone proactively (§10) is for people; that is the one place the root rule does not reach.
 
 ### 11.3 Two walls, and neither of them counts money

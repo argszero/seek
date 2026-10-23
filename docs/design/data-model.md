@@ -48,7 +48,7 @@ Bot and Agent split it the same way throughout: **the bot owns what is alive** (
 
 | Entity | What it is | Key point |
 |---|---|---|
-| **Room** | Where a group of participants talks | Own id, membership changes, **not classified by headcount**; a direct message is simply a room with two people; one shared message log |
+| **Room** | Where a group of participants talks | Own id, membership changes, **not classified by headcount**; a direct message is simply a room with two people; one shared message log; **a bot may create one on its own** (ruled 2026-10-23), so membership is not human-gated |
 | **Membership** | The Room × Principal relation | Must exist on its own, because the same principal differs per room: join time, role (owner/member), read position, mute, **whether it is observing** |
 
 ### 2.3 Time
@@ -121,7 +121,7 @@ Bot and Agent split it the same way throughout: **the bot owns what is alive** (
    In Slack a thread is a message; in Discord it is a channel. seek takes the Feishu shape: **a thread is a message tree**. The people in it are always the people already in the room, so nothing has to be re-invited or re-permissioned.
 
 3. **A direct message is a headcount, not a type.**
-   A room with two people and a room with fifty behave identically. Any `if (chat_mode === 'p2p')` branch is the model starting to rot.
+   A room with two people and a room with fifty behave identically. **Feishu agrees and stores it that way**: `chat_mode` has three values (`group` / `topic` / `p2p`), and a direct chat is a chat with its own `oc_` id whose `chat_mode` reads `p2p`. The field may be stored for fidelity; **no domain logic may branch on it**, because the entity it describes is the same Room either way. Note the one asymmetry: Feishu's `p2p` is bot-to-user only, so a direct room between two bots is a seek extension with nothing upstream to copy — it was ruled here (a bot may open a room on its own) rather than derived.
 
 4. **A room does not have to contain you — an earlier draft said it did, and that was wrong.**
    The draft carried a rule that every room has at least one human member, invented at 20:12 and never ruled; the ruling that all interaction is IM, group or direct, allows a direct room between two bots, and that is a room with nobody of yours in it. What is true instead: **a direct message is still a room** — the same entity, the same message log, the same membership. Nothing branches on who is in it, which is the previous point's rule and the reason this one could be withdrawn without touching any code shape. Visibility of bot-to-bot traffic is then a *listing* question, not a model question.
