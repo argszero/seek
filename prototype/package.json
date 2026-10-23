@@ -1,0 +1,14 @@
+{
+  "name": "seek",
+  "productName": "Seek",
+  "version": "0.1.0",
+  "description": "Seek — a local-only, Feishu(Lark)-style desktop client. No server.",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^45.0.0"
+  }
+}

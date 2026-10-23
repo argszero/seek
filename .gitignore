@@ -1,0 +1,15 @@
+# Dependencies and build output
+node_modules/
+dist/
+out/
+build/
+
+# Local session state (contains conversation logs — never committed)
+.emrg/
+
+# OS and editor
+.DS_Store
+*.log
+*.tmp
+.vscode/
+.idea/
