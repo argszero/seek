@@ -52,6 +52,8 @@ Also: stage 1's judge call produces no `Turn` and no `Message`, so the money spe
 
 ### 3. The interruption budget has no home
 
+> **Resolved 2026-10-23: there is no budget, so it needs no home.** The host withdrew the invented limits entirely — no daily cap, no spacing, no quiet hours. An agent's constraint is a prompt and a sandbox, as with any EMRG agent. The finding correctly identified that the budget had no entity; the answer was that it should not exist. The other half of this item — the room-level bot-turn counter — is resolved separately: it now lives on `Room`.
+
 §10 budgets proactive DMs in **interruptions** (3/day, 30-minute spacing, quiet hours, halve after three unanswered).
 §2's `budget` field is **tokens per hour and per day**. Those are different units with different lifetimes and different owners.
 
@@ -81,6 +83,8 @@ The conclusion (an order of magnitude below the naive port) probably survives, b
 ## Design flaws to settle before P2
 
 ### 6. Degrading a private matter into a room
+
+> **Moot 2026-10-23**: the degradation existed only because a quota could be spent. There is no quota.
 
 §10.4: *"When the quota is spent, it degrades to a room message."*
 

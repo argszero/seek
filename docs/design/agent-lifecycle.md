@@ -215,59 +215,29 @@ Assume 10 agents, 5 rooms, 500 messages an hour.
 
 One word filled in the last rung of the ladder: **observe → speak in a room → open a thread → direct message → must-reach**.
 
-### 10.1 What changes qualitatively
-Speaking in a room is being *present*; a direct message is *coming to find you*. The first is budgeted in tokens, **the second is budgeted in interruptions**. Talking a lot in a group is lively; too many DMs is harassment — so everything in this section is about being rare and right.
+Speaking in a room is being *present*; a direct message is *coming to find you*. An agent may do both, including the second.
 
-### 10.2 The five cases worth interrupting you (a whitelist, written into the persona)
+**There is no quota, no cooldown and no quiet-hours rule.** Earlier drafts of this section carried a whitelist of five reasons, a blacklist of four, a daily cap of three, a thirty-minute spacing and a 22:00–08:00 silence — all of it invented by the implementer, none of it decided. It is withdrawn.
 
-1. **Needs your decision**: without one it cannot go on.
-2. **Already handled on your behalf**: someone asked something only it could answer, it answered, and it brings you the original plus the conclusion.
-3. **A long-running task of yours has reached a conclusion** (a conclusion, not a progress report).
-4. **An anomaly**: a scheduled task failed, a PR was rejected, CI went red, the budget is being burned.
-5. **Something it cannot judge and must not guess**.
+What governs an agent here is what governs it everywhere else in seek, because **a seek agent is an EMRG agent**: it has a **prompt** and it has a **sandbox**, and those two are the whole of its constraint. Restraint about interrupting you is a property of how it is written, not a gate bolted on beside it. If a persona talks too much, that is a defect in the persona — the same way a badly written agent answers badly — and it is fixed there.
 
-### 10.3 What must not be a DM
+### 10.1 Acting needs no permission either (ruled 2026-10-23)
 
-- Restating what was just said in the room.
-- "Here is what I did today" work reports with no conclusion.
-- A second message on the same subject (dedupe key = subject + room + counterpart; one subject follows one thread — no new conversation each time).
-- "Are you there?" while it is already waiting for your answer.
+**An agent does not ask before it acts.** It edits files, runs commands and sends messages without stopping to request approval, the way a colleague you have worked with does not ask to open a file. A per-action dialog turns the product into a ticket queue, which is the one thing an IM must never become.
 
-### 10.4 Three hard gates
+What holds without asking:
 
-| Gate | Default | Note |
-|---|---|---|
-| Per day | 3 | "Blocked" does not count against the quota, but at most once a day |
-| Minimum spacing | 30 minutes | Between two proactive DMs |
-| Quiet hours | 22:00–08:00 | Even a "needs your decision" DM sends only once, and says plainly that it can wait until tomorrow |
-
-When the quota is spent, it degrades to a room message, and the state stays visible (you can see in the room that it wanted to say something but held back).
-
-### 10.5 When you do not answer
-
-- An unanswered DM is marked `unanswered`, and **the same subject is never re-sent**.
-- Three `unanswered` in a row → that agent halves its own proactive frequency; one reply from you restores it.
-- It never asks "just confirming?" again. Silence is information, not a refusal, and it should keep working.
-
-### 10.6 Acting needs no permission (ruled 2026-10-23)
-
-**An agent does not ask before it acts.** It edits files, runs commands and sends messages without stopping to request approval, the same way a colleague you have worked with does not ask to open a file. A per-action approval dialog turns the product into a ticket queue, which is exactly what an IM must never become.
-
-What replaces the approval is not a lighter approval — it is three properties that hold without asking:
-
-1. **A bounded reach.** An agent acts inside its own workspace and nowhere else. The boundary is set when the room is set up, not negotiated per action.
+1. **The sandbox.** An agent acts inside its own workspace and nowhere else. That boundary is the sandbox's job, not a negotiation held before each action.
 2. **An audit trail.** Every action is a `Turn`: what triggered it, which tools ran, what changed, what it cost. Nothing is asked in advance because everything is visible afterwards.
-3. **A stop that works.** Whatever it is doing on your behalf, you can see it and end it. Rule 11 in the data model — every room has a human member — is what makes this true rather than aspirational.
+3. **A stop that works.** Whatever it is doing on your behalf, you can see it and end it — data-model rule 11, every room has a human member, is what makes that true rather than aspirational.
 
-**This is not the same as asking for a decision.** An agent that is stuck, that cannot judge, or that needs you to choose between two things you alone can weigh is having a conversation, not requesting permission. That stays, and it is §10.2's first and fifth cases. The distinction is *"may I?"* (gone) versus *"which?"* (indelible).
+**Asking for a decision is not asking for permission.** An agent that is stuck, that cannot weigh two options, or that needs your judgement is having a conversation. *"May I?"* does not exist; *"which one?"* is ordinary speech.
 
-### 10.7 In the interface
+### 10.2 In the interface
 
-- A proactive DM carries a **"proactive"** tag **and must carry one line of reason** ("the task you gave me just failed"). No reason, no message — the reason line is mandatory, and it is the only basis you have for judging afterwards whether to trust it.
-- The contact list shows "1 proactive message".
+- A proactive message is marked **proactive** — not as a warning label but because "it came to find you" reads differently from "it answered you", and a reader who mistakes one for the other misreads the whole relationship.
+- The contact list shows what is waiting.
 - After sending, it does not wait: the interface must be able to express "I'll carry on; look at it when you get a chance".
-
----
 
 ## 11. Agent to agent (approved 2026-10-23: **yes**)
 
@@ -288,7 +258,7 @@ A **chain** is the set of agent turns causally descended from one message. Its r
 
 **An agent may address another agent only inside a chain whose root already exists. It never opens a conversation with another agent.**
 
-Note what this buys: it is not a rate limit but a bound on the *set* of chains. Total agent-to-agent traffic is `(human and scheduled initiations) × (depth cap)`. There is no term for "two agents deciding they have something to say to each other", because that term does not exist. §10's whitelist stays human-facing — coming to find someone is for people.
+Note what this buys: it is not a rate limit but a bound on the *set* of chains. Total agent-to-agent traffic is `(human and scheduled initiations) × (depth cap)`. There is no term for "two agents deciding they have something to say to each other", because that term does not exist. Coming to find someone proactively (§10) is for people; that is the one place the root rule does not reach.
 
 ### 11.3 Three walls
 
@@ -321,7 +291,7 @@ The delegate pays for its own turn out of its own budget — it is doing the wor
 
 At either wall the agent must do exactly one of these, and the choice must be deliberate:
 
-- **escalate** — a proactive DM if it matches §10's whitelist ("needs a decision" or "cannot judge"), subject to all three interruption gates;
+- **escalate** — a proactive DM, subject to nothing but its own persona and sandbox;
 - **say so in the room** — one system line: *"this exchange reached its limit and needs a person"*;
 - **stop and record** — write to the diary and let the thread rest.
 
