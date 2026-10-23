@@ -95,6 +95,10 @@ There is **one** delivery path and **one** loop. A message to a room is delivere
 | A room message that names nobody | The inbox | Everything else: rules, then the watch agent |
 | A scheduled tick | No message; the loop wakes anyway | Looks at whatever has accumulated |
 
+**Both kinds of wake are ruled** (2026-10-23): a message **and** the clock. Waking on messages alone would make this an EMRG session with extra steps — an agent that cannot act unless spoken to cannot keep a promise, notice that something it started has gone quiet, or come and find you on its own initiative. Since the root rule was withdrawn (§11.2), the bare tick is also the origin of most chains: a bot deciding to speak with no message behind it. The cost is stated where it belongs — an idle bot still wakes, so an idle tick must be nearly free, which is what stage 0 rule 1 guarantees (§4).
+
+What a wake is **not**: it is not an action and it is not a model call. A tick that finds an empty inbox is over before stage 1, and a tick that finds messages only gets them looked at — the same gate every message goes through.
+
 Why this matters more than it looks: with two roads, the same message could be answered twice — once by the direct road and once by a later tick that finds it still in the inbox. With one road there is nothing to reconcile, no "mark it handled" bookkeeping, and no ordering rule between two runners.
 
 **Receiving never spends anything.** That is the cost foundation of the whole design. Any implementation where an un-addressed message triggers a model call is already wrong.
@@ -276,8 +280,10 @@ When the watch agent decides to act, the work agent is woken with the entries an
 
 ### Backoff
 
-With nothing to do, the tick interval grows exponentially (one minute up to eight hours), and any new message snaps it back to the base. EMRG's scheduler already has this (`_heartbeat_interval` = max(i, min(i*8, 8h))); reuse it.
-**A quiet agent should consume almost nothing** — that is the only premise under which "long-lived" is affordable.
+**The clock is one of the two ruled wake sources** (2026-10-23), so this section is now a consequence of a ruling rather than a tuning note.
+
+With nothing to do, the tick interval grows exponentially (one minute up to eight hours), and any new message snaps it back to the base. EMRG's scheduler already has this (`_heartbeat_interval` = max(i, min(i*8, 8h))); reuse it. **The numbers are a starting default, not a ruling** — what was ruled is that the clock exists and that an idle bot must be cheap; the base interval and the ceiling are for the implementation to measure.
+**A quiet agent should consume almost nothing** — that is the only premise under which "long-lived" is affordable. Note the accounting: ten bots on a one-minute base is 600 ticks an hour, and every one of those that finds an empty inbox ends at stage 0 rule 1 having called no model at all. **The bill for being alive is disk reads, and it has to stay that way** — the day a bare tick costs a model call, the design's central claim is false.
 
 ### Concurrency
 
@@ -297,6 +303,9 @@ Assume 10 agents, 5 rooms, 500 messages an hour.
 | Every message to the expensive model (the naive port) | 500 × ~1500 = **750k billed** | broke within a day |
 | Every message to the local watch agent only (no stage 0) | 500 × ~300 = 150k **local, unbilled** | no bill — but one local inference per message, and each one is latency in the app |
 | **This design**: 90% stopped free, 10% watched locally, 5% of those act | 50 × 300 local (unbilled) + 2.5 × 3000 = **≈7.5k billed** | affordable |
+| The idle ticks on top of it | 10 bots × 60 ticks an hour = 600 ticks, **0 model calls** | the price of being alive is disk reads; if a bare tick ever costs a call, this row is a lie |
+
+One correction to the table's denominator: traffic arrives **per message**, but a message costs work **per bot in the room** — ten bots and one message is ten inbox entries. The figures above hold only because stage 0 is free per bot; the moment any per-bot step costs a call, the multiplication matters and the table understates it.
 | Leaner: watch only when a batch has piled up | another order of magnitude down | at the cost of slower reactions |
 
 (Order-of-magnitude estimates, not measurements.)
