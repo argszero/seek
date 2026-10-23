@@ -222,6 +222,16 @@ It is also why two agents rather than one agent asked two questions: the two win
 
 It raises a risk honestly: a weak local model with a history of its own can produce a confident wrong verdict. Two answers: **what the judge ignored is reviewable** — every verdict is recorded with the entry it judged, so a deaf gate is visible rather than silent — and **the working agent can read the judge's log**, so a wrong call is discoverable by the half that talks to the user.
 
+### How the judge finds out it was wrong (ruled 2026-10-23)
+
+**It reads the outcome off the record it already has.** When the judge forwards an observation and the working agent then says nothing in that room, that is visible: the entry it dispatched has no message after it. Next time the judge meets the same room, its own memory holds the line it wrote — *"I forwarded this and nothing was said"* — and it can weigh that before deciding again.
+
+No new machinery is built for this. The outcome is not reported to the judge by anyone: **it is already on the board**, because a turn that produced no message is a fact of the same data model everything else reads. The judge only has to look.
+
+**And it is not learning.** The weights do not move; nothing is trained; no rule is written down for the future. At most the judge accumulates its own observations, exactly as any agent's memory does, and a better-informed next judgement is all that follows.
+
+**It is also fine if it learns nothing.** If the judge never gets meaningfully better, the design still holds: what keeps it honest is the record being reviewable and the working agent being able to read it, not the judge improving over time. Nothing downstream may depend on the judge getting smarter — no decay schedule, no "wait until it has seen enough", no accuracy target. A weak judge with a visible record is an acceptable judge; a hidden one is not.
+
 ### Three ways to decide not to act
 
 - `ignore`: this is not about me. Consume the entry.
