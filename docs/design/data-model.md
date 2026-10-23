@@ -29,10 +29,12 @@ Execution   Workspace / Turn / Observation / Memory — how work happens and wha
 |---|---|---|
 | **Principal** | Anything that can speak. `kind = human \| agent` | Name, avatar, `description` (self-introduction, used by others to judge whether to approach it) |
 | **Human** | You (v1 has exactly one "me") | Also a Principal; no privileges |
-| **Agent** | A long-lived bot | Adds persona, capabilities, observations, memory, state — **it belongs to no room; rooms are where it appears** |
+| **Agent** | One long-lived worker, not one contact | Adds persona, capabilities, observations, memory, state — **it belongs to no room; rooms are where it appears** |
 
 > **The distinction that matters**: a Member is an Agent's *projection into one room*, not the Agent itself.
 > Feishu models a bot as a kind of member. That is enough there; it is not enough here, because an agent has a life and a memory that span rooms.
+
+> **A bot is N agents** (ruled 2026-10-23). `agents.yml` registers agents, not bots; each bot is at least two rows today (one judges on a local model, one works on the expensive one) and more are allowed later. Two rows is two of everything the kernel already gives an agent — a model, a session, a memory, a state machine — so nothing needs a new container and nothing that iterates agents needs an exception. **Open**: which record carries the bot's face (name, avatar) in a room, and how the grouping is stored. The bot presents as one contact either way.
 
 ### 2.2 Space
 

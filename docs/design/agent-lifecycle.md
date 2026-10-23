@@ -101,14 +101,14 @@ Why this matters more than it looks: with two roads, the same message could be a
 
 ```
 Agent
-├─ Identity (visible outside; equals one contact in seek)
+├─ Identity
 │   id / name / avatar / description   ← description is what others (including other agents) use to judge whether to approach it
+│   bot / role                         ← which bot it belongs to, and which job it does there
 │   persona                            ← how it speaks
 ├─ Capabilities
-│   model.main                        ← the expensive model that does the work
-│   judge                             ← the sibling judging agent (own history, own memory,
-│                                        own local model); readable from here, and only read
-│                                        on demand because every token of it is billed
+│   model                              ← its own model: the working agent's expensive one, or
+│                                        the judging agent's local bundled one
+│   reads[] / readableBy[]            ← the mutual read path (see "a bot is N agents" below)
 │   tools[] / sandbox / limits
 ├─ Attention
 │   rooms[]        ← which rooms it watches
@@ -125,6 +125,12 @@ Agent
     session[room] (its own stretch of work in each room; a new one starts when it
     changes workspace — private bookkeeping, never shown to the user)
 ```
+
+### A bot is N agents (ruled 2026-10-23)
+
+**`agents.yml` registers agents, not bots.** Each bot is at least two rows today — one that judges, one that works — and there is no rule that caps it at two: a bot that later needs a third role gets a third row. The file is a roster of agent processes, and a bot is the grouping they belong to.
+
+This is cheaper than it sounds, because the kernel already works this way: one agent, one model, one session, one memory, one state machine. Two rows means two of each, no new container, and nothing that iterates agents has to learn to skip a special case. What it costs is one grouping field, and the question of **which record wears the bot's face** — the name and avatar a room shows. That is the open item in `decisions.md` under "Not decided yet"; the bot must still present as one contact, whatever the answer.
 
 **Agent ≠ Session.** EMRG today presses the identity into the session (the session is that cwd, that model, that history), so one identity cannot live in three rooms at once. The Agent sits above the session; sessions are its stretches of memory.
 
@@ -248,8 +254,8 @@ Because the judge is an agent on a local model, **judge tokens are not money.** 
 | Main loop | `TaskHandler` (`scheduler.py:982`): heartbeat, interval/backoff, bounded cycles, stop/trigger/status, resume after restart | a new task type `agent-tick` running stages 0 and 1 |
 | Stage 2 · action | today's session turn (`_run_tool_loop_locked`) | open with "you chose to speak"; require the three closing notes |
 | Delivery into the inbox | room fan-out as a frame broadcast, but only to connected clients | server-side **fan-out into every member agent's inbox** (persisted, not in memory) — the one road in, for every kind of message |
-| Judge agent | `llm.py` already selects a model per session, and `session.compact()` already keeps a history per session | a **second agent instance per bot** with its own session and memory on a local model: same machinery, smaller windows, no tools, a low `max_tokens` cap. Cross-reading between the two is a new read path. Any unparseable verdict counts as no act |
-| Memory compaction | `session.compact()` rewrites the session's history in place | must become **per-agent** as a result: two agents means two stores, each compacted against its own window, so neither can destroy the other's detail |
+| Judge agent | `llm.py` already selects a model per session, and `session.compact()` already keeps a history per session | a **second row in `agents.yml` per bot**: same machinery, its own session and memory, a local model, smaller windows, no tools, a low `max_tokens` cap, and a read path to its sibling. Any unparseable verdict counts as no act |
+| Memory compaction | `session.compact()` rewrites the session's history in place | nothing to change *in kind*: each agent already has its own session file, so the two stores are separate by construction. What must be checked is that no code path compacts across them |
 | Memory | `memory_store`: session and project levels | add an **agent level** (across rooms and sessions) |
 | State visibility | frame broadcast | a new frame: `agent_state` (observing / judging / working / asleep / needy) |
 
