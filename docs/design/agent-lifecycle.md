@@ -248,8 +248,8 @@ What holds without asking:
 
 | Shape | What it is | Bounded by |
 |---|---|---|
-| **Delegation** — synchronous | A, inside its own turn, calls `ask_agent(B)` as a tool; B runs one turn and returns text | A's turn budget and the existing tool-loop limits. Not a conversation; no chain, no inbox |
-| **Conversation** — asynchronous | A posts a message in a room B is in, addressing B; B may take it up in a later tick | Everything below: root, depth, chain budget |
+| **Delegation** — synchronous | A, inside its own turn, calls `ask_agent(B)` as a tool; B runs one turn and returns text | The existing tool-loop limits, which bound how deep tools may nest. Not a conversation; no chain, no inbox |
+| **Conversation** — asynchronous | A posts a message in a room B is in, addressing B; B may take it up in a later tick | Everything below: root and depth |
 
 Both are legitimate. Delegation is the common case and needs no new machinery — it is a tool call, and its cost lands inside A's turn where it is already auditable. Conversation is the shape that can run away, so it carries the rules.
 
@@ -261,15 +261,16 @@ A **chain** is the set of agent turns causally descended from one message. Its r
 
 Note what this buys: it is not a rate limit but a bound on the *set* of chains. Total agent-to-agent traffic is `(human and scheduled initiations) × (depth cap)`. There is no term for "two agents deciding they have something to say to each other", because that term does not exist. Coming to find someone proactively (§10) is for people; that is the one place the root rule does not reach.
 
-### 11.3 Three walls
+### 11.3 Two walls, and neither of them counts money
 
 1. **Root** (§11.2) — no chain without a human or a schedule behind it.
 2. **Depth** — every message carries `caused_by`, `chain` and `depth` (data-model rule 12). Each agent turn in a chain adds one hop. **Default cap: 4.** At the cap the agent may end or escalate; it may not continue the chain.
-3. **Chain budget** — an aggregate token budget per chain, defaulting to the cost of four ordinary turns. Either wall ends the chain; whichever comes first.
 
-Depth is read off the message data rather than kept in a counter on purpose: a counter has to be restored after a crash, and the one time it is restored wrong is the one time it matters.
+There is **no chain budget**. An earlier draft had one, defaulting to four ordinary turns; it is withdrawn for the same reason the per-agent spend limit was — an agent's constraint is a prompt and a sandbox, and a spend wall beside them is invented governance that also silences the agent you wanted to hear from. What a chain costs is recorded like anything else, per turn, and is readable.
 
-**Wall 0 is structural, and it is in the data model rather than here**: *every room has at least one human member* (data-model rule 11). So there is no room in which two agents could talk unobserved. The walls above are then a net under a case the model no longer permits — which is the right order. A cap that is the only defence is a cap that will one day be the defence that fails.
+That leaves the depth cap as the *only* numeric limit in the whole design, and it is not a financial one: it exists to stop a loop, not to stop a bill. It is also read off the message data rather than kept in a counter, on purpose — a counter has to be restored after a crash, and the one time it is restored wrong is the one time it matters.
+
+**The structural wall is in the data model rather than here**: *every room has at least one human member* (data-model rule 11). So there is no room in which two agents could talk unobserved. The walls above are a net under a case the model no longer permits — which is the right order. A cap that is the only defence is a cap that will one day be the defence that fails.
 
 ### 11.4 Wake rules, revised
 
@@ -277,7 +278,6 @@ Depth is read off the message data rather than kept in a counter on purpose: a c
 
 - it @-mentions that bot, or replies to one of its messages;
 - the chain depth is below the cap;
-- the chain still has budget;
 - the room's consecutive-agent-turn counter is below 3.
 
 Otherwise the message still lands in that bot's inbox, at zero cost, with `hints.chainBlocked = reason`, to be reconsidered the next time a human touches the room. Nothing is lost and nothing is spent — there is no separate road that could let it through anyway.
@@ -286,7 +286,7 @@ The **consecutive-agent-turn counter lives on the Room**, not on an agent: no si
 
 ### 11.5 Who pays
 
-The delegate pays for its own turn out of its own budget — it is doing the work. The chain carries the aggregate, so a chain cannot be made cheap by spreading it across several agents' budgets. Both are recorded, and the chain total is what the interface shows for "what did this come to".
+The delegate pays for its own turn — it is doing the work. Every turn in a chain is recorded like any other, so the chain total is a figure you can read, not a wall anything hits.
 
 ### 11.6 How a chain ends
 
@@ -306,4 +306,4 @@ An agent-to-agent run collapses into one line — *"5 exchanges between Editor a
 
 The useful case is real and common: A lacks a capability or a piece of context B has, and the alternative — A guessing, or the user relaying by hand — is worse on every axis.
 
-And seek is one local process running every agent, which is the one place this design is *easier* than a distributed one: a single arbiter can see every chain in the system, so the depth and budget walls are exact rather than approximate, and no coordination protocol is needed. The same property that makes the product private also makes the loop enforceable.
+And seek is one local process running every agent, which is the one place this design is *easier* than a distributed one: a single arbiter can see every chain in the system, so the depth wall is exact rather than approximate, and no coordination protocol is needed. The same property that makes the product private also makes the loop enforceable.
