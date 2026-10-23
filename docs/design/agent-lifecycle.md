@@ -95,9 +95,11 @@ There is **one** delivery path and **one** loop. A message to a room is delivere
 | A room message that names nobody | The inbox | Everything else: rules, then the watch agent |
 | A scheduled tick | No message; the loop wakes anyway | Looks at whatever has accumulated |
 
-**Both kinds of wake are ruled** (2026-10-23): a message **and** the clock. Waking on messages alone would make this an EMRG session with extra steps — an agent that cannot act unless spoken to cannot keep a promise, notice that something it started has gone quiet, or come and find you on its own initiative. Since the root rule was withdrawn (§11.2), the bare tick is also the origin of most chains: a bot deciding to speak with no message behind it. The cost is stated where it belongs — an idle bot still wakes, so an idle tick must be nearly free, which is what stage 0 rule 1 guarantees (§4).
+**Both kinds of wake are ruled** (2026-10-23): a message **and** the clock. Waking on messages alone would make this an EMRG session with extra steps — an agent that cannot act unless spoken to cannot keep a promise, notice that something it started has gone quiet, or come and find you on its own initiative. Since the root rule was withdrawn (§11.2), the bare tick is also the origin of most chains: a bot deciding to speak with no message behind it.
 
-What a wake is **not**: it is not an action and it is not a model call. A tick that finds an empty inbox is over before stage 1, and a tick that finds messages only gets them looked at — the same gate every message goes through.
+**And the clock's tick is not empty** (ruled 2026-10-23, the same day): when the timer is what woke the bot, the loop writes **its own entry** into the inbox before stage 0 runs — `kind: "clock"`, no message behind it, carrying how long it has been silent and what it left unfinished. That is what gives the watch agent something to judge when no message exists. A clock tick that arrived with nothing in the queue would end at stage 0 rule 1 every time, and a ruled wake source would then do no work at all.
+
+What a wake is **not**: it is not an action. A clock entry still has to get past the same gate as anything else, and the gate can — and mostly will — say no.
 
 Why this matters more than it looks: with two roads, the same message could be answered twice — once by the direct road and once by a later tick that finds it still in the inbox. With one road there is nothing to reconcile, no "mark it handled" bookkeeping, and no ordering rule between two runners.
 
@@ -172,12 +174,14 @@ Appended one entry at a time, **never processed by a model**:
 ```json
 { "id": "...", "room": "oc_...", "msg": "om_...", "ts": 1698123456789,
   "sender": "ou_...", "fromAgent": "agent_id|null",
-  "kind": "text|image|file|toolcard|system",
+  "kind": "text|image|file|toolcard|system|clock",
   "text": "……",
   "hints": { "mentionsMe": false, "asksQuestion": true, "repliesToMe": false,
              "keywordHit": ["release", "schedule"], "roomTemperature": "busy" },
   "state": "new" }
 ```
+
+- **A clock tick writes an entry too** (ruled 2026-10-23). When the timer is what woke the bot, the loop appends one `kind: "clock"` entry of the bot's own before stage 0 runs: `msg` null, no sender, and the bot's own facts in place of a message's hints — how long since it last spoke in a room, and what it left unfinished. It is written by the loop, never by a model, and it is what gives the watch agent something to judge when no message exists. Without it the clock would wake the bot and hand it nothing to look at, which is how a ruled wake source would end up doing no work.
 
 - `hints` are scored **by the producer, not by a model**: @ detection, question marks, whether it replies to me, keyword matches, message density. All of it is string and counting work that costs nothing.
 - **`mentionsMe` and `repliesToMe` are bot-level facts** (ruled 2026-10-23). They are computed once, when the message lands, against the bot — not per agent. No agent ever scans a room for its own name, and the watch agent could not: it is not addressable, so "an @ to me" is a question only the bot can answer. That is what makes stage 0's fast-pass a rule rather than a model call.
@@ -197,11 +201,17 @@ This is the core of the whole design:
 the bot's loop, per tick:
   ┌ Stage 0 · rules only, no model (settles everything that is certain and free)
   │  1. No new observations?   → end of tick, before anything else is considered
+  │     (a clock tick always has one — the loop wrote it — so this rule ends
+  │      message-driven ticks only; a clock tick is never empty)
   │  2. Rule says act? (@-mentioned / replied to / DM — read off the bot's own
   │     hints, computed at delivery; "@-mentioned" means this bot's id appears
   │     in the message's mentions[]) → straight to stage 2
   │  3. Rule says ignore? (my own message / another bot's broadcast / muted room)
   │                            → mark them ignore, end of tick
+  │     NOTE: "my own message" means one this bot posted into a room. A clock
+  │     entry is not that — it is the bot asking itself, and it must reach
+  │     stage 1, or rule 3 silently swallows every clock tick and the ruled
+  │     wake source does nothing
   │  4. Everything else → stage 1 (call the watch agent)
   │
   ├ Stage 1 · the loop calls the watch agent (an agent, so it has tools)
@@ -283,7 +293,7 @@ When the watch agent decides to act, the work agent is woken with the entries an
 **The clock is one of the two ruled wake sources** (2026-10-23), so this section is now a consequence of a ruling rather than a tuning note.
 
 With nothing to do, the tick interval grows exponentially (one minute up to eight hours), and any new message snaps it back to the base. EMRG's scheduler already has this (`_heartbeat_interval` = max(i, min(i*8, 8h))); reuse it. **The numbers are a starting default, not a ruling** — what was ruled is that the clock exists and that an idle bot must be cheap; the base interval and the ceiling are for the implementation to measure.
-**A quiet agent should consume almost nothing** — that is the only premise under which "long-lived" is affordable. Note the accounting: ten bots on a one-minute base is 600 ticks an hour, and every one of those that finds an empty inbox ends at stage 0 rule 1 having called no model at all. **The bill for being alive is disk reads, and it has to stay that way** — the day a bare tick costs a model call, the design's central claim is false.
+**A quiet agent should consume almost nothing** — that is the only premise under which "long-lived" is affordable. Note the accounting honestly: ten bots on a one-minute base is 600 clock ticks an hour, and since a clock tick carries its own entry it reaches the watch agent, so that is 600 local inferences — unbilled, but real wall-clock, roughly two minutes of CPU an hour at 200 ms each. The backoff is what brings it down: a bot nobody is talking to drifts towards eight hours between ticks and settles at a few an hour. **The line that must hold is the expensive one**: a clock tick may reach the watch agent, and must never reach the work agent on its own.
 
 ### Concurrency
 
@@ -303,7 +313,9 @@ Assume 10 agents, 5 rooms, 500 messages an hour.
 | Every message to the expensive model (the naive port) | 500 × ~1500 = **750k billed** | broke within a day |
 | Every message to the local watch agent only (no stage 0) | 500 × ~300 = 150k **local, unbilled** | no bill — but one local inference per message, and each one is latency in the app |
 | **This design**: 90% stopped free, 10% watched locally, 5% of those act | 50 × 300 local (unbilled) + 2.5 × 3000 = **≈7.5k billed** | affordable |
-| The idle ticks on top of it | 10 bots × 60 ticks an hour = 600 ticks, **0 model calls** | the price of being alive is disk reads; if a bare tick ever costs a call, this row is a lie |
+| The clock ticks, one local call each | 10 bots × 60 an hour = 600 local inferences, **0 billed** | ~2 minutes of CPU an hour at ~200 ms a call — the price of being alive, paid in wall-clock |
+
+**The clock ticks do cost a local call, and an earlier draft of this table said they cost nothing.** That was written before the clock entry was ruled: with nothing in the inbox, a clock tick ended at stage 0 rule 1 having called no model at all. Now that a clock tick always carries its own entry, it reaches the watch agent — which is exactly what the ruling wanted, since the watch agent is the only thing that can decide "I should speak now". **Nothing billed was added, and the backoff is what keeps the local cost small**: a bot left alone backs off towards eight hours, so its steady state is a few ticks an hour rather than sixty. The line to hold is that a clock tick never reaches the *work* agent on its own; if it did, an idle bot would be billing you for thinking about whether to talk.
 
 One correction to the table's denominator: traffic arrives **per message**, but a message costs work **per bot in the room** — ten bots and one message is ten inbox entries. The figures above hold only because stage 0 is free per bot; the moment any per-bot step costs a call, the multiplication matters and the table understates it.
 | Leaner: watch only when a batch has piled up | another order of magnitude down | at the cost of slower reactions |
