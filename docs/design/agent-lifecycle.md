@@ -51,7 +51,7 @@ Agent
 │   diary (its own markdown memory, across sessions and rooms)
 │   roomDigest[room] (rolling summary per room, cheap context for the judge)
 ├─ Life state
-│   state: asleep | observing | judging | working | quiet (budget spent) | blocked (waiting for approval)
+│   state: asleep | observing | judging | working | quiet (budget spent) | needy (waiting on your decision)
 │   lastSpoke[room] / lastTick / sleepUntil / backoff
 │   budget: tokens per hour and per day, spent, resets at
 └─ Sessions
@@ -220,7 +220,7 @@ Speaking in a room is being *present*; a direct message is *coming to find you*.
 
 ### 10.2 The five cases worth interrupting you (a whitelist, written into the persona)
 
-1. **Blocked**: without a decision it cannot go on.
+1. **Needs your decision**: without one it cannot go on.
 2. **Already handled on your behalf**: someone asked something only it could answer, it answered, and it brings you the original plus the conclusion.
 3. **A long-running task of yours has reached a conclusion** (a conclusion, not a progress report).
 4. **An anomaly**: a scheduled task failed, a PR was rejected, CI went red, the budget is being burned.
@@ -239,7 +239,7 @@ Speaking in a room is being *present*; a direct message is *coming to find you*.
 |---|---|---|
 | Per day | 3 | "Blocked" does not count against the quota, but at most once a day |
 | Minimum spacing | 30 minutes | Between two proactive DMs |
-| Quiet hours | 22:00–08:00 | Even "blocked" sends only once, and says plainly that it can wait until tomorrow |
+| Quiet hours | 22:00–08:00 | Even a "needs your decision" DM sends only once, and says plainly that it can wait until tomorrow |
 
 When the quota is spent, it degrades to a room message, and the state stays visible (you can see in the room that it wanted to say something but held back).
 
@@ -249,10 +249,17 @@ When the quota is spent, it degrades to a room message, and the state stays visi
 - Three `unanswered` in a row → that agent halves its own proactive frequency; one reply from you restores it.
 - It never asks "just confirming?" again. Silence is information, not a refusal, and it should keep working.
 
-### 10.6 Speaking is free, doing needs permission
+### 10.6 Acting needs no permission (ruled 2026-10-23)
 
-**Speaking up needs no approval. Any action with side effects** — sending messages in your name, editing files, running commands, spending money — **is asked first**.
-This line sits ahead of sandbox tiers, because what it protects is not files but "you not knowing what it is doing on your behalf".
+**An agent does not ask before it acts.** It edits files, runs commands and sends messages without stopping to request approval, the same way a colleague you have worked with does not ask to open a file. A per-action approval dialog turns the product into a ticket queue, which is exactly what an IM must never become.
+
+What replaces the approval is not a lighter approval — it is three properties that hold without asking:
+
+1. **A bounded reach.** An agent acts inside its own workspace and nowhere else. The boundary is set when the room is set up, not negotiated per action.
+2. **An audit trail.** Every action is a `Turn`: what triggered it, which tools ran, what changed, what it cost. Nothing is asked in advance because everything is visible afterwards.
+3. **A stop that works.** Whatever it is doing on your behalf, you can see it and end it. Rule 11 in the data model — every room has a human member — is what makes this true rather than aspirational.
+
+**This is not the same as asking for a decision.** An agent that is stuck, that cannot judge, or that needs you to choose between two things you alone can weigh is having a conversation, not requesting permission. That stays, and it is §10.2's first and fifth cases. The distinction is *"may I?"* (gone) versus *"which?"* (indelible).
 
 ### 10.7 In the interface
 
@@ -314,7 +321,7 @@ The delegate pays for its own turn out of its own budget — it is doing the wor
 
 At either wall the agent must do exactly one of these, and the choice must be deliberate:
 
-- **escalate** — a proactive DM if it matches §10's whitelist ("blocked" or "cannot judge"), subject to all three interruption gates;
+- **escalate** — a proactive DM if it matches §10's whitelist ("needs a decision" or "cannot judge"), subject to all three interruption gates;
 - **say so in the room** — one system line: *"this exchange reached its limit and needs a person"*;
 - **stop and record** — write to the diary and let the thread rest.
 

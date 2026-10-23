@@ -22,6 +22,8 @@ Five items below block P1. None of them is a taste question; each is "this promi
 
 ### 1. Approval has nowhere to be stored
 
+> **Resolved 2026-10-23, in the opposite direction: there is no approval, so there is nothing to store.** The host ruled that an agent does not ask before it acts; a per-action dialog would turn an IM into a ticket queue. What replaces it is a bounded reach, a complete audit trail (`Turn`), and a working stop. The finding was still correct as a finding — the promise had no entity — but the answer was to withdraw the promise. What survives is the distinction the old wording blurred: asking *"may I?"* (gone) versus asking *"which one?"* (indelible, and §10's first and fifth cases).
+
 `decisions.md`: *"Saying is free; doing requires permission… any action with side effects is asked first."*
 `agent-lifecycle.md` §2: agent state includes `blocked (waiting for approval)`.
 
