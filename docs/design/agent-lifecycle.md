@@ -124,7 +124,9 @@ Agent                                   ← a runnable, not a process
 ├─ model                               ← its own: the work agent's expensive one, or
 │                                        the watch agent's local bundled one
 ├─ prompt + persona                    ← how it speaks, which is now all "who it is" means
-├─ tools[] / sandbox / limits
+├─ tools[] / sandbox / limits          ← the same machinery for both roles; the toolset
+│                                        differs. `work` may act in the room; `watch` may
+│                                        touch its own memory and session, not the room
 ├─ reads[] / readableBy[]              ← the mutual read path (see "a bot is N agents" below)
 ├─ memory
 │   diary (its own markdown memory, across sessions and rooms)
@@ -196,10 +198,13 @@ the bot's loop, per tick:
   │                            → mark them ignore, end of tick
   │  4. Everything else → stage 1 (call the watch agent)
   │
-  ├ Stage 1 · the loop calls the watch agent (one call, no tools)
+  ├ Stage 1 · the loop calls the watch agent (an agent, so it has tools)
   │  input: its own history for this room, its own memory, the persona, why it woke,
   │         plus — when it matters — a bounded slice read from the work agent's log
-  │  model: model.watch — local, bundled (no download, no network), no tools, max_tokens capped
+  │  model: model.watch — local, bundled (no download, no network), max_tokens capped
+  │  tools: yes — the same machinery the work agent has, so it can read and write its
+  │         own memory and compact its own session. A watch that cannot manage its
+  │         memory is not an agent, it is a classifier with a memory bolted on
   │  output: one decision the loop can act on — the FORM is the implementation's choice
   │          (a single word, a label from a fixed set, a tiny JSON, whatever this model
   │           produces reliably). What matters is that it is unambiguous and parseable
@@ -242,7 +247,11 @@ No new machinery is built for this. The outcome is not reported to the watch age
 
 `keep` matters: it makes an agent "present but not interrupting", which is the most human thing about being permanently alive.
 
-**The watch agent never writes anything itself.** It emits a verdict; the loop performs the consequence — `ignore` consumes, `snooze` re-queues, `keep` appends the line. That split is what lets the watch agent stay a single call with no tools on a local model, and it is why the verdict's shape is free: a word is enough, because the runtime already knows what each verdict means.
+**The watch agent does not perform its own verdicts.** It emits a decision; the loop performs the consequence — `ignore` consumes, `snooze` re-queues, `keep` appends the line. That is why the verdict's shape is free: a word is enough, because the runtime already knows what each one means.
+
+**Having tools is not the same as acting on them** (ruled 2026-10-23). The watch agent has the tools any agent has, because it has to read and write its own memory and compact its own session; a watch that could not manage its memory would not be an agent. What it must not do is take the bot's visible actions — it does not speak in the room, and it does not dispatch work. So the line is not "tools or no tools", it is **tools for its own housekeeping, never for the bot's outward acts**.
+
+**The latency target is therefore a target, not a guarantee.** A judgement that needs no tool — the common case — is one call in the low hundreds of milliseconds. A judgement that reads its own memory costs a second round. That is acceptable because rules settle most traffic before the watch agent is called at all, and because the budget exists to keep the app responsive, not to forbid an agent from thinking twice.
 
 ### Backoff
 
@@ -285,7 +294,7 @@ Because the watch agent is an agent on a local model, **watch tokens are not mon
 | Main loop | `TaskHandler` (`scheduler.py:982`): heartbeat, interval/backoff, bounded cycles, stop/trigger/status, resume after restart | a new task type `agent-tick` running stages 0 and 1 |
 | Stage 2 · action | today's session turn (`_run_tool_loop_locked`) | open with "you chose to speak"; require the three closing notes |
 | Delivery into the inbox | room fan-out as a frame broadcast, but only to connected clients | server-side **fan-out into every member bot's inbox** (persisted, not in memory) — the one road in, for every kind of message |
-| Watch agent | `llm.py` already selects a model per session, and `session.compact()` already keeps a history per session | a **second row in `agents.yml` per bot**: same machinery, its own session and memory, a local model, smaller windows, no tools, a low `max_tokens` cap, and a read path to its sibling. Any unparseable verdict counts as no act |
+| Watch agent | `llm.py` already selects a model per session, and `session.compact()` already keeps a history per session | a **second row in `agents.yml` per bot**: same machinery, its own session and memory, a local model, smaller windows, a low `max_tokens` cap, and a read path to its sibling. Tools are the same registry, but its toolset excludes the bot's outward acts. Any unparseable verdict counts as no act |
 | Memory compaction | `session.compact()` rewrites the session's history in place | nothing to change *in kind*: each agent already has its own session file, so the two stores are separate by construction. What must be checked is that no code path compacts across them |
 | Memory | `memory_store`: session and project levels | add an **agent level** (across rooms and sessions) |
 | State visibility | frame broadcast | a new frame: `agent_state` (watching / working / asleep / needy) |
