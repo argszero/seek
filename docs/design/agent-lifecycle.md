@@ -29,7 +29,7 @@ So the judgement stage is not an optimisation added to a design that would work 
 
 ### The gate is a bundled model behind cheap rules (ruled 2026-10-23)
 
-The judgement runs on **a small model shipped with the product** — no download step, no "install Ollama first", no user machine that might not have one. Budget: **under 300 MB of weights, smaller if it can still do the job.**
+The judgement runs on **a model shipped with the product** — no download step, no "install Ollama first", no user machine that might not have one.
 
 It never fires on every message, because rules run first and settle most of them for nothing:
 
@@ -41,6 +41,25 @@ It never fires on every message, because rules run first and settle most of them
 | 4 | Everything else | one small-model call | The model decides |
 
 The ordering is the whole economy of the design: the two cases that are both **certain and free** are settled before anything runs, so the model is only ever asked about the genuinely ambiguous remainder — a group of people talking near it, without naming it.
+
+#### What the judge model must be (requirements, ruled 2026-10-23 — the choice itself is deferred)
+
+| # | Requirement | Why |
+|---|---|---|
+| 1 | **Multilingual: Chinese and English at minimum**, more is better | The product is international from the first screen, and a room's shape follows its people, not a setting. A judge that only reads English is blind in exactly the rooms where it is needed |
+| 2 | **Multimodal: it must see images** | Messages carry screenshots, photos, diagrams and tool cards. Judging "is this about me?" from alt text alone is guessing |
+| 3 | **Bundled, not downloaded** | The gate is what makes aliveness affordable; making it depend on the user fetching anything means it silently is not there |
+| 4 | **Small enough to ship inside an app** — target ≤ 300 MB of weights | Installers are the first thing a user meets |
+| 5 | **Runs on a plain CPU, quantised** | It runs per message per agent on ordinary laptops, not on a GPU |
+| 6 | **Fast enough that looking is invisible** — a judgement in the low hundreds of milliseconds | A gate slower than the thing it gates is not a gate |
+
+**Requirements 2 and 4 pull against each other, and that is the real difficulty.** Measured on 2026-10-23 (bf16 weights as published):
+
+- SmolVLM2-500M-Video-Instruct — **2.0 GB**
+- Qwen3-VL-2B-Instruct — **4.3 GB**
+- Qwen2.5-VL-3B-Instruct — **~4.0 GB per shard, two shards**
+
+A multimodal model at 300 MB therefore means a very small base or aggressive quantisation (4-bit divides by roughly four, which brings a 500M model to ≈500 MB and a 2B model to ≈1.1 GB). The requirement set is kept as written and the trade is decided at selection time, against real cases — not by quietly dropping the image requirement or the size target.
 
 ---
 
