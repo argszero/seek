@@ -328,7 +328,7 @@ Because the watch agent is an agent on a local model, **watch tokens are not mon
 
 | Failure | Mechanism |
 |---|---|
-| **Two bots wake each other and never stop** | ①`fromAgent` marks bot messages, which do not wake other bots unless @-mentioned or replied to ②a cap on consecutive bot turns per room (grok-bot uses 3), held **on the Room** ③the root and depth rules — §11 is the full treatment: a chain needs a human or a scheduled root, and every hop counts. Note that a **direct message between two bots is allowed** (ruled 2026-10-23), so this case is bounded by hops rather than excluded by membership |
+| **Two bots wake each other and never stop** | ①`fromAgent` marks bot messages, which do not wake other bots unless @-mentioned, replied to, or a direct message ②a cap on consecutive bot turns per room (grok-bot uses 3), held **on the Room** — this is what bounds a burst ③the depth cap, which bounds how long one chain runs (§11). **There is no root rule any more** (withdrawn 2026-10-23): a bot may open a conversation with another bot, so the number of chains is bounded by nothing but judgement and the record |
 | The watch agent is too cheap → deaf and blind | hit rate observable; per-agent thresholds; what it ignored can be reviewed (entries and reasons are kept) |
 | The watch agent is too expensive → burning money | spent is recorded and visible per agent, so a runaway bill is *seen* rather than silently capped. There is no self-stop: a bill that climbs is a defect in the persona or the gate, and it is fixed there, not papered over by a limit that also silences the agent you wanted to hear from |
 | Inbox explosion | a cap plus collapse into the room digest |
@@ -361,6 +361,8 @@ Because the watch agent is an agent on a local model, **watch tokens are not mon
 One word filled in the last rung of the ladder: **observe → speak in a room → open a thread → direct message → must-reach**.
 
 Speaking in a room is being *present*; a direct message is *coming to find you*. An agent may do both, including the second.
+
+**This section is about coming to find a person, and since 2026-10-23 the same act toward another bot is allowed too** — see §11.2, where the root rule was withdrawn. A bot opening a direct room with another bot is the same behaviour with a different recipient, and it carries the same absence of quota.
 
 **There is no quota, no cooldown and no quiet-hours rule.** Earlier drafts of this section carried a whitelist of five reasons, a blacklist of four, a daily cap of three, a thirty-minute spacing and a 22:00–08:00 silence — all of it invented by the implementer, none of it decided. It is withdrawn.
 
@@ -396,26 +398,24 @@ An earlier draft of this section had a second shape: a synchronous `ask_agent(B)
 
 What "delegation" still means is the **intent**, not a mechanism: "do this and report back" is a message that asks for work, and conversation is a message that asks a question. Both are messages, both enter the same inbox, and both carry the same chain.
 
-### 11.2 A chain always has a root, and the root is never an agent
+### 11.2 A chain may begin with an agent (ruled 2026-10-23)
 
-A **chain** is the set of agent turns causally descended from one message. Its root is a human message or a scheduled tick.
+**The root rule is withdrawn.** It said a chain's root is a human message or a scheduled tick, and that an agent never opens a conversation with another agent. Ruled instead: **a bot may say the first word to another bot** — in a room both are in, or in a direct room it opened for that purpose.
 
-**An agent may address another agent only inside a chain whose root already exists. It never opens a conversation with another agent.**
+Two reasons, both of them the host's own earlier rulings rather than new ones. A bot may already open a conversation with a **person** (§10, approved); the root rule was the only thing that forbade the identical act toward a peer, and that asymmetry was not asked for anywhere. And what the rule actually protected — a bound on the *set* of chains — is a bound nothing else was leaning on, given that a chain's length is capped by depth and a room's burst by the turn counter.
 
-**Opening a room is not the same act as opening a conversation, and only the first is settled** (ruled 2026-10-23: a bot may create a room on its own, including a room holding nothing but itself and one other bot). Creating the container costs nothing and decides nothing; what is still open is whether the *first* message inside such a room may be addressed to another bot, because that would be a new root and the rule above forbids it. The question is recorded in `decisions.md` under "Not decided yet" rather than answered here.
+**What the ruling costs, recorded plainly.** The set of chains is no longer bounded by *human and scheduled initiations × depth*; that arithmetic is gone with the rule. Every new conversation starts a fresh chain at depth 0, so **depth bounds how long a chain runs, not how many chains a bot may start**. Concretely: a bot can open a conversation with another bot whenever its judgement says to, and no count, interval or approval stands in the way. This is the same trade already accepted for proactive messages to people — there is no quota there either, and the fix for an agent that talks too much is its persona, not a wall. What remains true is that everything is on the record: every conversation is a room, every message is in a log, every turn is in the ledger.
 
-Note what this buys: it is not a rate limit but a bound on the *set* of chains. Total agent-to-agent traffic is `(human and scheduled initiations) × (depth cap)`. There is no term for "two agents deciding they have something to say to each other", because that term does not exist. Coming to find someone proactively (§10) is for people; that is the one place the root rule does not reach.
+### 11.3 One wall that counts hops
 
-### 11.3 Two walls, and neither of them counts money
-
-1. **Root** (§11.2) — no chain without a human or a schedule behind it.
-2. **Depth** — every message carries `caused_by`, `chain` and `depth` (data-model rule 12). Each agent turn in a chain adds one hop. **Default cap: 4.** At the cap the agent may end or escalate; it may not continue the chain.
+1. **Depth** — every message carries `caused_by`, `chain` and `depth` (data-model rule 12). Each agent turn in a chain adds one hop. **Default cap: 4.** At the cap the agent may end or escalate; it may not continue the chain.
+2. **The room's consecutive-agent-turn cap** (§11.4) — three bot turns in a row in one room, and further bot messages stop waking bots there. This is what bounds a burst; depth alone never did, because a burst of short exchanges uses few hops.
 
 There is **no chain budget**. An earlier draft had one, defaulting to four ordinary turns; it is withdrawn for the same reason the per-agent spend limit was — an agent's constraint is a prompt and a sandbox, and a spend wall beside them is invented governance that also silences the agent you wanted to hear from. What a chain costs is recorded like anything else, per turn, and is readable.
 
-That leaves the depth cap as the *only* numeric limit in the whole design, and it is not a financial one: it exists to stop a loop, not to stop a bill. It is also read off the message data rather than kept in a counter, on purpose — a counter has to be restored after a crash, and the one time it is restored wrong is the one time it matters.
+That leaves the depth cap as the *only* numeric limit on a chain, and it is not a financial one: it exists to stop a loop, not to stop a bill. It is also read off the message data rather than kept in a counter, on purpose — a counter has to be restored after a crash, and the one time it is restored wrong is the one time it matters.
 
-**The data model does not wall this off, and an earlier draft was wrong to say it did.** That draft carried a rule — *every room has at least one human member* — written by the implementer at 20:12, never ruled, and contradicted by the ruling above: a direct room between two bots is exactly a room with no human in it. **Withdrawn** (data-model rule 11). What bounds agent-to-agent traffic is the root rule, the depth cap and the wake rule, all of which hold with nobody in the room: a direct message is addressed by construction and wakes the other bot, and every further exchange adds a hop until the cap stops it. No rule any more assumes someone is present to notice.
+**The data model does not wall this off, and an earlier draft was wrong to say it did.** That draft carried a rule — *every room has at least one human member* — written by the implementer at 20:12, never ruled, and contradicted by the ruling that all interaction is IM, group or direct: a direct room between two bots is exactly a room with no human in it. **Withdrawn** (data-model rule 11). No rule any more assumes someone is present to notice; what holds is depth, the turn cap, and the record.
 
 ### 11.4 Wake rules, revised
 
@@ -435,7 +435,7 @@ The **consecutive-agent-turn counter lives on the Room**, not on an agent: no si
 
 ### 11.6 How a chain ends
 
-At either wall the agent must do exactly one of these, and the choice must be deliberate:
+At the depth cap or the room's turn cap the agent must do exactly one of these, and the choice must be deliberate:
 
 - **escalate** — a proactive DM, subject to nothing but its own persona and sandbox;
 - **say so in the room** — one system line: *"this exchange reached its limit and needs a person"*;
