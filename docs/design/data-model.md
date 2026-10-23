@@ -55,7 +55,7 @@ Bot and Agent split it the same way throughout: **the bot owns what is alive** (
 
 | Entity | What it is | Key point |
 |---|---|---|
-| **Message** | An immutable shared fact | Belongs to one room, optionally to one thread; sender is a Principal or `system`; kinds: text, image, file, **tool card**, system notice; carries its own cause — `caused_by` (the message that caused it), `chain` (the root of that causal run) and `depth`; also records **which agent of the bot wrote it**, which the room does not show |
+| **Message** | An immutable shared fact | Belongs to one room, optionally to one thread; sender is a Principal or `system`; kinds: text, image, file, **tool card**, system notice; **carries `mentions[]`** — the principals it @-mentions, each `{id, name}`, exactly Feishu's own field, and nothing per-reader; carries its own cause — `caused_by` (the message that caused it), `chain` (the root of that causal run) and `depth`; also records **which agent of the bot wrote it**, which the room does not show |
 | **Thread** | A "topic" — the message subtree rooted at one message | **Not a new room** (Feishu-style, not Slack/Discord-style); the people in it are already in the room |
 | **Session** | An agent's own stretch of work in one room | **Private bookkeeping, never a user-visible unit**; has a start and an end, **binds one workspace**, and is what its cost rolls up to. Five agents in one room have five of these; the room's timeline is continuous |
 
@@ -65,7 +65,7 @@ Bot and Agent split it the same way throughout: **the bot owns what is alive** (
 |---|---|---|
 | **Workspace** | Where work runs — a directory/project | Today's `cwd` in EMRG; bound by a Session, used by an Agent |
 | **Turn** | One action by an agent | What triggered it (which message, which watch), tokens spent, tools called, messages produced — **the atomic unit of cost and audit** |
-| **Observation** | One watch-queue entry, **on the bot's queue** (ruled 2026-10-23) | A reference to a Message + zero-cost hints (mentions me, asks a question, replies to me…) + a verdict (ignore / snooze / keep / act). One message enters one bot's queue once, not once per agent |
+| **Observation** | One watch-queue entry, **on the bot's queue** (ruled 2026-10-23) | A reference to a Message + zero-cost hints (mentions me, asks a question, replies to me…) + a verdict (ignore / snooze / keep / act). One message enters one bot's queue once, not once per agent. **The hints are derived at delivery for this bot and live here only** — `mentionsMe` is this bot's id found in the message's `mentions[]`, never a field written back onto the message |
 | **Memory** | Three levels | Agent diary (cross-room, long-lived) / room digest (rolling, per room) / session memory (today's EMRG session memory) |
 
 ---
@@ -94,7 +94,7 @@ Bot and Agent split it the same way throughout: **the bot owns what is alive** (
 
 **Bot and Agent are separate entities** (ruled 2026-10-23), and the line between them is **alive vs. runs**. The bot owns identity, membership, the inbox, the tick and the state machine; an agent owns a model, a prompt, tools, a session, a memory and its own turns. So a bot appears once no matter how many agents work behind it, delivery is one write rather than N, and the audit trail and the bill still name the exact worker.
 
-## 4. Cardinalities and rules (fourteen that must hold)
+## 4. Cardinalities and rules (fifteen that must hold)
 
 1. **Room 1 : N Message.** A message belongs to exactly one room; it never crosses rooms.
 2. **Message 0..1 : N Thread.** A message roots at most one thread; threads never cross rooms.
@@ -110,8 +110,9 @@ Bot and Agent split it the same way throughout: **the bot owns what is alive** (
 12. **Message N : 1 Message (causation).** `caused_by` names the message that caused this one; `chain` names the root of that run; `depth` is the hop count. A chain's depth is read off the data, never tracked in a mutable counter — a counter is what silently drifts after a restart.
 13. **Nothing splits a room's history for the user.** The interaction is Feishu's: one chat, one continuous timeline. A session boundary, a workspace change or a membership change is recorded in the data and surfaces at most as a system message — never as a list entry, a divider control, or a second timeline.
 14. **Bot 1 : N Agent; Agent N : 1 Bot.** The bot owns the name, avatar and description; its agents inherit them rather than storing copies, so a rename reaches every agent at once. An agent has a `role`, not a name. **The bot-level set** is identity, membership, @-mention, a room's participant list, the observation queue, the tick and the state machine — anything that is alive. **The agent-level set** is model, prompt, tools, session, memory, turn and cost — anything that runs.
+15. **A message stores `mentions[]`; "I was mentioned" is derived.** The message keeps the Feishu field — who it @-mentions, `{id, name}` — because that is what the interface draws as blue @-text and what the open platform defines. `mentionsMe` is not stored on it: it is the same fact seen from one bot's position, computed at delivery by finding that bot's id in `mentions`, and it lives solely on the observation entry. The message is written once and stays clean; every other bot derives its own answer from the same bytes.
 
-## 5. Four things that are easy to get wrong
+## 5. Five things that are easy to get wrong
 
 1. **Session is bookkeeping, not a place.**
    The user never sees one: a room's timeline runs continuously, exactly as in Feishu, and there is no "new session" to press. What the data needs the span for is private — which workspace this stretch ran in, and what it cost. If a workspace change must be visible at all, it is a **system message** in the timeline, which is a message kind Feishu already has — not a new control.
@@ -124,6 +125,9 @@ Bot and Agent split it the same way throughout: **the bot owns what is alive** (
 
 4. **A room must contain you — and that is a membership rule, not a headcount rule.**
    Rule 11 says every room has at least one human member, which rules out a room of two agents. That is not a contradiction with the previous point: no code branches on the number of members; the invariant is about *who must be present*, and it exists so that nothing an agent does on your behalf happens where you cannot read it. Agent-to-agent work therefore always has either you or a workspace turn above it — never a private channel of its own.
+
+5. **An @-mention lives on the message; "was I mentioned" does not.**
+   `Message.mentions` is the Feishu field and the only stored form: *who was named*. Each bot derives `hints.mentionsMe` when the message lands, by finding its own id in that array, and the boolean stays on that bot's queue entry. Storing `mentionsMe` on the message instead would put a reader's viewpoint inside an immutable shared fact — the message would have to be rewritten or duplicated once per bot in the room. It would also spend the one question stage 0 must answer for free: a bot asks it about itself, and the answer is one array scan.
 
 ## 6. Why this shape (how others do it)
 
