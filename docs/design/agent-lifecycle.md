@@ -18,6 +18,15 @@
 The first stage spends only what is affordable to look; the second spends what is affordable to act.
 All the saving lives in the first stage: **the overwhelming majority of messages should die there, and dying there must cost nothing.**
 
+### Why the first stage has to exist at all
+
+EMRG is **trigger-driven**: nothing runs until something calls it, so an idle agent costs nothing by construction. An agent in seek is **alive** — it keeps watching rooms, and rooms keep producing messages nobody addressed to it. Aliveness is the product; it is also, without a gate, an open tap.
+
+So the judgement stage is not an optimisation added to a design that would work without it. **It is what makes aliveness affordable**, and it answers two requirements at once:
+
+1. **It must stop meaningless work.** A room full of other people talking about something that has nothing to do with it is the normal state of a busy room, and every one of those messages must cost nothing to disregard.
+2. **It must itself be almost free.** A gate that costs a little per message is not a gate, it is a smaller bill. The preferred answer is **a small model running locally**; anything else — pure rules, a cheaper remote model — is judged by the same two requirements.
+
 ---
 
 ## 1. One path, not three (ruled by the host, 2026-10-23)
@@ -148,6 +157,8 @@ The reason is not performance but **identity consistency**: two parallel convers
 ---
 
 ## 5. Cost, worked out
+
+The point of this section is not frugality. It is that **an alive agent is only viable if looking is nearly free**, so the gate's cost per message is a design constraint, not a tuning knob.
 
 Assume 10 agents, 5 rooms, 500 messages an hour.
 
