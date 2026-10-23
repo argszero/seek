@@ -28,6 +28,9 @@ One line each, dated. What is written here is **not casually overturned** — ov
 - **Messages are shared; context is private.** Five agents in one room means one message log and five private interpretations.
 - **A member is a projection of an agent into a room, not the agent itself.** An agent belongs to no room; rooms are only where it appears.
 - **An agent runs one action at a time.** When several rooms want it to speak at once, they queue — for identity consistency, not for performance.
+- **An agent may address another agent** (approved 2026-10-23). Finding another agent is a normal part of work. But **an agent never opens a conversation with another agent**: a chain of agent turns always has a root, and the root is a human message or a scheduled tick. Proactive outreach — §10's whitelist — is to humans only.
+- **Every room has at least one human member.** There is no room the user cannot open. This is not a permission rule but a visibility one: whatever an agent does on your behalf, you can read, and stop. Together with the root rule it removes the one unbounded case — two agents alone in a room where each @-mention exempts them from the anti-loop rules and nobody is present to notice.
+- **An agent-to-agent chain is bounded by its depth and its own budget**, not by a counter someone has to keep: every message carries the message that caused it, so the depth is read off the data. At the cap the agent escalates or stops — it never silently drops the question.
 
 ## Not decided yet
 

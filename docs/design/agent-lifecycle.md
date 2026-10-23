@@ -180,7 +180,7 @@ Assume 10 agents, 5 rooms, 500 messages an hour.
 
 | Failure | Mechanism |
 |---|---|
-| **Two bots wake each other and never stop** | ①`fromAgent` marks bot messages, which do not wake other bots unless @-mentioned ②a cap on consecutive bot turns per room (grok-bot uses 3) ③a forced cooldown after acting |
+| **Two bots wake each other and never stop** | ①`fromAgent` marks bot messages, which do not wake other bots unless @-mentioned ②a cap on consecutive bot turns per room (grok-bot uses 3), held **on the Room** ③a forced cooldown after acting. §11 is the full treatment: the root rule and the depth cap bound the set of chains, and "every room has a human member" removes the case where none of this can be noticed |
 | The judge is too cheap → deaf and blind | hit rate observable; per-agent thresholds; what it ignored can be reviewed (entries and reasons are kept) |
 | The judge is too expensive → burning money | budget as a first-class citizen: over budget means `quiet`, and the interface says so plainly (never let the user think it died) |
 | Inbox explosion | a cap plus collapse into the room digest |
@@ -256,3 +256,73 @@ This line sits ahead of sandbox tiers, because what it protects is not files but
 - A proactive DM carries a **"proactive"** tag **and must carry one line of reason** ("the task you gave me just failed"). No reason, no message — the reason line is mandatory, and it is the only basis you have for judging afterwards whether to trust it.
 - The contact list shows "1 proactive message".
 - After sending, it does not wait: the interface must be able to express "I'll carry on; look at it when you get a chance".
+
+---
+
+## 11. Agent to agent (approved 2026-10-23: **yes**)
+
+§7's anti-loop rules all assume somebody is in the room to notice. That assumption is exactly what a two-agent room breaks: every rule is satisfied *because* each @-mention is an exemption, no human is present to be annoyed, and the bill is unbounded. A rate limit alone cannot fix that; something structural has to.
+
+### 11.1 Two shapes, and they are not the same thing
+
+| Shape | What it is | Bounded by |
+|---|---|---|
+| **Delegation** — synchronous | A, inside its own turn, calls `ask_agent(B)` as a tool; B runs one turn and returns text | A's turn budget and the existing tool-loop limits. Not a conversation; no chain, no inbox |
+| **Conversation** — asynchronous | A posts a message in a room B is in, addressing B; B may take it up in a later tick | Everything below: root, depth, chain budget |
+
+Both are legitimate. Delegation is the common case and needs no new machinery — it is a tool call, and its cost lands inside A's turn where it is already auditable. Conversation is the shape that can run away, so it carries the rules.
+
+### 11.2 A chain always has a root, and the root is never an agent
+
+A **chain** is the set of agent turns causally descended from one message. Its root is a human message or a scheduled tick.
+
+**An agent may address another agent only inside a chain whose root already exists. It never opens a conversation with another agent.**
+
+Note what this buys: it is not a rate limit but a bound on the *set* of chains. Total agent-to-agent traffic is `(human and scheduled initiations) × (depth cap)`. There is no term for "two agents deciding they have something to say to each other", because that term does not exist. §10's whitelist stays human-facing — coming to find someone is for people.
+
+### 11.3 Three walls
+
+1. **Root** (§11.2) — no chain without a human or a schedule behind it.
+2. **Depth** — every message carries `caused_by`, `chain` and `depth` (data-model rule 12). Each agent turn in a chain adds one hop. **Default cap: 4.** At the cap the agent may end or escalate; it may not continue the chain.
+3. **Chain budget** — an aggregate token budget per chain, defaulting to the cost of four ordinary turns. Either wall ends the chain; whichever comes first.
+
+Depth is read off the message data rather than kept in a counter on purpose: a counter has to be restored after a crash, and the one time it is restored wrong is the one time it matters.
+
+**Wall 0 is structural, and it is in the data model rather than here**: *every room has at least one human member* (data-model rule 11). So there is no room in which two agents could talk unobserved. The walls above are then a net under a case the model no longer permits — which is the right order. A cap that is the only defence is a cap that will one day be the defence that fails.
+
+### 11.4 Wake rules, revised
+
+§7 said a bot message does not wake another bot unless @-mentioned. Refined — a bot message wakes a bot only when **all** of these hold:
+
+- it @-mentions that bot, or replies to one of its messages;
+- the chain depth is below the cap;
+- the chain still has budget;
+- the room's consecutive-agent-turn counter is below 3.
+
+Otherwise the message still lands in that bot's inbox (path B, zero cost) with `hints.chainBlocked = reason`, to be reconsidered the next time a human touches the room. Nothing is lost and nothing is spent.
+
+The **consecutive-agent-turn counter lives on the Room**, not on an agent: no single agent can see how many times its peers just spoke, so an agent-local counter would be an agent measuring itself and calling it a conversation.
+
+### 11.5 Who pays
+
+The delegate pays for its own turn out of its own budget — it is doing the work. The chain carries the aggregate, so a chain cannot be made cheap by spreading it across several agents' budgets. Both are recorded, and the chain total is what the interface shows for "what did this come to".
+
+### 11.6 How a chain ends
+
+At either wall the agent must do exactly one of these, and the choice must be deliberate:
+
+- **escalate** — a proactive DM if it matches §10's whitelist ("blocked" or "cannot judge"), subject to all three interruption gates;
+- **say so in the room** — one system line: *"this exchange reached its limit and needs a person"*;
+- **stop and record** — write to the diary and let the thread rest.
+
+What it may not do is drop the question without a trace, or keep going quietly. Silence is allowed; silence that nobody can see is not.
+
+### 11.7 In the interface
+
+An agent-to-agent run collapses into one line — *"5 exchanges between Editor and Researcher"* — expandable, with the depth shown. Without the fold a room becomes unreadable the first time two agents get to work; without the count the user cannot tell an ordinary exchange from one that hit the wall. Both are cheap, and both are the difference between "the product is working" and "the product is spamming me".
+
+### 11.8 Why allow it at all, and why here it is cheap to police
+
+The useful case is real and common: A lacks a capability or a piece of context B has, and the alternative — A guessing, or the user relaying by hand — is worse on every axis.
+
+And seek is one local process running every agent, which is the one place this design is *easier* than a distributed one: a single arbiter can see every chain in the system, so the depth and budget walls are exact rather than approximate, and no coordination protocol is needed. The same property that makes the product private also makes the loop enforceable.

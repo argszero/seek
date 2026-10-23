@@ -45,7 +45,7 @@ Execution   Workspace / Turn / Observation / Memory — how work happens and wha
 
 | Entity | What it is | Key point |
 |---|---|---|
-| **Message** | An immutable shared fact | Belongs to one room, optionally to one thread; sender is a Principal or `system`; kinds: text, image, file, **tool card**, system notice |
+| **Message** | An immutable shared fact | Belongs to one room, optionally to one thread; sender is a Principal or `system`; kinds: text, image, file, **tool card**, system notice; carries its own cause — `caused_by` (the message that caused it), `chain` (the root of that causal run) and `depth` |
 | **Thread** | A "topic" — the message subtree rooted at one message | **Not a new room** (Feishu-style, not Slack/Discord-style); the people in it are already in the room |
 | **Session** | One stretch of work inside a room | Has a start and an end, **binds one workspace**, may bind a task; the unit of billing and of "where we left off" |
 
@@ -80,7 +80,7 @@ Execution   Workspace / Turn / Observation / Memory — how work happens and wha
        Workspace ──────────────┘ (tools run in the workspace)
 ```
 
-## 4. Cardinalities and rules (ten that must hold)
+## 4. Cardinalities and rules (twelve that must hold)
 
 1. **Room 1 : N Message.** A message belongs to exactly one room; it never crosses rooms.
 2. **Message 0..1 : N Thread.** A message roots at most one thread; threads never cross rooms.
@@ -92,8 +92,10 @@ Execution   Workspace / Turn / Observation / Memory — how work happens and wha
 8. **Agent 1 : 1 memory store** (N room digests + 1 diary).
 9. **Human 1 : 1 identity** in v1, with multiple selves left open.
 10. **Id prefixes follow the Feishu convention**: `ou_` principal, `oc_` room, `om_` message, plus `ag_` for agents. Readability over a generic UUID.
+11. **Every room has at least one human member.** No room exists that the user cannot open. Agent-to-agent traffic therefore always happens where it can be read and stopped — and the dangerous case (two agents alone, exempting each other from the anti-loop rules) is excluded by the model rather than merely limited.
+12. **Message N : 1 Message (causation).** `caused_by` names the message that caused this one; `chain` names the root of that run; `depth` is the hop count. A chain's depth is read off the data, never tracked in a mutable counter — a counter is what silently drifts after a restart.
 
-## 5. Three things that are easy to get wrong
+## 5. Four things that are easy to get wrong
 
 1. **A room and a session are not the same thing, but the interface may call both "chat".**
    In the model, Room is the container and Session is a stretch inside it. The UI need not expose the distinction, but the data must have it — otherwise "change the workspace" and "how much did this stretch cost" have nowhere to live.
@@ -103,6 +105,9 @@ Execution   Workspace / Turn / Observation / Memory — how work happens and wha
 
 3. **A direct message is a headcount, not a type.**
    A room with two people and a room with fifty behave identically. Any `if (chat_mode === 'p2p')` branch is the model starting to rot.
+
+4. **A room must contain you — and that is a membership rule, not a headcount rule.**
+   Rule 11 says every room has at least one human member, which rules out a room of two agents. That is not a contradiction with the previous point: no code branches on the number of members; the invariant is about *who must be present*, and it exists so that nothing an agent does on your behalf happens where you cannot read it. Agent-to-agent work therefore always has either you or a workspace turn above it — never a private channel of its own.
 
 ## 6. Why this shape (how others do it)
 
