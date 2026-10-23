@@ -328,7 +328,7 @@ Because the watch agent is an agent on a local model, **watch tokens are not mon
 
 | Failure | Mechanism |
 |---|---|
-| **Two bots wake each other and never stop** | ①`fromAgent` marks bot messages, which do not wake other bots unless @-mentioned ②a cap on consecutive bot turns per room (grok-bot uses 3), held **on the Room** ③the root and depth rules, which bound the set of chains without a cooldown — §11 is the full treatment: the root rule and the depth cap bound the set of chains, and "every room has a human member" removes the case where none of this can be noticed |
+| **Two bots wake each other and never stop** | ①`fromAgent` marks bot messages, which do not wake other bots unless @-mentioned or replied to ②a cap on consecutive bot turns per room (grok-bot uses 3), held **on the Room** ③the root and depth rules — §11 is the full treatment: a chain needs a human or a scheduled root, and every hop counts. Note that a **direct message between two bots is allowed** (ruled 2026-10-23), so this case is bounded by hops rather than excluded by membership |
 | The watch agent is too cheap → deaf and blind | hit rate observable; per-agent thresholds; what it ignored can be reviewed (entries and reasons are kept) |
 | The watch agent is too expensive → burning money | spent is recorded and visible per agent, so a runaway bill is *seen* rather than silently capped. There is no self-stop: a bill that climbs is a defect in the persona or the gate, and it is fixed there, not papered over by a limit that also silences the agent you wanted to hear from |
 | Inbox explosion | a cap plus collapse into the room digest |
@@ -374,7 +374,7 @@ What holds without asking:
 
 1. **The sandbox.** An agent acts inside its own workspace and nowhere else. That boundary is the sandbox's job, not a negotiation held before each action.
 2. **An audit trail.** Every action is a `Turn`: what triggered it, which tools ran, what changed, what it cost. Nothing is asked in advance because everything is visible afterwards.
-3. **A stop that works.** Whatever it is doing on your behalf, you can see it and end it — data-model rule 11, every room has a human member, is what makes that true rather than aspirational.
+3. **A stop that works.** Whatever it is doing on your behalf, you can see it and end it. The sandbox and the turn ledger are what make that true; an earlier draft also leaned on "every room has a human member", which is withdrawn (data-model rule 11) — so being able to *find* what an agent did is now carried entirely by the record, not by a membership rule.
 
 **Asking for a decision is not asking for permission.** An agent that is stuck, that cannot weigh two options, or that needs your decision is having a conversation. *"May I?"* does not exist; *"which one?"* is ordinary speech.
 
@@ -388,14 +388,13 @@ What holds without asking:
 
 §7's anti-loop rules all assume somebody is in the room to notice. That assumption is exactly what a two-agent room breaks: every rule is satisfied *because* each @-mention is an exemption, no human is present to be annoyed, and the bill is unbounded. A rate limit alone cannot fix that; something structural has to.
 
-### 11.1 Two shapes, and they are not the same thing
+### 11.1 One shape: a message (ruled 2026-10-23)
 
-| Shape | What it is | Bounded by |
-|---|---|---|
-| **Delegation** — synchronous | A, inside its own turn, calls `ask_agent(B)` as a tool; B runs one turn and returns text | The existing tool-loop limits, which bound how deep tools may nest. Not a conversation; no chain, no inbox |
-| **Conversation** — asynchronous | A posts a message in a room B is in, addressing B; B may take it up in a later tick | Everything below: root and depth |
+**All interaction is IM** (ruled 2026-10-23: *"all interaction is expressed in IM — group chat and direct messages"*). So an agent reaching another agent is not a tool call: it is a **message**, posted into a room the other bot is in, or into a direct room between the two. It lands in that bot's inbox like anything a person says, and that bot's own loop decides what to do with it — including deciding not to.
 
-Both are legitimate. Delegation is the common case and needs no new machinery — it is a tool call, and its cost lands inside A's turn where it is already auditable. Conversation is the shape that can run away, so it carries the rules.
+An earlier draft of this section had a second shape: a synchronous `ask_agent(B)` tool, where B ran one turn inside A's turn and returned text. **Withdrawn, on two grounds.** It is a tool the kernel does not have — EMRG's registry is fixed and `subagent` opens a child session of *the same* agent, not another bot — and it inverts the thing that makes a bot a bot: B decides for itself, on its own wake-up, what to take up. A synchronous call has **A deciding for B**.
+
+What "delegation" still means is the **intent**, not a mechanism: "do this and report back" is a message that asks for work, and conversation is a message that asks a question. Both are messages, both enter the same inbox, and both carry the same chain.
 
 ### 11.2 A chain always has a root, and the root is never an agent
 
@@ -414,13 +413,13 @@ There is **no chain budget**. An earlier draft had one, defaulting to four ordin
 
 That leaves the depth cap as the *only* numeric limit in the whole design, and it is not a financial one: it exists to stop a loop, not to stop a bill. It is also read off the message data rather than kept in a counter, on purpose — a counter has to be restored after a crash, and the one time it is restored wrong is the one time it matters.
 
-**The structural wall is in the data model rather than here**: *every room has at least one human member* (data-model rule 11). So there is no room in which two agents could talk unobserved. The walls above are a net under a case the model no longer permits — which is the right order. A cap that is the only defence is a cap that will one day be the defence that fails.
+**The data model does not wall this off, and an earlier draft was wrong to say it did.** That draft carried a rule — *every room has at least one human member* — written by the implementer at 20:12, never ruled, and contradicted by the ruling above: a direct room between two bots is exactly a room with no human in it. **Withdrawn** (data-model rule 11). What bounds agent-to-agent traffic is the root rule, the depth cap and the wake rule, all of which hold with nobody in the room: a direct message is addressed by construction and wakes the other bot, and every further exchange adds a hop until the cap stops it. No rule any more assumes someone is present to notice.
 
 ### 11.4 Wake rules, revised
 
 §7 said a bot message does not wake another bot unless @-mentioned. Refined — a bot message wakes a bot only when **all** of these hold:
 
-- it @-mentions that bot, or replies to one of its messages;
+- it @-mentions that bot, replies to one of its messages, or is a **direct message** (a DM is addressed by construction);
 - the chain depth is below the cap;
 - the room's consecutive-agent-turn counter is below 3.
 
@@ -430,7 +429,7 @@ The **consecutive-agent-turn counter lives on the Room**, not on an agent: no si
 
 ### 11.5 Who pays
 
-The delegate pays for its own turn — it is doing the work. Every turn in a chain is recorded like any other, so the chain total is a figure you can read, not a wall anything hits.
+**Whoever runs the turn pays.** A asks B by sending a message; that message ends A's part and costs A its own turn, and when B takes it up B runs a turn of its own and B's account records it. There is no way for A's turn to contain B's work, now that there is no synchronous call — which is the auditing property the withdrawn tool shape would have blurred. Every turn in a chain is recorded like any other, so the chain total is a figure you can read, not a wall anything hits.
 
 ### 11.6 How a chain ends
 

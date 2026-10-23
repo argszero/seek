@@ -19,6 +19,7 @@ Nothing is written here yet. By rule 1 in `docs/decisions.md`: **settle the data
 - [ ] The first milestone is **kernel only**: Agent object + watch queue + gate (pure rules, no model) + one room, **no interface**
       — what is being tested is whether "it spontaneously says something" holds up, not how it looks
 - [ ] Before any two agents can address each other, the chain arbiter is in place: `caused_by` / `chain` / `depth` written on every message, the root rule, the depth cap, and the room's consecutive-agent-turn counter (`agent-lifecycle.md` §11). All agents run in one process, so this is exact rather than approximate — the moment it is policed per-agent instead, it stops being enforceable
+- [ ] **An agent reaches another agent by sending a message — never by calling a tool.** All interaction is IM, group or direct, so a bot-to-bot direct room is an ordinary room and no membership rule excludes it. Two things to catch: a `ask_agent`-style tool reappearing (the kernel has none, and `subagent` is a child session of the same agent), and any code assuming a room necessarily contains a human
 
 ## Relationship to the prototype
 
