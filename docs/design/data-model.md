@@ -21,6 +21,8 @@ Existence   Bot / Agent, Principal (Human)  — who appears, and who works
 Space       Room + Membership              — where
 Time        Session / Message / Thread     — when, and what was said
 Execution   Workspace / Turn / Observation / Memory — how work happens and what it costs
+
+Bot and Agent split it the same way throughout: **the bot owns what is alive** (identity, inbox, tick, state, being a member), **an agent owns what runs** (model, prompt, tools, session, memory).
 ```
 
 ### 2.1 Existence
@@ -63,7 +65,7 @@ Execution   Workspace / Turn / Observation / Memory — how work happens and wha
 |---|---|---|
 | **Workspace** | Where work runs — a directory/project | Today's `cwd` in EMRG; bound by a Session, used by an Agent |
 | **Turn** | One action by an agent | What triggered it (which message, which judgement), tokens spent, tools called, messages produced — **the atomic unit of cost and audit** |
-| **Observation** | One watch-queue entry | A reference to a Message + zero-cost hints (mentions me, asks a question, replies to me…) + a verdict (ignore / snooze / keep / act) |
+| **Observation** | One watch-queue entry, **on the bot's queue** (ruled 2026-10-23) | A reference to a Message + zero-cost hints (mentions me, asks a question, replies to me…) + a verdict (ignore / snooze / keep / act). One message enters one bot's queue once, not once per agent |
 | **Memory** | Three levels | Agent diary (cross-room, long-lived) / room digest (rolling, per room) / session memory (today's EMRG session memory) |
 
 ---
@@ -79,17 +81,18 @@ Execution   Workspace / Turn / Observation / Memory — how work happens and wha
                               │            │
    Bot ──1:N──▶ Agent ────────┘            │
     │             │                        │
-    │             ├── persona / capabilities / state
-    │             ├── Observation ──▶ references a Message (zero-cost hints + a verdict)
-    │             ├── Memory (diary / room digest)
+    │             ├── model / prompt(+persona) / tools / sandbox
     │             ├── Session ──1:1──▶ Workspace     (agent × room, private bookkeeping)
+    │             ├── Memory (diary / room digest)
     │             └── Turn ──▶ Session, produces Messages
     │
+    ├── Observation ──▶ references a Message (zero-cost hints + a verdict)   ← one queue per bot
+    ├── tick / state machine / lastSpoke / spent                            ← the life, not the work
     └── name / avatar / description   ← inherited by every agent of this bot,
                                         so the room sees one contact, not two
 ```
 
-**Bot and Agent are separate entities** (ruled 2026-10-23). What a room shows is the bot; what runs is its agents. Membership is bot-level, so a bot appears once no matter how many agents work behind it; session, memory, turn and cost are agent-level, so the audit trail and the bill stay exact.
+**Bot and Agent are separate entities** (ruled 2026-10-23), and the line between them is **alive vs. runs**. The bot owns identity, membership, the inbox, the tick and the state machine; an agent owns a model, a prompt, tools, a session, a memory and its own turns. So a bot appears once no matter how many agents work behind it, delivery is one write rather than N, and the audit trail and the bill still name the exact worker.
 
 ## 4. Cardinalities and rules (fourteen that must hold)
 
@@ -98,15 +101,15 @@ Execution   Workspace / Turn / Observation / Memory — how work happens and wha
 3. **Agent 1 : N Session; each Session belongs to one (agent, room) pair.** A room's timeline is continuous and carries no session boundary in it. Five agents in a room have five private spans over the same shared log — which is what makes "messages shared, context private" true by construction rather than by discipline.
 4. **Session 1 : 1 Workspace** (fixed once chosen); Workspace 1 : N Session.
 5. **Principal N : M Room**, through Membership, which carries per-room state.
-6. **Agent 1 : N Observation**, Observation N : 1 Message (one message may enter several agents' queues).
+6. **Bot 1 : N Observation**, Observation N : 1 Message (one message may enter several bots' queues, but only once per bot). The queue is bot-level because delivery, the tick and "already handled" are bot-level; an agent never watches a room.
 7. **Agent 1 : N Turn**; Turn 1 : N Message (one action may say several things).
-8. **Agent 1 : 1 memory store** (N room digests + 1 diary).
+8. **Agent 1 : 1 memory store** (N room digests + 1 diary). Memory is per agent, not per bot: the two agents of a bot have different windows, so they keep different summaries of the same room.
 9. **Human 1 : 1 identity** in v1, with multiple selves left open.
 10. **Id prefixes follow the Feishu convention**: `ou_` principal, `oc_` room, `om_` message, plus `ag_` for agents. Readability over a generic UUID.
 11. **Every room has at least one human member.** No room exists that the user cannot open. Agent-to-agent traffic therefore always happens where it can be read and stopped — and the dangerous case (two agents alone, exempting each other from the anti-loop rules) is excluded by the model rather than merely limited.
 12. **Message N : 1 Message (causation).** `caused_by` names the message that caused this one; `chain` names the root of that run; `depth` is the hop count. A chain's depth is read off the data, never tracked in a mutable counter — a counter is what silently drifts after a restart.
 13. **Nothing splits a room's history for the user.** The interaction is Feishu's: one chat, one continuous timeline. A session boundary, a workspace change or a membership change is recorded in the data and surfaces at most as a system message — never as a list entry, a divider control, or a second timeline.
-14. **Bot 1 : N Agent; Agent N : 1 Bot.** The bot owns the name, avatar and description; its agents inherit them rather than storing copies, so a rename reaches every agent at once. An agent has a `role`, not a name. Membership, @-mention and a room's participant list are **bot-level**; session, memory, turn and cost are **agent-level**.
+14. **Bot 1 : N Agent; Agent N : 1 Bot.** The bot owns the name, avatar and description; its agents inherit them rather than storing copies, so a rename reaches every agent at once. An agent has a `role`, not a name. **The bot-level set** is identity, membership, @-mention, a room's participant list, the observation queue, the tick and the state machine — anything that is alive. **The agent-level set** is model, prompt, tools, session, memory, turn and cost — anything that runs.
 
 ## 5. Four things that are easy to get wrong
 
@@ -146,12 +149,12 @@ Execution   Workspace / Turn / Observation / Memory — how work happens and wha
 
 ## 8. On-disk shape (brief)
 
-One `seek.json` per account (as today), split into `bots / agents / principals / rooms / memberships / sessions[agentId] / messages[roomId] / observations[agentId] / turns / memories`.
+One `seek.json` per account (as today), split into `bots / agents / principals / rooms / memberships / sessions[agentId] / messages[roomId] / observations[botId] / turns / memories`.
 
 `bots` and `agents` are separate shards on purpose: a bot is a handful of rows that change when someone renames it, while agents are the things that are many and busy. Keeping the identity in its own shard means a rename is one write, not one per agent.
 
 Three sharding keys, each matching what grows fastest and what must be prunable on its own:
 
 - **messages by room** — one shared log per room, so the shard key is the thing every reader already has.
-- **observations and sessions by agent** — private, and the two that would otherwise make one shared file grow without bound.
+- **observations by bot, sessions by agent** — the queue is the bot's (one per bot) while the work is the agent's (one per agent). Both are the things that would otherwise make one shared file grow without bound.
 - **turns** stay together: they are the ledger, they are small, and a ledger split by agent stops being a ledger.

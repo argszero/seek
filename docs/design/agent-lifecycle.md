@@ -14,9 +14,11 @@
 
 ## 0. In one sentence
 
-**An agent = one identity + one inbox + one main loop that never stops, in two stages.**
+**A bot = one identity + one inbox + one main loop that never stops, in two stages; an agent = a model, a prompt, tools and a memory, called by that loop.**
 The first stage spends only what is affordable to look; the second spends what is affordable to act.
 All the saving lives in the first stage: **the overwhelming majority of messages should die there, and dying there must cost nothing.**
+
+Keeping the inbox and the loop on the bot is what keeps an agent small (ruled 2026-10-23). An agent stops being a process with a life of its own and becomes a **runnable**: a model, a system prompt, a tool list and a memory, executed when the bot's loop calls it — the same shape as an EMRG session or an ADK `LlmAgent`. Everything alive — watching, deciding, waking, spending, being muted — belongs to the bot.
 
 ### Why the first stage has to exist at all
 
@@ -83,7 +85,7 @@ A multimodal model at 300 MB therefore means a very small base or aggressive qua
 
 ## 1. One path, not three (ruled by the host, 2026-10-23)
 
-There is **one** delivery path and **one** loop. A message to a room is delivered into every member agent's inbox and costs nothing to receive. The loop then runs; stage 0 reads the inbox and decides what to do with it. An @-mention, a reply to its own message, or a direct message is not a second road — it is **a fast-pass inside stage 0**: the gate recognises it and sends it straight to stage 2, skipping the paid judgement, because there is nothing to judge.
+There is **one** delivery path and **one** loop. A message to a room is delivered into every member **bot's** inbox and costs nothing to receive. The loop then runs; stage 0 reads the inbox and decides what to do with it. An @-mention, a reply to its own message, or a direct message is not a second road — it is **a fast-pass inside stage 0**: the gate recognises it and sends it straight to stage 2, skipping the paid judgement, because there is nothing to judge.
 
 | What arrives | Where it lands | What stage 0 does |
 |---|---|---|
@@ -97,45 +99,52 @@ Why this matters more than it looks: with two roads, the same message could be a
 
 ---
 
-## 2. The Agent object
+## 2. The two objects
+
+Everything alive sits on the bot; everything that runs sits on an agent.
 
 ```
-Agent
+Bot                                     ← the contact: what a room shows and @-mentions
 ├─ Identity
-│   id / bot / role                    ← which bot it belongs to, and which job it does there
-│   persona                            ← how it speaks
-│   (name / avatar / description are NOT here: they live on the bot and are
-│    inherited, so every agent of a bot speaks as the same contact)
-├─ Capabilities
-│   model                              ← its own model: the working agent's expensive one, or
-│                                        the judging agent's local bundled one
-│   reads[] / readableBy[]            ← the mutual read path (see "a bot is N agents" below)
-│   tools[] / sandbox / limits
+│   id / name / avatar / description    ← the only copy of the identity; pushed down to agents
 ├─ Attention
 │   rooms[]        ← which rooms it watches
 │   interests[]    ← keywords / topics / "answer when someone asks about X" subscriptions
-├─ Watch queue (the inbox, see §3)
-├─ Long-term memory
-│   diary (its own markdown memory, across sessions and rooms)
-│   roomDigest[room] (rolling summary per room — its own memory, not a judge input format)
+├─ Watch queue (the inbox, see §3)      ← ONE queue per bot, whatever runs behind it
 ├─ Life state
 │   state: asleep | observing | judging | working | needy (waiting on your decision)
 │   lastSpoke[room] / lastTick / sleepUntil / backoff
 │   spent: tokens, observed and reported — a number, never a limit
+└─ agents[]  ──▶  each is a runnable the loop calls (see below)
+
+Agent                                   ← a runnable, not a process
+├─ id / bot / role                     ← which bot it belongs to, and which job it does there
+├─ model                               ← its own: the working agent's expensive one, or
+│                                        the judging agent's local bundled one
+├─ prompt + persona                    ← how it speaks, which is now all "who it is" means
+├─ tools[] / sandbox / limits
+├─ reads[] / readableBy[]              ← the mutual read path (see "a bot is N agents" below)
+├─ memory
+│   diary (its own markdown memory, across sessions and rooms)
+│   roomDigest[room] (rolling summary per room — its own memory, not a judge input format)
 └─ Sessions
     session[room] (its own stretch of work in each room; a new one starts when it
     changes workspace — private bookkeeping, never shown to the user)
 ```
 
+**The split falls where the kernel already falls.** A model, a system prompt, a tool list and a history are exactly what an EMRG session holds and what an ADK `LlmAgent` holds; a clock, a queue, a state machine and a budget of tokens are what a long-lived process holds. Putting the second half on the agent is what made the earlier draft complicated — and putting it on the bot means an agent is only ever "the thing that runs when called", with no lifecycle to design.
+
 ### A bot is N agents, and a bot is not an agent (ruled 2026-10-23)
 
-**Bot and Agent are two entities with two jobs.** The bot is the contact: it owns the name, the avatar and the description, it is what a room shows and what an @-mention names. The agents are the workers behind it: each owns a persona, a model, a session, a memory, a state machine and its own place in the cost ledger. **The bot pushes its identity down to its agents** — an agent has no name of its own, only a `role` — so renaming a bot renames every agent of it at once, and the room never sees two contacts where there is one.
+**Bot and Agent are two entities with two jobs.** The bot is the contact and the living thing: it owns the name, the avatar and the description, it owns the inbox and the loop, and it is what a room shows and what an @-mention names. The agents are the runnables behind it: each owns a persona, a model, a session and a memory, and runs when the bot's loop calls it. **The bot pushes its identity down to its agents** — an agent has no name of its own, only a `role` — so renaming a bot reaches every agent at once, and the room never sees two contacts where there is one.
 
-**`agents.yml` registers agents, not bots.** Each bot is at least two rows today — one that judges, one that works — and nothing caps it at two: a bot that later needs a third role gets a third row. This is cheap because the kernel already works this way: one agent, one model, one session, one memory, one state machine. Two rows means two of each, no new container, and nothing that iterates agents has to learn to skip a special case.
+**`agents.yml` registers agents, not bots.** Each bot is at least two rows today — one that judges, one that works — and nothing caps it at two: a bot that later needs a third role gets a third row. This is cheap because each row is a plain runnable: a model, a prompt, tools, a memory. No lifecycle to write for it, because the lifecycle is the bot's.
 
-**The split runs through the whole model**, and it is what keeps both sides honest: membership, @-mention and a room's list of people are **bot-level** (so a bot is one member however many agents work behind it); session, memory, turn and cost are **agent-level** (so the audit trail says exactly which worker acted, and the bill is per worker). Rules 14 in `data-model.md` states the cardinality.
+**The split runs through the whole model**, and it is what keeps both sides honest: membership, @-mention, a room's list of people, the inbox, the tick and the state machine are **bot-level** (so a bot has one queue and one clock however many agents work behind it); session, memory, turn and cost are **agent-level** (so the audit trail says exactly which worker acted, and the bill is per worker). Rules 14 in `data-model.md` states the cardinality.
 
-**Agent ≠ Session.** EMRG today presses the identity into the session (the session is that cwd, that model, that history), so one identity cannot live in three rooms at once. The Agent sits above the session; sessions are its stretches of memory.
+**One inbox is what removes the hard problem.** With a queue per agent, every message would be delivered N times and each agent would keep its own "already handled" state, and the loop would have to reconcile N of them. With one queue on the bot, delivery is a single write, the tick is a single loop, and stage 0 decides once — then the loop calls whichever agent the decision names.
+
+**Agent ≠ Session.** EMRG today presses the identity into the session (the session is that cwd, that model, that history), so one identity cannot live in three rooms at once. Here the **bot** sits above the sessions, and an agent's sessions are its stretches of memory — that is what lets one contact be present in three rooms at once while each agent keeps one continuous thread per room.
 
 **A session is never a user-visible unit either.** The room's timeline is continuous, the way a chat is in Feishu; five agents in one room simply have five private spans over the same shared log. That is not a display decision but the load-bearing one: it is what makes "messages shared, context private" true by construction.
 
@@ -144,7 +153,11 @@ Agent
 
 ---
 
-## 3. Watch queue (the inbox)
+## 3. Watch queue (the inbox) — one per bot (ruled 2026-10-23)
+
+**The inbox belongs to the bot, not to an agent.** A message to a room is delivered once, into the bot's queue; the bot's loop reads that queue and decides, and only then does an agent run. Agents do not watch rooms — the bot does.
+
+That is the whole reason the queue is here: delivery is one write per (bot, message) instead of one per (agent, message), there is one "already handled" state instead of N, and the tick stays one loop instead of a fan of loops to reconcile.
 
 Appended one entry at a time, **never processed by a model**:
 
@@ -160,8 +173,9 @@ Appended one entry at a time, **never processed by a model**:
 
 - `hints` are scored **by the producer, not by a model**: @ detection, question marks, whether it replies to me, keyword matches, message density. All of it is string and counting work that costs nothing.
 - State machine: `new → judged (act | ignore | snooze | keep) → consumed`; `snooze` carries a condition ("when this gets a reply", "in five minutes").
-- **Capacity**: per (agent, room) a cap such as 200 entries / 24 hours. Over the cap, entries are not dropped — they collapse into one line inside `roomDigest`. Otherwise the inbox becomes a second message log and blows up both disk and context.
-- The inbox is append-only and the writer **never blocks** (room fan-out must not stall because one agent is busy).
+- **Capacity**: per (bot, room) a cap such as 200 entries / 24 hours. Over the cap, entries are not dropped — they collapse into one line inside the bot's `roomDigest`. Otherwise the inbox becomes a second message log and blows up both disk and context.
+- The inbox is append-only and the writer **never blocks** (room fan-out must not stall because one bot is busy).
+- A verdict is written on the entry, and it is written by the **loop**, not by the agent that produced it — the judging agent only answers; the loop performs (see §4).
 
 ---
 
@@ -170,15 +184,15 @@ Appended one entry at a time, **never processed by a model**:
 This is the core of the whole design:
 
 ```
-per tick:
+the bot's loop, per tick:
   ┌ Stage 0 · rules only, no model (settles everything that is certain and free)
   │  1. No new observations?   → end of tick, before anything else is considered
   │  2. Rule says act? (@-mentioned / replied to / DM) → straight to stage 2
   │  3. Rule says ignore? (my own message / another bot's broadcast / muted room)
   │                            → mark them ignore, end of tick
-  │  4. Everything else → stage 1 (the judging agent)
+  │  4. Everything else → stage 1 (call the judging agent)
   │
-  ├ Stage 1 · the judging agent (one call, no tools)
+  ├ Stage 1 · the loop calls the judging agent (one call, no tools)
   │  input: its own history for this room, its own memory, the persona, why it woke,
   │         plus — when it matters — a bounded slice read from the working agent's log
   │  model: model.judge — local, bundled (no download, no network), no tools, max_tokens capped
@@ -189,8 +203,9 @@ per tick:
   │          no act → record the verdict and the reason if one came back, end of tick
   │          unparseable → treated as no act, and counted as a judge failure
   │
-  └ Stage 2 · the real agent loop (expensive)
-     Identical to one EMRG turn today: full context + tools + streaming + memory write at the end.
+  └ Stage 2 · run the working agent (expensive)
+     Stage 2 calls the working agent and lets it run — identical to one EMRG turn today:
+     full context + tools + streaming + memory write at the end.
      Two differences: ① opened with "you decided to say this yourself; nobody called you"
                       ② must end by recording three things: what it said / why / how to judge
                         the same situation next time
@@ -256,7 +271,7 @@ Because the judge is an agent on a local model, **judge tokens are not money.** 
 | Agent identity | `projects.yml` → `agents.yml` (already decided) | the fields in §2 |
 | Main loop | `TaskHandler` (`scheduler.py:982`): heartbeat, interval/backoff, bounded cycles, stop/trigger/status, resume after restart | a new task type `agent-tick` running stages 0 and 1 |
 | Stage 2 · action | today's session turn (`_run_tool_loop_locked`) | open with "you chose to speak"; require the three closing notes |
-| Delivery into the inbox | room fan-out as a frame broadcast, but only to connected clients | server-side **fan-out into every member agent's inbox** (persisted, not in memory) — the one road in, for every kind of message |
+| Delivery into the inbox | room fan-out as a frame broadcast, but only to connected clients | server-side **fan-out into every member bot's inbox** (persisted, not in memory) — the one road in, for every kind of message |
 | Judge agent | `llm.py` already selects a model per session, and `session.compact()` already keeps a history per session | a **second row in `agents.yml` per bot**: same machinery, its own session and memory, a local model, smaller windows, no tools, a low `max_tokens` cap, and a read path to its sibling. Any unparseable verdict counts as no act |
 | Memory compaction | `session.compact()` rewrites the session's history in place | nothing to change *in kind*: each agent already has its own session file, so the two stores are separate by construction. What must be checked is that no code path compacts across them |
 | Memory | `memory_store`: session and project levels | add an **agent level** (across rooms and sessions) |
