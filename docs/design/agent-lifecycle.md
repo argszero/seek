@@ -172,6 +172,7 @@ Appended one entry at a time, **never processed by a model**:
 ```
 
 - `hints` are scored **by the producer, not by a model**: @ detection, question marks, whether it replies to me, keyword matches, message density. All of it is string and counting work that costs nothing.
+- **`mentionsMe` and `repliesToMe` are bot-level facts** (ruled 2026-10-23). They are computed once, when the message lands, against the bot — not per agent. No agent ever scans a room for its own name, and the judging agent could not: it is not addressable, so "an @ to me" is a question only the bot can answer. That is what makes stage 0's fast-pass a rule rather than a model call.
 - State machine: `new → judged (act | ignore | snooze | keep) → consumed`; `snooze` carries a condition ("when this gets a reply", "in five minutes").
 - **Capacity**: per (bot, room) a cap such as 200 entries / 24 hours. Over the cap, entries are not dropped — they collapse into one line inside the bot's `roomDigest`. Otherwise the inbox becomes a second message log and blows up both disk and context.
 - The inbox is append-only and the writer **never blocks** (room fan-out must not stall because one bot is busy).
@@ -187,7 +188,8 @@ This is the core of the whole design:
 the bot's loop, per tick:
   ┌ Stage 0 · rules only, no model (settles everything that is certain and free)
   │  1. No new observations?   → end of tick, before anything else is considered
-  │  2. Rule says act? (@-mentioned / replied to / DM) → straight to stage 2
+  │  2. Rule says act? (@-mentioned / replied to / DM — read off the bot's own
+  │     hints, computed at delivery) → straight to stage 2
   │  3. Rule says ignore? (my own message / another bot's broadcast / muted room)
   │                            → mark them ignore, end of tick
   │  4. Everything else → stage 1 (call the judging agent)
