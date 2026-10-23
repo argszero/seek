@@ -63,6 +63,8 @@ Same class of gap: **the room-level bot-turn streak** (§7's cap of 3 consecutiv
 
 ### 4. `keep` is impossible as specified
 
+> **Resolved 2026-10-23.** The contradiction came from one word doing two jobs. The judge *decides*; the loop *performs*. `keep` is a verdict like any other — the runtime appends the line, the judge only names it. That also frees the verdict's shape: since the runtime already knows what each verdict means, one word is enough, and the strict-JSON requirement is gone (the implementation uses whatever form the chosen small model produces reliably; unparseable is treated as no act and counted as a judge failure).
+
 §4 says stage 1's judge has **no tools**, a capped `max_tokens`, and a strict-JSON reply; and that `act=0` ends the tick, *"what this step cost is the whole bill"*.
 §4 also defines `keep` as *"write one line into the diary, take no action"*.
 

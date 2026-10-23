@@ -149,13 +149,16 @@ per tick:
   │                            → mark them ignore, end of tick
   │  5. Everything else → stage 1 (the bundled small model)
   │
-  ├ Stage 1 · the small model (bundled, under 300 MB, one call, summaries only)
+  ├ Stage 1 · the bundled judge (one call, summaries only)
   │  input: why it woke + a one-line summary of the last N messages in that room + roomDigest
   │         + my job/interests (+ how long since I last spoke here)
   │  model: the bundled judge (no download, no network), no tools, max_tokens capped
-  │  output: strict JSON — {"act":0|1, "reason":"<enum>", "priority":0-3, "focus":["om_..."]}
-  │  effect: act=0 → record ignore(+reason), end of tick (what this step cost is the whole bill)
-  │          act=1 → stage 2, carrying the focus messages as the ones it decided to care about
+  │  output: one decision the loop can act on — the FORM is the implementation's choice
+  │          (a single word, a label from a fixed set, a tiny JSON, whatever this model
+  │           produces reliably). What matters is that it is unambiguous and parseable
+  │  effect: act → stage 2, carrying the messages it decided to care about
+  │          no act → record the verdict and the reason if one came back, end of tick
+  │          unparseable → treated as no act, and counted as a judge failure
   │
   └ Stage 2 · the real agent loop (expensive)
      Identical to one EMRG turn today: full context + tools + streaming + memory write at the end.
@@ -173,9 +176,11 @@ If the judge reads the full history, it has become an expensive model and the wh
 
 - `ignore`: this is not about me. Consume the entry.
 - `snooze`: not now, but possibly later (the question is still unanswered, someone else should speak first). Re-queue with a condition (in five minutes / when this gets a reply / when the room calms down).
-- `keep`: no need to speak, but I should remember (someone is discussing my area). Write one line into the diary, take no action.
+- `keep`: no need to speak, but I should remember (someone is discussing my area). Take no action; keep the line.
 
 `keep` matters: it makes an agent "present but not interrupting", which is the most human thing about being permanently alive.
+
+**The judge never writes anything itself.** It emits a verdict; the loop performs the consequence — `ignore` consumes, `snooze` re-queues, `keep` appends the line. That split is what lets the judge stay a single cheap call with no tools, and it is why the verdict's shape is free: a word is enough, because the runtime already knows what each verdict means.
 
 ### Backoff
 
