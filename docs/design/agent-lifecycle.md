@@ -25,7 +25,22 @@ EMRG is **trigger-driven**: nothing runs until something calls it, so an idle ag
 So the judgement stage is not an optimisation added to a design that would work without it. **It is what makes aliveness affordable**, and it answers two requirements at once:
 
 1. **It must stop meaningless work.** A room full of other people talking about something that has nothing to do with it is the normal state of a busy room, and every one of those messages must cost nothing to disregard.
-2. **It must itself be almost free.** A gate that costs a little per message is not a gate, it is a smaller bill. The preferred answer is **a small model running locally**; anything else — pure rules, a cheaper remote model — is judged by the same two requirements.
+2. **It must itself be almost free.** A gate that costs a little per message is not a gate, it is a smaller bill.
+
+### The gate is a bundled model behind cheap rules (ruled 2026-10-23)
+
+The judgement runs on **a small model shipped with the product** — no download step, no "install Ollama first", no user machine that might not have one. Budget: **under 300 MB of weights, smaller if it can still do the job.**
+
+It never fires on every message, because rules run first and settle most of them for nothing:
+
+| Order | Check | Cost | Verdict |
+|---|---|---|---|
+| 1 | **No new observations at all** | nothing | **Return.** There is nothing to look at; the tick ends here |
+| 2 | **@ me, a reply to my message, or a direct message** | nothing | **Act.** Straight to stage 2 — there is nothing to judge |
+| 3 | Muted room, my own message, another bot's broadcast | nothing | Ignore |
+| 4 | Everything else | one small-model call | The model decides |
+
+The ordering is the whole economy of the design: the two cases that are both **certain and free** are settled before anything runs, so the model is only ever asked about the genuinely ambiguous remainder — a group of people talking near it, without naming it.
 
 ---
 
@@ -107,19 +122,18 @@ This is the core of the whole design:
 
 ```
 per tick:
-  ┌ Stage 0 · zero-cost gate (pure local computation, no model)
-  │  1. Inside cooldown?       → unless @-mentioned, end of tick
-  │  2. No new entries?        → increase backoff, sleep longer, end of tick
-  │  3. Rule says ignore? (pure emoji / my own message / another bot's broadcast / muted room)
+  ┌ Stage 0 · rules only, no model (settles everything that is certain and free)
+  │  1. No new observations?   → end of tick, before anything else is considered
+  │  2. Inside cooldown?       → unless @-mentioned, end of tick
+  │  3. Rule says act? (@-mentioned / replied to / DM) → straight to stage 2
+  │  4. Rule says ignore? (my own message / another bot's broadcast / muted room)
   │                            → mark them ignore, end of tick
-  │  4. Rule says act? (@-mentioned / replied to / a must-answer subscription)
-  │                            → go straight to stage 2 (skip the judge, save the money)
-  │  5. Everything else → stage 1
+  │  5. Everything else → stage 1 (the bundled small model)
   │
-  ├ Stage 1 · cheap judgement (one call, summaries only)
+  ├ Stage 1 · the small model (bundled, under 300 MB, one call, summaries only)
   │  input: why it woke + a one-line summary of the last N messages in that room + roomDigest
   │         + my job/interests (+ how long since I last spoke here)
-  │  model: model.judge (local small model / cheapest cloud model), no tools, max_tokens capped
+  │  model: the bundled judge (no download, no network), no tools, max_tokens capped
   │  output: strict JSON — {"act":0|1, "reason":"<enum>", "priority":0-3, "focus":["om_..."]}
   │  effect: act=0 → record ignore(+reason), end of tick (what this step cost is the whole bill)
   │          act=1 → stage 2, carrying the focus messages as the ones it decided to care about
