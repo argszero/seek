@@ -209,13 +209,15 @@ the bot's loop, per tick:
   │  output: one decision the loop can act on — the FORM is the implementation's choice
   │          (a single word, a label from a fixed set, a tiny JSON, whatever this model
   │           produces reliably). What matters is that it is unambiguous and parseable
-  │  effect: act → stage 2, carrying the messages it decided to care about
+  │  effect: act → stage 2, carrying the observation entries and nothing else
   │          no act → record the verdict and the reason if one came back, end of tick
   │          unparseable → treated as no act, and counted as a watch agent failure
   │
   └ Stage 2 · run the work agent (expensive)
      Stage 2 calls the work agent and lets it run — identical to one EMRG turn today:
      full context + tools + streaming + memory write at the end.
+     It receives the observation entries and nothing else: NOT the watch agent's
+     reason (see "what crosses the line" below).
      One difference: it opens with "you decided to say this yourself; nobody called you",
      because nothing called it and the reason it woke is context, not a request.
 ```
@@ -253,6 +255,20 @@ No new machinery is built for this. The outcome is not reported to the watch age
 **Both agents get EMRG's toolset, unchanged** (ruled 2026-10-23: *"just use the EMRG set"*). There is no watch-specific tool, no memory tool and no compaction tool to build — the tool registry is the one already in the kernel, and which tools a given agent is allowed is ordinary per-agent configuration in `agents.yml`, not a mechanism this design introduces.
 
 **Memory writes and compaction are not tools in EMRG, and they will not be here.** They are what the runtime does when a turn ends, and an agent does not choose to do them. So "the watch agent needs tools to manage its memory" was wrong on the facts: it has tools because it is an agent, and its memory is maintained for it the same way.
+
+### What crosses the line from watch to work (ruled 2026-10-23)
+
+**The observation entries cross; the watch agent's reasoning does not.**
+
+When the watch agent decides to act, the work agent is woken with the entries and nothing more — not the line the watch agent wrote about why they mattered. It reads its own history and its own memory and decides for itself what, if anything, to say.
+
+**Why not pass the reason: the work agent would start depending on a 300 MB model's judgement without knowing it.** A reason in the context is not advice, it is a premise — the expensive model reads it as a fact about the world and builds on it. Where the watch agent is wrong, the work agent would not correct it, it would amplify it, and the amplification would look like coherence.
+
+**The cost, stated plainly:** sometimes the work agent will look at the entries and cannot tell why it was called at all. It may then say something slightly flat-footed, or ask what the point was. That is a real cost and it is the right side of the trade: a bot that looks a little slow is better than a bot whose confidence is borrowed from a model nobody chose to trust.
+
+**The reason is still recorded** — on the observation entry, next to the verdict — because it is what makes a bad call reviewable, and because the watch agent reads its own log back. It just never enters the work agent's context.
+
+### How slow a judgement is
 
 **The latency target stays a target, not a guarantee.** The common judgement is one call with no tool round in the low hundreds of milliseconds. A judgement that does call a tool costs a second round, and a 300 MB local model calling `bash` will rarely be worth it — so the expected shape is that the watch agent almost never uses its tools, while nothing forbids it and no separate toolset has to be maintained. Rules have already settled most traffic before it is called at all.
 
