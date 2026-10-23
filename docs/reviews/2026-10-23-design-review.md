@@ -2,6 +2,8 @@
 
 > Reviewing `docs/design/data-model.md`, `docs/design/agent-lifecycle.md`, `docs/design/i18n.md` and `docs/decisions.md`.
 > Written the same day they were settled, before any code. Findings are ordered by what they cost if found later, not by how wrong they are.
+>
+> **Terminology note.** This review is left in its original wording. Two roles named here were renamed later the same day: *the judge* is now the **watch agent** (`model.watch`), and *the working agent* is now the **work agent** (`model.work`). Read old names as new ones; the findings themselves stand as written.
 
 ## Verdict
 
