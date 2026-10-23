@@ -92,13 +92,15 @@ The conclusion (an order of magnitude below the naive port) probably survives, b
 
 The five whitelisted cases are all private by nature — *"blocked: without a decision it cannot go on"*, *"something it cannot judge"*. Moving that into a group room publishes the thing the DM existed to keep private, and it does so exactly when the agent is most blocked. Degrade to a visible *wanting to speak* badge on the contact instead; the user can ask it to say it in the room if they choose.
 
-### 7. The spender can rewrite the gate
+### 7. The spender can rewrite the gate — **closed 2026-10-23: the rule it attacked was never decided**
 
 §4 stage 2 must end by recording *"how to judge the same situation next time"*. That is a self-authored update to the rules that govern future spend, written by the most expensive model in the system, with no schema, no cap, no review and no rollback. A single bad entry ("this room matters, always check it") inflates the cost curve permanently, and the curve is the product's viability.
 
 It also makes §7's *"persona drift corrected against the diary"* circular: the diary is written by the same drifting persona.
 
 Needs: a defined store with a schema, a rate limit on writes, a diff the user can see, and a rule that machine-written guidance can only ever be *stricter* than the persona, never more permissive.
+
+> **Closed 2026-10-23.** The requirement this item attacks — *"stage 2 must end by recording how to judge the same situation next time"* — was the implementer's, not the host's. It entered with the first design commit and was never stated by anyone else; the host asked on 2026-10-23 where it came from, and there is no answer. It is withdrawn: stage 2 ends with an ordinary memory write, as an EMRG turn does, and no agent writes down rules for its own future gating. The circularity this item found was real, and it is fixed by removing the thing that caused it rather than by governing it.
 
 ### 8. No timezone exists anywhere
 

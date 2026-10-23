@@ -208,9 +208,8 @@ the bot's loop, per tick:
   └ Stage 2 · run the working agent (expensive)
      Stage 2 calls the working agent and lets it run — identical to one EMRG turn today:
      full context + tools + streaming + memory write at the end.
-     Two differences: ① opened with "you decided to say this yourself; nobody called you"
-                      ② must end by recording three things: what it said / why / how to judge
-                        the same situation next time
+     One difference: it opens with "you decided to say this yourself; nobody called you",
+     because nothing called it and the reason it woke is context, not a request.
 ```
 
 ### Why two stages
