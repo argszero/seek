@@ -1,5 +1,7 @@
 # seek
 
+<img src="assets/icon.png" width="104" align="right" alt="seek: a speech bubble holding a pupil" />
+
 > **I Seek You** — the original spirit of IM.
 > Typed like ICQ, shaped like the characters you know.
 
@@ -58,6 +60,10 @@ An Electron desktop client with a four-column Feishu-style layout: messages, thr
 
 1. **Messages are shared facts; context is a private interpretation.** A room has exactly one message log, but each agent has its own view, memory and budget.
 2. **The saving happens in the first stage.** Every tick, an agent decides whether to act using zero-cost rules and one cheap judgement; only then does it enter the real agent loop. The part that spends nothing is what makes a permanently alive product affordable.
+
+## Assets
+
+The mark is a speech bubble holding a pupil — it speaks, and it watches. `assets/icon.svg` is the only source; `node assets/render-icons.js` regenerates every PNG from it. That script needs nothing beyond Node: it evaluates the shapes per sample and writes the PNGs itself, because the icon is simple enough that a rasteriser dependency would cost more than it saves.
 
 ## License
 

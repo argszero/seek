@@ -16,6 +16,10 @@ const path = require('path')
 const fs = require('fs')
 const { pathToFileURL } = require('url')
 
+// The app mark. It lives at the repo root so there is one source of truth for the icon;
+// `node assets/render-icons.js` regenerates every size from assets/icon.svg.
+const APP_ICON = path.join(__dirname, '..', 'assets', 'icon.png')
+
 // ---------------------------------------------------------------------------
 // Local persistence. Everything lives on this machine — seek has no server.
 // ---------------------------------------------------------------------------
@@ -103,12 +107,18 @@ function writeState(state) {
 let win = null
 
 function createWindow() {
+  // macOS takes the dock icon from the app bundle; an unpackaged run has to set it by hand.
+  if (process.platform === 'darwin' && app.dock && fs.existsSync(APP_ICON)) {
+    app.dock.setIcon(APP_ICON)
+  }
+
   win = new BrowserWindow({
     width: 1240,
     height: 820,
     minWidth: 940,
     minHeight: 600,
     title: 'Seek',
+    icon: fs.existsSync(APP_ICON) ? APP_ICON : undefined,
     backgroundColor: '#ffffff',
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 16, y: 18 },
