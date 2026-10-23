@@ -27,9 +27,13 @@ So the judgement stage is not an optimisation added to a design that would work 
 1. **It must stop meaningless work.** A room full of other people talking about something that has nothing to do with it is the normal state of a busy room, and every one of those messages must cost nothing to disregard.
 2. **It must itself be almost free.** A gate that costs a little per message is not a gate, it is a smaller bill.
 
-### The gate is a bundled model behind cheap rules (ruled 2026-10-23)
+### The gate is the same agent, on a cheaper model, behind free rules (ruled 2026-10-23)
 
-The judgement runs on **a model shipped with the product** — no download step, no "install Ollama first", no user machine that might not have one.
+**The judge is not a second entity.** It is the same agent — same identity, same persona, same session history, same memory, same compression — asked one question instead of being let loose to act. The only thing that changes is which model answers: `model.judge` rather than `model.main` (ruled 2026-10-23: *"the judge is also an agent, it just uses a local model"*).
+
+That has a consequence worth stating plainly, because it removes work rather than adding it: **there is no judge-specific input pipeline.** The request the judge sends is the request the agent sends when it really runs — its own session history, its own memory, its own compression. Nothing is summarised on the judge's behalf, nothing is built twice, and there is no second context to keep in sync with the first.
+
+The judge model is **shipped with the product** — no download step, no "install Ollama first", no dependence on what the user's machine happens to have installed.
 
 It never fires on every message, because rules run first and settle most of them for nothing:
 
@@ -87,7 +91,8 @@ Agent
 │   id / name / avatar / description   ← description is what others (including other agents) use to judge whether to approach it
 │   persona                            ← how it speaks
 ├─ Capabilities
-│   model.main / model.judge           ← the expensive model for work / the cheap model for judgement
+│   model.main / model.judge           ← the same agent on two models: the expensive one
+│                                        for work, the local bundled one for judgement
 │   tools[] / sandbox / limits
 ├─ Attention
 │   rooms[]        ← which rooms it watches
@@ -95,7 +100,7 @@ Agent
 ├─ Watch queue (the inbox, see §3)
 ├─ Long-term memory
 │   diary (its own markdown memory, across sessions and rooms)
-│   roomDigest[room] (rolling summary per room, cheap context for the judge)
+│   roomDigest[room] (rolling summary per room — its own memory, not a judge input format)
 ├─ Life state
 │   state: asleep | observing | judging | working | needy (waiting on your decision)
 │   lastSpoke[room] / lastTick / sleepUntil / backoff
@@ -143,16 +148,16 @@ This is the core of the whole design:
 per tick:
   ┌ Stage 0 · rules only, no model (settles everything that is certain and free)
   │  1. No new observations?   → end of tick, before anything else is considered
-  │  2. Inside cooldown?       → unless @-mentioned, end of tick
-  │  3. Rule says act? (@-mentioned / replied to / DM) → straight to stage 2
-  │  4. Rule says ignore? (my own message / another bot's broadcast / muted room)
+  │  2. Rule says act? (@-mentioned / replied to / DM) → straight to stage 2
+  │  3. Rule says ignore? (my own message / another bot's broadcast / muted room)
   │                            → mark them ignore, end of tick
-  │  5. Everything else → stage 1 (the bundled small model)
+  │  4. Everything else → stage 1 (the same agent, on the local model)
   │
-  ├ Stage 1 · the bundled judge (one call, summaries only)
-  │  input: why it woke + a one-line summary of the last N messages in that room + roomDigest
-  │         + my job/interests (+ how long since I last spoke here)
-  │  model: the bundled judge (no download, no network), no tools, max_tokens capped
+  ├ Stage 1 · the same agent answering on model.judge (one call, no tools)
+  │  input: exactly what the agent would send to act — my own session history for this
+  │         room (compressed as usual), my memory, my persona, why I woke
+  │         (no judge-only summary, no second context pipeline)
+  │  model: model.judge — local, bundled (no download, no network), no tools, max_tokens capped
   │  output: one decision the loop can act on — the FORM is the implementation's choice
   │          (a single word, a label from a fixed set, a tiny JSON, whatever this model
   │           produces reliably). What matters is that it is unambiguous and parseable
@@ -169,8 +174,13 @@ per tick:
 
 ### Why two stages
 
-One reason: **the judge looks at little, the actor looks at everything.**
-If the judge reads the full history, it has become an expensive model and the whole saving evaporates.
+Because **the actor spends money and the judge does not.**
+
+Earlier drafts said the judge "looks at little" and the actor "looks at everything" — that is no longer true and was never the real point. Both look at the same context. What differs is the model behind it: the judge is a local model running on the user's machine, so its tokens cost nothing; the actor is whatever expensive model the agent is configured with, and every call is billed.
+
+That moves the judge's budget from money to **wall-clock** — which is why requirement 6 (a verdict in the low hundreds of milliseconds) is not a nicety but the real constraint, and why the verdict must stay small: a local model writing a long answer is a local model that makes the app stutter.
+
+It also, honestly, raises the risk: a weak local model reading a full session context can produce a confident wrong verdict, where a weak model reading three lines could only produce a vague one. §7's answer is that **what the judge ignored is reviewable** — every verdict is recorded with the entry it judged, so a deaf gate is visible rather than silent.
 
 ### Three ways to decide not to act
 
@@ -180,7 +190,7 @@ If the judge reads the full history, it has become an expensive model and the wh
 
 `keep` matters: it makes an agent "present but not interrupting", which is the most human thing about being permanently alive.
 
-**The judge never writes anything itself.** It emits a verdict; the loop performs the consequence — `ignore` consumes, `snooze` re-queues, `keep` appends the line. That split is what lets the judge stay a single cheap call with no tools, and it is why the verdict's shape is free: a word is enough, because the runtime already knows what each verdict means.
+**The judge never writes anything itself.** It emits a verdict; the loop performs the consequence — `ignore` consumes, `snooze` re-queues, `keep` appends the line. That split is what lets the judge stay a single call with no tools on a local model, and it is why the verdict's shape is free: a word is enough, because the runtime already knows what each verdict means.
 
 ### Backoff
 
@@ -202,12 +212,14 @@ Assume 10 agents, 5 rooms, 500 messages an hour.
 
 | Approach | Tokens per hour | Outcome |
 |---|---|---|
-| Every message to the expensive model (the naive port) | 500 × ~1500 = **750k** | broke within a day |
-| Every message to the judge only (no stage 0) | 500 × ~300 = **150k** | still too much |
-| **This design**: 90% stopped by the gate, 10% judged, 5% of those act | 50 × 300 + 2.5 × 3000 = **≈23k** | affordable |
+| Every message to the expensive model (the naive port) | 500 × ~1500 = **750k billed** | broke within a day |
+| Every message to the local judge only (no stage 0) | 500 × ~300 = 150k **local, unbilled** | no bill — but one local inference per message, and each one is latency in the app |
+| **This design**: 90% stopped free, 10% judged locally, 5% of those act | 50 × 300 local (unbilled) + 2.5 × 3000 = **≈7.5k billed** | affordable |
 | Leaner: judge only when a batch has piled up | another order of magnitude down | at the cost of slower reactions |
 
 (Order-of-magnitude estimates, not measurements.)
+
+Because the judge is the same agent on a local model, **judge tokens are not money.** The billed column above is only stage 2 — the expensive model actually acting — and it dropped by roughly a third against the pre-ruling table, from ≈23k to ≈7.5k, purely because 15k of judge tokens stopped being billed. What replaced that cost is wall-clock: a local inference per judged batch, in the low hundreds of milliseconds, off the GPU, while the room is live. That is the number the judge model is actually chosen against.
 
 **The gate's hit rate is the product's cost curve.** So it must be observable and tunable: every agent records `judged` (batches judged), `acted` (hits), `ratio` (hit rate) and `spent` (tokens). A hit rate that suddenly jumps to 50% means a persona is written wrong or a room has been flooded by bots — and that has to be visible in the interface.
 
@@ -221,7 +233,7 @@ Assume 10 agents, 5 rooms, 500 messages an hour.
 | Main loop | `TaskHandler` (`scheduler.py:982`): heartbeat, interval/backoff, bounded cycles, stop/trigger/status, resume after restart | a new task type `agent-tick` running stages 0 and 1 |
 | Stage 2 · action | today's session turn (`_run_tool_loop_locked`) | open with "you chose to speak"; require the three closing notes |
 | Delivery into the inbox | room fan-out as a frame broadcast, but only to connected clients | server-side **fan-out into every member agent's inbox** (persisted, not in memory) — the one road in, for every kind of message |
-| Judge model | `llm.py` already selects a model per session | a call shape with no tools, a low `max_tokens` cap and a mandatory JSON reply |
+| Judge model | `llm.py` already selects a model per session — the judge is the same agent pointed at `model.judge` instead of `model.main` | a local/bundled model binding, and a call shape with no tools and a low `max_tokens` cap; the reply's form is unconstrained, and anything unparseable counts as no act |
 | Memory | `memory_store`: session and project levels | add an **agent level** (across rooms and sessions) |
 | State visibility | frame broadcast | a new frame: `agent_state` (observing / judging / working / asleep / needy) |
 
@@ -233,7 +245,7 @@ Assume 10 agents, 5 rooms, 500 messages an hour.
 
 | Failure | Mechanism |
 |---|---|
-| **Two bots wake each other and never stop** | ①`fromAgent` marks bot messages, which do not wake other bots unless @-mentioned ②a cap on consecutive bot turns per room (grok-bot uses 3), held **on the Room** ③a forced cooldown after acting. §11 is the full treatment: the root rule and the depth cap bound the set of chains, and "every room has a human member" removes the case where none of this can be noticed |
+| **Two bots wake each other and never stop** | ①`fromAgent` marks bot messages, which do not wake other bots unless @-mentioned ②a cap on consecutive bot turns per room (grok-bot uses 3), held **on the Room** ③the root and depth rules, which bound the set of chains without a cooldown — §11 is the full treatment: the root rule and the depth cap bound the set of chains, and "every room has a human member" removes the case where none of this can be noticed |
 | The judge is too cheap → deaf and blind | hit rate observable; per-agent thresholds; what it ignored can be reviewed (entries and reasons are kept) |
 | The judge is too expensive → burning money | spent is recorded and visible per agent, so a runaway bill is *seen* rather than silently capped. There is no self-stop: a bill that climbs is a defect in the persona or the gate, and it is fixed there, not papered over by a limit that also silences the agent you wanted to hear from |
 | Inbox explosion | a cap plus collapse into the room digest |
@@ -255,7 +267,7 @@ Assume 10 agents, 5 rooms, 500 messages an hour.
 ## 9. Staging
 
 - **P1 (minimally alive)**: the Agent object + inbox + stages 0/1 + one room + rule-based gate (no model). Even at this point the question "does it spontaneously say something" gets answered.
-- **P2**: judge model + the three ways not to act + cooldown + the state frame on screen.
+- **P2**: `model.judge` bound to a local model (the same agent, second model) + the three ways not to act + the state frame on screen.
 - **P3**: multi-room concurrency and the action queue + the diary + a hit-rate panel.
 - **P4**: multi-agent group chat (bounded turns, @-wake, the `(pass)` protocol) + delegation trees in threads.
 
