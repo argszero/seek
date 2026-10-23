@@ -3,10 +3,11 @@
 > Settled by the host on 2026-10-23: **every bot is alive**, differing from an ordinary agent in three ways —
 > **long-lived, observes on its own, acts on its own**. If a bot sits in a room where someone speaks without
 > mentioning it, that message is still delivered to it and lands in its **watch queue**. The bot has a
-> **main loop**, and that loop is the core of its life — **the only loop there is**. Every tick it first decides from
-> the watch data whether to act (rules, then one call to a local model — this is where the money is saved, because a
-> permanently alive bot must not burn tokens when nothing is called for). A direct message or an @-mention is not a
-> separate road out of this loop: the gate sees it and passes it straight through.
+> **main loop**, and that loop is the core of its life — **the only loop there is**, and a tick of it happens when
+> something is delivered, not on a timer (the clock was considered and deferred on 2026-10-23). Every tick it first
+> decides from the watch data whether to act (rules, then one call to a local model — this is where the money is saved,
+> because a permanently alive bot must not burn tokens when nothing is called for). A direct message or an @-mention is
+> not a separate road out of this loop: the gate sees it and passes it straight through.
 >
 > The interaction layer above this (rooms, messages, the sense of presence) is in `~/.emrg/designs/seek-mental-model.md`.
 
@@ -93,13 +94,13 @@ There is **one** delivery path and **one** loop. A message to a room is delivere
 |---|---|---|
 | A DM, an @-mention, a reply to its own message | The inbox, like everything else | **Pass** — straight to stage 2, no watch call |
 | A room message that names nobody | The inbox | Everything else: rules, then the watch agent |
-| A scheduled tick | No message; the loop wakes anyway | Looks at whatever has accumulated |
+| ~~A scheduled tick~~ | **Deferred 2026-10-23** — no timer for now: with nothing delivered, nothing runs | — |
 
-**Both kinds of wake are ruled** (2026-10-23): a message **and** the clock. Waking on messages alone would make this an EMRG session with extra steps — an agent that cannot act unless spoken to cannot keep a promise, notice that something it started has gone quiet, or come and find you on its own initiative. Since the root rule was withdrawn (§11.2), the bare tick is also the origin of most chains: a bot deciding to speak with no message behind it.
+**One wake source, for now: a message** (ruled 2026-10-23). A delivery into the inbox starts a tick; with nothing delivered, nothing runs at all. A timer was designed and **deferred the same day** as more machinery than the design needs yet — see below for what that costs.
 
-**And the clock's tick is not empty** (ruled 2026-10-23, the same day): when the timer is what woke the bot, the loop writes **its own entry** into the inbox before stage 0 runs — `kind: "clock"`, no message behind it, carrying how long it has been silent and what it left unfinished. That is what gives the watch agent something to judge when no message exists. A clock tick that arrived with nothing in the queue would end at stage 0 rule 1 every time, and a ruled wake source would then do no work at all.
+**What deferring the clock costs, recorded rather than smoothed over.** ①*Proactive outreach is now reachable only while awake.* A bot may still open a conversation with you (§10) or with another bot (§11.2), but only during a tick a message already started — so "it came to find you" always has a message somewhere upstream. ②*Nothing can wake on time*, so a `snooze` conditioned on "in five minutes" has nothing behind it; only event conditions ("when this gets a reply") work, because a reply is itself a delivery. Both are open questions in `decisions.md`, not settled here.
 
-What a wake is **not**: it is not an action. A clock entry still has to get past the same gate as anything else, and the gate can — and mostly will — say no.
+**What the deferral buys is not only simplicity.** With no timer, the design makes no claim it cannot keep: there is no idle path at all, so nothing has to be argued about what an idle tick costs. The day a clock is added, the questions it was withdrawn over come back — what an idle tick may call, and what wakes a bot with an empty queue.
 
 Why this matters more than it looks: with two roads, the same message could be answered twice — once by the direct road and once by a later tick that finds it still in the inbox. With one road there is nothing to reconcile, no "mark it handled" bookkeeping, and no ordering rule between two runners.
 
@@ -121,7 +122,8 @@ Bot                                     ← the contact: what a room shows and @
 ├─ Watch queue (the inbox, see §3)      ← ONE queue per bot, whatever runs behind it
 ├─ Life state
 │   state: asleep | watching | working | needy (waiting on your decision)
-│   lastSpoke[room] / lastTick / sleepUntil / backoff
+│   lastSpoke[room] / lastTick        ← no interval and no sleep-until:
+│                                       nothing wakes a bot on time (2026-10-23)
 │   spent: tokens, observed and reported — a number, never a limit
 └─ agents[]  ──▶  each is a runnable the loop calls (see below)
 
@@ -174,14 +176,14 @@ Appended one entry at a time, **never processed by a model**:
 ```json
 { "id": "...", "room": "oc_...", "msg": "om_...", "ts": 1698123456789,
   "sender": "ou_...", "fromAgent": "agent_id|null",
-  "kind": "text|image|file|toolcard|system|clock",
+  "kind": "text|image|file|toolcard|system",
   "text": "……",
   "hints": { "mentionsMe": false, "asksQuestion": true, "repliesToMe": false,
              "keywordHit": ["release", "schedule"], "roomTemperature": "busy" },
   "state": "new" }
 ```
 
-- **A clock tick writes an entry too** (ruled 2026-10-23). When the timer is what woke the bot, the loop appends one `kind: "clock"` entry of the bot's own before stage 0 runs: `msg` null, no sender, and the bot's own facts in place of a message's hints — how long since it last spoke in a room, and what it left unfinished. It is written by the loop, never by a model, and it is what gives the watch agent something to judge when no message exists. Without it the clock would wake the bot and hand it nothing to look at, which is how a ruled wake source would end up doing no work.
+- **Every entry comes from a message, and that is now the whole rule** (2026-10-23: the clock was deferred, and with it the `kind: "clock"` entry that would have carried a timer's own facts). One consequence worth keeping: the queue never contains anything the bot wrote to itself, so every entry has a sender other than this bot, and stage 0's first rule — no new entries, end of tick — is the only exit that ever fires on an empty queue.
 
 - `hints` are scored **by the producer, not by a model**: @ detection, question marks, whether it replies to me, keyword matches, message density. All of it is string and counting work that costs nothing.
 - **`mentionsMe` and `repliesToMe` are bot-level facts** (ruled 2026-10-23). They are computed once, when the message lands, against the bot — not per agent. No agent ever scans a room for its own name, and the watch agent could not: it is not addressable, so "an @ to me" is a question only the bot can answer. That is what makes stage 0's fast-pass a rule rather than a model call.
@@ -201,17 +203,11 @@ This is the core of the whole design:
 the bot's loop, per tick:
   ┌ Stage 0 · rules only, no model (settles everything that is certain and free)
   │  1. No new observations?   → end of tick, before anything else is considered
-  │     (a clock tick always has one — the loop wrote it — so this rule ends
-  │      message-driven ticks only; a clock tick is never empty)
   │  2. Rule says act? (@-mentioned / replied to / DM — read off the bot's own
   │     hints, computed at delivery; "@-mentioned" means this bot's id appears
   │     in the message's mentions[]) → straight to stage 2
   │  3. Rule says ignore? (my own message / another bot's broadcast / muted room)
   │                            → mark them ignore, end of tick
-  │     NOTE: "my own message" means one this bot posted into a room. A clock
-  │     entry is not that — it is the bot asking itself, and it must reach
-  │     stage 1, or rule 3 silently swallows every clock tick and the ruled
-  │     wake source does nothing
   │  4. Everything else → stage 1 (call the watch agent)
   │
   ├ Stage 1 · the loop calls the watch agent (an agent, so it has tools)
@@ -288,12 +284,11 @@ When the watch agent decides to act, the work agent is woken with the entries an
 
 **The latency target stays a target, not a guarantee.** The common judgement is one call with no tool round in the low hundreds of milliseconds. A judgement that does call a tool costs a second round, and a 300 MB local model calling `bash` will rarely be worth it — so the expected shape is that the watch agent almost never uses its tools, while nothing forbids it and no separate toolset has to be maintained. Rules have already settled most traffic before it is called at all.
 
-### Backoff
+### Backoff — deferred with the clock
 
-**The clock is one of the two ruled wake sources** (2026-10-23), so this section is now a consequence of a ruling rather than a tuning note.
+**There is no interval to back off from** (2026-10-23: the clock was deferred). Earlier drafts of this section carried an exponential interval — one minute up to eight hours, EMRG's `_heartbeat_interval` reused — computed *from nothing*, which is only meaningful if something ticks when the queue is empty.
 
-With nothing to do, the tick interval grows exponentially (one minute up to eight hours), and any new message snaps it back to the base. EMRG's scheduler already has this (`_heartbeat_interval` = max(i, min(i*8, 8h))); reuse it. **The numbers are a starting default, not a ruling** — what was ruled is that the clock exists and that an idle bot must be cheap; the base interval and the ceiling are for the implementation to measure.
-**A quiet agent should consume almost nothing** — that is the only premise under which "long-lived" is affordable. Note the accounting honestly: ten bots on a one-minute base is 600 clock ticks an hour, and since a clock tick carries its own entry it reaches the watch agent, so that is 600 local inferences — unbilled, but real wall-clock, roughly two minutes of CPU an hour at 200 ms each. The backoff is what brings it down: a bot nobody is talking to drifts towards eight hours between ticks and settles at a few an hour. **The line that must hold is the expensive one**: a clock tick may reach the watch agent, and must never reach the work agent on its own.
+What remains true, and stays written down for the day a timer returns: **a quiet agent must consume almost nothing**, because that is the only premise under which "long-lived" is affordable. With no timer, the design satisfies this absolutely rather than approximately — no delivery, no tick, no call. Any timer added later has to earn its place against that standard, and the two questions it was withdrawn over — what an idle tick may call, and what wakes a bot with an empty queue — come back with it.
 
 ### Concurrency
 
@@ -313,12 +308,12 @@ Assume 10 agents, 5 rooms, 500 messages an hour.
 | Every message to the expensive model (the naive port) | 500 × ~1500 = **750k billed** | broke within a day |
 | Every message to the local watch agent only (no stage 0) | 500 × ~300 = 150k **local, unbilled** | no bill — but one local inference per message, and each one is latency in the app |
 | **This design**: 90% stopped free, 10% watched locally, 5% of those act | 50 × 300 local (unbilled) + 2.5 × 3000 = **≈7.5k billed** | affordable |
-| The clock ticks, one local call each | 10 bots × 60 an hour = 600 local inferences, **0 billed** | ~2 minutes of CPU an hour at ~200 ms a call — the price of being alive, paid in wall-clock |
+| Leaner: watch only when a batch has piled up | another order of magnitude down | at the cost of slower reactions |
+| **Idle, in this design** | **zero** — no delivery, no tick, no call | the clock was deferred (2026-10-23), so there is no idle path to pay for and nothing to argue about what an idle tick may call |
 
-**The clock ticks do cost a local call, and an earlier draft of this table said they cost nothing.** That was written before the clock entry was ruled: with nothing in the inbox, a clock tick ended at stage 0 rule 1 having called no model at all. Now that a clock tick always carries its own entry, it reaches the watch agent — which is exactly what the ruling wanted, since the watch agent is the only thing that can decide "I should speak now". **Nothing billed was added, and the backoff is what keeps the local cost small**: a bot left alone backs off towards eight hours, so its steady state is a few ticks an hour rather than sixty. The line to hold is that a clock tick never reaches the *work* agent on its own; if it did, an idle bot would be billing you for thinking about whether to talk.
+**There is no idle row to defend, and that is the deferral's real gift.** A draft ruled earlier the same day added a timer, and with it a `kind: "clock"` entry so an idle bot would reach the watch agent — which meant an idle bot paying one local inference per tick, and the design owing an answer about what a bare tick may call. Dropping the clock withdrew the mechanism and the question together. If a clock is ever added back, both come back with it, and the line to hold will be the same: an idle tick may reach the watch agent and must never reach the *work* agent.
 
 One correction to the table's denominator: traffic arrives **per message**, but a message costs work **per bot in the room** — ten bots and one message is ten inbox entries. The figures above hold only because stage 0 is free per bot; the moment any per-bot step costs a call, the multiplication matters and the table understates it.
-| Leaner: watch only when a batch has piled up | another order of magnitude down | at the cost of slower reactions |
 
 (Order-of-magnitude estimates, not measurements.)
 
@@ -333,7 +328,7 @@ Because the watch agent is an agent on a local model, **watch tokens are not mon
 | Component | What exists today | What is new |
 |---|---|---|
 | Agent identity | `projects.yml` → `agents.yml` (already decided) | the fields in §2 |
-| Main loop | `TaskHandler` (`scheduler.py:982`): heartbeat, interval/backoff, bounded cycles, stop/trigger/status, resume after restart | a new task type `agent-tick` running stages 0 and 1 |
+| Main loop | `TaskHandler` (`scheduler.py:982`): heartbeat, interval/backoff, bounded cycles, stop/trigger/status, resume after restart | a new task type that runs stages 0 and 1 — **driven by delivery, not by the scheduler's heartbeat** (the clock was deferred 2026-10-23, so EMRG's interval machinery is not what calls it) |
 | Stage 2 · action | today's session turn (`_run_tool_loop_locked`) | open with "you chose to speak"; require the three closing notes |
 | Delivery into the inbox | room fan-out as a frame broadcast, but only to connected clients | server-side **fan-out into every member bot's inbox** (persisted, not in memory) — the one road in, for every kind of message |
 | Watch agent | `llm.py` already selects a model per session, and `session.compact()` already keeps a history per session | a **second row in `agents.yml` per bot**: same machinery, its own session and memory, a local model, smaller windows, a low `max_tokens` cap, and a read path to its sibling. Tools are EMRG's existing registry, unchanged — no watch-specific tool is added. Any unparseable verdict counts as no act |
@@ -421,7 +416,7 @@ What "delegation" still means is the **intent**, not a mechanism: "do this and r
 
 ### 11.2 A chain may begin with an agent (ruled 2026-10-23)
 
-**The root rule is withdrawn.** It said a chain's root is a human message or a scheduled tick, and that an agent never opens a conversation with another agent. Ruled instead: **a bot may say the first word to another bot** — in a room both are in, or in a direct room it opened for that purpose.
+**The root rule is withdrawn.** It said a chain's root is a human message or a scheduled tick, and that an agent never opens a conversation with another agent. (A scheduled tick is itself deferred — see §1 — but the rule's withdrawal does not depend on it.) Ruled instead: **a bot may say the first word to another bot** — in a room both are in, or in a direct room it opened for that purpose.
 
 Two reasons, both of them the host's own earlier rulings rather than new ones. A bot may already open a conversation with a **person** (§10, approved); the root rule was the only thing that forbade the identical act toward a peer, and that asymmetry was not asked for anywhere. And what the rule actually protected — a bound on the *set* of chains — is a bound nothing else was leaning on, given that a chain's length is capped by depth and a room's burst by the turn counter.
 
