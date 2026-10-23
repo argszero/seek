@@ -29,10 +29,10 @@ Execution   Workspace / Turn / Observation / Memory — how work happens and wha
 |---|---|---|
 | **Principal** | Anything that can speak. `kind = human \| agent` | Name, avatar, `description` (self-introduction, used by others to judge whether to approach it) |
 | **Human** | You (v1 has exactly one "me") | Also a Principal; no privileges |
-| **Agent** | A long-lived bot | Adds persona, capabilities, observations, memory, state, budget — **it belongs to no room; rooms are where it appears** |
+| **Agent** | A long-lived bot | Adds persona, capabilities, observations, memory, state — **it belongs to no room; rooms are where it appears** |
 
 > **The distinction that matters**: a Member is an Agent's *projection into one room*, not the Agent itself.
-> Feishu models a bot as a kind of member. That is enough there; it is not enough here, because an agent has a life, a memory and a budget that span rooms.
+> Feishu models a bot as a kind of member. That is enough there; it is not enough here, because an agent has a life and a memory that span rooms.
 
 ### 2.2 Space
 
@@ -67,7 +67,7 @@ Execution   Workspace / Turn / Observation / Memory — how work happens and wha
                             │
               ┌─────────────┴──────────────┐
               │ Membership (projection)     │ owns
-              ▼                            ├── agent-only: persona / capabilities / budget
+              ▼                            ├── agent-only: persona / capabilities / state
         ┌─────────── Room ───────────┐     ├── Observation ──▶ references a Message
         │   one shared message log   │     ├── Memory (diary / room digest)
         └──────────────┬────────────┘     ├── Session ──▶ (agent × room), private

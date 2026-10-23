@@ -54,9 +54,9 @@ Agent
 │   diary (its own markdown memory, across sessions and rooms)
 │   roomDigest[room] (rolling summary per room, cheap context for the judge)
 ├─ Life state
-│   state: asleep | observing | judging | working | quiet (budget spent) | needy (waiting on your decision)
+│   state: asleep | observing | judging | working | needy (waiting on your decision)
 │   lastSpoke[room] / lastTick / sleepUntil / backoff
-│   budget: tokens per hour and per day, spent, resets at
+│   spent: tokens, observed and reported — a number, never a limit
 └─ Sessions
     session[room] (its own stretch of work in each room; a new one starts when it
     changes workspace — private bookkeeping, never shown to the user)
@@ -99,14 +99,13 @@ This is the core of the whole design:
 ```
 per tick:
   ┌ Stage 0 · zero-cost gate (pure local computation, no model)
-  │  1. Budget spent?          → state=quiet, end of tick (and visible outside)
-  │  2. Inside cooldown?       → unless @-mentioned, end of tick
-  │  3. No new entries?        → increase backoff, sleep longer, end of tick
-  │  4. Rule says ignore? (pure emoji / my own message / another bot's broadcast / muted room)
+  │  1. Inside cooldown?       → unless @-mentioned, end of tick
+  │  2. No new entries?        → increase backoff, sleep longer, end of tick
+  │  3. Rule says ignore? (pure emoji / my own message / another bot's broadcast / muted room)
   │                            → mark them ignore, end of tick
-  │  5. Rule says act? (@-mentioned / replied to / a must-answer subscription)
+  │  4. Rule says act? (@-mentioned / replied to / a must-answer subscription)
   │                            → go straight to stage 2 (skip the judge, save the money)
-  │  6. Everything else → stage 1
+  │  5. Everything else → stage 1
   │
   ├ Stage 1 · cheap judgement (one call, summaries only)
   │  input: why it woke + a one-line summary of the last N messages in that room + roomDigest
@@ -175,7 +174,7 @@ Assume 10 agents, 5 rooms, 500 messages an hour.
 | Delivery into the inbox | room fan-out as a frame broadcast, but only to connected clients | server-side **fan-out into every member agent's inbox** (persisted, not in memory) — the one road in, for every kind of message |
 | Judge model | `llm.py` already selects a model per session | a call shape with no tools, a low `max_tokens` cap and a mandatory JSON reply |
 | Memory | `memory_store`: session and project levels | add an **agent level** (across rooms and sessions) |
-| State visibility | frame broadcast | a new frame: `agent_state` (observing / judging / working / asleep / quiet) |
+| State visibility | frame broadcast | a new frame: `agent_state` (observing / judging / working / asleep / needy) |
 
 **An honest cost**: today's daemon presses "identity" and "runtime" into the same `EmrgServer`, and the busy table, cancel table and contexts are all keyed by session. Running many agents in one process needs another layer keyed by agent. It is doable; the work is real.
 
@@ -187,9 +186,9 @@ Assume 10 agents, 5 rooms, 500 messages an hour.
 |---|---|
 | **Two bots wake each other and never stop** | ①`fromAgent` marks bot messages, which do not wake other bots unless @-mentioned ②a cap on consecutive bot turns per room (grok-bot uses 3), held **on the Room** ③a forced cooldown after acting. §11 is the full treatment: the root rule and the depth cap bound the set of chains, and "every room has a human member" removes the case where none of this can be noticed |
 | The judge is too cheap → deaf and blind | hit rate observable; per-agent thresholds; what it ignored can be reviewed (entries and reasons are kept) |
-| The judge is too expensive → burning money | budget as a first-class citizen: over budget means `quiet`, and the interface says so plainly (never let the user think it died) |
+| The judge is too expensive → burning money | spent is recorded and visible per agent, so a runaway bill is *seen* rather than silently capped. There is no self-stop: a bill that climbs is a defect in the persona or the gate, and it is fixed there, not papered over by a limit that also silences the agent you wanted to hear from |
 | Inbox explosion | a cap plus collapse into the room digest |
-| Long-lived means creeping corruption | checkpoint at the end of every tick; on restart, self-check (budget, queue, time since it last spoke); persona drift corrected against the diary |
+| Long-lived means creeping corruption | checkpoint at the end of every tick; on restart, self-check (queue, time since it last spoke, spent); persona drift corrected against the diary |
 | No sense of time | every tick injects "how long since you last spoke in this room" and "how old this message is"; without that it asks the same question forever |
 
 
@@ -197,17 +196,17 @@ Assume 10 agents, 5 rooms, 500 messages an hour.
 
 ## 8. What the interface must show (or users will read it as a bug)
 
-1. **A state dot**: observing / judging / working / asleep / quiet, as an avatar badge.
+1. **A state dot**: observing / judging / working / asleep / needy, as an avatar badge.
 2. **Proactive messages are marked**: not a reply to you, but something it chose to say — without a tag you will read it as a non-answer.
 3. **"Why did it ignore me?" is expandable**: translate `reason` into plain language ("this was not addressed to me, and someone else is already answering"). This is both the product difference and the only way to debug the thing.
-4. **Budget visible**: how much it has spent today, how much is left.
+4. **Spend visible**: how much it has spent today. There is no remainder, because there is no limit — the number is there to be read, not enforced.
 
 ---
 
 ## 9. Staging
 
 - **P1 (minimally alive)**: the Agent object + inbox + stages 0/1 + one room + rule-based gate (no model). Even at this point the question "does it spontaneously say something" gets answered.
-- **P2**: judge model + the three ways not to act + budget and cooldown + the state frame on screen.
+- **P2**: judge model + the three ways not to act + cooldown + the state frame on screen.
 - **P3**: multi-room concurrency and the action queue + the diary + a hit-rate panel.
 - **P4**: multi-agent group chat (bounded turns, @-wake, the `(pass)` protocol) + delegation trees in threads.
 
