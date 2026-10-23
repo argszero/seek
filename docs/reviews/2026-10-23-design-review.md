@@ -108,6 +108,8 @@ Minimum: store the quiet window as a local time plus an IANA zone id, resolve at
 
 ### 9. One @-mention can produce two replies
 
+> **Resolved 2026-10-23, by dissolving the premise.** The host pointed out that there is only ever one path: the direct road was never a bypass, it is the gate recognising an @-mention and waving it through. Since no second runner exists, no message can be picked up twice and there is no "mark it handled" bookkeeping to get wrong. Section 1 of `agent-lifecycle.md` now says one path and one loop.
+
 Path A (DM / @ / reply) runs the full loop. Stage 0 rule 5 also says: *"@-mentioned → go straight to stage 2"*.
 
 Nothing states that path A **consumes** the matching inbox entries. A plausible implementation does both and the agent answers twice. One sentence fixes it: path A marks its triggering entries `handled` before it starts, and the gate skips anything already handled.

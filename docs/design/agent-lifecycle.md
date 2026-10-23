@@ -3,11 +3,10 @@
 > Settled by the host on 2026-10-23: **every bot is a complete agent**, differing from an ordinary agent in three ways —
 > **long-lived, observes on its own, acts on its own**. If the agent sits in a room where someone speaks without
 > mentioning it, that message is still delivered to it and lands in its own watch queue. Inside the agent there is a
-> **main loop**, and that loop is the core of its life. Every tick it first decides from the watch data whether to act
-> (rules / events / a cheap model / a local model — this is where the money is saved, because a permanently alive
-> agent must not burn tokens when nothing is called for). Only after a positive verdict does it enter the real agent
-> loop. The agent also has a direct "receive a message and handle it" path, used when someone talks to it directly or
-> @-mentions it — the same as today's EMRG conversation.
+> **main loop**, and that loop is the core of its life — **the only loop there is**. Every tick it first decides from
+> the watch data whether to act (rules / events / a cheap model / a local model — this is where the money is saved,
+> because a permanently alive agent must not burn tokens when nothing is called for). A direct message or an
+> @-mention is not a separate road out of this loop: the gate sees it and passes it straight through.
 >
 > The interaction layer above this (rooms, messages, the sense of presence) is in `~/.emrg/designs/seek-mental-model.md`.
 
@@ -21,15 +20,19 @@ All the saving lives in the first stage: **the overwhelming majority of messages
 
 ---
 
-## 1. Three paths (fix the boundaries first)
+## 1. One path, not three (ruled by the host, 2026-10-23)
 
-| Path | Trigger | Cost | What it feels like |
-|---|---|---|---|
-| **A Direct** | DM, @-mention, or a reply to its own message | The full agent loop (tools, full context, streaming) | Today's EMRG conversation |
-| **B Observe** | A message in a room that does not name it | **Zero** (lands in the inbox only) | A person sitting in a meeting, listening |
-| **C Main loop** | Wakes on a timer or an event, looks at the inbox | Cheap judgement first, pay only if it hits | A person deciding "this one I should answer" |
+There is **one** delivery path and **one** loop. A message to a room is delivered into every member agent's inbox and costs nothing to receive. The loop then runs; stage 0 reads the inbox and decides what to do with it. An @-mention, a reply to its own message, or a direct message is not a second road — it is **a fast-pass inside stage 0**: the gate recognises it and sends it straight to stage 2, skipping the paid judgement, because there is nothing to judge.
 
-A is "someone called me". C is "I decided I should speak". **B never spends anything** — that is the cost foundation of the whole design. Any implementation where an un-addressed message triggers a model call is already wrong.
+| What arrives | Where it lands | What stage 0 does |
+|---|---|---|
+| A DM, an @-mention, a reply to its own message | The inbox, like everything else | **Pass** — straight to stage 2, no judge call |
+| A room message that names nobody | The inbox | Everything else: rules, then the judge |
+| A scheduled tick | No message; the loop wakes anyway | Looks at whatever has accumulated |
+
+Why this matters more than it looks: with two roads, the same message could be answered twice — once by the direct road and once by a later tick that finds it still in the inbox. With one road there is nothing to reconcile, no "mark it handled" bookkeeping, and no ordering rule between two runners.
+
+**Receiving never spends anything.** That is the cost foundation of the whole design. Any implementation where an un-addressed message triggers a model call is already wrong.
 
 ---
 
@@ -169,8 +172,7 @@ Assume 10 agents, 5 rooms, 500 messages an hour.
 | Agent identity | `projects.yml` → `agents.yml` (already decided) | the fields in §2 |
 | Main loop | `TaskHandler` (`scheduler.py:982`): heartbeat, interval/backoff, bounded cycles, stop/trigger/status, resume after restart | a new task type `agent-tick` running stages 0 and 1 |
 | Stage 2 · action | today's session turn (`_run_tool_loop_locked`) | open with "you chose to speak"; require the three closing notes |
-| Direct path A | unchanged | — |
-| Observe path B | room fan-out (frame broadcast exists, but only to connected clients) | server-side **fan-out into every member agent's inbox** (persisted, not in memory) |
+| Delivery into the inbox | room fan-out as a frame broadcast, but only to connected clients | server-side **fan-out into every member agent's inbox** (persisted, not in memory) — the one road in, for every kind of message |
 | Judge model | `llm.py` already selects a model per session | a call shape with no tools, a low `max_tokens` cap and a mandatory JSON reply |
 | Memory | `memory_store`: session and project levels | add an **agent level** (across rooms and sessions) |
 | State visibility | frame broadcast | a new frame: `agent_state` (observing / judging / working / asleep / quiet) |
@@ -279,7 +281,7 @@ Depth is read off the message data rather than kept in a counter on purpose: a c
 - the chain still has budget;
 - the room's consecutive-agent-turn counter is below 3.
 
-Otherwise the message still lands in that bot's inbox (path B, zero cost) with `hints.chainBlocked = reason`, to be reconsidered the next time a human touches the room. Nothing is lost and nothing is spent.
+Otherwise the message still lands in that bot's inbox, at zero cost, with `hints.chainBlocked = reason`, to be reconsidered the next time a human touches the room. Nothing is lost and nothing is spent — there is no separate road that could let it through anyway.
 
 The **consecutive-agent-turn counter lives on the Room**, not on an agent: no single agent can see how many times its peers just spoke, so an agent-local counter would be an agent measuring itself and calling it a conversation.
 
