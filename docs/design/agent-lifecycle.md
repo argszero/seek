@@ -102,9 +102,10 @@ Why this matters more than it looks: with two roads, the same message could be a
 ```
 Agent
 ├─ Identity
-│   id / name / avatar / description   ← description is what others (including other agents) use to judge whether to approach it
-│   bot / role                         ← which bot it belongs to, and which job it does there
+│   id / bot / role                    ← which bot it belongs to, and which job it does there
 │   persona                            ← how it speaks
+│   (name / avatar / description are NOT here: they live on the bot and are
+│    inherited, so every agent of a bot speaks as the same contact)
 ├─ Capabilities
 │   model                              ← its own model: the working agent's expensive one, or
 │                                        the judging agent's local bundled one
@@ -126,11 +127,13 @@ Agent
     changes workspace — private bookkeeping, never shown to the user)
 ```
 
-### A bot is N agents (ruled 2026-10-23)
+### A bot is N agents, and a bot is not an agent (ruled 2026-10-23)
 
-**`agents.yml` registers agents, not bots.** Each bot is at least two rows today — one that judges, one that works — and there is no rule that caps it at two: a bot that later needs a third role gets a third row. The file is a roster of agent processes, and a bot is the grouping they belong to.
+**Bot and Agent are two entities with two jobs.** The bot is the contact: it owns the name, the avatar and the description, it is what a room shows and what an @-mention names. The agents are the workers behind it: each owns a persona, a model, a session, a memory, a state machine and its own place in the cost ledger. **The bot pushes its identity down to its agents** — an agent has no name of its own, only a `role` — so renaming a bot renames every agent of it at once, and the room never sees two contacts where there is one.
 
-This is cheaper than it sounds, because the kernel already works this way: one agent, one model, one session, one memory, one state machine. Two rows means two of each, no new container, and nothing that iterates agents has to learn to skip a special case. What it costs is one grouping field, and the question of **which record wears the bot's face** — the name and avatar a room shows. That is the open item in `decisions.md` under "Not decided yet"; the bot must still present as one contact, whatever the answer.
+**`agents.yml` registers agents, not bots.** Each bot is at least two rows today — one that judges, one that works — and nothing caps it at two: a bot that later needs a third role gets a third row. This is cheap because the kernel already works this way: one agent, one model, one session, one memory, one state machine. Two rows means two of each, no new container, and nothing that iterates agents has to learn to skip a special case.
+
+**The split runs through the whole model**, and it is what keeps both sides honest: membership, @-mention and a room's list of people are **bot-level** (so a bot is one member however many agents work behind it); session, memory, turn and cost are **agent-level** (so the audit trail says exactly which worker acted, and the bill is per worker). Rules 14 in `data-model.md` states the cardinality.
 
 **Agent ≠ Session.** EMRG today presses the identity into the session (the session is that cwd, that model, that history), so one identity cannot live in three rooms at once. The Agent sits above the session; sessions are its stretches of memory.
 

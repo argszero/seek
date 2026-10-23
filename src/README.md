@@ -5,7 +5,8 @@ Nothing is written here yet. By rule 1 in `docs/decisions.md`: **settle the data
 ## Before the first line of code
 
 - [ ] Every open item in `docs/decisions.md` ("Not decided yet") is closed
-- [ ] The on-disk shape is fixed: `principals / rooms / memberships / sessions / messages / observations / turns / memories` — messages sharded by room, observations sharded by agent
+- [ ] The on-disk shape is fixed: `bots / agents / principals / rooms / memberships / sessions / messages / observations / turns / memories` — messages sharded by room, observations and sessions sharded by agent. **`bots` and `agents` are separate shards**: the bot owns name/avatar/description, the agents inherit them and own sessions, memory, turns and cost
+- [ ] Bot-level and agent-level are not mixed anywhere: membership, @-mention and the room's participant list resolve to a bot; session, memory, turn and cost resolve to an agent. A UI list built from agents would show one bot as two contacts
 - [ ] String externalisation is set up before the first screen: no user-visible literal in code (see `docs/design/i18n.md`)
 - [ ] The judge is **a second row in `agents.yml`**, not a classifier and not a field inside the working agent: its own session, its own memory, its own local model, and a read path to its sibling (and one back). `agents.yml` is a roster of agents, not of bots — a bot may hold more than two, so nothing may assume exactly two. Two things signal the design going wrong: a summary layer built *for the judge* (it sends its own history like any agent), and any code path that lets one agent's compaction reach another's store
 - [ ] Compaction is **per-agent**, because agents have different windows: verify that one agent compacting can never remove detail from another's history — this is the silent-amnesia defect the two-store rule exists to prevent
