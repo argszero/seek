@@ -27,11 +27,25 @@ So the judgement stage is not an optimisation added to a design that would work 
 1. **It must stop meaningless work.** A room full of other people talking about something that has nothing to do with it is the normal state of a busy room, and every one of those messages must cost nothing to disregard.
 2. **It must itself be almost free.** A gate that costs a little per message is not a gate, it is a smaller bill.
 
-### The gate is the same agent, on a cheaper model, behind free rules (ruled 2026-10-23)
+### Behind every bot there are two agents (ruled 2026-10-23)
 
-**The judge is not a second entity.** It is the same agent — same identity, same persona, same session history, same memory, same compression — asked one question instead of being let loose to act. The only thing that changes is which model answers: `model.judge` rather than `model.main` (ruled 2026-10-23: *"the judge is also an agent, it just uses a local model"*).
+One judges, one acts. Both are agents in the full sense — each has a persona, its own session history, its own memory store, its own turns on the audit trail. **They do not share memory.** What they share is that **each knows the other exists and can read the other's history and memory** (ruled 2026-10-23).
 
-That has a consequence worth stating plainly, because it removes work rather than adding it: **there is no judge-specific input pipeline.** The request the judge sends is the request the agent sends when it really runs — its own session history, its own memory, its own compression. Nothing is summarised on the judge's behalf, nothing is built twice, and there is no second context to keep in sync with the first.
+| | The judging agent | The working agent |
+|---|---|---|
+| Model | `model.judge` — local, bundled, small | `model.main` — whatever expensive model the agent is configured with |
+| Window | small (thousands of tokens) | large (as much as the model offers) |
+| What it does | answers one question: does anything here concern me? | does the work, speaks in the room, uses tools |
+| What it costs | wall-clock, in the low hundreds of milliseconds | money |
+| What it remembers | its own compact log: what it looked at, what it decided, how the room usually goes | the full record: everything it did and said |
+
+**Why they must not share one memory: the two windows are an order of magnitude apart, and compaction is destructive.** A shared log means the small-window agent compacts first and, judging by its own 4k window, deletes detail the large-window agent can still read. That is not thrift, it is amnesia — and it is silent, because nothing in the room shows the moment a memory was thrown away. Two stores, each compacted against its own window, removes the collision rather than managing it.
+
+**Why they must be able to read each other: an agent that cannot see its own other half invents a reason.** The failure to design against is the split-brain one: the acting half does something, the half that talks to you has no record of why, and it produces a confident explanation that is simply wrong. So the read channel is not an integration nicety, it is what keeps the bot honest about *"I said nothing there"* and *"I already answered that"*.
+
+**Cross-reading is not free, and the two directions cost different things.** The working agent reading the judge's log is billed tokens on an expensive model, so it is **on demand, not injected into every turn** — pulled when it matters (the user asks why it stayed quiet; it is about to speak in a room it has been ignoring). The judge reading the working agent's log costs no money but costs latency, so it reads a **bounded** slice, never the whole record.
+
+**There is no judge-specific input pipeline.** The judge sends the same shape of request the working agent sends — its own history, its own memory, its own compression — because it is an agent, not a classifier. Nothing is summarised on its behalf and no second context has to be kept in sync.
 
 The judge model is **shipped with the product** — no download step, no "install Ollama first", no dependence on what the user's machine happens to have installed.
 
@@ -91,8 +105,10 @@ Agent
 │   id / name / avatar / description   ← description is what others (including other agents) use to judge whether to approach it
 │   persona                            ← how it speaks
 ├─ Capabilities
-│   model.main / model.judge           ← the same agent on two models: the expensive one
-│                                        for work, the local bundled one for judgement
+│   model.main                        ← the expensive model that does the work
+│   judge                             ← the sibling judging agent (own history, own memory,
+│                                        own local model); readable from here, and only read
+│                                        on demand because every token of it is billed
 │   tools[] / sandbox / limits
 ├─ Attention
 │   rooms[]        ← which rooms it watches
@@ -151,12 +167,11 @@ per tick:
   │  2. Rule says act? (@-mentioned / replied to / DM) → straight to stage 2
   │  3. Rule says ignore? (my own message / another bot's broadcast / muted room)
   │                            → mark them ignore, end of tick
-  │  4. Everything else → stage 1 (the same agent, on the local model)
+  │  4. Everything else → stage 1 (the judging agent)
   │
-  ├ Stage 1 · the same agent answering on model.judge (one call, no tools)
-  │  input: exactly what the agent would send to act — my own session history for this
-  │         room (compressed as usual), my memory, my persona, why I woke
-  │         (no judge-only summary, no second context pipeline)
+  ├ Stage 1 · the judging agent (one call, no tools)
+  │  input: its own history for this room, its own memory, the persona, why it woke,
+  │         plus — when it matters — a bounded slice read from the working agent's log
   │  model: model.judge — local, bundled (no download, no network), no tools, max_tokens capped
   │  output: one decision the loop can act on — the FORM is the implementation's choice
   │          (a single word, a label from a fixed set, a tiny JSON, whatever this model
@@ -176,11 +191,11 @@ per tick:
 
 Because **the actor spends money and the judge does not.**
 
-Earlier drafts said the judge "looks at little" and the actor "looks at everything" — that is no longer true and was never the real point. Both look at the same context. What differs is the model behind it: the judge is a local model running on the user's machine, so its tokens cost nothing; the actor is whatever expensive model the agent is configured with, and every call is billed.
+The judge is a local model on the user's machine, so its tokens cost nothing; the actor is whatever expensive model the agent is configured with, and every call is billed. That moves the judge's budget from money to **wall-clock** — which is why requirement 6 (a verdict in the low hundreds of milliseconds) is not a nicety but the real constraint, and why the verdict must stay small: a local model writing a long answer is a local model that makes the app stutter.
 
-That moves the judge's budget from money to **wall-clock** — which is why requirement 6 (a verdict in the low hundreds of milliseconds) is not a nicety but the real constraint, and why the verdict must stay small: a local model writing a long answer is a local model that makes the app stutter.
+It is also why two agents rather than one agent asked two questions: the two windows are an order of magnitude apart. A 4k window cannot hold what a 200k window holds, so the small one needs its own history, compacted to its own shape. Forcing them into one store would either starve the judge (fed a log it cannot fit) or truncate the actor (its history compacted to 4k's convenience).
 
-It also, honestly, raises the risk: a weak local model reading a full session context can produce a confident wrong verdict, where a weak model reading three lines could only produce a vague one. §7's answer is that **what the judge ignored is reviewable** — every verdict is recorded with the entry it judged, so a deaf gate is visible rather than silent.
+It raises a risk honestly: a weak local model with a history of its own can produce a confident wrong verdict. Two answers: **what the judge ignored is reviewable** — every verdict is recorded with the entry it judged, so a deaf gate is visible rather than silent — and **the working agent can read the judge's log**, so a wrong call is discoverable by the half that talks to the user.
 
 ### Three ways to decide not to act
 
@@ -219,7 +234,7 @@ Assume 10 agents, 5 rooms, 500 messages an hour.
 
 (Order-of-magnitude estimates, not measurements.)
 
-Because the judge is the same agent on a local model, **judge tokens are not money.** The billed column above is only stage 2 — the expensive model actually acting — and it dropped by roughly a third against the pre-ruling table, from ≈23k to ≈7.5k, purely because 15k of judge tokens stopped being billed. What replaced that cost is wall-clock: a local inference per judged batch, in the low hundreds of milliseconds, off the GPU, while the room is live. That is the number the judge model is actually chosen against.
+Because the judge is an agent on a local model, **judge tokens are not money.** The billed column above is only stage 2 — the expensive model actually acting — and it dropped by roughly a third against the pre-ruling table, from ≈23k to ≈7.5k, purely because 15k of judge tokens stopped being billed. What replaced that cost is wall-clock: a local inference per judged batch, in the low hundreds of milliseconds, off the GPU, while the room is live. That is the number the judge model is actually chosen against.
 
 **The gate's hit rate is the product's cost curve.** So it must be observable and tunable: every agent records `judged` (batches judged), `acted` (hits), `ratio` (hit rate) and `spent` (tokens). A hit rate that suddenly jumps to 50% means a persona is written wrong or a room has been flooded by bots — and that has to be visible in the interface.
 
@@ -233,7 +248,8 @@ Because the judge is the same agent on a local model, **judge tokens are not mon
 | Main loop | `TaskHandler` (`scheduler.py:982`): heartbeat, interval/backoff, bounded cycles, stop/trigger/status, resume after restart | a new task type `agent-tick` running stages 0 and 1 |
 | Stage 2 · action | today's session turn (`_run_tool_loop_locked`) | open with "you chose to speak"; require the three closing notes |
 | Delivery into the inbox | room fan-out as a frame broadcast, but only to connected clients | server-side **fan-out into every member agent's inbox** (persisted, not in memory) — the one road in, for every kind of message |
-| Judge model | `llm.py` already selects a model per session — the judge is the same agent pointed at `model.judge` instead of `model.main` | a local/bundled model binding, and a call shape with no tools and a low `max_tokens` cap; the reply's form is unconstrained, and anything unparseable counts as no act |
+| Judge agent | `llm.py` already selects a model per session, and `session.compact()` already keeps a history per session | a **second agent instance per bot** with its own session and memory on a local model: same machinery, smaller windows, no tools, a low `max_tokens` cap. Cross-reading between the two is a new read path. Any unparseable verdict counts as no act |
+| Memory compaction | `session.compact()` rewrites the session's history in place | must become **per-agent** as a result: two agents means two stores, each compacted against its own window, so neither can destroy the other's detail |
 | Memory | `memory_store`: session and project levels | add an **agent level** (across rooms and sessions) |
 | State visibility | frame broadcast | a new frame: `agent_state` (observing / judging / working / asleep / needy) |
 
@@ -267,7 +283,7 @@ Because the judge is the same agent on a local model, **judge tokens are not mon
 ## 9. Staging
 
 - **P1 (minimally alive)**: the Agent object + inbox + stages 0/1 + one room + rule-based gate (no model). Even at this point the question "does it spontaneously say something" gets answered.
-- **P2**: `model.judge` bound to a local model (the same agent, second model) + the three ways not to act + the state frame on screen.
+- **P2**: the judging agent (a second agent per bot, local model, own memory, cross-reading) + the three ways not to act + the state frame on screen.
 - **P3**: multi-room concurrency and the action queue + the diary + a hit-rate panel.
 - **P4**: multi-agent group chat (bounded turns, @-wake, the `(pass)` protocol) + delegation trees in threads.
 
