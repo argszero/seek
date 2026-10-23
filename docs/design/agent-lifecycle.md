@@ -124,9 +124,9 @@ Agent                                   ← a runnable, not a process
 ├─ model                               ← its own: the work agent's expensive one, or
 │                                        the watch agent's local bundled one
 ├─ prompt + persona                    ← how it speaks, which is now all "who it is" means
-├─ tools[] / sandbox / limits          ← the same machinery for both roles; the toolset
-│                                        differs. `work` may act in the room; `watch` may
-│                                        touch its own memory and session, not the room
+├─ tools[] / sandbox / limits          ← EMRG's existing registry, unchanged; which tools
+│                                        a given agent is allowed is ordinary per-agent
+│                                        configuration, not a new mechanism
 ├─ reads[] / readableBy[]              ← the mutual read path (see "a bot is N agents" below)
 ├─ memory
 │   diary (its own markdown memory, across sessions and rooms)
@@ -202,9 +202,10 @@ the bot's loop, per tick:
   │  input: its own history for this room, its own memory, the persona, why it woke,
   │         plus — when it matters — a bounded slice read from the work agent's log
   │  model: model.watch — local, bundled (no download, no network), max_tokens capped
-  │  tools: yes — the same machinery the work agent has, so it can read and write its
-  │         own memory and compact its own session. A watch that cannot manage its
-  │         memory is not an agent, it is a classifier with a memory bolted on
+  │  tools: the same registry EMRG already gives an agent (bash / read / write / edit /
+  │         glob / grep / subagent / submit_rant / boss). Nothing new is invented for
+  │         this design — memory writes and compaction are not tools at all, they are
+  │         what the runtime does at the end of a turn, exactly as in EMRG
   │  output: one decision the loop can act on — the FORM is the implementation's choice
   │          (a single word, a label from a fixed set, a tiny JSON, whatever this model
   │           produces reliably). What matters is that it is unambiguous and parseable
@@ -249,9 +250,11 @@ No new machinery is built for this. The outcome is not reported to the watch age
 
 **The watch agent does not perform its own verdicts.** It emits a decision; the loop performs the consequence — `ignore` consumes, `snooze` re-queues, `keep` appends the line. That is why the verdict's shape is free: a word is enough, because the runtime already knows what each one means.
 
-**Having tools is not the same as acting on them** (ruled 2026-10-23). The watch agent has the tools any agent has, because it has to read and write its own memory and compact its own session; a watch that could not manage its memory would not be an agent. What it must not do is take the bot's visible actions — it does not speak in the room, and it does not dispatch work. So the line is not "tools or no tools", it is **tools for its own housekeeping, never for the bot's outward acts**.
+**Both agents get EMRG's toolset, unchanged** (ruled 2026-10-23: *"just use the EMRG set"*). There is no watch-specific tool, no memory tool and no compaction tool to build — the tool registry is the one already in the kernel, and which tools a given agent is allowed is ordinary per-agent configuration in `agents.yml`, not a mechanism this design introduces.
 
-**The latency target is therefore a target, not a guarantee.** A judgement that needs no tool — the common case — is one call in the low hundreds of milliseconds. A judgement that reads its own memory costs a second round. That is acceptable because rules settle most traffic before the watch agent is called at all, and because the budget exists to keep the app responsive, not to forbid an agent from thinking twice.
+**Memory writes and compaction are not tools in EMRG, and they will not be here.** They are what the runtime does when a turn ends, and an agent does not choose to do them. So "the watch agent needs tools to manage its memory" was wrong on the facts: it has tools because it is an agent, and its memory is maintained for it the same way.
+
+**The latency target stays a target, not a guarantee.** The common judgement is one call with no tool round in the low hundreds of milliseconds. A judgement that does call a tool costs a second round, and a 300 MB local model calling `bash` will rarely be worth it — so the expected shape is that the watch agent almost never uses its tools, while nothing forbids it and no separate toolset has to be maintained. Rules have already settled most traffic before it is called at all.
 
 ### Backoff
 
@@ -294,7 +297,7 @@ Because the watch agent is an agent on a local model, **watch tokens are not mon
 | Main loop | `TaskHandler` (`scheduler.py:982`): heartbeat, interval/backoff, bounded cycles, stop/trigger/status, resume after restart | a new task type `agent-tick` running stages 0 and 1 |
 | Stage 2 · action | today's session turn (`_run_tool_loop_locked`) | open with "you chose to speak"; require the three closing notes |
 | Delivery into the inbox | room fan-out as a frame broadcast, but only to connected clients | server-side **fan-out into every member bot's inbox** (persisted, not in memory) — the one road in, for every kind of message |
-| Watch agent | `llm.py` already selects a model per session, and `session.compact()` already keeps a history per session | a **second row in `agents.yml` per bot**: same machinery, its own session and memory, a local model, smaller windows, a low `max_tokens` cap, and a read path to its sibling. Tools are the same registry, but its toolset excludes the bot's outward acts. Any unparseable verdict counts as no act |
+| Watch agent | `llm.py` already selects a model per session, and `session.compact()` already keeps a history per session | a **second row in `agents.yml` per bot**: same machinery, its own session and memory, a local model, smaller windows, a low `max_tokens` cap, and a read path to its sibling. Tools are EMRG's existing registry, unchanged — no watch-specific tool is added. Any unparseable verdict counts as no act |
 | Memory compaction | `session.compact()` rewrites the session's history in place | nothing to change *in kind*: each agent already has its own session file, so the two stores are separate by construction. What must be checked is that no code path compacts across them |
 | Memory | `memory_store`: session and project levels | add an **agent level** (across rooms and sessions) |
 | State visibility | frame broadcast | a new frame: `agent_state` (watching / working / asleep / needy) |
