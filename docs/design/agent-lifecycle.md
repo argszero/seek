@@ -1,12 +1,12 @@
 # Long-lived agent design (seek kernel)
 
-> Settled by the host on 2026-10-23: **every bot is a complete agent**, differing from an ordinary agent in three ways —
-> **long-lived, observes on its own, acts on its own**. If the agent sits in a room where someone speaks without
-> mentioning it, that message is still delivered to it and lands in its own watch queue. Inside the agent there is a
+> Settled by the host on 2026-10-23: **every bot is alive**, differing from an ordinary agent in three ways —
+> **long-lived, observes on its own, acts on its own**. If a bot sits in a room where someone speaks without
+> mentioning it, that message is still delivered to it and lands in its **watch queue**. The bot has a
 > **main loop**, and that loop is the core of its life — **the only loop there is**. Every tick it first decides from
-> the watch data whether to act (rules / events / a cheap model / a local model — this is where the money is saved,
-> because a permanently alive agent must not burn tokens when nothing is called for). A direct message or an
-> @-mention is not a separate road out of this loop: the gate sees it and passes it straight through.
+> the watch data whether to act (rules, then one call to a local model — this is where the money is saved, because a
+> permanently alive bot must not burn tokens when nothing is called for). A direct message or an @-mention is not a
+> separate road out of this loop: the gate sees it and passes it straight through.
 >
 > The interaction layer above this (rooms, messages, the sense of presence) is in `~/.emrg/designs/seek-mental-model.md`.
 
@@ -24,54 +24,56 @@ Keeping the inbox and the loop on the bot is what keeps an agent small (ruled 20
 
 EMRG is **trigger-driven**: nothing runs until something calls it, so an idle agent costs nothing by construction. An agent in seek is **alive** — it keeps watching rooms, and rooms keep producing messages nobody addressed to it. Aliveness is the product; it is also, without a gate, an open tap.
 
-So the judgement stage is not an optimisation added to a design that would work without it. **It is what makes aliveness affordable**, and it answers two requirements at once:
+So the watch stage is not an optimisation added to a design that would work without it. **It is what makes aliveness affordable**, and it answers two requirements at once:
 
 1. **It must stop meaningless work.** A room full of other people talking about something that has nothing to do with it is the normal state of a busy room, and every one of those messages must cost nothing to disregard.
 2. **It must itself be almost free.** A gate that costs a little per message is not a gate, it is a smaller bill.
 
-### Behind every bot there are two agents (ruled 2026-10-23)
+### Behind every bot there are two agents: one watches, one works (ruled 2026-10-23)
 
-One judges, one acts. Both are agents in the full sense — each has a persona, its own session history, its own memory store, its own turns on the audit trail. **They do not share memory.** What they share is that **each knows the other exists and can read the other's history and memory** (ruled 2026-10-23).
+**The two roles are named `watch` and `work`** (ruled 2026-10-23, replacing "judge" and "the working agent"). The names were chosen from the vocabulary already in the design rather than invented for the roles: the bot's inbox is the **watch queue**, the bot "keeps watching rooms", and the expensive agent's job was already the **work**. So `watch` reads the watch queue and `work` does the work, and a third role later — say `recall` — lands in the same register instead of fighting it.
 
-| | The judging agent | The working agent |
+One watches, one works. Both are agents in the full sense — each has a persona, its own session history, its own memory store, its own turns on the audit trail. **They do not share memory.** What they share is that **each knows the other exists and can read the other's history and memory** (ruled 2026-10-23).
+
+| | The watch agent | The work agent |
 |---|---|---|
-| Model | `model.judge` — local, bundled, small | `model.main` — whatever expensive model the agent is configured with |
+| Model | `model.watch` — local, bundled, small | `model.work` — whatever expensive model the bot is configured with |
 | Window | small (thousands of tokens) | large (as much as the model offers) |
 | What it does | answers one question: does anything here concern me? | does the work, speaks in the room, uses tools |
 | What it costs | wall-clock, in the low hundreds of milliseconds | money |
 | What it remembers | its own compact log: what it looked at, what it decided, how the room usually goes | the full record: everything it did and said |
 
-**Why they must not share one memory: the two windows are an order of magnitude apart, and compaction is destructive.** A shared log means the small-window agent compacts first and, judging by its own 4k window, deletes detail the large-window agent can still read. That is not thrift, it is amnesia — and it is silent, because nothing in the room shows the moment a memory was thrown away. Two stores, each compacted against its own window, removes the collision rather than managing it.
+**Why they must not share one memory: the two windows are an order of magnitude apart, and compaction is destructive.** A shared log means the small-window agent compacts first and, reading its own 4k window, deletes detail the large-window agent can still read. That is not thrift, it is amnesia — and it is silent, because nothing in the room shows the moment a memory was thrown away. Two stores, each compacted against its own window, removes the collision rather than managing it.
 
 **Why they must be able to read each other: an agent that cannot see its own other half invents a reason.** The failure to design against is the split-brain one: the acting half does something, the half that talks to you has no record of why, and it produces a confident explanation that is simply wrong. So the read channel is not an integration nicety, it is what keeps the bot honest about *"I said nothing there"* and *"I already answered that"*.
 
-**Cross-reading is not free, and the two directions cost different things.** The working agent reading the judge's log is billed tokens on an expensive model, so it is **on demand, not injected into every turn** — pulled when it matters (the user asks why it stayed quiet; it is about to speak in a room it has been ignoring). The judge reading the working agent's log costs no money but costs latency, so it reads a **bounded** slice, never the whole record.
+**Cross-reading is not free, and the two directions cost different things.** The work agent reading the watch agent's log is billed tokens on an expensive model, so it is **on demand, not injected into every turn** — pulled when it matters (the user asks why it stayed quiet; it is about to speak in a room it has been ignoring). The watch agent reading the work agent's log costs no money but costs latency, so it reads a **bounded** slice, never the whole record.
 
-**There is no judge-specific input pipeline.** The judge sends the same shape of request the working agent sends — its own history, its own memory, its own compression — because it is an agent, not a classifier. Nothing is summarised on its behalf and no second context has to be kept in sync.
+**There is no watch-specific input pipeline.** The watch agent sends the same shape of request the work agent sends — its own history, its own memory, its own compression — because it is an agent, not a classifier. Nothing is summarised on its behalf and no second context has to be kept in sync.
 
-The judge model is **shipped with the product** — no download step, no "install Ollama first", no dependence on what the user's machine happens to have installed.
+The watch model is **shipped with the product** — no download step, no "install Ollama first", no dependence on what the user's machine happens to have installed.
 
 It never fires on every message, because rules run first and settle most of them for nothing:
 
 | Order | Check | Cost | Verdict |
 |---|---|---|---|
 | 1 | **No new observations at all** | nothing | **Return.** There is nothing to look at; the tick ends here |
-| 2 | **@ me, a reply to my message, or a direct message** | nothing | **Act.** Straight to stage 2 — there is nothing to judge |
+| 2 | **@ me, a reply to my message, or a direct message** | nothing | **Act.** Straight to stage 2 — there is nothing to decide |
 | 3 | Muted room, my own message, another bot's broadcast | nothing | Ignore |
 | 4 | Everything else | one small-model call | The model decides |
 
 The ordering is the whole economy of the design: the two cases that are both **certain and free** are settled before anything runs, so the model is only ever asked about the genuinely ambiguous remainder — a group of people talking near it, without naming it.
 
-#### What the judge model must be (requirements, ruled 2026-10-23 — the choice itself is deferred)
+#### What the watch model must be (requirements, ruled 2026-10-23 — the choice itself is deferred)
 
 | # | Requirement | Why |
 |---|---|---|
-| 1 | **Multilingual: Chinese and English at minimum**, more is better | The product is international from the first screen, and a room's shape follows its people, not a setting. A judge that only reads English is blind in exactly the rooms where it is needed |
-| 2 | **Multimodal: it must see images** | Messages carry screenshots, photos, diagrams and tool cards. Judging "is this about me?" from alt text alone is guessing |
+| 1 | **Multilingual: Chinese and English at minimum**, more is better | The product is international from the first screen, and a room's shape follows its people, not a setting. A watch agent that only reads English is blind in exactly the rooms where it is needed |
+| 2 | **Multimodal: it must see images** | Messages carry screenshots, photos, diagrams and tool cards. Deciding "is this about me?" from alt text alone is guessing |
 | 3 | **Bundled, not downloaded** | The gate is what makes aliveness affordable; making it depend on the user fetching anything means it silently is not there |
 | 4 | **Small enough to ship inside an app** — target ≤ 300 MB of weights | Installers are the first thing a user meets |
 | 5 | **Runs on a plain CPU, quantised** | It runs per message per agent on ordinary laptops, not on a GPU |
-| 6 | **Fast enough that looking is invisible** — a judgement in the low hundreds of milliseconds | A gate slower than the thing it gates is not a gate |
+| 6 | **Fast enough that looking is invisible** — a watch agentment in the low hundreds of milliseconds | A gate slower than the thing it gates is not a gate |
 
 **Requirements 2 and 4 pull against each other, and that is the real difficulty.** Measured on 2026-10-23 (bf16 weights as published):
 
@@ -85,12 +87,12 @@ A multimodal model at 300 MB therefore means a very small base or aggressive qua
 
 ## 1. One path, not three (ruled by the host, 2026-10-23)
 
-There is **one** delivery path and **one** loop. A message to a room is delivered into every member **bot's** inbox and costs nothing to receive. The loop then runs; stage 0 reads the inbox and decides what to do with it. An @-mention, a reply to its own message, or a direct message is not a second road — it is **a fast-pass inside stage 0**: the gate recognises it and sends it straight to stage 2, skipping the paid judgement, because there is nothing to judge.
+There is **one** delivery path and **one** loop. A message to a room is delivered into every member **bot's** inbox and costs nothing to receive. The loop then runs; stage 0 reads the inbox and decides what to do with it. An @-mention, a reply to its own message, or a direct message is not a second road — it is **a fast-pass inside stage 0**: the gate recognises it and sends it straight to stage 2, skipping the watch, because there is nothing to decide.
 
 | What arrives | Where it lands | What stage 0 does |
 |---|---|---|
-| A DM, an @-mention, a reply to its own message | The inbox, like everything else | **Pass** — straight to stage 2, no judge call |
-| A room message that names nobody | The inbox | Everything else: rules, then the judge |
+| A DM, an @-mention, a reply to its own message | The inbox, like everything else | **Pass** — straight to stage 2, no watch call |
+| A room message that names nobody | The inbox | Everything else: rules, then the watch agent |
 | A scheduled tick | No message; the loop wakes anyway | Looks at whatever has accumulated |
 
 Why this matters more than it looks: with two roads, the same message could be answered twice — once by the direct road and once by a later tick that finds it still in the inbox. With one road there is nothing to reconcile, no "mark it handled" bookkeeping, and no ordering rule between two runners.
@@ -112,21 +114,21 @@ Bot                                     ← the contact: what a room shows and @
 │   interests[]    ← keywords / topics / "answer when someone asks about X" subscriptions
 ├─ Watch queue (the inbox, see §3)      ← ONE queue per bot, whatever runs behind it
 ├─ Life state
-│   state: asleep | observing | judging | working | needy (waiting on your decision)
+│   state: asleep | watching | working | needy (waiting on your decision)
 │   lastSpoke[room] / lastTick / sleepUntil / backoff
 │   spent: tokens, observed and reported — a number, never a limit
 └─ agents[]  ──▶  each is a runnable the loop calls (see below)
 
 Agent                                   ← a runnable, not a process
 ├─ id / bot / role                     ← which bot it belongs to, and which job it does there
-├─ model                               ← its own: the working agent's expensive one, or
-│                                        the judging agent's local bundled one
+├─ model                               ← its own: the work agent's expensive one, or
+│                                        the watch agent's local bundled one
 ├─ prompt + persona                    ← how it speaks, which is now all "who it is" means
 ├─ tools[] / sandbox / limits
 ├─ reads[] / readableBy[]              ← the mutual read path (see "a bot is N agents" below)
 ├─ memory
 │   diary (its own markdown memory, across sessions and rooms)
-│   roomDigest[room] (rolling summary per room — its own memory, not a judge input format)
+│   roomDigest[room] (rolling summary per room — its own memory, not a watch-agent input format)
 └─ Sessions
     session[room] (its own stretch of work in each room; a new one starts when it
     changes workspace — private bookkeeping, never shown to the user)
@@ -138,7 +140,7 @@ Agent                                   ← a runnable, not a process
 
 **Bot and Agent are two entities with two jobs.** The bot is the contact and the living thing: it owns the name, the avatar and the description, it owns the inbox and the loop, and it is what a room shows and what an @-mention names. The agents are the runnables behind it: each owns a persona, a model, a session and a memory, and runs when the bot's loop calls it. **The bot pushes its identity down to its agents** — an agent has no name of its own, only a `role` — so renaming a bot reaches every agent at once, and the room never sees two contacts where there is one.
 
-**`agents.yml` registers agents, not bots.** Each bot is at least two rows today — one that judges, one that works — and nothing caps it at two: a bot that later needs a third role gets a third row. This is cheap because each row is a plain runnable: a model, a prompt, tools, a memory. No lifecycle to write for it, because the lifecycle is the bot's.
+**`agents.yml` registers agents, not bots.** Each bot is at least two rows today — one that watches, one that works — and nothing caps it at two: a bot that later needs a third role gets a third row. This is cheap because each row is a plain runnable: a model, a prompt, tools, a memory. No lifecycle to write for it, because the lifecycle is the bot's.
 
 **The split runs through the whole model**, and it is what keeps both sides honest: membership, @-mention, a room's list of people, the inbox, the tick and the state machine are **bot-level** (so a bot has one queue and one clock however many agents work behind it); session, memory, turn and cost are **agent-level** (so the audit trail says exactly which worker acted, and the bill is per worker). Rules 14 in `data-model.md` states the cardinality.
 
@@ -155,7 +157,7 @@ Agent                                   ← a runnable, not a process
 
 ## 3. Watch queue (the inbox) — one per bot (ruled 2026-10-23)
 
-**The inbox belongs to the bot, not to an agent.** A message to a room is delivered once, into the bot's queue; the bot's loop reads that queue and decides, and only then does an agent run. Agents do not watch rooms — the bot does.
+**The inbox belongs to the bot, not to an agent.** A message to a room is delivered once, into the bot's watch queue; the bot's loop reads that queue and decides, and only then does an agent run. Agents do not watch rooms — the bot does, and the `watch` agent is what it asks.
 
 That is the whole reason the queue is here: delivery is one write per (bot, message) instead of one per (agent, message), there is one "already handled" state instead of N, and the tick stays one loop instead of a fan of loops to reconcile.
 
@@ -172,11 +174,11 @@ Appended one entry at a time, **never processed by a model**:
 ```
 
 - `hints` are scored **by the producer, not by a model**: @ detection, question marks, whether it replies to me, keyword matches, message density. All of it is string and counting work that costs nothing.
-- **`mentionsMe` and `repliesToMe` are bot-level facts** (ruled 2026-10-23). They are computed once, when the message lands, against the bot — not per agent. No agent ever scans a room for its own name, and the judging agent could not: it is not addressable, so "an @ to me" is a question only the bot can answer. That is what makes stage 0's fast-pass a rule rather than a model call.
-- State machine: `new → judged (act | ignore | snooze | keep) → consumed`; `snooze` carries a condition ("when this gets a reply", "in five minutes").
+- **`mentionsMe` and `repliesToMe` are bot-level facts** (ruled 2026-10-23). They are computed once, when the message lands, against the bot — not per agent. No agent ever scans a room for its own name, and the watch agent could not: it is not addressable, so "an @ to me" is a question only the bot can answer. That is what makes stage 0's fast-pass a rule rather than a model call.
+- State machine: `new → watched (act | ignore | snooze | keep) → consumed`; `snooze` carries a condition ("when this gets a reply", "in five minutes").
 - **Capacity**: per (bot, room) a cap such as 200 entries / 24 hours. Over the cap, entries are not dropped — they collapse into one line inside the bot's `roomDigest`. Otherwise the inbox becomes a second message log and blows up both disk and context.
 - The inbox is append-only and the writer **never blocks** (room fan-out must not stall because one bot is busy).
-- A verdict is written on the entry, and it is written by the **loop**, not by the agent that produced it — the judging agent only answers; the loop performs (see §4).
+- A verdict is written on the entry, and it is written by the **loop**, not by the agent that produced it — the watch agent only answers; the loop performs (see §4).
 
 ---
 
@@ -192,21 +194,21 @@ the bot's loop, per tick:
   │     hints, computed at delivery) → straight to stage 2
   │  3. Rule says ignore? (my own message / another bot's broadcast / muted room)
   │                            → mark them ignore, end of tick
-  │  4. Everything else → stage 1 (call the judging agent)
+  │  4. Everything else → stage 1 (call the watch agent)
   │
-  ├ Stage 1 · the loop calls the judging agent (one call, no tools)
+  ├ Stage 1 · the loop calls the watch agent (one call, no tools)
   │  input: its own history for this room, its own memory, the persona, why it woke,
-  │         plus — when it matters — a bounded slice read from the working agent's log
-  │  model: model.judge — local, bundled (no download, no network), no tools, max_tokens capped
+  │         plus — when it matters — a bounded slice read from the work agent's log
+  │  model: model.watch — local, bundled (no download, no network), no tools, max_tokens capped
   │  output: one decision the loop can act on — the FORM is the implementation's choice
   │          (a single word, a label from a fixed set, a tiny JSON, whatever this model
   │           produces reliably). What matters is that it is unambiguous and parseable
   │  effect: act → stage 2, carrying the messages it decided to care about
   │          no act → record the verdict and the reason if one came back, end of tick
-  │          unparseable → treated as no act, and counted as a judge failure
+  │          unparseable → treated as no act, and counted as a watch agent failure
   │
-  └ Stage 2 · run the working agent (expensive)
-     Stage 2 calls the working agent and lets it run — identical to one EMRG turn today:
+  └ Stage 2 · run the work agent (expensive)
+     Stage 2 calls the work agent and lets it run — identical to one EMRG turn today:
      full context + tools + streaming + memory write at the end.
      One difference: it opens with "you decided to say this yourself; nobody called you",
      because nothing called it and the reason it woke is context, not a request.
@@ -214,23 +216,23 @@ the bot's loop, per tick:
 
 ### Why two stages
 
-Because **the actor spends money and the judge does not.**
+Because **the work agent spends money and the watch agent does not.**
 
-The judge is a local model on the user's machine, so its tokens cost nothing; the actor is whatever expensive model the agent is configured with, and every call is billed. That moves the judge's budget from money to **wall-clock** — which is why requirement 6 (a verdict in the low hundreds of milliseconds) is not a nicety but the real constraint, and why the verdict must stay small: a local model writing a long answer is a local model that makes the app stutter.
+The watch agent is a local model on the user's machine, so its tokens cost nothing; the work agent runs whatever expensive model the bot is configured with, and every call is billed. That moves the watch agent's budget from money to **wall-clock** — which is why requirement 6 (a verdict in the low hundreds of milliseconds) is not a nicety but the real constraint, and why the verdict must stay small: a local model writing a long answer is a local model that makes the app stutter.
 
-It is also why two agents rather than one agent asked two questions: the two windows are an order of magnitude apart. A 4k window cannot hold what a 200k window holds, so the small one needs its own history, compacted to its own shape. Forcing them into one store would either starve the judge (fed a log it cannot fit) or truncate the actor (its history compacted to 4k's convenience).
+It is also why two agents rather than one agent asked two questions: the two windows are an order of magnitude apart. A 4k window cannot hold what a 200k window holds, so the small one needs its own history, compacted to its own shape. Forcing them into one store would either starve the watch agent (fed a log it cannot fit) or truncate the work agent (its history compacted to 4k's convenience).
 
-It raises a risk honestly: a weak local model with a history of its own can produce a confident wrong verdict. Two answers: **what the judge ignored is reviewable** — every verdict is recorded with the entry it judged, so a deaf gate is visible rather than silent — and **the working agent can read the judge's log**, so a wrong call is discoverable by the half that talks to the user.
+It raises a risk honestly: a weak local model with a history of its own can produce a confident wrong verdict. Two answers: **what the watch agent ignored is reviewable** — every verdict is recorded with the entry it watched, so a deaf gate is visible rather than silent — and **the work agent can read the watch agent's log**, so a wrong call is discoverable by the half that talks to the user.
 
-### How the judge finds out it was wrong (ruled 2026-10-23)
+### How the watch agent finds out it was wrong (ruled 2026-10-23)
 
-**It reads the outcome off the record it already has.** When the judge forwards an observation and the working agent then says nothing in that room, that is visible: the entry it dispatched has no message after it. Next time the judge meets the same room, its own memory holds the line it wrote — *"I forwarded this and nothing was said"* — and it can weigh that before deciding again.
+**It reads the outcome off the record it already has.** When the watch agent forwards an observation and the work agent then says nothing in that room, that is visible: the entry it dispatched has no message after it. Next time the watch agent meets the same room, its own memory holds the line it wrote — *"I forwarded this and nothing was said"* — and it can weigh that before deciding again.
 
-No new machinery is built for this. The outcome is not reported to the judge by anyone: **it is already on the board**, because a turn that produced no message is a fact of the same data model everything else reads. The judge only has to look.
+No new machinery is built for this. The outcome is not reported to the watch agent by anyone: **it is already on the board**, because a turn that produced no message is a fact of the same data model everything else reads. The watch agent only has to look.
 
-**And it is not learning.** The weights do not move; nothing is trained; no rule is written down for the future. At most the judge accumulates its own observations, exactly as any agent's memory does, and a better-informed next judgement is all that follows.
+**And it is not learning.** The weights do not move; nothing is trained; no rule is written down for the future. At most the watch agent accumulates its own observations, exactly as any agent's memory does, and a better-informed next watch is all that follows.
 
-**It is also fine if it learns nothing.** If the judge never gets meaningfully better, the design still holds: what keeps it honest is the record being reviewable and the working agent being able to read it, not the judge improving over time. Nothing downstream may depend on the judge getting smarter — no decay schedule, no "wait until it has seen enough", no accuracy target. A weak judge with a visible record is an acceptable judge; a hidden one is not.
+**It is also fine if it learns nothing.** If the watch agent never gets meaningfully better, the design still holds: what keeps it honest is the record being reviewable and the work agent being able to read it, not the watch agent improving over time. Nothing downstream may depend on the watch agent getting smarter — no decay schedule, no "wait until it has seen enough", no accuracy target. A weak watch agent with a visible record is an acceptable watch agent; a hidden one is not.
 
 ### Three ways to decide not to act
 
@@ -240,7 +242,7 @@ No new machinery is built for this. The outcome is not reported to the judge by 
 
 `keep` matters: it makes an agent "present but not interrupting", which is the most human thing about being permanently alive.
 
-**The judge never writes anything itself.** It emits a verdict; the loop performs the consequence — `ignore` consumes, `snooze` re-queues, `keep` appends the line. That split is what lets the judge stay a single call with no tools on a local model, and it is why the verdict's shape is free: a word is enough, because the runtime already knows what each verdict means.
+**The watch agent never writes anything itself.** It emits a verdict; the loop performs the consequence — `ignore` consumes, `snooze` re-queues, `keep` appends the line. That split is what lets the watch agent stay a single call with no tools on a local model, and it is why the verdict's shape is free: a word is enough, because the runtime already knows what each verdict means.
 
 ### Backoff
 
@@ -263,15 +265,15 @@ Assume 10 agents, 5 rooms, 500 messages an hour.
 | Approach | Tokens per hour | Outcome |
 |---|---|---|
 | Every message to the expensive model (the naive port) | 500 × ~1500 = **750k billed** | broke within a day |
-| Every message to the local judge only (no stage 0) | 500 × ~300 = 150k **local, unbilled** | no bill — but one local inference per message, and each one is latency in the app |
-| **This design**: 90% stopped free, 10% judged locally, 5% of those act | 50 × 300 local (unbilled) + 2.5 × 3000 = **≈7.5k billed** | affordable |
-| Leaner: judge only when a batch has piled up | another order of magnitude down | at the cost of slower reactions |
+| Every message to the local watch agent only (no stage 0) | 500 × ~300 = 150k **local, unbilled** | no bill — but one local inference per message, and each one is latency in the app |
+| **This design**: 90% stopped free, 10% watched locally, 5% of those act | 50 × 300 local (unbilled) + 2.5 × 3000 = **≈7.5k billed** | affordable |
+| Leaner: watch only when a batch has piled up | another order of magnitude down | at the cost of slower reactions |
 
 (Order-of-magnitude estimates, not measurements.)
 
-Because the judge is an agent on a local model, **judge tokens are not money.** The billed column above is only stage 2 — the expensive model actually acting — and it dropped by roughly a third against the pre-ruling table, from ≈23k to ≈7.5k, purely because 15k of judge tokens stopped being billed. What replaced that cost is wall-clock: a local inference per judged batch, in the low hundreds of milliseconds, off the GPU, while the room is live. That is the number the judge model is actually chosen against.
+Because the watch agent is an agent on a local model, **watch tokens are not money.** The billed column above is only stage 2 — the expensive model actually acting — and it dropped by roughly a third against the pre-ruling table, from ≈23k to ≈7.5k, purely because 15k of watch tokens stopped being billed. What replaced that cost is wall-clock: a local inference per watched batch, in the low hundreds of milliseconds, off the GPU, while the room is live. That is the number the watch model is actually chosen against.
 
-**The gate's hit rate is the product's cost curve.** So it must be observable and tunable: every agent records `judged` (batches judged), `acted` (hits), `ratio` (hit rate) and `spent` (tokens). A hit rate that suddenly jumps to 50% means a persona is written wrong or a room has been flooded by bots — and that has to be visible in the interface.
+**The gate's hit rate is the product's cost curve.** So it must be observable and tunable: every agent records `watched` (batches watched), `acted` (hits), `ratio` (hit rate) and `spent` (tokens). A hit rate that suddenly jumps to 50% means a persona is written wrong or a room has been flooded by bots — and that has to be visible in the interface.
 
 ---
 
@@ -283,10 +285,10 @@ Because the judge is an agent on a local model, **judge tokens are not money.** 
 | Main loop | `TaskHandler` (`scheduler.py:982`): heartbeat, interval/backoff, bounded cycles, stop/trigger/status, resume after restart | a new task type `agent-tick` running stages 0 and 1 |
 | Stage 2 · action | today's session turn (`_run_tool_loop_locked`) | open with "you chose to speak"; require the three closing notes |
 | Delivery into the inbox | room fan-out as a frame broadcast, but only to connected clients | server-side **fan-out into every member bot's inbox** (persisted, not in memory) — the one road in, for every kind of message |
-| Judge agent | `llm.py` already selects a model per session, and `session.compact()` already keeps a history per session | a **second row in `agents.yml` per bot**: same machinery, its own session and memory, a local model, smaller windows, no tools, a low `max_tokens` cap, and a read path to its sibling. Any unparseable verdict counts as no act |
+| Watch agent | `llm.py` already selects a model per session, and `session.compact()` already keeps a history per session | a **second row in `agents.yml` per bot**: same machinery, its own session and memory, a local model, smaller windows, no tools, a low `max_tokens` cap, and a read path to its sibling. Any unparseable verdict counts as no act |
 | Memory compaction | `session.compact()` rewrites the session's history in place | nothing to change *in kind*: each agent already has its own session file, so the two stores are separate by construction. What must be checked is that no code path compacts across them |
 | Memory | `memory_store`: session and project levels | add an **agent level** (across rooms and sessions) |
-| State visibility | frame broadcast | a new frame: `agent_state` (observing / judging / working / asleep / needy) |
+| State visibility | frame broadcast | a new frame: `agent_state` (watching / working / asleep / needy) |
 
 **An honest cost**: today's daemon presses "identity" and "runtime" into the same `EmrgServer`, and the busy table, cancel table and contexts are all keyed by session. Running many agents in one process needs another layer keyed by agent. It is doable; the work is real.
 
@@ -297,8 +299,8 @@ Because the judge is an agent on a local model, **judge tokens are not money.** 
 | Failure | Mechanism |
 |---|---|
 | **Two bots wake each other and never stop** | ①`fromAgent` marks bot messages, which do not wake other bots unless @-mentioned ②a cap on consecutive bot turns per room (grok-bot uses 3), held **on the Room** ③the root and depth rules, which bound the set of chains without a cooldown — §11 is the full treatment: the root rule and the depth cap bound the set of chains, and "every room has a human member" removes the case where none of this can be noticed |
-| The judge is too cheap → deaf and blind | hit rate observable; per-agent thresholds; what it ignored can be reviewed (entries and reasons are kept) |
-| The judge is too expensive → burning money | spent is recorded and visible per agent, so a runaway bill is *seen* rather than silently capped. There is no self-stop: a bill that climbs is a defect in the persona or the gate, and it is fixed there, not papered over by a limit that also silences the agent you wanted to hear from |
+| The watch agent is too cheap → deaf and blind | hit rate observable; per-agent thresholds; what it ignored can be reviewed (entries and reasons are kept) |
+| The watch agent is too expensive → burning money | spent is recorded and visible per agent, so a runaway bill is *seen* rather than silently capped. There is no self-stop: a bill that climbs is a defect in the persona or the gate, and it is fixed there, not papered over by a limit that also silences the agent you wanted to hear from |
 | Inbox explosion | a cap plus collapse into the room digest |
 | Long-lived means creeping corruption | checkpoint at the end of every tick; on restart, self-check (queue, time since it last spoke, spent); persona drift corrected against the diary |
 | No sense of time | every tick injects "how long since you last spoke in this room" and "how old this message is"; without that it asks the same question forever |
@@ -308,7 +310,7 @@ Because the judge is an agent on a local model, **judge tokens are not money.** 
 
 ## 8. What the interface must show (or users will read it as a bug)
 
-1. **A state dot**: observing / judging / working / asleep / needy, as an avatar badge.
+1. **A state dot**: watching / working / asleep / needy, as an avatar badge.
 2. **Proactive messages are marked**: not a reply to you, but something it chose to say — without a tag you will read it as a non-answer.
 3. **"Why did it ignore me?" is expandable**: translate `reason` into plain language ("this was not addressed to me, and someone else is already answering"). This is both the product difference and the only way to debug the thing.
 4. **Spend visible**: how much it has spent today. There is no remainder, because there is no limit — the number is there to be read, not enforced.
@@ -318,7 +320,7 @@ Because the judge is an agent on a local model, **judge tokens are not money.** 
 ## 9. Staging
 
 - **P1 (minimally alive)**: the Agent object + inbox + stages 0/1 + one room + rule-based gate (no model). Even at this point the question "does it spontaneously say something" gets answered.
-- **P2**: the judging agent (a second agent per bot, local model, own memory, cross-reading) + the three ways not to act + the state frame on screen.
+- **P2**: the watch agent (a second agent per bot, local model, own memory, cross-reading) + the three ways not to act + the state frame on screen.
 - **P3**: multi-room concurrency and the action queue + the diary + a hit-rate panel.
 - **P4**: multi-agent group chat (bounded turns, @-wake, the `(pass)` protocol) + delegation trees in threads.
 
@@ -344,7 +346,7 @@ What holds without asking:
 2. **An audit trail.** Every action is a `Turn`: what triggered it, which tools ran, what changed, what it cost. Nothing is asked in advance because everything is visible afterwards.
 3. **A stop that works.** Whatever it is doing on your behalf, you can see it and end it — data-model rule 11, every room has a human member, is what makes that true rather than aspirational.
 
-**Asking for a decision is not asking for permission.** An agent that is stuck, that cannot weigh two options, or that needs your judgement is having a conversation. *"May I?"* does not exist; *"which one?"* is ordinary speech.
+**Asking for a decision is not asking for permission.** An agent that is stuck, that cannot weigh two options, or that needs your decision is having a conversation. *"May I?"* does not exist; *"which one?"* is ordinary speech.
 
 ### 10.2 In the interface
 

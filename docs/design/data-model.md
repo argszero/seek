@@ -29,18 +29,18 @@ Bot and Agent split it the same way throughout: **the bot owns what is alive** (
 
 | Entity | What it is | Key point |
 |---|---|---|
-| **Principal** | Anything that can appear in a room and be addressed. `kind = human \| bot` | Name, avatar, `description` (self-introduction, used by others to judge whether to approach it). **Agents are not principals**; a message records which agent of the bot produced it, so the audit trail stays exact while the room sees one speaker |
+| **Principal** | Anything that can appear in a room and be addressed. `kind = human \| bot` | Name, avatar, `description` (self-introduction, used by others to gauge whether to approach it). **Agents are not principals**; a message records which agent of the bot produced it, so the audit trail stays exact while the room sees one speaker |
 | **Human** | You (v1 has exactly one "me") | Also a Principal; no privileges |
 | **Bot** | A visible contact — **the thing a room shows** (ruled 2026-10-23) | Owns the **name, avatar and description**. A bot is not an agent and an agent is not a bot: they are two models, and the identity lives here |
-| **Agent** | One long-lived worker behind a bot — a bot has one or more (today: one judges, one works) | Adds persona, capabilities, observations, memory, state. **It takes its name and avatar from its bot**, so two agents of one bot speak as one contact; it belongs to no room, and rooms are where it appears through its bot |
+| **Agent** | One long-lived worker behind a bot — a bot has one or more (today: one watches, one works) | Adds persona, capabilities, observations, memory, state. **It takes its name and avatar from its bot**, so two agents of one bot speak as one contact; it belongs to no room, and rooms are where it appears through its bot |
 
 > **The distinction that matters**: a Member is a Bot's *projection into one room*. The bot is what people see and address; its agents are the workers behind it, and the audit trail records which one acted.
 >
 > Feishu models a bot as a kind of member. That is enough there; it is not enough here, because the work behind a bot has a life and a memory that span rooms, and there is more than one worker behind it.
 
-> **Bot and Agent are two entities, not two views of one** (ruled 2026-10-23). Names and avatars live on the bot and are **pushed down to its agents**, so renaming a bot renames every agent of it at once and no agent carries a second copy of the identity. An agent has no name of its own: it has a `role` (`judge`, `work`, and whatever comes later) and its bot's face.
+> **Bot and Agent are two entities, not two views of one** (ruled 2026-10-23). Names and avatars live on the bot and are **pushed down to its agents**, so renaming a bot renames every agent of it at once and no agent carries a second copy of the identity. An agent has no name of its own: it has a `role` (`watch`, `work`, and whatever comes later) and its bot's face.
 
-> **A bot is N agents** (ruled 2026-10-23). `agents.yml` registers agents, not bots; each bot is at least two rows today (one judges on a local model, one works on the expensive one) and more are allowed later. Two rows is two of everything the kernel already gives an agent — a model, a session, a memory, a state machine — so nothing needs a new container and nothing that iterates agents needs an exception.
+> **A bot is N agents** (ruled 2026-10-23). `agents.yml` registers agents, not bots; each bot is at least two rows today (one watches on a local model, one works on the expensive one) and more are allowed later. Two rows is two of everything the kernel already gives an agent — a model, a session, a memory, a state machine — so nothing needs a new container and nothing that iterates agents needs an exception.
 >
 > Three things follow, and they are the whole reason the two models are kept apart: **the bot is the member** (membership, @-mention and the room's list of people are bot-level, so two agents never show as two contacts); **the agents are the workers** (a session, a memory and a turn each, so cost and audit stay per-agent and `sessions[agentId]` needs no change); **the identity is the bot's** (name, avatar, description, and the persona's voice, pushed down to its agents).
 
@@ -64,7 +64,7 @@ Bot and Agent split it the same way throughout: **the bot owns what is alive** (
 | Entity | What it is | Key point |
 |---|---|---|
 | **Workspace** | Where work runs — a directory/project | Today's `cwd` in EMRG; bound by a Session, used by an Agent |
-| **Turn** | One action by an agent | What triggered it (which message, which judgement), tokens spent, tools called, messages produced — **the atomic unit of cost and audit** |
+| **Turn** | One action by an agent | What triggered it (which message, which watch), tokens spent, tools called, messages produced — **the atomic unit of cost and audit** |
 | **Observation** | One watch-queue entry, **on the bot's queue** (ruled 2026-10-23) | A reference to a Message + zero-cost hints (mentions me, asks a question, replies to me…) + a verdict (ignore / snooze / keep / act). One message enters one bot's queue once, not once per agent |
 | **Memory** | Three levels | Agent diary (cross-room, long-lived) / room digest (rolling, per room) / session memory (today's EMRG session memory) |
 
