@@ -46,7 +46,7 @@ Then a fourth problem, independent of the above: `Session` is called *"the unit 
 
 Also: stage 1's judge call produces no `Turn` and no `Message`, so the money spent deciding *not* to speak — the majority of the product's spend — appears in no ledger at all. If `Turn` is "the atomic unit of cost and audit", either the judge calls are `Turn`s too, or a tick gets its own record.
 
-**Ruling needed**: is a Session the room's, or the (agent, room) pair's? The answer changes the on-disk shape, and it is the question that "context is private" quietly depends on — a room-wide session means shared memory, which contradicts the first claim in the model.
+> **Resolved 2026-10-23.** The question was framed wrong — that is what the conflict exposed. The requirement is that the interaction match Feishu's, and Feishu shows no session at all, so a Session must not be a unit the user can see; asking whether it belongs to the room or to the agent was asking the wrong layer. It is now the agent's private span of work in a room (data-model rule 3), the room's timeline is continuous (rule 13), and a Turn records the span it belongs to. That also makes "context is private" true by construction rather than by discipline. The judge-call accounting point stands and is still open.
 
 ### 3. The interruption budget has no home
 

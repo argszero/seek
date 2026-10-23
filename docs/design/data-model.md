@@ -47,7 +47,7 @@ Execution   Workspace / Turn / Observation / Memory — how work happens and wha
 |---|---|---|
 | **Message** | An immutable shared fact | Belongs to one room, optionally to one thread; sender is a Principal or `system`; kinds: text, image, file, **tool card**, system notice; carries its own cause — `caused_by` (the message that caused it), `chain` (the root of that causal run) and `depth` |
 | **Thread** | A "topic" — the message subtree rooted at one message | **Not a new room** (Feishu-style, not Slack/Discord-style); the people in it are already in the room |
-| **Session** | One stretch of work inside a room | Has a start and an end, **binds one workspace**, may bind a task; the unit of billing and of "where we left off" |
+| **Session** | An agent's own stretch of work in one room | **Private bookkeeping, never a user-visible unit**; has a start and an end, **binds one workspace**, and is what its cost rolls up to. Five agents in one room have five of these; the room's timeline is continuous |
 
 ### 2.4 Execution
 
@@ -70,21 +70,23 @@ Execution   Workspace / Turn / Observation / Memory — how work happens and wha
               ▼                            ├── agent-only: persona / capabilities / budget
         ┌─────────── Room ───────────┐     ├── Observation ──▶ references a Message
         │   one shared message log   │     ├── Memory (diary / room digest)
-        └──┬──────────────────┬──────┘     └── Turn ──▶ produces Messages
-           │ 1:N              │ 1:N
-           ▼                  ▼
-       Session            Message ◀── root_id self-reference ── Thread (a view)
-           │                  ▲
-           │ 1:1 binds        │
-           ▼                  │
-       Workspace ──────────────┘ (tools run in the workspace)
+        └──────────────┬────────────┘     ├── Session ──▶ (agent × room), private
+                       │ 1:N              └── Turn ──▶ Session, produces Messages
+                       ▼
+                   Message ◀── root_id self-reference ── Thread (a view)
+                       ▲
+                       │ tools run in the workspace
+                       │
+    Session ──1:1──▶ Workspace
+    (an agent's own stretch of work in one room; nothing in the room's
+     timeline marks where it starts or ends)
 ```
 
-## 4. Cardinalities and rules (twelve that must hold)
+## 4. Cardinalities and rules (thirteen that must hold)
 
 1. **Room 1 : N Message.** A message belongs to exactly one room; it never crosses rooms.
 2. **Message 0..1 : N Thread.** A message roots at most one thread; threads never cross rooms.
-3. **Room 1 : N Session.** Sessions never cross rooms; one room can hold many.
+3. **Agent 1 : N Session; each Session belongs to one (agent, room) pair.** A room's timeline is continuous and carries no session boundary in it. Five agents in a room have five private spans over the same shared log — which is what makes "messages shared, context private" true by construction rather than by discipline.
 4. **Session 1 : 1 Workspace** (fixed once chosen); Workspace 1 : N Session.
 5. **Principal N : M Room**, through Membership, which carries per-room state.
 6. **Agent 1 : N Observation**, Observation N : 1 Message (one message may enter several agents' queues).
@@ -94,11 +96,12 @@ Execution   Workspace / Turn / Observation / Memory — how work happens and wha
 10. **Id prefixes follow the Feishu convention**: `ou_` principal, `oc_` room, `om_` message, plus `ag_` for agents. Readability over a generic UUID.
 11. **Every room has at least one human member.** No room exists that the user cannot open. Agent-to-agent traffic therefore always happens where it can be read and stopped — and the dangerous case (two agents alone, exempting each other from the anti-loop rules) is excluded by the model rather than merely limited.
 12. **Message N : 1 Message (causation).** `caused_by` names the message that caused this one; `chain` names the root of that run; `depth` is the hop count. A chain's depth is read off the data, never tracked in a mutable counter — a counter is what silently drifts after a restart.
+13. **Nothing splits a room's history for the user.** The interaction is Feishu's: one chat, one continuous timeline. A session boundary, a workspace change or a membership change is recorded in the data and surfaces at most as a system message — never as a list entry, a divider control, or a second timeline.
 
 ## 5. Four things that are easy to get wrong
 
-1. **A room and a session are not the same thing, but the interface may call both "chat".**
-   In the model, Room is the container and Session is a stretch inside it. The UI need not expose the distinction, but the data must have it — otherwise "change the workspace" and "how much did this stretch cost" have nowhere to live.
+1. **Session is bookkeeping, not a place.**
+   The user never sees one: a room's timeline runs continuously, exactly as in Feishu, and there is no "new session" to press. What the data needs the span for is private — which workspace this stretch ran in, and what it cost. If a workspace change must be visible at all, it is a **system message** in the timeline, which is a message kind Feishu already has — not a new control.
 
 2. **A thread is not a room.**
    In Slack a thread is a message; in Discord it is a channel. seek takes the Feishu shape: **a thread is a message tree**. The people in it are always the people already in the room, so nothing has to be re-invited or re-permissioned.
@@ -115,7 +118,7 @@ Execution   Workspace / Turn / Observation / Memory — how work happens and wha
 |---|---|---|---|---|---|
 | Chat container | chat (p2p/group/topic) | channel | Room | — | **Room** (unclassified) |
 | Thread | thread (message tree) | Slack: message; Discord: sub-channel | — | `sub_agents` | **Thread (message tree)** |
-| A stretch of work | none | none | turn | **Session (event sequence)** | **Session** |
+| A stretch of work | none | none | turn | **Session (event sequence)** | **Session** (an agent's private span, per agent × room — never shown) |
 | The executor | bot (a kind of member) | bot | agent (a member) | **Agent (config + behaviour)** | **Agent (long-lived)** |
 | Shared vs private | all shared | all shared | all shared | cleanly separated | **messages shared, context private** |
 
@@ -125,13 +128,18 @@ Execution   Workspace / Turn / Observation / Memory — how work happens and wha
 
 | # | Conflict | September choice | Today's reality | Suggestion |
 |---|---|---|---|---|
-| 1 | **What the left list shows** | sessions currently open | today it shows rooms (Feishu-style) | see the open question in `docs/decisions.md` |
-| 2 | Whether a Session is visible to the user | yes (a new session picks a workspace) | the concept does not exist in the UI at all | render it as a divider in the timeline ("new stretch · bound to ~/dev/foo") rather than a list row |
+| 1 | **What the left list shows** | sessions currently open | today it shows rooms (Feishu-style) | **Resolved 2026-10-23**: rooms. Interaction is Feishu's, so the list is chats — and a session is not a chat |
+| 2 | Whether a Session is visible to the user | yes (a new session picks a workspace) | the concept does not exist in the UI at all | **Resolved 2026-10-23**: never visible. A session is an agent's private bookkeeping (rule 3); a workspace change appears at most as a system message (rule 13) |
 | 3 | Character kind | human \| virtual | today it is a plain `chatter` with no kind | `human \| agent`, aligned with the Agent entity |
 | 4 | What a workspace binds to | Session | not implemented yet | keep September: bind to Session; an Agent also has a default workspace |
-| 5 | Whether a session snapshots its members | undecided | undecided | snapshot the member list on the Session at start (otherwise "who said this before I joined" cannot be answered) |
+| 5 | Whether a session snapshots its members | undecided | undecided | still open, and it is now purely a memory question: whoever wrote a message is on the message, so a snapshot would only serve an agent asking "who was here when this stretch began" |
 
 ## 8. On-disk shape (brief)
 
-One `seek.json` per account (as today), split into `principals / rooms / memberships / sessions / messages[roomId] / observations[agentId] / turns / memories`.
-Messages are sharded by room and observations by agent — those two grow fastest and must be prunable without touching anything else.
+One `seek.json` per account (as today), split into `principals / rooms / memberships / sessions[agentId] / messages[roomId] / observations[agentId] / turns / memories`.
+
+Three sharding keys, each matching what grows fastest and what must be prunable on its own:
+
+- **messages by room** — one shared log per room, so the shard key is the thing every reader already has.
+- **observations and sessions by agent** — private, and the two that would otherwise make one shared file grow without bound.
+- **turns** stay together: they are the ledger, they are small, and a ledger split by agent stops being a ledger.

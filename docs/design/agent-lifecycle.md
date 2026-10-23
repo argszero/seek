@@ -55,10 +55,13 @@ Agent
 │   lastSpoke[room] / lastTick / sleepUntil / backoff
 │   budget: tokens per hour and per day, spent, resets at
 └─ Sessions
-    session[room] (one session per room; a group room is shared, but "its" context is its own)
+    session[room] (its own stretch of work in each room; a new one starts when it
+    changes workspace — private bookkeeping, never shown to the user)
 ```
 
 **Agent ≠ Session.** EMRG today presses the identity into the session (the session is that cwd, that model, that history), so one identity cannot live in three rooms at once. The Agent sits above the session; sessions are its stretches of memory.
+
+**A session is never a user-visible unit either.** The room's timeline is continuous, the way a chat is in Feishu; five agents in one room simply have five private spans over the same shared log. That is not a display decision but the load-bearing one: it is what makes "messages shared, context private" true by construction.
 
 > This connects to the instruction already given on 2026-10-23: `projects.yml` → `agents.yml`, one agent per project.
 > That `agent-abstraction-step1.md` is the first step (abstract the Agent out); this document is the second (give the Agent a life).
