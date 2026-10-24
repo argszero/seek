@@ -76,11 +76,15 @@ The gate is architecture, with two requirements: it stops meaningless work, and 
 
 **Bundled, small, rules first.**
 *"It must be built in — find a small enough model to bundle locally (model file within 300 MB, smaller is better). Together with some rules: if there are no new observations, return at once; if I am @-mentioned, return 'do it'. Only the remainder goes to the small model."*
-The watch model ships with the product, ≤300 MB of weights; the two free rules run ahead of it.
+The watch model ships with the product, and the two free rules run ahead of it. **The ≤300 MB figure was a target set before any candidate was run, and it is withdrawn**: at that size the model has no usable judgement, so the number gives way to the requirement it was standing in for.
+
+**Which model, for now.**
+*"Fine — use the 3B for now, and switch later when there is a smaller model."*
+The bundled watch model is the 3B class as it stands. **A smaller model replaces it when it clears the same measurement, not when one appears** — the target was withdrawn because it was met by a model that could not judge, and adopting the next small model on size alone would repeat that.
 
 **Multilingual and multimodal.**
 *"Because it is international, the small model must support Chinese + English + multimodal."*
-Both are requirements. They pull against the ≤300 MB target, and the trade is settled at selection time — neither may be quietly dropped.
+Both are requirements. With the size target withdrawn they no longer pull against anything, and **neither is settled by argument**: multilingual was measured, and only a model that clears the bar in both languages is eligible; multimodal is still to be measured, and until it is, the requirement stands unmet rather than dropped.
 
 **Write the requirements, choose later.**
 *"Write down the requirements first; choose later. There is no need to go looking now."*

@@ -15,6 +15,7 @@ Nothing here carries a date, and nothing records what it used to say. The git lo
 
 - **Feishu's chat modes.** `chat_mode` has three values — 群组 / 话题 / 单聊 (`group` / `topic` / `p2p`) — and **a direct chat is a chat**: it has its own `chat_id` beginning `oc_`, and `chat_mode` reads `p2p` when queried. So "a direct message is a room with two people" is how Feishu stores it, not an invention of ours. Two things follow. ①**The field exists; the domain logic still must not branch on it** — the entity is a Room either way, and Feishu's own behaviours (you cannot invite into a p2p, you cannot leave one) are properties of the surface, not reasons to split the model. ②**Feishu's `p2p` is bot-to-user only**, so a direct room between two bots has no counterpart to imitate; it is settled by a ruling instead.
 - **Feishu's message fields.** `mentions[]` on a message carries the principals it names, `{id, name}` each. Id prefixes: `ou_` principal, `oc_` room, `om_` message. seek adds `ag_` for agents.
+- **The bundled watch model, measured on a laptop.** Sizes as downloaded: `LFM2.5-VL-3B` Q4_0 **1.52 GB** plus its vision projector Q8 **0.56 GB**; `LFM2.5-VL-450M` Q4_K_M **219 MB**; `Qwen3.5-0.8B` Q4_K_M **508 MB**. Quality on act-or-not, across 76 hand-written cases in three disjoint sets: **3B 0.96–1.00 AUC** (100% on the last 24), **450M 0.48–0.74**, **0.8B 0.48–0.85**. Per message: 3B **96 ms**, 450M **18 ms**, 0.8B **71 ms**. A 3B model re-reading a full box costs ≈**1 ms per token**.
 
 ## Derived from a ruling
 
@@ -44,6 +45,9 @@ Nothing here carries a date, and nothing records what it used to say. The git lo
 - **The state handed to a decision model is structured JSON, not prose.** Its contract is a state that may be any JSON value plus named questions. A paragraph would spend the model's small window on prose and throw away the signals that cost nothing to compute.
 - **The previous verdict is input as a fact, never as an instruction.** How long ago it was and what it was, so a `keep` can be looked at again. An instruction to repeat it would make every stale decision self-perpetuating.
 - **Memory writes and compaction are runtime behaviour, not tools.** An agent does not choose to do them; the runtime does them when a turn ends.
+- **The judgement is binary; the other two verdicts are the loop's to write.** A decision model that answers by reading the probabilities of declared options can only return an option it was given, so the question is act-or-not and nothing wider — four-way was measured at chance on every model tried, including the one that ships. `later` is what the loop writes when a turn schedules a reminder, and `keep` is what it writes when the room is already in flight. This is the same division the compaction question already had: the model answers, the loop performs and records.
+- **The question put to the watch model is part of the contract.** Measured, one model's discrimination moved from 0.09 to 0.77 on the same cases purely by rewording, and inverted between English and Chinese. A prompt is therefore something the runtime carries as a fixed, versioned artifact that the operating point was calibrated against — not a string composed at the call site, where a well-meant edit would silently move the threshold.
+- **The operating point comes from a labelled set, and the box carries the unread count.** A small model's usable cut sits far from even (0.6 to 0.98 measured), so 0.5 is not a default worth having; and a verdict reached on part of a room is stored with how much of it was read, because a silently partial judgement is indistinguishable from a whole one afterwards.
 
 ## Defaults the host left open
 
@@ -60,6 +64,7 @@ Each row is a choice the host did not rule on, listed with the word that changes
 | 7 | The licence | **MIT** | The host delegated it | "Apache-2.0" / another |
 | 8 | What the left list shows | **Rooms** | Feishu's left list is a list of chats | — (a derivation, kept here for the one question it first answered) |
 | 9 | What the speaking tool is called | **`say`, as `say(room, text)`** | It is the register's bare-single-word style (`read` / `write` / `edit` / `glob`), and it cannot be mistaken for the tools it sits beside: not `write`, which is files, and not `post`, which is a Feishu message type and would read as the format rather than the act. `reply` is wrong because most of what it sends is not a reply, and `message` collides with the entity | a different name, settled before the first prompt is written |
+| 10 | Which checkpoint of the 3B class ships, and whether the vision projector ships with it | **`LFM2.5-VL-3B` Q4_0 for the text path; the projector ships only once vision is measured** | The text path is the one the gate's correctness rests on and the one that was measured; shipping 0.56 GB of projector for a capability nobody has validated trades installer size for an untested behaviour. Under the LFM Open Licence v1.0 it is redistributable with its NOTICE | "ship the projector now" / a different checkpoint |
 
 ## What is not decided here
 

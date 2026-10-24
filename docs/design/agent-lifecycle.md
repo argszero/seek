@@ -63,11 +63,23 @@ The ordering is the whole economy of the design: the two cases that are both **c
 | 1 | **Multilingual: Chinese and English at minimum**, more is better | The product is international from the first screen, and a room's shape follows its people, not a setting. A watch agent that reads only English is blind in exactly the rooms where it is needed |
 | 2 | **Multimodal: it must see images** | Messages carry screenshots, photos, diagrams and tool cards. Deciding "is this about me?" from alt text alone is guessing |
 | 3 | **Bundled, not downloaded** | The gate is what makes aliveness affordable; making it depend on the user fetching anything means it silently is not there |
-| 4 | **Small enough to ship inside an app** — target ≤ 300 MB of weights | Installers are the first thing a user meets |
+| 4 | **Shippable inside an app** — as it stands ≈1.5 GB of weights, ≈2.1 GB with the vision projector | Installers are the first thing a user meets |
 | 5 | **Runs on a plain CPU, quantised** | It runs per message per agent on ordinary laptops, not on a GPU |
 | 6 | **Fast enough that looking is invisible** — low hundreds of milliseconds | A gate slower than the thing it gates is not a gate |
 
-**Requirements 2 and 4 pull against each other, and that is the real difficulty.** At bf16 as published: SmolVLM2-500M at 2.0 GB, Qwen3-VL-2B at 4.3 GB, Qwen2.5-VL-3B at ~4.0 GB per shard across two shards. A multimodal model at 300 MB therefore means a very small base or aggressive quantisation (4-bit divides by roughly four, bringing a 500M model to ≈500 MB and a 2B model to ≈1.1 GB). The requirement set stands as written and the trade is decided at selection time, against real cases — never by quietly dropping the image requirement or the size target.
+**Requirement 4 used to be a target of 300 MB, and measurement withdrew it.** The target was set before any candidate was run. On real room traffic a model that size does not judge: `LFM2.5-VL-450M` (219 MB) scores **AUC 0.477** on act-or-not — chance — and `Qwen3.5-0.8B` (508 MB) scores **0.484**. The 3B class scores **0.96–1.00**, in both languages, across three disjoint case sets. The size target was standing in for "cheap enough to bundle", and a bundled model that cannot judge is the more expensive mistake: the gate then either wakes the bot for everything or for nothing.
+
+**What that measurement does and does not cover.** It covers **text**, and only text: 76 hand-written room cases, 44 of them Chinese, judged against labels written before the prompts were chosen. Two things are therefore still open rather than settled. **Vision is unmeasured** — requirement 2 stands, unimplemented and unmet, and nothing here may be read as saying images are unnecessary. And a small model's discrimination is **sensitive to the exact wording** of the question: on the same model, changing one prompt moved AUC from 0.09 to 0.77, and the 450 MB model inverted between English and Chinese. So the question below is part of the specification, not a detail of whoever writes the prompt.
+
+#### How the judgement is put to the model
+
+- **One binary question.** The model is asked whether this needs it to act, and answers from the probabilities of two declared option tokens. `act` and `ignore` are the whole of what it produces. `later` is written by the loop when a turn schedules a reminder, and `keep` when the bot already has that room in flight — neither is a question a decision model can be asked, because a model that answers by reading token probabilities cannot emit an option it was not given, and asking it four-way was measured at chance on every model tried, including the 3B.
+- **The question is concrete.** "Does this message need you to act?" measured far above "Should you speak in this room right now?". The abstract form invites an answer about the bot's disposition; the concrete one asks about the message.
+- **The box is not decorated.** Markdown headings and section labels cost a small model more than they give it; the box reads as labelled lines and the question sits last.
+- **Option tokens must be single tokens, and masked where they actually land.** A word that the tokeniser splits cannot carry a probability in one pass — `snooze` splits into four pieces and had to be replaced. And the id to mask is the one the option takes at the prompt's own end (with its leading space, in its own case), not the id of the bare word: masking the wrong form makes an option permanently unreachable and reads as a confident wrong answer.
+- **The threshold is calibrated, never 0.5.** A small model's usable cut sits far from even — measured between 0.6 and 0.98 — so the operating point comes from a labelled set, and the box carries the unread count it was judged with.
+- **The box's tokens are kept warm.** A 3B model re-reading a full box costs about a millisecond per token: 2.4k tokens is 2.3 s, and 9k is 9.5 s, which is not a gate. Each (bot, room) therefore keeps a resident context and pays only for what arrived since its last judgement.
+
 
 ---
 
