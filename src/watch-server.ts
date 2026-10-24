@@ -2,15 +2,19 @@
  * Stage 1 wired to a server: a running model, in one call, as the loop's `Judge`.
  *
  * `watch.ts` is the rules and asks for a `WatchModel`; `llama.ts` is the transport
- * and produces one. Between the two sit three steps that have to happen in this
+ * and produces one. Between the two sit four steps that have to happen in this
  * order and in one place:
  *
  * 1. settle the artifact — the prompt, the cut and the option ids are one contract
  *    (`prompts.ts`, `docs/decisions.md` row 18);
- * 2. measure the option ids against the text the model will actually continue from,
+ * 2. refuse a server that cannot be read this way at all — no chat template in
+ *    effect, or a window too small for the question alone (`requireServerShape`,
+ *    `docs/decisions.md` row 21). Both failures come back as a number rather than as
+ *    an error, which is why the check is here and not left to the caller;
+ * 3. measure the option ids against the text the model will actually continue from,
  *    which for a tokeniser behind HTTP has to happen *before* the runtime is built
  *    (`bindOverServer`, because `watchAs` binds synchronously);
- * 3. build the runtime with that mask.
+ * 4. build the runtime with that mask.
  *
  * Composing those by hand at each call site is how a mask ends up measured against a
  * different prompt than the one being asked — the failure `agent-lifecycle.md` §4
@@ -24,7 +28,7 @@
  * stands, together with the word that would change it.
  */
 import type { Judge } from './inbox.ts';
-import { bindOverServer, llamaWatchModel, type LlamaServer } from './llama.ts';
+import { bindOverServer, llamaWatchModel, requireServerShape, type LlamaServer } from './llama.ts';
 import { loadPromptArtifact, skeletonOf } from './prompts.ts';
 import type { SeekStore } from './store.ts';
 import type { Id } from './types.ts';
@@ -73,6 +77,11 @@ export async function watchOverServer(
         'taken under one question cannot answer the other',
     );
   }
+
+  // Then the server itself, before an id is measured on it: an id measured on a
+  // server that will read the prompt flat is the right id in the wrong shape, and
+  // the reading that comes back would still look like a reading.
+  await requireServerShape(server, skeleton);
 
   const mask = await bindOverServer(server, skeleton, tokens);
   return watchAs(store, botId, llamaWatchModel(server), { ...options, mask });

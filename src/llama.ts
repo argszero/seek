@@ -56,14 +56,16 @@ import type {
 } from './watch.ts';
 
 /**
- * What this module needs from `fetch`: one POST, one body.
+ * What this module needs from `fetch`: one request, and the text it answered.
  *
  * Structural rather than `typeof fetch`, so the seam is one method wide and a test
- * can stand a recorder in it without a DOM type in sight.
+ * can stand a recorder in it without a DOM type in sight. `body` is optional because
+ * `/props` is read with a GET, and a real `fetch` refuses a GET that carries a body
+ * — even an empty one.
  */
 export type Fetcher = (
   url: string,
-  init: { method: string; headers: Record<string, string>; body: string },
+  init: { method: string; headers: Record<string, string>; body?: string },
 ) => Promise<{ ok: boolean; status: number; text(): Promise<string> }>;
 
 /** Where the model is, and which prompt's shape the assembly is being read in. */
@@ -167,6 +169,79 @@ export async function bindOverServer(
     );
   }
   return { act, ignore };
+}
+
+/**
+ * What the server says it is, from `/props`.
+ *
+ * Three facts, and only the ones this file can act on: whether it will render a chat
+ * template at all, how many tokens one prompt may spend, and which build answered —
+ * the last so that a refusal can be pasted into a report exactly as it stands.
+ */
+export interface ServerShape {
+  /** The template the server renders, verbatim. Empty means it has none. */
+  chatTemplate: string;
+  /** The per-slot context window: what one prompt may spend, in tokens. */
+  nCtx: number;
+  /** The build that answered, e.g. `0.7.0-dev`. */
+  buildInfo: string;
+}
+
+/**
+ * Refuse a server that cannot be read the way the cut was measured.
+ *
+ * Three things were true of the server every number in `calibration/` was taken on,
+ * and none of them is true by default, so each is asked for rather than assumed:
+ *
+ * 1. **It renders a chat template.** `calibration/vision/server-transport.json`
+ *    records the first as `--jinja`. A server with no template in effect answers a
+ *    flat prompt, and a chat model fed one flat string scores below chance — AUC
+ *    0.469, `act` 0/12 (`calibration/vision/remeasured.json`). From here that is not
+ *    a failure at all: a distribution over the two options still comes back, and it
+ *    is the wrong one.
+ * 2. **One prompt may spend at least what the question costs, plus the token the
+ *    answer is read from.** `-c` defaults to the model's own size, so a server
+ *    started small on a model that trains long is the ordinary way to get this
+ *    wrong. On overflow llama-server's context shift keeps `n_keep = 0` tokens from
+ *    the front, and the front is the artifact's system line — the boundary the
+ *    measured shape is split at — so the box arrives truncated and the reading that
+ *    comes back is still a number.
+ * 3. **It says how large that window is.** A `/props` without a positive
+ *    `default_generation_settings.n_ctx` is not a server this file can speak to, and
+ *    assuming a window is how (2) happens in the first place.
+ *
+ * What is measured here is the **skeleton** — the question with no summary and no
+ * entries — because that is the smallest text every real assembly contains: a server
+ * that cannot hold it cannot serve a single judgement, whatever the caller's own
+ * `window` is. That `window` stays the caller's (`box.ts` makes it a budget in
+ * whatever unit they measure in, and says so); this function does not convert it,
+ * and it does not start, stop or configure a server.
+ */
+export async function requireServerShape(
+  server: LlamaServer,
+  prompt: WatchPrompt,
+): Promise<ServerShape> {
+  const shape = await propsOf(server);
+  if (shape.chatTemplate.trim() === '') {
+    throw new Error(
+      "this server renders no chat template, so it would read a flat prompt: the " +
+        'shipped cut was measured on the template\'s own output, and the same model ' +
+        'read flat scores below chance (calibration/vision/remeasured.json). Start ' +
+        "the server with the model's template in effect (`--jinja`)",
+    );
+  }
+  const templated = await applyTemplate(server, userTurn(server.artifact, prompt.text));
+  const spend = (await tokenise(server, templated)).length + 1;
+  if (spend > shape.nCtx) {
+    throw new Error(
+      `this server allows ${shape.nCtx} tokens per prompt (${shape.buildInfo}) and the ` +
+        `question alone costs ${spend} with the one token the answer is read from, so ` +
+        'every judgement would overflow: llama-server keeps 0 leading tokens when it ' +
+        'shifts a context, and the front it would discard is the system line the ' +
+        'measured shape begins with. Start it with a larger `-c`',
+    );
+  }
+  return shape;
 }
 
 /** One option, measured where the server will read it. */
@@ -304,6 +379,48 @@ async function completion(server: LlamaServer, prompt: string): Promise<Candidat
 }
 
 /**
+ * `/props`, and the three fields this file reads out of it.
+ *
+ * A GET, and a separate function rather than a flag on `postJson`: the server
+ * registers `/props` for a GET, while its POST is a different endpoint that refuses
+ * unless the process was started with `--props`. Reading what a server *is* must not
+ * depend on a flag whose only purpose is to change it.
+ */
+async function propsOf(server: LlamaServer): Promise<ServerShape> {
+  const answer = (await request(server, '/props', 'GET')) as {
+    chat_template?: unknown;
+    build_info?: unknown;
+    default_generation_settings?: { n_ctx?: unknown };
+  } | null;
+  const props = answer ?? {};
+  const chatTemplate = props.chat_template;
+  if (typeof chatTemplate !== 'string') {
+    throw new Error(
+      'the server answered no /props chat_template, so whether it renders a template ' +
+        'cannot be told — and a prompt read flat scores below chance',
+    );
+  }
+  const nCtx = props.default_generation_settings?.n_ctx;
+  if (typeof nCtx !== 'number' || !Number.isInteger(nCtx) || nCtx <= 0) {
+    throw new Error(
+      'the server answered no usable /props default_generation_settings.n_ctx, so how ' +
+        'much of a box it can hold is unknown — and assuming a window is how a box ' +
+        'overflows one',
+    );
+  }
+  return {
+    chatTemplate,
+    nCtx,
+    buildInfo: typeof props.build_info === 'string' ? props.build_info : 'build unknown',
+  };
+}
+
+/** One POST, refused loudly when it did not arrive. */
+async function postJson(server: LlamaServer, path: string, body: unknown): Promise<unknown> {
+  return request(server, path, 'POST', JSON.stringify(body));
+}
+
+/**
  * One request, refused loudly when it did not arrive.
  *
  * A transport failure throws: the kernel already treats a model that fell over as a
@@ -311,13 +428,18 @@ async function completion(server: LlamaServer, prompt: string): Promise<Candidat
  * same fact as an answer that could not be *read*. The second one is
  * `WatchOutcome.unparsed`, and it lives above this file.
  */
-async function postJson(server: LlamaServer, path: string, body: unknown): Promise<unknown> {
+async function request(
+  server: LlamaServer,
+  path: string,
+  method: string,
+  body?: string,
+): Promise<unknown> {
   const base = server.baseUrl.replace(/\/+$/, '');
   const fetcher = server.fetch ?? (globalThis.fetch as unknown as Fetcher);
   const response = await fetcher(`${base}${path}`, {
-    method: 'POST',
+    method,
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body,
   });
   const text = await response.text();
   if (!response.ok) {

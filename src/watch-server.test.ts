@@ -31,6 +31,7 @@ const ARTIFACT: PromptArtifact = {
 /** One request the transport made, as the server saw it. */
 interface Call {
   path: string;
+  method: string;
   body: Record<string, unknown>;
 }
 
@@ -70,18 +71,37 @@ function makeVocab(): (content: string) => number[] {
  * A recorder rather than a live socket: what this file has to pin is which requests
  * happen and in what order, and that is visible without a model. Nothing here starts
  * a process, and nothing waits on one.
+ *
+ * `/props` is the one answer a caller can shape here, because what a server reports
+ * about itself is what the preflight exists to refuse (`docs/decisions.md` row 21):
+ * an empty `chatTemplate` is a server that will read a flat prompt, `nCtx: null` is
+ * one that will not say how large its window is, and a small number is one that would
+ * truncate the question.
  */
 function fakeServer(
-  options: { candidates?: unknown[]; failTemplate?: boolean } = {},
+  options: {
+    candidates?: unknown[];
+    failTemplate?: boolean;
+    chatTemplate?: string;
+    nCtx?: number | null;
+  } = {},
 ): { fetch: Fetcher; calls: Call[] } {
   const tokenise = makeVocab();
   const calls: Call[] = [];
   const fetcher: Fetcher = async (url, init) => {
     const path = new URL(url).pathname;
-    const body = JSON.parse(init.body) as Record<string, unknown>;
-    calls.push({ path, body });
+    const body =
+      init.body === undefined ? {} : (JSON.parse(init.body) as Record<string, unknown>);
+    calls.push({ path, method: init.method, body });
     let payload: unknown;
-    if (path === '/apply-template') {
+    if (path === '/props') {
+      const nCtx = options.nCtx === undefined ? 4096 : options.nCtx;
+      payload = {
+        chat_template: options.chatTemplate ?? TEMPLATE_HEAD,
+        build_info: 'test build',
+        ...(nCtx === null ? {} : { default_generation_settings: { n_ctx: nCtx } }),
+      };
+    } else if (path === '/apply-template') {
       if (options.failTemplate) {
         return { ok: false, status: 500, text: async () => 'no model loaded' };
       }
@@ -163,8 +183,12 @@ test('the ids are measured at construction, past the template, before anything i
 
   const templates = recorder.calls.filter((call) => call.path === '/apply-template');
   const tokenised = recorder.calls.filter((call) => call.path === '/tokenize');
-  assert.equal(templates.length, 1, 'the template is rendered once, to find the answer’s end');
-  assert.equal(tokenised.length, 3, 'the prompt and its two suffixes, once each');
+  assert.equal(
+    templates.length,
+    2,
+    'the question is rendered once to check the server can hold it, once to find the answer’s end',
+  );
+  assert.equal(tokenised.length, 4, 'the question, then the prompt and its two suffixes, once each');
   assert.equal(
     recorder.calls.filter((call) => call.path === '/completion').length,
     0,
@@ -293,4 +317,126 @@ test('a transport failure surfaces at construction, so no half-built judge is ha
       }),
     /answered 500 for \/apply-template/,
   );
+});
+
+test('a server that renders no chat template is refused, because a flat prompt scores below chance', async () => {
+  // AUC 0.469, `act` 0/12 measured (`calibration/vision/remeasured.json`): the answer
+  // still comes back as a distribution over the two options, which is why nothing
+  // downstream can notice. It is refused on what the server says about itself.
+  const world = makeWorld();
+  const recorder = fakeServer({ candidates: ACTS, chatTemplate: '' });
+
+  await assert.rejects(
+    () =>
+      watchOverServer(world.store, world.botA, serverOf(recorder), {
+        window: 10,
+        prompt: ARTIFACT,
+      }),
+    /renders no chat template/,
+  );
+  assert.deepEqual(
+    recorder.calls.map((call) => call.path),
+    ['/props'],
+    'refused before a prompt is rendered on it, and long before an id is measured',
+  );
+});
+
+test('a window too small for the question alone is refused rather than truncated', async () => {
+  // llama-server keeps `n_keep = 0` tokens from the front when it shifts a context, so
+  // the system line the measured shape begins with is the first thing to go and the
+  // reading that comes back is still a number.
+  const world = makeWorld();
+  const recorder = fakeServer({ candidates: ACTS, nCtx: 3 });
+
+  await assert.rejects(
+    () =>
+      watchOverServer(world.store, world.botA, serverOf(recorder), {
+        window: 10,
+        prompt: ARTIFACT,
+      }),
+    /allows 3 tokens per prompt[\s\S]*larger `-c`/,
+  );
+});
+
+test('a server that will not say how large its window is is refused', async () => {
+  const world = makeWorld();
+  const recorder = fakeServer({ candidates: ACTS, nCtx: null });
+
+  await assert.rejects(
+    () =>
+      watchOverServer(world.store, world.botA, serverOf(recorder), {
+        window: 10,
+        prompt: ARTIFACT,
+      }),
+    /default_generation_settings\.n_ctx/,
+  );
+});
+
+test('the server is asked what it is before an id is measured on it', async () => {
+  const world = makeWorld();
+  const recorder = fakeServer({ candidates: ACTS });
+  const judge = await watchOverServer(world.store, world.botA, serverOf(recorder), {
+    window: 10,
+    prompt: ARTIFACT,
+  });
+
+  const props = recorder.calls.find((call) => call.path === '/props');
+  assert.equal(
+    props?.method,
+    'GET',
+    'read rather than configured: a POST to /props is the other endpoint, and needs `--props`',
+  );
+  assert.equal(recorder.calls[0].path, '/props', 'the first thing asked of a server is what it is');
+
+  const acting = await judge(await entriesOf(world));
+  assert.equal(acting.length, 1, 'and a server that passes the check still judges');
+  assert.equal(acting[0].verdict, 'act');
+});
+
+test('a window that fits the question but not its answer is refused, and one token more is enough', async () => {
+  // The answer is read from the token after the prompt, so a window of exactly the
+  // question's own cost overflows on the read. The boundary is pinned from the count
+  // the transport itself asked for, rather than from a number copied out of it.
+  const world = makeWorld();
+  const probe = fakeServer({ candidates: ACTS });
+  await watchOverServer(world.store, world.botA, serverOf(probe), {
+    window: 10,
+    prompt: ARTIFACT,
+  });
+  const question = probe.calls.find((call) => call.path === '/tokenize')?.body.content;
+  const cost = (String(question).match(/\s+|[^\s]+/g) ?? []).length;
+  assert.ok(cost > 1, 'the question is more than one token, or this test pins nothing');
+
+  const exact = fakeServer({ candidates: ACTS, nCtx: cost });
+  await assert.rejects(
+    () =>
+      watchOverServer(world.store, world.botA, serverOf(exact), {
+        window: 10,
+        prompt: ARTIFACT,
+      }),
+    /allows \d+ tokens per prompt/,
+  );
+
+  const justEnough = fakeServer({ candidates: ACTS, nCtx: cost + 1 });
+  const judge = await watchOverServer(world.store, world.botA, serverOf(justEnough), {
+    window: 10,
+    prompt: ARTIFACT,
+  });
+  assert.equal(typeof judge, 'function', 'one token of room for the answer is room enough');
+});
+
+test('a window that is zero or fractional is refused rather than read as a number', async () => {
+  const world = makeWorld();
+  for (const nCtx of [0, 1.5]) {
+    const recorder = fakeServer({ candidates: ACTS, nCtx });
+    await assert.rejects(
+      () =>
+        watchOverServer(world.store, world.botA, serverOf(recorder), {
+          window: 10,
+          prompt: ARTIFACT,
+        }),
+      /default_generation_settings\.n_ctx/,
+      `n_ctx ${nCtx} is not a window`,
+    );
+  }
 });
