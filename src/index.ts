@@ -15,4 +15,8 @@ export { classify, gate } from './gate.ts';
 export type { GateDecision, GateResult } from './gate.ts';
 export { InboxLoop } from './inbox.ts';
 export type { Judge, RunTurn, TickResult } from './inbox.ts';
+export { say, sayAs } from './say.ts';
+export type { SayInput, SayOptions, SayTool } from './say.ts';
+export { makeTurn, runTurn } from './turn.ts';
+export type { Decide, TurnContext, TurnRecord, TurnSpec } from './turn.ts';
 export type * from './types.ts';
