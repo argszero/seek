@@ -204,7 +204,8 @@ the bot's loop, per tick:
   └ Stage 2 · run the work agent (expensive)
      Stage 2 calls the work agent and lets it run — one ordinary turn: full context,
      tools, streaming, memory write at the end. It receives the observation entries and
-     nothing else: NOT the watch agent's reason (see "what crosses the line").
+     nothing else: the watch agent's reason is not handed over; it stays on the record,
+     where the work agent may go and read it if it wants to (see "what crosses the line").
      One difference: it opens with "you decided to say this yourself; nobody called you",
      because nothing called it and the reason it woke is context, not a request.
 ```
@@ -245,7 +246,7 @@ No new machinery is built for this. The outcome is not reported to the watch age
 
 ### What crosses the line from watch to work
 
-**The observation entries cross; the watch agent's reasoning does not.**
+**The observation entries are handed over; the reasoning stays on the record.**
 
 When the watch agent decides to act, the work agent is woken with the entries and nothing more — not the line the watch agent wrote about why they mattered. It reads its own history and its own memory and decides for itself what, if anything, to say.
 
@@ -253,7 +254,9 @@ When the watch agent decides to act, the work agent is woken with the entries an
 
 **The cost, stated plainly:** sometimes the work agent will look at the entries and cannot tell why it was called at all. It may then say something slightly flat-footed, or ask what the point was. That is a real cost and it is the right side of the trade.
 
-**The reason is still recorded** — on the observation entry, next to the verdict — because it is what makes a bad call reviewable, and because the watch agent reads its own log back. It never enters the work agent's context.
+**The reason is still recorded** — on the observation entry, next to the verdict — because it is what makes a bad call reviewable, and because the watch agent reads its own log back.
+
+**It is not handed over; it is not sealed either.** The runtime never puts it in the work agent's context, and the work agent may go and read it, because the two agents can read each other's records — the lookup is a lookup, not a special channel. That is the difference between an invisible premise and an answerable one: having read it, the work agent knows both what was decided and whose sentence it was, so a wrong judgement carries a name instead of quietly shaping the reply.
 
 ### How slow a judgement is
 

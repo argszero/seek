@@ -10,7 +10,7 @@
 2. **When he decides again on a question, the old entry goes and the new one takes its place.** This file holds what stands. What it used to say is in the git log.
 3. **No dates and no times.** An entry is placed by the question it answers, not by when it was answered; the commit that carries it is the date.
 
-Quotations are the host's, translated into English for this repository; the session log holds the original. The implementer's own answers to his questions are never quoted, only his.
+Quotations are the host's, translated into English for this repository; the session log holds the original. The implementer's own answers to his questions are never quoted, only his. **Where he answered with a single word, the question it answered is given in brackets and marked as the implementer's** — an answer like "A" stops meaning anything once the date that placed it is gone.
 
 ---
 
@@ -49,7 +49,7 @@ Work the implementer can do — asset rendering, uploads, tooling — is not han
 Three properties — long-lived, observes on its own, acts on its own; a per-bot inbox; a two-stage loop with a cheap gate ahead of the expensive one, and the cost argument that forces it. → `agent-lifecycle.md` §0–§5.
 
 **A bot may come to find you.**
-*"It can."* — asked whether an agent may open a direct message with the user.
+*"It can."* [asked: *"May an agent open a direct message with you?"* — the implementer's wording.]
 A bot may initiate a direct message, on its own initiative. There is no quota, no cooldown and no quiet-hours rule anywhere in the design. → `agent-lifecycle.md` §10.
 
 **A bot's only constraints are a prompt and a sandbox.**
@@ -57,12 +57,12 @@ A bot may initiate a direct message, on its own initiative. There is no quota, n
 A seek agent is an EMRG agent, and its whole constraint is its prompt and its sandbox. No quotas, no cooldowns, no quiet hours, no justification lines, no per-action limits. A bot that talks too much has a persona defect, and it is fixed in the persona. → `decisions.md`, `agent-lifecycle.md` §10.
 
 **An agent does not ask before it acts.**
-*"No."* — asked whether an agent must stop for approval before acting.
+*"No."* [asked: *"Must an agent stop and ask before it acts?"* — the implementer's wording.]
 No approval step anywhere. What holds instead: the sandbox, a complete audit trail, and a stop that works. *"May I?"* is gone; *"which one?"* stays, because a choice between options is a conversation and not a permission. → `decisions.md` "Agents", `agent-lifecycle.md` §10.1.
 
 **No spending cap.**
-*"A."*
-No budget field, no "quiet because spent" state, no cap anywhere. Cost is **recorded** — a turn carries its tokens — and visible. A bot that spends too much has a persona or a gate defect, fixed there. → `decisions.md`, `data-model.md`.
+*"A."* [asked: *"Should a bot carry a spending budget it stops at?"* — A: no budget, record the spend and show it. The implementer's wording.]
+No cap on spending anywhere: no budget field, no "quiet because spent" state, no limit it stops at. Cost is **recorded** — a turn carries its tokens — and visible. A bot that spends too much has a persona or a gate defect, fixed there. The other bounds the design carries are not spending limits: how long one chain may run, how many bot turns one room may take in a row, and how big an inbox may grow. → `decisions.md`, `data-model.md`.
 
 ---
 
@@ -105,12 +105,12 @@ The watch agent sends the same shape of request as any agent. Nothing is summari
 The split is between two agents, not two modes of one. → `decisions.md`, `data-model.md` rule 14.
 
 **Two role names: `watch` and `work`.**
-*"Fine, B then."*
+*"Fine, B then."* [asked: *"What should the two roles be called?"* — B: `watch` / `work`. The implementer's wording.]
 The names come from vocabulary the design already had — the watch queue, the work. → everywhere.
 
 **Separate memories, each readable by the other.**
 *"Do not share one memory. Each is independent, and each knows the other exists and can read the other's history, memory and so on."*
-Two stores, each compacted against its own window, plus a read path in both directions. The reason it matters: the windows differ by an order of magnitude and compaction is destructive, so a shared log means the small one compacts first and deletes detail the large one can still read. → `decisions.md`, `agent-lifecycle.md` §0.
+Two stores, each compacted against its own window, plus a read path in both directions. The reason it matters: the windows differ by an order of magnitude and compaction is destructive, so a shared log means the small one compacts first and deletes detail the large one can still read. **The read path covers everything either agent writes, including a verdict and the reason behind it** — it is how the work agent can find out why it was woken without that reason being handed to it. → `decisions.md`, `agent-lifecycle.md` §0.
 
 **It has tools — EMRG's set, unchanged.**
 *"It has tools — otherwise how would it read and write memory, compress its session?"* / *"Just use the EMRG set."*
@@ -120,9 +120,9 @@ Tools are the kernel's registry (bash / read / write / edit / glob / grep / suba
 *"The judge relies on the observation data: say it judged wrong and the working agent then said nothing in the room — next time the judge sees that it handed this over and nothing was done. Also, do not agonise over the judge learning; it is fine if it never learns."*
 No feedback channel is built and nothing is trained. The outcome is read off the record the watch agent already keeps, and nothing downstream may assume it gets better. → `agent-lifecycle.md` §4.
 
-**Only the observations cross the line.**
-*"A."*
-The work agent wakes with the inbox entries and **not** the watch agent's reason. A reason in its context is a premise rather than advice, so where the watch agent is wrong the work agent would amplify rather than correct it, and the amplification would look like coherence. The reason is recorded on the entry, for review and for the watch agent's own read-back. → `agent-lifecycle.md` §4.
+**Only the observations are handed over; the reason stays where it was written.**
+*"A."* [asked: *"What does the work agent receive when the watch agent decides to act?"* — A: the inbox entries only. The implementer's wording.]
+The work agent wakes with the entries and nothing else: the runtime never puts the watch agent's reason into its context, because a reason in a context is a premise rather than advice — where the watch agent is wrong, the work agent would amplify rather than correct it, and the amplification would look like coherence. **It is not sealed, though.** The reason is on the record, and the two agents can read each other's records, so the work agent may go and read it — and then it knows both what was decided and whose sentence it was. What is forbidden is the silent handoff, not the lookup. → `agent-lifecycle.md` §4.
 
 ---
 
@@ -169,8 +169,8 @@ It writes nothing extra. It is an ordinary turn with one difference — it opens
 → `docs/design/data-model.md`.
 
 **@-mention and reply are bot-level facts.**
-*"A."*
-Derived at delivery and stored on that bot's inbox entry. No agent scans a room for its own name — and the watch agent could not, being unaddressable. → `data-model.md` rule 15.
+*"A."* [asked: *"Is `mentionsMe` computed once per bot at delivery, or per agent?"* — A: once per bot, on the inbox entry. The implementer's wording.]
+Derived at delivery and stored on that bot's inbox entry. No agent scans a room for its own name: the bot knows, once, and tells its agent. → `data-model.md` rule 15.
 
 **The message stores `mentions[]`, and nothing per reader.**
 *"A, look at `mentions` to see whether my own name is in there."*
@@ -189,16 +189,16 @@ Agent-to-agent contact is allowed. Its form is the next entry. → `agent-lifecy
 An agent reaches another agent by **sending a message**, never by calling a tool. There is no synchronous delegate call: it would have A deciding for B, on A's turn, bypassing the judgement B exists to make. Whoever runs the turn pays, so a delegate's work sits on the delegate's ledger and can never hide inside the caller's. → `agent-lifecycle.md` §11.1, `decisions.md`.
 
 **A bot may open a room with another bot.**
-*"It can."*
+*"It can."* [asked: *"May a bot open a room with another bot?"* — the implementer's wording.]
 Yes, with no approval step; membership is not human-gated. Recorded cost: the left list can grow with conversations the user never started, and the answer to that is the persona, not a gate. → `decisions.md` "Rooms and time".
 
 **A bot may say the first word to another bot.**
-*"A."*
-A chain's root needs no human message and no scheduled tick. A bot may open a conversation with a peer — in a room both are in, or in a direct room it opened for that purpose — exactly as it may with a person. What bounds this traffic: depth 4, which bounds how long one chain runs, and the room's consecutive-turn cap of 3, which bounds a burst. **The number of chains is bounded by nothing structural**, and that cost is recorded rather than smoothed. → `agent-lifecycle.md` §11.2.
+*"A."* [asked: *"May a chain's root be another bot's message, or must it start with a human?"* — A: a bot may open the conversation. The implementer's wording.]
+A chain's root needs no human message and no scheduled tick. A bot may open a conversation with a peer — in a room both are in, or in a direct room it opened for that purpose — exactly as it may with a person. **The number of chains is bounded by nothing structural**, and that cost is recorded rather than smoothed. What bounds a chain's *length* and a room's *burst* are two numbers the design carries; neither is the host's, and both are stated in `decisions.md` as the implementer's defaults. → `agent-lifecycle.md` §11.2.
 
 **A chain carries no budget.**
-*"Delete."*
-No financial limit on a chain. What bounds it is depth and the room's consecutive-turn cap. Its cost is recorded per turn and readable. → `agent-lifecycle.md` §11.3.
+*"Delete."* [asked: *"What should bound a chain — keep the chain budget, or delete it?"* — the implementer's wording.]
+No financial limit on a chain. Its cost is recorded per turn and readable. What stops a runaway exchange is not money but structure: how long one chain may run, and how many bot turns one room may take in a row. → `agent-lifecycle.md` §11.3.
 
 ---
 
