@@ -4,7 +4,7 @@ Nothing is written here yet. By rule 1 in `docs/decisions.md`: **settle the data
 
 ## Before the first line of code
 
-- [ ] Every open item in `docs/decisions.md` ("Not decided yet") is closed
+- [x] Every open item in `docs/decisions.md` is closed — the last three on 2026-10-24, on stated defaults recorded in "Closed by default" (a session keeps no member snapshot; the watch agent is not addressable; a watch turn stays in its own history). Nothing in the design is waiting on an answer
 - [ ] The on-disk shape is fixed: `bots / agents / principals / rooms / memberships / sessions / messages / observations / turns / memories` — messages sharded by room, observations sharded by bot, sessions by agent. **`bots` and `agents` are separate shards**: the bot owns name/avatar/description, the agents inherit them and own sessions, memory, turns and cost
 - [ ] Bot-level and agent-level are not mixed anywhere. **Bot-level**: identity, membership, @-mention, the participant list, the observation queue, the tick, the state machine. **Agent-level**: model, prompt, tools, session, memory, turn, cost. Two failure modes to watch: a UI list built from agents (shows one bot as two contacts) and an inbox per agent (N deliveries and N "already handled" states instead of one)
 - [ ] `mentionsMe` / `repliesToMe` are computed **once at delivery, against the bot**, and stored on the observation entry. No agent scans a room for its own name; if an agent-level scan appears, both the delivery cost and the "addressed to me" answer have gone wrong

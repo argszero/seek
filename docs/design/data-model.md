@@ -95,7 +95,7 @@ Bot and Agent split it the same way throughout: **the bot owns what is alive** (
 
 **Bot and Agent are separate entities** (ruled 2026-10-23), and the line between them is **alive vs. runs**. The bot owns identity, membership, the inbox, the tick and the state machine; an agent owns a model, a prompt, tools, a session, a memory and its own turns. So a bot appears once no matter how many agents work behind it, delivery is one write rather than N, and the audit trail and the bill still name the exact worker.
 
-## 4. Cardinalities and rules (fifteen that must hold)
+## 4. Cardinalities and rules (fifteen numbered, fourteen in force — 11 was withdrawn)
 
 1. **Room 1 : N Message.** A message belongs to exactly one room; it never crosses rooms.
 2. **Message 0..1 : N Thread.** A message roots at most one thread; threads never cross rooms.
@@ -142,7 +142,7 @@ Bot and Agent split it the same way throughout: **the bot owns what is alive** (
 
 **Three things are seek's own**: ① **a bot and its agents are two entities** — the bot is the contact and owns the identity, its agents are the workers and own the sessions, memory and cost (ruled 2026-10-23); ② an agent is long-lived and spans rooms, and a room is only where its bot appears; ③ messages are shared while context is private — that is what makes "five bots in one room" possible at all.
 
-## 7. Conflicts with earlier decisions (awaiting a ruling)
+## 7. Conflicts with earlier decisions (all resolved)
 
 | # | Conflict | September choice | Today's reality | Suggestion |
 |---|---|---|---|---|
@@ -150,7 +150,7 @@ Bot and Agent split it the same way throughout: **the bot owns what is alive** (
 | 2 | Whether a Session is visible to the user | yes (a new session picks a workspace) | the concept does not exist in the UI at all | **Resolved 2026-10-23**: never visible. A session is an agent's private bookkeeping (rule 3); a workspace change appears at most as a system message (rule 13) |
 | 3 | Character kind | human \| virtual | today it is a plain `chatter` with no kind | **Resolved 2026-10-23**: `human \| bot`. A bot is a principal and appears in rooms; an agent is not a principal and never appears on its own |
 | 4 | What a workspace binds to | Session | not implemented yet | keep September: bind to Session; an Agent also has a default workspace |
-| 5 | Whether a session snapshots its members | undecided | undecided | still open, and it is now purely a memory question: whoever wrote a message is on the message, so a snapshot would only serve an agent asking "who was here when this stretch began" |
+| 5 | Whether a session snapshots its members | undecided | **Resolved 2026-10-24: no snapshot.** Whoever wrote a message is on the message (rule 15), so a snapshot would only answer "who was here when this stretch began" — a second fact about membership that goes stale silently, for a private span that has no use for it |
 
 ## 8. On-disk shape (brief)
 
