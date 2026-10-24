@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -17,6 +17,7 @@ import {
   stubJudge,
   transcriptOf,
 } from './main.ts';
+import { applyRoster, readRosterFor } from './roster.ts';
 import { SeekStore } from './store.ts';
 import type { TurnContext } from './turn.ts';
 
@@ -35,10 +36,27 @@ function makeTimers(): Timers & { armed: number[] } {
   };
 }
 
-/** A store on a throwaway path, and its directory. */
+/**
+ * The roster the harness's stores are given.
+ *
+ * Written beside every throwaway store, because that is where a run looks for it
+ * (`src/roster.ts`): the file is the roster, so a test that skipped it would be
+ * testing a path no real run takes.
+ */
+const ROSTER_YAML = `agents:
+  - bot: Echo
+    role: watch
+    tools: []
+  - bot: Echo
+    role: work
+    tools: [say]
+`;
+
+/** A store on a throwaway path, its roster, and its directory. */
 async function onDisk(): Promise<{ store: SeekStore; path: string; dir: string }> {
   const dir = await mkdtemp(join(tmpdir(), 'seek-milestone-'));
   const path = join(dir, 'seek.json');
+  await writeFile(join(dir, 'agents.yml'), ROSTER_YAML);
   return { store: await SeekStore.load(path), path, dir };
 }
 
@@ -133,10 +151,20 @@ test('a second run continues the room instead of seeding a second one', async ()
   }
 });
 
-test('the seeded world uses the entities the data model fixes, and no roster', async () => {
+test('the roster supplies the agents, the seed supplies the world', async () => {
   const { store, dir } = await onDisk();
   try {
-    const scene = seedOneRoom(store);
+    const world = seedOneRoom(store);
+    // The seed writes no agents at all: nothing exists until the roster is read,
+    // which is what keeps the file the one place agents come from.
+    assert.deepEqual(store.agentsOf(world.bot), []);
+
+    const rows = await readRosterFor(store);
+    assert.ok(rows, 'the harness wrote a roster beside the store');
+    applyRoster(store, rows);
+
+    const scene = sceneOf(store);
+    assert.ok(scene, 'the roster is what completes the scene');
     const watch = store.data.agents[scene.watch];
     const work = store.data.agents[scene.work];
 
@@ -145,7 +173,8 @@ test('the seeded world uses the entities the data model fixes, and no roster', a
     assert.equal(watch.bot_id, scene.bot);
     assert.equal(work.bot_id, scene.bot);
     // The half that cannot write holds no tool; the half that answers may speak
-    // and nothing else (checklist line 14, and "exactly two additions" on 13).
+    // and nothing else — read off `agents.yml` rather than out of a table in the
+    // code (checklist line 13, "exactly two additions").
     assert.deepEqual(watch.tools, []);
     assert.deepEqual(work.tools, ['say']);
     // No model was chosen: that is a measurement, and this file does not take it.
@@ -194,6 +223,7 @@ test('the run settles the compaction it started before it reports', async () => 
   const dir = await mkdtemp(join(tmpdir(), 'seek-milestone-'));
   try {
     const path = join(dir, 'seek.json');
+    await writeFile(join(dir, 'agents.yml'), ROSTER_YAML);
     const store = new DigestStore((await SeekStore.load(path)).data, path);
 
     const run = await runFirstMilestone(store, {
@@ -229,8 +259,13 @@ test('a store with no scene says so instead of inventing one', async () => {
 
     // A bot without its two halves is not a scene either: something would have
     // to guess which agent answers, and guessing is what this file must not do.
-    const scene = seedOneRoom(store);
-    delete store.data.agents[scene.work];
+    const world = seedOneRoom(store);
+    const rows = await readRosterFor(store);
+    assert.ok(rows);
+    // A roster that declares the watch row and not the work one: one agent is
+    // not a scene, however well-formed the file is.
+    applyRoster(store, rows.filter((row) => row.role !== 'work'));
+    assert.equal(store.agentsOf(world.bot).length, 1);
     assert.equal(sceneOf(store), undefined);
   } finally {
     await rm(dir, { recursive: true, force: true });
@@ -290,10 +325,10 @@ test('a run with no path goes to a predictable place, and never to the repositor
 test('the stubs answer without reading, and a reminder’s turn says nothing', async () => {
   const { store, dir } = await onDisk();
   try {
-    const scene = seedOneRoom(store);
+    const world = seedOneRoom(store);
     const said: string[] = [];
     const context = {
-      roomId: scene.room,
+      roomId: world.room,
       say: (roomId: string, text: string) => {
         said.push(`${roomId}:${text}`);
         return { id: 'om_x' };
@@ -302,7 +337,7 @@ test('the stubs answer without reading, and a reminder’s turn says nothing', a
 
     await stubDecide(context);
     assert.equal(said.length, 1);
-    assert.equal(said[0].startsWith(`${scene.room}:`), true);
+    assert.equal(said[0].startsWith(`${world.room}:`), true);
 
     // A reminder's turn has no room (`agent-lifecycle.md` §12), and `say`
     // addresses a room by name — so it has nothing to address.

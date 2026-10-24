@@ -10,6 +10,16 @@
 
 export { SeekStore, emptyData, newId } from './store.ts';
 export type { SeekData } from './store.ts';
+export {
+  agentIdFor,
+  applyRoster,
+  parseRoster,
+  readRoster,
+  readRosterFor,
+  rosterPath,
+  ROSTER_FILE,
+} from './roster.ts';
+export type { AgentRow } from './roster.ts';
 export { deliver, deriveHints, deriveKind } from './delivery.ts';
 export type { Delivery, PostMessageInput } from './delivery.ts';
 export { classify, gate } from './gate.ts';

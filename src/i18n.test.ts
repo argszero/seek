@@ -49,9 +49,26 @@ function makeTimers(): Timers {
   return { set: (delayMs: number) => delayMs, clear: () => {} };
 }
 
+/**
+ * A throwaway directory holding the roster a store needs.
+ *
+ * `agents.yml` sits beside every store (`src/roster.ts`), so a store a test hands
+ * to `main` needs one too: without it the run has a bot and no agents, and the
+ * command line is being measured rather than the roster.
+ */
+const ROSTER = `agents:
+  - bot: Echo
+    role: watch
+    tools: []
+  - bot: Echo
+    role: work
+    tools: [say]
+`;
+
 async function withDirectory(body: (directory: string) => Promise<void>): Promise<void> {
   const directory = await mkdtemp(join(tmpdir(), 'seek-i18n-'));
   try {
+    await writeFile(join(directory, 'agents.yml'), ROSTER);
     await body(directory);
   } finally {
     await rm(directory, { recursive: true, force: true });
