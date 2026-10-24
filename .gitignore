@@ -7,6 +7,10 @@ build/
 # Local session state (contains conversation logs — never committed)
 .emrg/
 
+# The kernel's default store, written by `npm start` (same reason: it is the
+# room's log, not source)
+seek-data/
+
 # OS and editor
 .DS_Store
 *.log
