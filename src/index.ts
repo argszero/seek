@@ -24,6 +24,8 @@ export {
 export type { ChainBlockReason } from './chain.ts';
 export { InboxLoop } from './inbox.ts';
 export type { Judge, RunTurn, TickResult } from './inbox.ts';
+export { addRow, cancelRow, fireDue, listRows } from './schedule.ts';
+export type { AddRowInput } from './schedule.ts';
 export { say, sayAs } from './say.ts';
 export type { SayInput, SayOptions, SayTool } from './say.ts';
 export { makeTurn, runTurn } from './turn.ts';

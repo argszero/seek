@@ -182,23 +182,49 @@ export type ChainBlockReason = 'depth' | 'room_agent_turns';
 export interface Observation {
   id: Id;
   bot_id: Id;
-  message_id: Id;
+  /**
+   * The message this entry delivers. Absent on a reminder: a reminder was never
+   * spoken in a room, so there is no message behind it (`agent-lifecycle.md`
+   * §12).
+   */
+  message_id?: Id;
   /** Absent on a reminder: a reminder has no room and is never displayed. */
   room_id?: Id;
   kind: ObservationKind;
   hints: ObservationHints;
+  /**
+   * The reminder's own words, on a reminder and on nothing else.
+   *
+   * Delivered **verbatim** (§12): not summarised, not translated, not rewritten
+   * on the way out. What the author wrote is what the bot reads back, which is
+   * what makes a reminder a note to its future self rather than a fresh
+   * instruction. Every other entry refers to a message, and the message holds
+   * the text.
+   */
+  text?: string;
+  /** The schedule row that produced this entry, on a reminder (§12). */
+  schedule_id?: Id;
   delivered_at: string;
   /** Written by the loop or the watch side, never at delivery. */
   verdict?: Verdict;
 }
 
-// --- Schema-only this round: the shapes are fixed, nothing writes them yet. ---
+// --- The rest of the shapes are fixed by the design. Only `ScheduleRow` is
+// written yet (`schedule.ts`); the three below are still schema-only. ---
 
 /** An agent's private stretch of work in one room. Never a user-visible unit. */
 export interface Session {
   id: Id;
   agent_id: Id;
-  room_id: Id;
+  /**
+   * Absent when the work was in no room.
+   *
+   * A session is an agent's stretch of work *in one room*, and a reminder has
+   * no room — §12 keeps "the turn that fired it" on the record, so that turn
+   * needs a session, and that session belongs to no room. It is the only way a
+   * session has no room.
+   */
+  room_id?: Id;
   workspace: string;
   started_at: string;
   ended_at?: string;
@@ -231,6 +257,15 @@ export interface Memory {
 }
 
 /**
+ * Where a row is in its one-way trip (`agent-lifecycle.md` §12).
+ *
+ * It moves once and never backwards: `pending` → `fired`, or `pending` →
+ * `cancelled`, and a `cancelled` row is a tombstone because "I had planned this
+ * and dropped it" is information its author may want back.
+ */
+export type ScheduleState = 'pending' | 'fired' | 'cancelled';
+
+/**
  * One row of the one global schedule table.
  *
  * When a row comes due its `text` becomes an Observation of kind `reminder` on
@@ -238,8 +273,16 @@ export interface Memory {
  */
 export interface ScheduleRow {
   id: Id;
+  /** The bot the reminder belongs to: the inbox is the bot's, never an agent's. */
   bot_id: Id;
+  /** The instant it is due, an ISO string like every other time here. */
   when: string;
+  /** Delivered verbatim, exactly as its author wrote it. */
   text: string;
+  state: ScheduleState;
+  created_at: string;
+  /** The agent that wrote the row, when an agent did rather than the loop. */
+  created_by?: Id;
+  /** When it fired. Present exactly when `state` is `fired`, set in one step with it. */
   fired_at?: string;
 }

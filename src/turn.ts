@@ -35,8 +35,15 @@ import type { Agent, Id, Message, Observation, Session, Turn } from './types.ts'
 export interface TurnSpec {
   /** The work agent this turn belongs to. */
   agentId: Id;
-  /** The room the entries came from: the session's room. */
-  roomId: Id;
+  /**
+   * The room the entries came from: the session's room.
+   *
+   * Absent for a reminder, which has no room (§12). Its turn still runs — the
+   * reminder wakes the bot exactly as a person's message would — but it is the
+   * bot's own work rather than a contribution to a room, so it opens a session
+   * that belongs to no room and counts toward no room's burst.
+   */
+  roomId?: Id;
   /** The entries the turn opens with. Never the whole inbox. */
   entries: Observation[];
   /** Where the session opens. Defaults to the agent's own home. */
@@ -51,7 +58,8 @@ export interface TurnContext {
   agentId: Id;
   sessionId: Id;
   turnId: Id;
-  roomId: Id;
+  /** Absent on a reminder's turn: a reminder is in no room (§12). */
+  roomId?: Id;
   /** The observations that woke it — the entries and nothing more. */
   entries: Observation[];
   /** `say(room, text)`: bound to this bot and this agent, addressed by the caller. */
@@ -91,11 +99,13 @@ export async function runTurn(
 ): Promise<TurnRecord> {
   const agent = store.data.agents[spec.agentId];
   if (!agent) throw new Error(`unknown agent: ${spec.agentId}`);
-  if (!store.room(spec.roomId)) throw new Error(`unknown room: ${spec.roomId}`);
+  if (spec.roomId !== undefined && !store.room(spec.roomId)) {
+    throw new Error(`unknown room: ${spec.roomId}`);
+  }
   for (const entry of spec.entries) {
     if (entry.room_id !== spec.roomId) {
       throw new Error(
-        `entry ${entry.id} is not from ${spec.roomId}: one turn is one agent's work in one room`,
+        `entry ${entry.id} is not from ${spec.roomId ?? 'no room'}: one turn is one agent's work in one room`,
       );
     }
   }
@@ -137,7 +147,11 @@ export async function runTurn(
     // §11.3: this room has now had one more bot turn in a row, with no human
     // message between. Counted when the turn ends so that the third turn's own
     // words still reach the other side — the cap stops *further* messages.
-    bumpAgentTurns(store, spec.roomId);
+    //
+    // Only a turn *in a room* counts. §12 says a reminder does not touch this
+    // counter: the cap exists to stop two bots trading turns in a room, and a
+    // bot reminding itself is not a conversation in a room.
+    if (spec.roomId !== undefined) bumpAgentTurns(store, spec.roomId);
     await store.save();
   }
 
@@ -166,20 +180,16 @@ export function makeTurn(
       throw new Error(`bot ${botId} has no 'work' agent, so nothing can run`);
     }
 
-    const byRoom = new Map<Id, Observation[]>();
+    const byRoom = new Map<Id | undefined, Observation[]>();
     for (const entry of entries) {
-      // A reminder carries no room (`Observation.room_id`), and its turn is the
-      // schedule's business (`agent-lifecycle.md` §12): nothing produces one
-      // yet, so this is a guard rather than a path. Left loud on purpose — the
-      // alternative is a waking entry that no turn ever took.
-      if (!entry.room_id) {
-        throw new Error(
-          `entry ${entry.id} has no room: a reminder's turn belongs to the schedule (§12), which is not built`,
-        );
-      }
-      const group = byRoom.get(entry.room_id) ?? [];
+      // A reminder carries no room (`Observation.room_id`) and its turn still
+      // runs: §12 keeps "the turn that fired it" on the record, so a reminder is
+      // not a waking entry that no turn ever took. It opens the one turn that
+      // has no room, and that turn does not count toward any room's burst.
+      const key = entry.room_id;
+      const group = byRoom.get(key) ?? [];
       group.push(entry);
-      byRoom.set(entry.room_id, group);
+      byRoom.set(key, group);
     }
 
     for (const [roomId, group] of byRoom) {
@@ -193,12 +203,13 @@ export function makeTurn(
  *
  * A session is per (agent, room, workspace): it is the agent's private
  * bookkeeping, never shown to the user, and a change of workspace is what
- * starts a new one.
+ * starts a new one. A reminder's turn has no room, and that is its own key — it
+ * never joins a room's session.
  */
 function openSession(
   store: SeekStore,
   agent: Agent,
-  roomId: Id,
+  roomId: Id | undefined,
   workspace: string,
   now: string,
 ): Session {
