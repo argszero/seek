@@ -82,6 +82,17 @@ export interface BoxVerdict {
    * the judgement was made.
    */
   delivered_at: string;
+  /**
+   * What the judgement said, when it said anything.
+   *
+   * §3 lists it as part of the box's last-verdict part — *"when it was taken,
+   * what it was, and the reason if one came back"* — and it is a **fact about
+   * the record**, never an argument: "you kept this twelve observations ago and
+   * have said nothing since" is the box reporting; "you should keep this" is
+   * the box arguing, and that is what would make a stale decision
+   * self-perpetuating (§3).
+   */
+  reason?: string;
 }
 
 /** Who spoke in this room over the delta, and how often. */
@@ -189,11 +200,16 @@ function newestVerdict(delta: Observation[]): BoxVerdict | undefined {
   for (let index = delta.length - 1; index >= 0; index -= 1) {
     const entry = delta[index];
     if (entry.verdict) {
-      return {
+      const last: BoxVerdict = {
         verdict: entry.verdict,
         entryId: entry.id,
         delivered_at: entry.delivered_at,
       };
+      // Carried when the judgement gave one, and absent when it did not: a box
+      // that invented a reason would be putting words in the last verdict's
+      // mouth, which is the instruction this field is not allowed to become.
+      if (entry.reason !== undefined) last.reason = entry.reason;
+      return last;
     }
   }
   return undefined;
