@@ -31,6 +31,7 @@
  */
 
 import { bumpAgentTurns } from './chain.ts';
+import { identityFor, type AgentIdentity } from './identity.ts';
 import type { RunTurn } from './inbox.ts';
 import { sayAs, type SayTool } from './say.ts';
 import { scheduleAs, type ScheduleTool } from './schedule.ts';
@@ -94,7 +95,15 @@ export interface TurnSpec {
  */
 export type HandedEntry = Omit<Observation, 'verdict' | 'reason'>;
 
-/** What the agent is given when the loop calls it. */
+/**
+ * Whose agent this is — the bot's identity and the roster of its agents,
+ * itself included (`agent-lifecycle.md` §2).
+ *
+ * Read from the store when this turn opens rather than when the loop was built,
+ * so a renamed bot or a new roster row reaches the next turn without a
+ * migration. Nothing of it is stored on the agent: the copy in the store stays
+ * the only one, which is what keeps a name from disagreeing with itself.
+ */
 export interface TurnContext {
   botId: Id;
   agentId: Id;
@@ -102,6 +111,8 @@ export interface TurnContext {
   turnId: Id;
   /** Absent on a reminder's turn: a reminder is in no room (§12). */
   roomId?: Id;
+  /** The bot it belongs to, and every agent of that bot: pushed, never stored. */
+  identity: AgentIdentity;
   /**
    * The observations that woke it — the entries and nothing more.
    *
@@ -167,6 +178,14 @@ export async function runTurn(
     }
   }
 
+  // §2: whose agent this is, read *here* rather than when the loop was built.
+  // A bot renamed between two turns is seen renamed by the second one, and a
+  // roster row added meanwhile arrives with no migration — which is the whole of
+  // "pushed, not stored". Read before the ledger row is written, so a store that
+  // cannot answer fails like the unknown-agent guard above rather than leaving a
+  // turn that ran with nobody's identity.
+  const identity = identityFor(store, agent.bot_id, agent.id);
+
   const now = spec.now ?? new Date().toISOString();
   const workspace = spec.workspace ?? agent.home;
   const session = openSession(store, agent, spec.roomId, workspace, now);
@@ -205,6 +224,7 @@ export async function runTurn(
       sessionId: session.id,
       turnId: turn.id,
       roomId: spec.roomId,
+      identity,
       entries: spec.entries.map(handOver),
       say,
       schedule,

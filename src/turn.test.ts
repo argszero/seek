@@ -368,3 +368,54 @@ test('a turn holds the schedule tool, bound to its own bot and agent', async () 
   assert.equal(written?.state, 'pending');
   assert.equal(world.store.data.turns.length, 1);
 });
+
+test('a turn is told whose it is: its bot, and every agent of that bot', async () => {
+  const world = makeWorld();
+  let seen: TurnContext | undefined;
+  await runTurn(
+    world.store,
+    { agentId: world.agentA2, roomId: world.room, entries: [] },
+    (context) => {
+      seen = context;
+    },
+  );
+
+  assert.equal(seen?.identity.bot.id, world.botA);
+  assert.equal(seen?.identity.bot.name, 'A');
+  const self = seen?.identity.roster.filter((row) => row.self) ?? [];
+  assert.deepEqual(
+    self.map((row) => row.agentId),
+    [world.agentA2],
+    'the work agent is told which row is itself',
+  );
+  assert.deepEqual(
+    (seen?.identity.roster ?? []).map((row) => row.role).sort(),
+    ['watch', 'work'],
+  );
+});
+
+test('the identity is read at the turn, not at the loop: a rename lands on the next turn', async () => {
+  const world = makeWorld();
+  const names: string[] = [];
+  const loop = new InboxLoop(
+    world.store,
+    makeTurn(world.store, world.botA, (context) => {
+      names.push(context.identity.bot.name);
+    }),
+  );
+
+  for (const text of ['@A first', '@A second']) {
+    deliver(world.store, {
+      roomId: world.room,
+      senderId: world.me,
+      text,
+      mentions: [{ id: world.botA, name: 'A' }],
+    });
+    await loop.tick(world.botA);
+    // The bot is renamed between two turns of one loop — the case a copy taken
+    // when `makeTurn` was built would answer with the old name for ever.
+    world.store.data.bots[world.botA].name = 'Echo';
+  }
+
+  assert.deepEqual(names, ['A', 'Echo']);
+});
