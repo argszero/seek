@@ -1,0 +1,277 @@
+{
+ "_what_this_is": "The text calibration re-read through a local llama.cpp HTTP server, case by case against the recorded one-shot CLI reading, to show the two transports read the same quantity.",
+ "_why_this_file_exists": "The runtime reaches the watch model over a server (`src/llama.ts`), because the resident context of `agent-lifecycle.md` §4 lives in the model's own KV cache and a process per judgement throws that cache away with the process. But the shipped 0.600 cut was measured through a one-shot CLI scorer, so an adapter on a different transport had to be shown to read the same estimator before it could be allowed to keep that cut. A reading taken the other way -- one masked id per option -- would not be a second implementation of this cut, it would be a second cut.",
+ "date": "2026-10-25",
+ "measured_on": "this machine, CPU/Metal, no network",
+ "model": {
+  "file": "LFM2.5-VL-3B-Q4_0.gguf",
+  "sha256": "364224c6bd45b4ff4bf8af71f7be384ea166fa0f573d68bc0b6e10ef9ae7ae58"
+ },
+ "server": "llama.cpp 0.7.0-dev (build 701fd25), llama-server, --jinja",
+ "shape": {
+  "prompt": "the artifact's system line as a chat system message, then the assembled remainder as a user turn, rendered by the server's own chat template (/apply-template) -- the shape calibration/vision/remeasured.json was taken in",
+  "answer_read": "the next-token distribution at the prompt's own end (/completion, n_predict 1, n_probs 64), summed over every candidate whose decoded form strips to the option (lowercase, letters and digits only) -- the estimator calibration/provenance.md describes for the text run",
+  "samplers": "neutral (temperature 1, top_k 0, top_p 1, min_p 0, repeat_penalty 1), so the reading is the raw softmax and not a sampled or truncated one",
+  "cache_prompt": true,
+  "note": "the mask ids are measured on the TEMPLATED text, because the answer is read after the template's own tail; src/llama.ts bindOverServer does this by tokenising the templated prompt and the templated prompt plus each option"
+ },
+ "result": {
+  "n": 24,
+  "auc_server": 1,
+  "auc_recorded": 1.0,
+  "at_cut_0_600": {
+   "correct": 20,
+   "act_caught": 8,
+   "act_total": 12,
+   "ignore_kept": 12,
+   "ignore_total": 12
+  },
+  "at_cut_recorded": [
+   20,
+   8,
+   12,
+   12,
+   12
+  ],
+  "verdicts_agreeing_at_the_cut": "24/24",
+  "per_case_delta": {
+   "max_abs": 0.0008,
+   "mean_abs": 0.0003
+  },
+  "latency": {
+   "mean_ms_per_case_server": 114.0,
+   "recorded_mean_ms_per_case_cli": 186,
+   "model_load_ms": 4233,
+   "note": "the CLI figure is a fresh process per case; the server figure is a warm one, which is the point of the transport"
+  }
+ },
+ "what_this_settles": [
+  "A server-based reader reproduces the calibrated probability to within 0.0008 on all 24 cases, so the adapter built on it keeps the 0.600 cut in src/prompts/watch-v1.json rather than needing its own.",
+  "The 20/24 at the shipped cut is the same 20/24 the CLI rig recorded -- including act 8/12 -- so the gap at 0.600 is the operating point and not the transport.",
+  "Reading each case costs 114 ms warm against 186 ms cold, so the resident context is doing what §4 says it is for."
+ ],
+ "what_this_does_not_settle": [
+  "Nothing about which model ships: line 25 of src/README.md is still open, and the multilingual half is still measured and unmet (act 1/6 on the twelve Chinese cases).",
+  "Nothing about images. This run is the text set only; the image sets carry a projector path (/completion takes no projector) and are unmeasured through this transport, so no image figure here should be quoted.",
+  "Nothing about the cut itself. 0.600 is what the artifact declares and what governs; the re-measurement that says one cut near 0.39 serves both paths is calibration/vision/remeasured.json's, and moving the number is docs/decisions.md row 12's to do.",
+  "The estimator is summed over the top 64 candidates, not over the whole vocabulary. At this depth the omitted mass is far below any cut in the measured plateaus, but it is not zero and a shallower n_probs would under-report."
+ ],
+ "cases": [
+  {
+   "text": "对账任务今天凌晨跑失败了，需要人看一下",
+   "label": "act",
+   "p_act_server": 0.5322,
+   "p_ignore_server": 0.1577,
+   "p_act_recorded": 0.5318,
+   "delta": 0.0004,
+   "eval_ms": 230
+  },
+  {
+   "text": "The settlement batch failed at 03:00, nothing was sent to the bank.",
+   "label": "act",
+   "p_act_server": 0.8256,
+   "p_ignore_server": 0.0536,
+   "p_act_recorded": 0.8253,
+   "delta": 0.0003,
+   "eval_ms": 150
+  },
+  {
+   "text": "@ops-bot 退款申请一直卡在审核中，客户催了两次",
+   "label": "act",
+   "p_act_server": 0.6293,
+   "p_ignore_server": 0.0952,
+   "p_act_recorded": 0.6289,
+   "delta": 0.0004,
+   "eval_ms": 108
+  },
+  {
+   "text": "We're getting 429s from the upstream PSP on every retry.",
+   "label": "act",
+   "p_act_server": 0.8144,
+   "p_ignore_server": 0.0466,
+   "p_act_recorded": 0.8139,
+   "delta": 0.0005,
+   "eval_ms": 108
+  },
+  {
+   "text": "支付成功的订单没有回调，订单状态一直是待支付",
+   "label": "act",
+   "p_act_server": 0.6198,
+   "p_ignore_server": 0.0401,
+   "p_act_recorded": 0.6193,
+   "delta": 0.0005,
+   "eval_ms": 109
+  },
+  {
+   "text": "Can someone check why the CSV export is empty for yesterday?",
+   "label": "act",
+   "p_act_server": 0.3956,
+   "p_ignore_server": 0.4376,
+   "p_act_recorded": 0.3948,
+   "delta": 0.0008,
+   "eval_ms": 109
+  },
+  {
+   "text": "线上支付页面白屏了，用户下不了单",
+   "label": "act",
+   "p_act_server": 0.6521,
+   "p_ignore_server": 0.0237,
+   "p_act_recorded": 0.6513,
+   "delta": 0.0008,
+   "eval_ms": 108
+  },
+  {
+   "text": "Our nightly reconciliation is 3 hours late and still running.",
+   "label": "act",
+   "p_act_server": 0.5453,
+   "p_ignore_server": 0.2855,
+   "p_act_recorded": 0.5451,
+   "delta": 0.0002,
+   "eval_ms": 109
+  },
+  {
+   "text": "@ops-bot what's the retry policy for failed payouts?",
+   "label": "act",
+   "p_act_server": 0.4074,
+   "p_ignore_server": 0.4203,
+   "p_act_recorded": 0.4073,
+   "delta": 0.0001,
+   "eval_ms": 110
+  },
+  {
+   "text": "Alert fired: dispute rate above threshold for merchant 8842.",
+   "label": "act",
+   "p_act_server": 0.8399,
+   "p_ignore_server": 0.0477,
+   "p_act_recorded": 0.8394,
+   "delta": 0.0005,
+   "eval_ms": 110
+  },
+  {
+   "text": "有个商户说钱扣了但订单没生成",
+   "label": "act",
+   "p_act_server": 0.6204,
+   "p_ignore_server": 0.0228,
+   "p_act_recorded": 0.6201,
+   "delta": 0.0003,
+   "eval_ms": 111
+  },
+  {
+   "text": "The webhook consumer is dead, no events processed since 09:14.",
+   "label": "act",
+   "p_act_server": 0.8374,
+   "p_ignore_server": 0.0411,
+   "p_act_recorded": 0.8371,
+   "delta": 0.0003,
+   "eval_ms": 108
+  },
+  {
+   "text": "我下周一到周三休假，有事找小李",
+   "label": "ignore",
+   "p_act_server": 0.2958,
+   "p_ignore_server": 0.3803,
+   "p_act_recorded": 0.2955,
+   "delta": 0.0003,
+   "eval_ms": 108
+  },
+  {
+   "text": "There's cake in the kitchen for the new hire.",
+   "label": "ignore",
+   "p_act_server": 0.2555,
+   "p_ignore_server": 0.5817,
+   "p_act_recorded": 0.2555,
+   "delta": 0,
+   "eval_ms": 107
+  },
+  {
+   "text": "今天的例会取消",
+   "label": "ignore",
+   "p_act_server": 0.3474,
+   "p_ignore_server": 0.4132,
+   "p_act_recorded": 0.3471,
+   "delta": 0.0003,
+   "eval_ms": 87
+  },
+  {
+   "text": "New badge policy starts next month, card needed at all doors.",
+   "label": "ignore",
+   "p_act_server": 0.385,
+   "p_ignore_server": 0.4379,
+   "p_act_recorded": 0.3845,
+   "delta": 0.0005,
+   "eval_ms": 107
+  },
+  {
+   "text": "笑死，这个 bug 的复现路径太离谱了",
+   "label": "ignore",
+   "p_act_server": 0.289,
+   "p_ignore_server": 0.4898,
+   "p_act_recorded": 0.2886,
+   "delta": 0.0004,
+   "eval_ms": 107
+  },
+  {
+   "text": "Lunch order closes at 11:30.",
+   "label": "ignore",
+   "p_act_server": 0.2336,
+   "p_ignore_server": 0.6248,
+   "p_act_recorded": 0.2335,
+   "delta": 0.0001,
+   "eval_ms": 106
+  },
+  {
+   "text": "是谁把我的杯子拿走了",
+   "label": "ignore",
+   "p_act_server": 0.0651,
+   "p_ignore_server": 0.7371,
+   "p_act_recorded": 0.0651,
+   "delta": 0,
+   "eval_ms": 107
+  },
+  {
+   "text": "The offsite photos are uploaded to the shared album.",
+   "label": "ignore",
+   "p_act_server": 0.2877,
+   "p_ignore_server": 0.5588,
+   "p_act_recorded": 0.2874,
+   "delta": 0.0003,
+   "eval_ms": 107
+  },
+  {
+   "text": "明天上午十点全员会",
+   "label": "ignore",
+   "p_act_server": 0.3087,
+   "p_ignore_server": 0.4466,
+   "p_act_recorded": 0.3085,
+   "delta": 0.0002,
+   "eval_ms": 108
+  },
+  {
+   "text": "刚看了下招聘进度，简历收了不少",
+   "label": "ignore",
+   "p_act_server": 0.1741,
+   "p_ignore_server": 0.6034,
+   "p_act_recorded": 0.1741,
+   "delta": 0,
+   "eval_ms": 107
+  },
+  {
+   "text": "I'm looking into it now, will update in 30 min.",
+   "label": "keep",
+   "p_act_server": 0.115,
+   "p_ignore_server": 0.7294,
+   "p_act_recorded": 0.115,
+   "delta": 0,
+   "eval_ms": 107
+  },
+  {
+   "text": "已经联系了银行，等他们回复",
+   "label": "keep",
+   "p_act_server": 0.0493,
+   "p_ignore_server": 0.8349,
+   "p_act_recorded": 0.0493,
+   "delta": 0,
+   "eval_ms": 107
+  }
+ ]
+}

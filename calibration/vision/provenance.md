@@ -277,9 +277,16 @@ before, and not enough to rank models on Chinese vision.
 - **n = 32.** Sixteen images per label is a narrower interval than sixteen cases were, and
   a language split. The reading is enough to say the requirement is unmet and not enough to
   rank models on vision.
-- **The estimator.** The scorer reads the whole next-token distribution; the kernel masks a
-  single id per option. That difference is already recorded as an open tension in
-  `docs/decisions.md`, and this run neither widens nor narrows it.
+- **The estimator.** The scorer reads the whole next-token distribution, summed over every
+  token that spells the option. The kernel's own mask names a single id per option, and this
+  sentence used to say that difference *was already recorded* in `docs/decisions.md` — it was
+  recorded nowhere, and four files repeated the claim. The row exists now (`docs/decisions.md`
+  row 19), and it settles the reading rather than describing two: the runtime sums the
+  distribution as the measurement did, and `calibration/vision/server-transport.json` shows that
+  transport reproducing this file's text set exactly — AUC 1.000, 20/24 at 0.600, per-case
+  difference at most 0.0008. What is still open on that path is the images: `/completion` takes
+  no projector, so no image figure in this directory has been read through the server transport
+  at all, and none should be quoted as if it had.
 - **No rule was changed.** The 0.600 cut is unchanged in `src/prompts/watch-v1.json`. The
   re-measurement above says one cut near 0.39 serves both paths and dominates 0.600 on each, but
   choosing it is `decisions.md` row 12's to do, not a measurement's to declare.

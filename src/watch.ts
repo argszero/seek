@@ -9,10 +9,10 @@
  * and writes the verdict — and the reason, when one came back — onto the entries
  * it judged.
  *
- * **No model is built, bundled or chosen here.** `WatchModel` is the seam, and
- * the only implementation in the tree is the stub the tests inject: which model
- * ships is `src/README.md` line 25, answered by measurement. This file is what
- * that model will be plugged into, testable without one.
+ * **No model is built, bundled or chosen here.** `WatchModel` is the seam and
+ * `llama.ts` is the implementation over a local server; which model *ships* is
+ * `src/README.md` line 25, answered by measurement, and nothing in this file reads
+ * that answer. So this file stays the rules, and stays testable without a model.
  *
  * Five things the runtime is not allowed to decide for itself, each with the
  * document that keeps it out of here:
@@ -286,13 +286,29 @@ export interface WatchOptions {
   /** Overrides for the declared option tokens. Defaults to `act` / `ignore`. */
   optionTokens?: Partial<OptionTokens>;
   /**
-   * The tokeniser the mask ids are measured with. **Required**, and there is no
-   * default: a runtime without one cannot say where its own answer is read, and the
-   * options it cannot place may never be answerable at all. It refuses at
-   * construction for the same reason the operating point does — the defect would
-   * otherwise show up as a bot that always says no.
+   * The tokeniser the mask ids are measured with.
+   *
+   * **One of this and `mask` is required**, and neither has a default: a runtime
+   * holding neither cannot say where its own answer is read, and the options it
+   * cannot place may never be answerable at all. It refuses at construction for the
+   * same reason the operating point does — the defect would otherwise show up as a
+   * bot that always says no.
+   *
+   * Give this one when the tokeniser answers synchronously, which is what the suite's
+   * stub does. Give `mask` instead when the ids have to be measured *before* the
+   * runtime is built: a model behind HTTP cannot answer inside a synchronous bind,
+   * so `llama.ts` measures first (`bindOverServer`) and hands the result over.
    */
-  tokeniser: Tokeniser;
+  tokeniser?: Tokeniser;
+  /**
+   * The mask, already measured at the prompt's own end.
+   *
+   * The value `bindOptions` would have produced, measured by whoever could reach the
+   * tokeniser — and checked here rather than trusted, because this is the one field
+   * that reaches the model without passing through the function that normally
+   * catches a mask that names no answer.
+   */
+  mask?: OptionBinding;
   /** What one observation costs against `window`. Passed through to the box. */
   weigh?: (entry: Observation) => number;
 }
@@ -366,7 +382,7 @@ export function watchAs(
   // (the artifact's last part is unconditional), so these are the ids the answer is
   // read at in every room and on every tick. Warmth is not this line's doing — that
   // is `resident` below, and it holds no ids of its own.
-  const mask = bindOptions(options.tokeniser, skeletonOf(artifact), tokens);
+  const mask = maskFor(artifact, options, tokens);
   const front = frontOf(artifact);
 
   // The resident context, one per room (§4 "the box's tokens are kept warm"). One
@@ -484,6 +500,64 @@ export function watchAs(
   }) as Watch;
 
   return watch;
+}
+
+/**
+ * The mask in force: measured here from a tokeniser, or measured elsewhere and
+ * handed in.
+ *
+ * Exactly one route, because two would be two answers about where the answer is read
+ * — a tokeniser that disagrees with the mask beside it is a runtime that cannot say
+ * which id it is about to read, and the failure is silent in the worst way: the mask
+ * goes to the model and an unreachable option reads as a confident "no".
+ *
+ * A supplied mask is checked, not trusted. The three refusals `bindOptions` makes are
+ * about the mask rather than about the tokeniser, so they apply to this one too: an
+ * id that is not a token id names no position, and one id for both options is one
+ * answer wearing two names.
+ */
+function maskFor(
+  artifact: PromptArtifact,
+  options: WatchOptions,
+  tokens: OptionTokens,
+): OptionBinding {
+  const supplied = options.mask;
+  if (supplied !== undefined && options.tokeniser !== undefined) {
+    throw new Error(
+      'stage 1 was given both a tokeniser and a mask, and they are free to disagree ' +
+        "about where this prompt's end is — hand over whichever one measured the ids, " +
+        'not both',
+    );
+  }
+  if (supplied !== undefined) return checkedMask(supplied);
+  if (options.tokeniser !== undefined) {
+    return bindOptions(options.tokeniser, skeletonOf(artifact), tokens);
+  }
+  throw new Error(
+    'stage 1 needs a tokeniser or a mask measured from one: the ids are read off the ' +
+      "prompt's own end, and without them a declared option may be unreachable for good " +
+      '(src/README.md line 26)',
+  );
+}
+
+/** A supplied mask, held to the same three refusals as a measured one. */
+function checkedMask(mask: OptionBinding): OptionBinding {
+  const ids = [mask.act?.id, mask.ignore?.id];
+  for (const id of ids) {
+    if (!Number.isInteger(id) || id < 0) {
+      throw new Error(
+        `a mask id must be a token id, got ${JSON.stringify(id)} — the answer is read by ` +
+          'position, and an id that names no token names no answer',
+      );
+    }
+  }
+  if (ids[0] === ids[1]) {
+    throw new Error(
+      `the two options land on the same id (${ids[0]}), so ${JSON.stringify(mask.act?.token)} ` +
+        `and ${JSON.stringify(mask.ignore?.token)} are one answer wearing two names`,
+    );
+  }
+  return mask;
 }
 
 /**
