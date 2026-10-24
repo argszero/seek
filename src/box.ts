@@ -102,6 +102,33 @@ export interface BoxSpeaker {
   count: number;
 }
 
+/**
+ * One picture the judgement is handed, named rather than inlined.
+ *
+ * The bytes stay where the client keeps them (`MessageMedia.key` is a reference),
+ * so what the box owes a judgement is that the picture is **in the box at all**.
+ * An image message whose entry the delta holds while its picture reaches nobody
+ * is judged from its text, and that is the guessing `src/README.md` line 25
+ * forbids — the entry alone cannot prevent it, because an entry names a message
+ * and a message's text reads perfectly well on its own.
+ *
+ * **Handing over the picture is the kernel's; loading the bytes is not.** Turning
+ * a `key` into pixels needs the client's blob scheme, and putting a picture in
+ * front of a model needs a vision projector that has not been measured (line 25).
+ * The box stops at the reference, which is the last thing this kernel can be sure
+ * of.
+ */
+export interface BoxMedia {
+  /** The entry this picture belongs to — the delta line it is the picture for. */
+  entryId: Id;
+  /** The message that carries it. */
+  messageId: Id;
+  /** The blob's address, opaque here: how a client names a file is its business. */
+  key: string;
+  /** What the bytes are — `image/png` — since a reader has to know before loading. */
+  mime: string;
+}
+
 /** One room's box, as a judgement receives it. Structured, never prose. */
 export interface RoomBox {
   botId: Id;
@@ -110,6 +137,19 @@ export interface RoomBox {
   summary?: string;
   /** The observations that fit, newest first. */
   delta: Observation[];
+  /**
+   * The pictures among those observations, in the same order, newest first.
+   *
+   * Derived from the entries the window **kept**, never from the delta in full:
+   * an observation beyond the window is not handed over, and a picture handed
+   * over without its line would be an image the judgement cannot place — line 23's
+   * failure in its new form.
+   *
+   * How a picture is charged against `window` is the caller's `weigh`, which is
+   * given the entry and not its bytes, so a window measured in images arrives as a
+   * `weigh` that counts entries. Nothing here charges for the picture.
+   */
+  media: BoxMedia[];
   /** How many entries the judgement was given. */
   read: number;
   /** How many the delta holds in total. */
@@ -166,14 +206,16 @@ export function buildBox(
   const summary = digestOf(store, workAgentId(store, botId) ?? '', roomId)?.body;
 
   const lastVerdict = newestVerdict(total);
+  const messages = byMessageId(store.messagesOf(roomId));
   const box: RoomBox = {
     botId,
     roomId,
     delta: kept,
+    media: mediaOf(messages, kept),
     read: kept.length,
     total: total.length,
     unread: total.length - kept.length,
-    whoSpoke: speakersOf(store, roomId, total),
+    whoSpoke: speakersOf(store, messages, total),
   };
   if (summary !== undefined) box.summary = summary;
   if (lastVerdict) {
@@ -218,15 +260,41 @@ function newestVerdict(delta: Observation[]): BoxVerdict | undefined {
   return undefined;
 }
 
+/** The room's messages, keyed by id — built once, because two parts read them. */
+function byMessageId(messages: Message[]): Map<Id, Message> {
+  const byId = new Map<Id, Message>();
+  for (const message of messages) byId.set(message.id, message);
+  return byId;
+}
+
+/**
+ * The pictures in the entries the box actually kept.
+ *
+ * Walked in the delta's own order, so `box.media` and `box.delta` read together.
+ * A reminder has no message (`message_id` absent) and so no picture: its words are
+ * its own, and it is never displayed.
+ */
+function mediaOf(messages: Map<Id, Message>, delta: Observation[]): BoxMedia[] {
+  const media: BoxMedia[] = [];
+  for (const entry of delta) {
+    const message = entry.message_id ? messages.get(entry.message_id) : undefined;
+    if (!message?.media) continue;
+    media.push({
+      entryId: entry.id,
+      messageId: message.id,
+      key: message.media.key,
+      mime: message.media.mime,
+    });
+  }
+  return media;
+}
+
 /** Who spoke across the delta, counted off the messages the entries point at. */
 function speakersOf(
   store: SeekStore,
-  roomId: Id,
+  byId: Map<Id, Message>,
   delta: Observation[],
 ): BoxSpeaker[] {
-  const byId = new Map<Id, Message>();
-  for (const message of store.messagesOf(roomId)) byId.set(message.id, message);
-
   const counts = new Map<Id, number>();
   for (const entry of delta) {
     const sender = byId.get(entry.message_id)?.sender_id;

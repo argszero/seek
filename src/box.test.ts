@@ -326,3 +326,52 @@ test("another room's entries are not let into this room's box", async () => {
   assert.equal(elsewhere.total, 0, "a box is one room's");
   assert.deepEqual(elsewhere.delta, []);
 });
+
+function postImage(world: World, key: string, text = '看这张'): string {
+  const { message } = deliver(world.store, {
+    roomId: world.room,
+    senderId: world.me,
+    kind: 'image',
+    text,
+    media: { key, mime: 'image/png' },
+  });
+  return message.id;
+}
+
+test('a picture arrives with the entry that carries it, named and located', () => {
+  const world = makeWorld();
+  const messageId = postImage(world, 'blobs/screen.png');
+  const box = buildBox(world.store, world.botA, world.room, { window: 10 });
+
+  assert.equal(box.media.length, 1, 'the image is in the box, not only its text');
+  const [picture] = box.media;
+  assert.equal(picture.entryId, box.delta[0].id, 'the line it is the picture for');
+  assert.equal(picture.messageId, messageId);
+  assert.equal(picture.key, 'blobs/screen.png');
+  assert.equal(picture.mime, 'image/png');
+});
+
+test('a picture the window left out is not handed over', () => {
+  const world = makeWorld();
+  postImage(world, 'blobs/old.png');
+  const newest = postImage(world, 'blobs/new.png');
+
+  const box = buildBox(world.store, world.botA, world.room, { window: 1 });
+  assert.equal(box.read, 1);
+  assert.equal(box.unread, 1, 'the older entry is outside what the judgement read');
+  assert.deepEqual(
+    box.media.map((picture) => picture.key),
+    ['blobs/new.png'],
+    'an image whose entry was left out is not slipped in beside the ones that fit',
+  );
+  assert.equal(box.media[0].messageId, newest);
+});
+
+test('a box of text has an empty media list rather than a missing one', () => {
+  const world = makeWorld();
+  fill(world, 2);
+  const box = buildBox(world.store, world.botA, world.room, { window: 10 });
+
+  assert.deepEqual(box.media, []);
+  assert.equal(box.read, 2);
+});

@@ -142,3 +142,85 @@ test('a mention outranks a reply, and both outrank a plain message', () => {
   assert.equal(toA?.hints.mentionsMe, true);
   assert.equal(toA?.kind, 'mention');
 });
+
+test('an image message carries its picture, as a copy of the caller\'s reference', () => {
+  const world = makeWorld();
+  const media = { key: 'blobs/screen.png', mime: 'image/png' };
+  const { message } = deliver(world.store, {
+    roomId: world.room,
+    senderId: world.me,
+    kind: 'image',
+    text: '这个报错怎么办',
+    media,
+  });
+
+  assert.equal(message.kind, 'image');
+  assert.deepEqual(message.media, { key: 'blobs/screen.png', mime: 'image/png' });
+
+  // The message is written once and stays clean: a caller still holding the
+  // reference cannot rename the picture under a message already delivered.
+  media.key = 'blobs/somewhere-else.png';
+  assert.equal(message.media?.key, 'blobs/screen.png');
+  assert.equal(world.store.messagesOf(world.room)[0].media?.key, 'blobs/screen.png');
+});
+
+test('an image message with no picture is refused at the door', () => {
+  const world = makeWorld();
+  // The alt-text failure itself: a kind that says "look at this" with nothing to
+  // look at, which every reader downstream treats as a text message.
+  assert.throws(
+    () =>
+      deliver(world.store, {
+        roomId: world.room,
+        senderId: world.me,
+        kind: 'image',
+        text: '看这张',
+      }),
+    /no image/,
+  );
+  // A picture whose key names no blob is the same failure wearing a field.
+  assert.throws(
+    () =>
+      deliver(world.store, {
+        roomId: world.room,
+        senderId: world.me,
+        kind: 'image',
+        text: '看这张',
+        media: { key: '   ', mime: 'image/png' },
+      }),
+    /no image/,
+  );
+  assert.equal(world.store.messagesOf(world.room).length, 0, 'a refusal writes nothing');
+});
+
+test('a picture on a message whose kind disowns it is refused', () => {
+  const world = makeWorld();
+  assert.throws(
+    () =>
+      deliver(world.store, {
+        roomId: world.room,
+        senderId: world.me,
+        kind: 'text',
+        text: 'hello',
+        media: { key: 'blobs/screen.png', mime: 'image/png' },
+      }),
+    /only 'image' carries a picture/,
+  );
+  assert.equal(world.store.messagesOf(world.room).length, 0);
+});
+
+test('an image message whose bytes are not an image is refused', () => {
+  const world = makeWorld();
+  assert.throws(
+    () =>
+      deliver(world.store, {
+        roomId: world.room,
+        senderId: world.me,
+        kind: 'image',
+        text: 'the invoice',
+        media: { key: 'blobs/invoice.pdf', mime: 'application/pdf' },
+      }),
+    /bytes say otherwise/,
+  );
+  assert.equal(world.store.messagesOf(world.room).length, 0);
+});
