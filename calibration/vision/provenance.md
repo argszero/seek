@@ -37,6 +37,8 @@ and a green status board — the ordinary traffic of an ops room.
 | `heldout.json` | the second 16 cases, written after the first 16 had been measured and used to pick nothing |
 | `measured.json` | the readings: model files and their hashes, the runner, per-case `p_act`, accuracy, AUC, latency, and the diagnostic below |
 | `probe.json` | the prompt probe: four wordings of the ask over the same 32 cases, and the operating-point finding below |
+| `boundary.json` | the third 24 cases, written to **choose** a cut: thin-evidence positives against evidence-like negatives |
+| `boundary-measured.json` | their reading, the plateau they form, and the three sets compared |
 | `provenance.md` / `provenance.zh-CN.md` | this record |
 
 ## How the reading was taken
@@ -131,7 +133,56 @@ operating point is not a gain.
 
 **The cut is.** That is the finding worth carrying: the vision gap is mostly an
 operating-point mismatch, and an operating point is cheap to question and expensive to
-assume.
+assume. A third set, written afterwards to choose that cut rather than to describe the model,
+confirms the interval and states what moving costs — next section.
+
+## A set written to choose the cut, and what moving it costs
+
+`boundary.json` is the set the first two could not be. Line 25 and `docs/decisions.md` row 12 both
+ended at "choosing a cut for the image path needs a set written for that purpose", and the first 32
+could not supply one: their accuracy-maximal interval, (0.134, 0.168], was pinned by exactly one
+case on each side — `i6` at 0.1340 and `a8` at 0.1680 — so the boundary rested on two pictures
+nobody had chosen for the job. The third set stresses that boundary on purpose: twelve positives
+whose evidence is **thin** (one amber tile among twelve, one ERROR line among INFO, a gauge at 91%,
+an SLO just crossed, a warn counter trending up) and twelve negatives that **look** like evidence
+and carry none (a red brand header over an all-green status page, an incident marked RESOLVED, an
+audit reporting zero errors, a dip annotated recovered, a red announcement slide, a backup that
+COMPLETED). Every case was assigned to its family before anything was scored, and all 24 are
+reported whatever they scored.
+
+At the shipped 0.600 cut the new set answers **15/24** — `act` 3/12, `ignore` 12/12 — with an AUC of
+**0.701** against 0.891 on the first 32. That gap is not noise: the earlier figure was measured on
+negatives that were easy to dismiss (a plant, a meme, a receipt, a burndown), and evidence-like
+negatives are not easy. On this set alone the best cut is (0.1097, 0.1143].
+
+Pooled, the picture is steadier than either half:
+
+| cut | first 32 | boundary 24 | all 56 |
+|---|---|---|---|
+| 0.600 (shipped) | 25/32, `ignore` 16/16 | 15/24, `ignore` 12/12 | **40/56**, `act` 12/28, `ignore` 28/28 |
+| 0.200 | 28/32, `ignore` 16/16 | 15/24, `ignore` 10/12 | 43/56, `act` 17/28, `ignore` 26/28 |
+| 0.168 | 28/32, `ignore` 16/16 | 15/24, `ignore` 9/12 | 43/56, `act` 18/28, `ignore` 25/28 |
+| **0.151** (max-margin) | 29/32, `ignore` 16/16 | 16/24, `ignore` 9/12 | **45/56**, `act` 20/28, `ignore` 25/28 |
+| 0.134 | 28/32, `ignore` 15/16 | 15/24, `ignore` 8/12 | 43/56, `act` 20/28, `ignore` 23/28 |
+| 0.112 | 26/32, `ignore` 13/16 | 17/24, `ignore` 8/12 | 43/56, `act` 22/28, `ignore` 21/28 |
+
+**The interval survives, and it is no longer two lucky pictures.** Over all 56 cases the
+accuracy-maximal cut is **(0.1356, 0.1667]**, max-margin **0.1512** — against **0.1510** for the
+first 32 alone, but now pinned by `b-i4` (0.1356, a dip annotated recovered) and `b-a9`
+(0.1667, an incident still investigating): two cases from the set that was built to stress it. Drop
+the three act labels a reader could dispute (`b-a1`, `b-a4`, `b-a10` — one amber tile among twelve,
+and a certificate 21 and 18 days out) and the interval does not move.
+
+**What the move costs is what this reading adds.** Going from 0.600 to 0.151 lifts `act` recall from
+12/28 to 20/28 and drops negatives answered correctly from 28/28 to 25/28. The three that start to
+fire are `b-i8` at 0.3588 (a backup log whose last line is COMPLETED), `b-i5` at 0.2482 (a red
+announcement slide) and `b-i3` at 0.1985 (an audit whose line reads `errors 0`). Each is a plausible
+thing to find in an ops room, and each would cost a message the bot should not have sent.
+
+So the set does not close the question; it turns it from a question about the model into a question
+about cost. At 0.600 the gate misses 16 of 28 incidents and never fires wrongly; at 0.151 it misses
+8 and fires wrongly 3 times in 28. Which of those the kernel prefers is a ruling, and the cut in
+`src/prompts/watch-v1.json` is unchanged at 0.600.
 
 ## What this material does not settle
 
@@ -147,4 +198,6 @@ assume.
   single id per option. That difference is already recorded as an open tension in
   `docs/decisions.md`, and this run neither widens nor narrows it.
 - **No rule was changed.** The 0.600 cut is the one measured on the text set. Whether a
-  vision-bearing room wants a different cut is a question this set was not written to answer.
+  vision-bearing room wants a different cut is a question the first two sets were not written to
+  answer; `boundary.json` was written to answer it, and narrows it to an interval with a stated
+  cost without choosing — choosing is a ruling.
