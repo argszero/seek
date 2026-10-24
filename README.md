@@ -44,7 +44,7 @@ seek/
 
 **Read in this order**: `docs/design/data-model.md` settles *what exists and how it relates*; `docs/design/agent-lifecycle.md` settles *how those things stay alive and when they spend money*.
 
-Design documents are maintained in English. A Chinese copy of the design docs lives under `docs/design/zh-CN/` for reference and may lag behind the English version.
+**Every document comes in English and Chinese, kept in step.** The Chinese version sits beside the original with a `.zh-CN.md` suffix (`README.zh-CN.md`, `docs/decisions.zh-CN.md`, …); the two are changed together, and a disagreement between them is a defect in the pair rather than one of them winning. `LICENSE` is the exception and stays English only — a translated licence is not the licence. See `CONTRIBUTING.md`.
 
 ## Run the prototype
 

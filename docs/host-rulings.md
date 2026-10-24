@@ -1,0 +1,241 @@
+# The host's rulings
+
+**What this file is:** every decision the host himself made, each stated as it stands. The design documents mix three kinds of statement — what the host ruled, what the implementer derived from it, and what the implementer invented — and the third kind has been mistaken for the first more than once. Here only the first appears, and it is the source list the other documents are answerable to.
+
+**What this file is not:** the design. Mechanisms, costs and reasoning live in `design/agent-lifecycle.md`, `design/data-model.md`, `design/i18n.md` and `decisions.md`. Derivations and the implementer's own choices live in `decisions.md`, labelled as such.
+
+## Three rules
+
+1. **Only the host's own words become an entry.** A statement that cannot be traced to a message he sent is a derivation or a proposal, and it belongs in `decisions.md` marked as one.
+2. **When he decides again on a question, the old entry goes and the new one takes its place.** This file holds what stands. What it used to say is in the git log.
+3. **No dates and no times.** An entry is placed by the question it answers, not by when it was answered; the commit that carries it is the date.
+
+Quotations are the host's, translated into English for this repository; the session log holds the original. The implementer's own answers to his questions are never quoted, only his.
+
+---
+
+## The product
+
+**seek is a multi-agent product.**
+*"seek and Feishu may look alike, but it is a multi-agent product: behind seek are bots (agents), not real people. Review how we designed EMRG, and what you learned about Google ADK today."*
+The IM shell is a shell. A contact is a bot, and an agent is the thing behind it. → `README.md`, `data-model.md` §1.
+
+**The name, and the shape it implies.**
+*"I Seek You — the original spirit of IM. Typed like ICQ, shaped like the characters you know."*
+The name, the tagline, and a constraint on the product's feel: it stays an IM, not a task panel or a workflow editor. → `README.md`, `decisions.md` "Naming".
+
+**Design precedes code, and the earlier build is a prototype.**
+*"Move the current implementation into the directory a prototype belongs in."* / *"Plan the current directory properly. Do not develop yet — there should be a design and a runnable prototype. This project is going to be open source."* / *"Finish the design documents first."*
+The earlier Electron build is archived as `prototype/`; the documents close before the kernel is written; the repository is public. → `prototype/`, `README.md`, `src/README.md`.
+
+**English is the project language.**
+*"The project must be international-facing. English first."*
+English is the language of everything that leaves the repository — issues, pull requests, commits, code comments — and the product's own text is never hard-coded in a component. → `docs/design/i18n.md`, `CONTRIBUTING.md`.
+
+**Feishu parity governs interaction.**
+*"This part of the design is wrong. Your model must support the product requirement, and the product requirement is that the interaction is identical to Feishu."*
+Where a design question has two answers, the one visible in Feishu wins. Its boundary: parity governs how a bot reaches **other principals**; it says nothing about how a bot handles its own note to itself. → `decisions.md` "Interaction".
+
+**Do it yourself.**
+*"Why does it need me to do it — can't you?"*
+Work the implementer can do — asset rendering, uploads, tooling — is not handed back to the host. → the icon set, the social card and the render scripts in `assets/`.
+
+---
+
+## The agent
+
+**What makes a bot a bot.**
+*"Each bot is a complete Agent. What is different: it is long-lived, it observes on its own, it acts on its own. A message in a group that does not @ it is still sent to it, and it keeps it in its own pending observations. Inside it is a main loop, and that loop is the core of its life. Each round it first looks at the observations and decides whether to act — perhaps by rule, by event, by a cheap model, by a local model; that is where the saving is, because a long-lived agent must not burn money when it does not need to. Only after deciding to act does it enter the real agent loop."*
+Three properties — long-lived, observes on its own, acts on its own; a per-bot inbox; a two-stage loop with a cheap gate ahead of the expensive one, and the cost argument that forces it. → `agent-lifecycle.md` §0–§5.
+
+**A bot may come to find you.**
+*"It can."* — asked whether an agent may open a direct message with the user.
+A bot may initiate a direct message, on its own initiative. There is no quota, no cooldown and no quiet-hours rule anywhere in the design. → `agent-lifecycle.md` §10.
+
+**A bot's only constraints are a prompt and a sandbox.**
+*"B, and an Agent has no constraints — much like an EMRG agent: a prompt and a sandbox."*
+A seek agent is an EMRG agent, and its whole constraint is its prompt and its sandbox. No quotas, no cooldowns, no quiet hours, no justification lines, no per-action limits. A bot that talks too much has a persona defect, and it is fixed in the persona. → `decisions.md`, `agent-lifecycle.md` §10.
+
+**An agent does not ask before it acts.**
+*"No."* — asked whether an agent must stop for approval before acting.
+No approval step anywhere. What holds instead: the sandbox, a complete audit trail, and a stop that works. *"May I?"* is gone; *"which one?"* stays, because a choice between options is a conversation and not a permission. → `decisions.md` "Agents", `agent-lifecycle.md` §10.1.
+
+**No spending cap.**
+*"A."*
+No budget field, no "quiet because spent" state, no cap anywhere. Cost is **recorded** — a turn carries its tokens — and visible. A bot that spends too much has a persona or a gate defect, fixed there. → `decisions.md`, `data-model.md`.
+
+---
+
+## The gate
+
+**The gate exists, and must be nearly free.**
+*"EMRG is trigger-driven, so as long as nobody talks to it, it spends nothing. In seek the agent is alive, so without a judgement it would spend continuously, and that is not acceptable. So on top of being alive, add a judgement that decides whether the agent's own session and tool chain is really called… ① it must stop meaningless actions ② the judgement itself must be cheap or free. So ideally a small model running locally."*
+The gate is architecture, with two requirements: it stops meaningless work, and it costs almost nothing itself. It is not a constraint on the agent's behaviour — it asks one question, whether the agent runs at all, and it is what makes an always-on agent affordable. → `agent-lifecycle.md` §4.
+
+**Bundled, small, rules first.**
+*"It must be built in — find a small enough model to bundle locally (model file within 300 MB, smaller is better). Together with some rules: if there are no new observations, return at once; if I am @-mentioned, return 'do it'. Only the remainder goes to the small model."*
+The watch model ships with the product, ≤300 MB of weights; the two free rules run ahead of it. → `agent-lifecycle.md` §4, `src/README.md`.
+
+**Multilingual and multimodal.**
+*"Because it is international, the small model must support Chinese + English + multimodal."*
+Both are requirements. They pull against the ≤300 MB target, and the trade is settled at selection time — neither may be quietly dropped. → `decisions.md`, `src/README.md`.
+
+**Write the requirements, choose later.**
+*"Write down the requirements first; choose later. There is no need to go looking now."*
+→ `src/README.md` checklist.
+
+**The verdict needs no fixed form.**
+*"Do not restrict it to JSON — as long as it meets the requirements I just described."*
+A word, a label or a tiny JSON — whatever the chosen model emits reliably. An unparseable verdict counts as no act. → `agent-lifecycle.md` §4.
+
+**No special input pipeline for the watch agent.**
+*"There is no need to design one specially, because the Agent itself already has a session history, memory and compaction. The judge's request should be essentially the same as the request the Agent sends when it really runs — it gets the agent's session history, memory and compaction."*
+The watch agent sends the same shape of request as any agent. Nothing is summarised on its behalf and no second context is kept in sync. → `agent-lifecycle.md` §4.
+
+---
+
+## Two agents behind one bot
+
+**The watch agent is an agent.**
+*"Let us say the judge is also an Agent, only using a local model."*
+→ `agent-lifecycle.md` §2, §4.
+
+**Two agents per bot.**
+*"Actually each bot has two Agents: one for fast judgement, one that really does the work."*
+The split is between two agents, not two modes of one. → `decisions.md`, `data-model.md` rule 14.
+
+**Two role names: `watch` and `work`.**
+*"Fine, B then."*
+The names come from vocabulary the design already had — the watch queue, the work. → everywhere.
+
+**Separate memories, each readable by the other.**
+*"Do not share one memory. Each is independent, and each knows the other exists and can read the other's history, memory and so on."*
+Two stores, each compacted against its own window, plus a read path in both directions. The reason it matters: the windows differ by an order of magnitude and compaction is destructive, so a shared log means the small one compacts first and deletes detail the large one can still read. → `decisions.md`, `agent-lifecycle.md` §0.
+
+**It has tools — EMRG's set, unchanged.**
+*"It has tools — otherwise how would it read and write memory, compress its session?"* / *"Just use the EMRG set."*
+Tools are the kernel's registry (bash / read / write / edit / glob / grep / subagent / submit_rant / boss), and which agent may call which is ordinary per-agent configuration in `agents.yml`. No watch-specific tool, no memory tool, no compaction tool: memory writes and compaction are not tools in EMRG — the runtime does both at the end of a turn — so they stay runtime behaviour here, as for any agent. **One exception, named by the host: `schedule`.** A second one beside it would mean the exception was read as a licence. → `decisions.md`, `src/README.md`.
+
+**The watch agent reads its own outcome, and is not expected to improve.**
+*"The judge relies on the observation data: say it judged wrong and the working agent then said nothing in the room — next time the judge sees that it handed this over and nothing was done. Also, do not agonise over the judge learning; it is fine if it never learns."*
+No feedback channel is built and nothing is trained. The outcome is read off the record the watch agent already keeps, and nothing downstream may assume it gets better. → `agent-lifecycle.md` §4.
+
+**Only the observations cross the line.**
+*"A."*
+The work agent wakes with the inbox entries and **not** the watch agent's reason. A reason in its context is a premise rather than advice, so where the watch agent is wrong the work agent would amplify rather than correct it, and the amplification would look like coherence. The reason is recorded on the entry, for review and for the watch agent's own read-back. → `agent-lifecycle.md` §4.
+
+---
+
+## Bot and agent as two objects
+
+**Two data models; identity lives on the bot.**
+*"A bot is a bot and an Agent is an Agent — two data models. The name and avatar land on the bot, and the bot passes its name down to the two Agents."*
+An agent has a `role`, not a name of its own; renaming a bot reaches every agent at once, and a room never sees two contacts where there is one. → `data-model.md` §2, rule 14.
+
+**`agents.yml` is a roster of agents.**
+*"Each bot can have two rows, that is fine — what is in agents.yml is agents, not bots. In future we may find some bot needs more rows."*
+No cap on rows; the file registers agents, and a bot is the grouping. → `decisions.md`, `data-model.md` rule 14.
+
+**The inbox lives on the bot.**
+*"As it looks now, the inbox can sit on the bot, which keeps the agent's design simple — close to what EMRG or Google ADK has."*
+One queue, one "already handled" state and one tick, all bot-level; an agent stays a runnable. → `agent-lifecycle.md` §3, `data-model.md` rule 6.
+
+---
+
+## Messages and delivery
+
+**One path, one loop.**
+*"Direct is not skipping the judgement; it is that the judgement notices an @ and lets it through. There is really only one path."*
+One delivery path and one loop. An @-mention, a reply and a direct message are a **fast-pass inside stage 0**, not a second road; the double-reply problem does not exist. → `agent-lifecycle.md` §1.
+
+**Only a delivery wakes a bot.**
+*"It looks a bit complicated, let's drop the clock for now."*
+No timer, no clock tick, no `kind: "clock"` entry. A delivery into the inbox is the only thing that starts a tick; with nothing delivered nothing runs, so there is no idle path to defend and no backoff to compute. → `decisions.md`, `agent-lifecycle.md` §1.
+
+**A mid-turn direct message joins the turn it interrupted.**
+*"Same as EMRG: when a new direct message arrives, wait for the tool run to finish and then insert the new information."*
+The running turn keeps its lock, and the message joins it **at the round boundary** — after this round's tools return, before the next model request. Not a second turn, not an interruption of a running tool, and not held until the turn ends either. Kept from EMRG: the atomic drain of the whole queue, one timestamp written at commit, a refreshed round budget for injected messages, and nothing dropped silently. Absent here, because seek's inbox is written at delivery and *is* the in-flight queue: a client re-send contract and a second pending list. → `agent-lifecycle.md` §4.
+
+**A stage-2 turn is an ordinary turn.**
+*"What do you mean, when was it decided that three records must be written?"*
+It writes nothing extra. It is an ordinary turn with one difference — it opens knowing nobody called it. → `agent-lifecycle.md` §4.
+
+---
+
+## The data model
+
+**The data model comes first.**
+*"Design the data model first — Agent, room, chat, session, thread and so on. What are the big pieces, and how do they relate. Do not care too much about detail at this stage. You may refer to Feishu, grok, or other similar products you can find."*
+→ `docs/design/data-model.md`.
+
+**@-mention and reply are bot-level facts.**
+*"A."*
+Derived at delivery and stored on that bot's inbox entry. No agent scans a room for its own name — and the watch agent could not, being unaddressable. → `data-model.md` rule 15.
+
+**The message stores `mentions[]`, and nothing per reader.**
+*"A, look at `mentions` to see whether my own name is in there."*
+The message keeps Feishu's own array; `mentionsMe` is **derived** at delivery, per bot, and lives only on that bot's inbox entry. A per-reader boolean on the shared message would force a rewrite or a copy per bot and turn one array scan into stored state that can disagree with what it describes. → `data-model.md` rule 15, `agent-lifecycle.md` §3.
+
+---
+
+## Agent to agent
+
+**An agent may find an agent.**
+*"Can an agent find an agent? It can."*
+Agent-to-agent contact is allowed. Its form is the next entry. → `agent-lifecycle.md` §11.
+
+**All interaction is IM.**
+*"A: all interaction is expressed in IM — group chat and direct messages."*
+An agent reaches another agent by **sending a message**, never by calling a tool. There is no synchronous delegate call: it would have A deciding for B, on A's turn, bypassing the judgement B exists to make. Whoever runs the turn pays, so a delegate's work sits on the delegate's ledger and can never hide inside the caller's. → `agent-lifecycle.md` §11.1, `decisions.md`.
+
+**A bot may open a room with another bot.**
+*"It can."*
+Yes, with no approval step; membership is not human-gated. Recorded cost: the left list can grow with conversations the user never started, and the answer to that is the persona, not a gate. → `decisions.md` "Rooms and time".
+
+**A bot may say the first word to another bot.**
+*"A."*
+A chain's root needs no human message and no scheduled tick. A bot may open a conversation with a peer — in a room both are in, or in a direct room it opened for that purpose — exactly as it may with a person. What bounds this traffic: depth 4, which bounds how long one chain runs, and the room's consecutive-turn cap of 3, which bounds a burst. **The number of chains is bounded by nothing structural**, and that cost is recorded rather than smoothed. → `agent-lifecycle.md` §11.2.
+
+**A chain carries no budget.**
+*"Delete."*
+No financial limit on a chain. What bounds it is depth and the room's consecutive-turn cap. Its cost is recorded per turn and readable. → `agent-lifecycle.md` §11.3.
+
+---
+
+## The schedule
+
+**One global schedule, one tool, and a due row is a delivery.**
+*"Provide a global schedule — a tool for every bot to read and write it (when, what reminder, which bot). When a schedule entry comes due, send the reminder to the corresponding bot automatically; it is a direct message, equivalent to an @-mention."*
+One table every bot reads and writes; one tool, `schedule`, with three verbs — list, add, cancel — and nothing else; a due row becomes an ordinary inbox entry of `kind: "reminder"` that takes the fast-pass. **This adds a producer of deliveries, not a wake source**: one table plus a comparator rather than a heartbeat per bot, and it wakes nobody, because a row coming due *is* a delivery. The line the implementation is checked against: **the schedule may produce deliveries and may never produce ticks.** It gives a bot a way to keep a promise — "I will look at this tomorrow" can come true — and it closes the time-conditioned `snooze`, which the loop performs by writing a row. → `agent-lifecycle.md` §12, `decisions.md`.
+
+**A fired reminder is not displayed.**
+*"No need to display it."*
+A reminder reaches the bot's inbox and stops there — no `room` field on the row, no frame, no transcript line. The user sees what the bot does about it and nothing else. **This is where Feishu parity stops**: parity governs how a bot reaches other principals, and a reminder reaches nobody, so there is no second party to show it to. Recorded cost: the interface shows an effect without its cause, which stays recoverable by reading the record rather than by displaying it. → `agent-lifecycle.md` §12, `decisions.md`.
+
+---
+
+## How to work
+
+**One question at a time.**
+*"Ask me one question at a time, and keep it plain, focused, logical, no waffle. One question, one answer."* — repeated twice more, the last time with *"say it completely, say it clearly"*.
+Each question stands alone: what is being decided, what each option costs, and one recommendation with one reason. A question the host must ask back about has not been asked. → this file, and every entry in it is written to that standard.
+
+**Attribute nothing to him that he did not say.**
+*"When was that rule decided?"* — asked of a rule the implementer had presented as settled.
+No statement may be attributed to the host that he did not make. A rule with no traceable source is a proposal and is labelled one. This file exists for that reason. → `decisions.md`.
+
+---
+
+## Documents
+
+**Every document ships in both languages, kept in sync.**
+*"All documents come in Chinese and English versions, and the two are kept in sync."*
+Two maintained versions, by a `.zh-CN.md` suffix beside each file rather than a parallel tree, and **neither half outranks the other** — a disagreement is a defect in the pair, fixed at once. A change to an English file is unfinished until its Chinese twin changes in the same commit. Two exclusions: `LICENSE` stays English only, because a translated licence is not the licence, and dated reviews keep translations as snapshots of their date. → `CONTRIBUTING.md`, `decisions.md`.
+
+**A document holds the result, not the process.**
+*"No review material in the documents — the documents hold only the final result, with no process in them (what it used to be, what it was changed into and why — none of that; do not show history — history is in the git commit log)."*
+A document states what is true now, in the form an implementer can build from. What a rule used to be, what it was changed into and why it changed do not appear; the log carries that. → every document in `docs/`.
+
+**This file carries no dates, and no superseded entries.**
+*"host-rulings does not need dates. Each time I make a new decision on a question, delete the old one and write in the new — that is all."*
+An entry is grouped by the question it answers. The entry it replaces is gone, and the commit that carries the change is where the older decision is found. → this file, rule 2 and rule 3.

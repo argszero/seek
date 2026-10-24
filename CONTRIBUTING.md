@@ -2,9 +2,18 @@
 
 ## Language
 
-**English is the project language.** Issues, pull requests, commit messages, code comments, identifiers and all documents in this repository are written in English, whatever language the discussion happened in. A quotation from another language is carried in English with its source named.
+**English is the project language** for everything that leaves the repository: issues, pull requests, commit messages, code comments and identifiers. A quotation from another language is carried in English with its source named.
 
-Translations of design documents may live under `docs/design/zh-CN/`. They are references, never the source of truth: when they disagree with the English text, the English text wins, and a stale translation may be deleted rather than maintained.
+**Every document ships in both English and Chinese, and the two are kept in step** (ruled 2026-10-24). The convention is a suffix beside the original, never a parallel tree:
+
+```
+README.md            README.zh-CN.md
+docs/decisions.md    docs/decisions.zh-CN.md
+```
+
+**Both halves are the document.** When they disagree, that is a defect in the pair and is fixed at once, not a hierarchy where one wins by default. So a change to an English file is not finished until its Chinese twin is changed in the same commit; a pull request that updates one and not the other is incomplete.
+
+Two things this convention does not cover: **`LICENSE`** keeps its English text only — a translated licence is not the licence, and only the canonical wording has legal standing — and **dated reviews** (`docs/reviews/`) are records of what was believed on that date, so their translations are snapshots and are not rewritten when the design moves on.
 
 ## What to contribute right now
 
