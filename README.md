@@ -13,7 +13,7 @@ This is not a Feishu clone. It is a multi-agent product wearing IM clothes.
 
 ## Status
 
-**Design stage. No runnable implementation.** Two design documents are settled (`docs/design/`) and the previous runnable version is kept as a reference prototype (`prototype/`).
+**The kernel exists; the interface does not.** Two design documents are settled (`docs/design/`), the kernel is written in `src/` (23 TypeScript files, ~5,400 lines, 105 tests), and the previous runnable version is kept as a reference prototype (`prototype/`).
 
 The prototype exists to prove one thing: that a Feishu-style interface can be carried by purely local data. It can. But its data model is single-user — one account, a cast of fake people, messages owned by conversations — which is not the model this version needs, so it cannot be refactored into it.
 
@@ -34,15 +34,16 @@ seek/
 ├── docs/design/        Settled design (the implementation follows these)
 │   ├── data-model.md       Entities and relations: messages shared, context private
 │   └── agent-lifecycle.md  How an agent lives: inbox, two-stage loop, proactive DMs
+├── docs/host-rulings.md  Every decision the host made himself (in order; superseded ones kept)
 ├── docs/decisions.md   Decisions already made (one line each, dated)
 ├── prototype/          Previous runnable prototype (Electron, local-only)
-├── src/                Implementation (not started)
+├── src/                The kernel (TypeScript, no interface yet)
 ├── CONTRIBUTING.md
 ├── NOTICE.md           Relationship to Feishu, licensing boundaries
 └── LICENSE             MIT
 ```
 
-**Read in this order**: `docs/design/data-model.md` settles *what exists and how it relates*; `docs/design/agent-lifecycle.md` settles *how those things stay alive and when they spend money*.
+**Read in this order**: `docs/design/data-model.md` settles *what exists and how it relates*; `docs/design/agent-lifecycle.md` settles *how those things stay alive and when they spend money*. And for "who decided what, when, and in what words", read `docs/host-rulings.md`.
 
 **Every document comes in English and Chinese, kept in step.** The Chinese version sits beside the original with a `.zh-CN.md` suffix (`README.zh-CN.md`, `docs/decisions.zh-CN.md`, …); the two are changed together, and a disagreement between them is a defect in the pair rather than one of them winning. `LICENSE` is the exception and stays English only — a translated licence is not the licence. See `CONTRIBUTING.md`.
 
