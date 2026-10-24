@@ -1,0 +1,24 @@
+{
+  "locale": "en",
+  "messages": {
+    "report.title": "seek — the first milestone",
+    "report.store": "store: {path}",
+    "report.room": "the room ({room}):",
+    "report.line": "  {sender}: {text}",
+    "report.spoke": {
+      "one": "the bot spoke: {count} message, unaddressed by anyone.",
+      "other": "the bot spoke: {count} messages, unaddressed by anyone."
+    },
+    "report.silent": "the bot said nothing: a turn opened no message.",
+    "report.turns": {
+      "one": "{count} turn threw.",
+      "other": "{count} turns threw."
+    },
+    "report.stub": "nothing above came from a model: the decision to act and the words said are\nstubs in src/main.ts. What this run shows is the kernel — delivery, the gate,\nthe turn — and what it cannot show is whether the design holds up.",
+    "cli.unknown-locale": "no catalogue for {locale}: this tree ships {languages}",
+    "cli.unknown-flag": "not a flag this harness knows: {flag}",
+    "cli.repeated-flag": "{flag} was given twice",
+    "cli.flag-needs-value": "{flag} needs a value after it",
+    "cli.two-paths": "two store paths were given ({first} and {second}), and a run writes to one store"
+  }
+}

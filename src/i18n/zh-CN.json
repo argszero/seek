@@ -1,0 +1,22 @@
+{
+  "locale": "zh-CN",
+  "messages": {
+    "report.title": "seek —— 第一个里程碑",
+    "report.store": "存储：{path}",
+    "report.room": "房间（{room}）：",
+    "report.line": "  {sender}：{text}",
+    "report.spoke": {
+      "other": "机器人说话了：{count} 条，没有人点它的名。"
+    },
+    "report.silent": "机器人没有说话：一个回合开了口，却没有发出消息。",
+    "report.turns": {
+      "other": "{count} 个回合抛出了异常。"
+    },
+    "report.stub": "上面没有一句话来自模型：要不要动的判断，以及说出口的那些字，都是\nsrc/main.ts 里的占位实现。这次运行展示的是内核——投递、闸门、回合——\n它展示不了的是这个设计立不立得住。",
+    "cli.unknown-locale": "没有 {locale} 的文案表：这棵树里带的是 {languages}",
+    "cli.unknown-flag": "这个观察器不认识这个参数：{flag}",
+    "cli.repeated-flag": "{flag} 给了两次",
+    "cli.flag-needs-value": "{flag} 后面需要一个值",
+    "cli.two-paths": "给了两个存储路径（{first} 和 {second}），而一次运行只写一个存储"
+  }
+}

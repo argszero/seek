@@ -40,11 +40,24 @@
  *   YAML key.
  * - **No interface.** The checklist line says "no interface", so this writes to
  *   stdout and has no other surface. It is a harness for watching the kernel,
- *   not the beginning of the client — checklist line 19 ("string
- *   externalisation before the first screen") is not due on account of it.
+ *   not the beginning of the client.
  *
- * Run it with `npm start`, or `npm start -- <path>` to choose the store. The
- * store is ordinary: the second run appends to the room the first one made.
+ * **What it prints is chrome all the same.** A person reads this report, so every
+ * word of it is looked up by key from `src/i18n/<tag>.json` and none of it is
+ * written below (checklist line 19, `docs/design/i18n.md` §1). That line was
+ * open while this file was the product's only surface, and an earlier version of
+ * this comment argued the line was therefore not due — which is the reading that
+ * makes retrofitting certain: the first screen would have inherited a file full
+ * of sentences instead of a catalogue next to it. Two things stay out of the
+ * catalogue, and both are deliberate. **Content** — what the person says, what
+ * the stub says back, the names the seed gives them — is data a participant
+ * produced, and translating it is the trust violation `docs/design/i18n.md` §2
+ * forbids. **Diagnostics** — the kernel's `throw`s — are §7's English, read in a
+ * log rather than rendered.
+ *
+ * Run it with `npm start`, `npm start -- --lang zh-CN` to choose the language, or
+ * `npm start -- <path>` to choose the store. The store is ordinary: the second
+ * run appends to the room the first one made.
  */
 
 import { dirname, join } from 'node:path';
@@ -53,6 +66,15 @@ import { pathToFileURL } from 'node:url';
 import type { CompactLines, Summarise } from './compact.ts';
 import type { Timers } from './comparator.ts';
 import { deliver } from './delivery.ts';
+import {
+  catalogueFor,
+  DEFAULT_LOCALE,
+  joinList,
+  locales,
+  loadCatalogue,
+  translator,
+  type Catalogue,
+} from './i18n.ts';
 import type { Judge } from './inbox.ts';
 import { Kernel, type KernelFailure } from './kernel.ts';
 import { newId, SeekStore } from './store.ts';
@@ -62,7 +84,13 @@ import type { Id } from './types.ts';
 /** Where the seed writes its `created_at`, so a seeded world is reproducible. */
 const SEED_AT = '2026-10-24T00:00:00.000Z';
 
-/** What the person says: a remark to the room that names nobody. */
+/**
+ * What the person says: a remark to the room that names nobody.
+ *
+ * Content, not chrome — a participant's words are data, and the catalogue beside
+ * this file never touches them (`docs/design/i18n.md` §2). The line below is what
+ * a language switch must leave byte-identical, and the suite asserts exactly that.
+ */
 export const SAID =
   'the release notes for the last build still say "not started" — someone should look at that';
 
@@ -71,7 +99,8 @@ export const SAID =
  *
  * It is deliberately about the placeholder and not about the message: a stub
  * cannot have read the room, and a line that pretended to would be the one lie
- * this file could tell.
+ * this file could tell. Content for the same reason as `SAID`: it is what a
+ * participant would say, so it is stored as the words it is, not as a key.
  */
 export const STUB_REPLY =
   'I would answer that once there is a model behind me — for now this line is a stub, and the plumbing is what works.';
@@ -364,23 +393,37 @@ export async function runFirstMilestone(
  * It names the store, the room, the log, and — in as many words — that the
  * words above came from a stub. A placeholder printed without that sentence
  * would be this file's only real hazard.
+ *
+ * **Every word of the chrome comes from a catalogue**, which is what makes the
+ * report translatable and, before that, reviewable: the sentence a user reads can
+ * be changed without touching this function and this function can be changed
+ * without changing what a user reads. `catalogue` defaults to the shipped base
+ * language and takes any loaded catalogue, so a test can render this report in a
+ * language that exists only in a temporary directory.
+ *
+ * The one thing not looked up is the blank line, which carries no text to
+ * translate, and the transcript's own lines, whose sender and text are content
+ * and are passed through as they were written.
  */
-export function format(run: MilestoneRun, path: string): string {
+export function format(
+  run: MilestoneRun,
+  path: string,
+  catalogue: Catalogue = loadCatalogue(),
+): string {
+  const t = translator(catalogue);
   const lines = [
-    'seek — the first milestone',
-    `store: ${path}`,
+    t('report.title'),
+    t('report.store', { path }),
     '',
-    `the room (${run.scene.room}):`,
-    ...run.transcript.map((line) => `  ${line.sender}: ${line.text}`),
+    t('report.room', { room: run.scene.room }),
+    ...run.transcript.map((line) => t('report.line', { sender: line.sender, text: line.text })),
     '',
     run.spoke
-      ? `the bot spoke: ${run.transcript.filter((line) => line.byBot).length} message(s), unaddressed by anyone.`
-      : 'the bot said nothing: a turn opened no message.',
-    `${run.failures.length} turn(s) threw.`,
+      ? t('report.spoke', { count: run.transcript.filter((line) => line.byBot).length })
+      : t('report.silent'),
+    t('report.turns', { count: run.failures.length }),
     '',
-    'nothing above came from a model: the decision to act and the words said are',
-    'stubs in src/main.ts. What this run shows is the kernel — delivery, the gate,',
-    'the turn — and what it cannot show is whether the design holds up.',
+    t('report.stub'),
   ];
   return `${lines.join('\n')}\n`;
 }
@@ -390,21 +433,128 @@ export function defaultStorePath(): string {
   return join(process.cwd(), 'seek-data', 'seek.json');
 }
 
+/** What a command line asked for, before anything asks whether it can be honoured. */
+export interface ParsedArgv {
+  /** The language `--lang` named, or the default. Unvalidated: it may not exist. */
+  locale: string;
+  /** Flags this harness does not know, in the order they appeared. */
+  unknown: string[];
+  /** Whether `--lang` was given more than once. */
+  repeatedLocale: boolean;
+  /** Flags left without the value they need — `--lang` with nothing usable after it. */
+  missingValue: string[];
+  /** Positional arguments, which is where a store path goes. */
+  paths: string[];
+}
+
 /**
- * The command line: `npm start`, optionally with a store path.
+ * Read the command line without deciding anything about it.
+ *
+ * Separated from `main` so that "what was asked for" is a value a test can read,
+ * and so that every refusal below is written after the language is known — a
+ * message about a bad flag in a language nobody asked for would be its own small
+ * version of the bug this file is fixing.
+ */
+export function parseArgv(argv: string[]): ParsedArgv {
+  const parsed: ParsedArgv = {
+    locale: DEFAULT_LOCALE,
+    unknown: [],
+    repeatedLocale: false,
+    missingValue: [],
+    paths: [],
+  };
+  let sawLocale = false;
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    let value: string | undefined;
+    let isLocale = false;
+
+    if (arg === '--lang') {
+      const next = argv[index + 1];
+      // A following flag is not this flag's value: `--lang --nope` asked for a
+      // language and wrote nothing, which is a different mistake from a typo.
+      if (next !== undefined && !next.startsWith('-')) {
+        index += 1;
+        value = next;
+        isLocale = true;
+      }
+    } else if (arg.startsWith('--lang=')) {
+      value = arg.slice('--lang='.length);
+      isLocale = true;
+    } else if (arg.startsWith('-')) {
+      parsed.unknown.push(arg);
+      continue;
+    } else {
+      parsed.paths.push(arg);
+      continue;
+    }
+
+    if (!isLocale) {
+      parsed.missingValue.push('--lang');
+      continue;
+    }
+    if (value === undefined || value.length === 0) {
+      parsed.missingValue.push('--lang');
+      continue;
+    }
+    if (sawLocale) {
+      parsed.repeatedLocale = true;
+      continue;
+    }
+    sawLocale = true;
+    parsed.locale = value;
+  }
+
+  return parsed;
+}
+
+/**
+ * The command line: `npm start`, optionally `--lang <tag>` and a store path.
  *
  * The exit status is the milestone's answer, so a run that stops speaking fails
  * loudly instead of printing a page of success around one empty line.
+ *
+ * The catalogue is chosen before anything is refused, because a refusal is itself
+ * a sentence a person reads. A language this tree does not ship has no catalogue
+ * to carry its own refusal, so `catalogueFor` hands back the base one: the answer
+ * to "there is no catalogue for de-DE" is written in English, and that is the one
+ * case where the fallback is allowed to print.
  */
 export async function main(
   argv: string[],
   options: MilestoneOptions = {},
 ): Promise<number> {
-  const path = argv[0] ?? defaultStorePath();
+  const parsed = parseArgv(argv);
+  const catalogue = catalogueFor(parsed.locale);
+  const t = translator(catalogue);
+
+  if (!locales().includes(parsed.locale)) {
+    throw new Error(
+      t('cli.unknown-locale', {
+        locale: parsed.locale,
+        languages: joinList(DEFAULT_LOCALE, locales()),
+      }),
+    );
+  }
+  // Unknown flags first: `--lang --nope` is both a language with no value and a
+  // flag nobody ships, and the flag nobody ships is the one worth naming.
+  if (parsed.unknown.length > 0) {
+    throw new Error(t('cli.unknown-flag', { flag: parsed.unknown[0] }));
+  }
+  if (parsed.missingValue.length > 0) {
+    throw new Error(t('cli.flag-needs-value', { flag: parsed.missingValue[0] }));
+  }
+  if (parsed.repeatedLocale) throw new Error(t('cli.repeated-flag', { flag: '--lang' }));
+  if (parsed.paths.length > 1) {
+    throw new Error(t('cli.two-paths', { first: parsed.paths[0], second: parsed.paths[1] }));
+  }
+
+  const path = parsed.paths[0] ?? defaultStorePath();
   const store = await SeekStore.load(path);
   const run = await runFirstMilestone(store, options);
   const out = options.out ?? ((text: string) => process.stdout.write(text));
-  out(format(run, path));
+  out(format(run, path, catalogue));
   return run.spoke && run.failures.length === 0 ? 0 : 1;
 }
 
