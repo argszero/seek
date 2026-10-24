@@ -41,6 +41,15 @@ export { say, sayAs } from './say.ts';
 export type { SayInput, SayOptions, SayTool } from './say.ts';
 export { makeTurn, runTurn } from './turn.ts';
 export type { Decide, TurnContext, TurnRecord, TurnSpec } from './turn.ts';
+export { RoomCompactor, deltaFor, digestOf } from './compact.ts';
+export type {
+  CompactLines,
+  CompactOptions,
+  CompactOutcome,
+  CompactSkip,
+  Summarise,
+  SummariseInput,
+} from './compact.ts';
 export { Kernel } from './kernel.ts';
 export type { KernelFailure, KernelOptions } from './kernel.ts';
 export type * from './types.ts';
