@@ -1,6 +1,7 @@
 /**
  * The kernel as it stands: the sharded store, delivery into one inbox per bot,
- * and the loop that wakes a bot only when an entry arrived.
+ * the loop that wakes a bot only when an entry arrived, and the assembled
+ * process that starts it — one store, one loop per bot, one schedule comparator.
  *
  * The build checklist that this is the first slice of is `src/README.md`; what
  * each behaviour answers to is `docs/design/data-model.md` and
@@ -40,4 +41,6 @@ export { say, sayAs } from './say.ts';
 export type { SayInput, SayOptions, SayTool } from './say.ts';
 export { makeTurn, runTurn } from './turn.ts';
 export type { Decide, TurnContext, TurnRecord, TurnSpec } from './turn.ts';
+export { Kernel } from './kernel.ts';
+export type { KernelFailure, KernelOptions } from './kernel.ts';
 export type * from './types.ts';

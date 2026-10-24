@@ -35,7 +35,15 @@ import type { RunTurn } from './inbox.ts';
 import { sayAs, type SayTool } from './say.ts';
 import { scheduleAs, type ScheduleTool } from './schedule.ts';
 import { newId, type SeekStore } from './store.ts';
-import type { Agent, Id, Message, Observation, Session, Turn } from './types.ts';
+import type {
+  Agent,
+  Id,
+  Message,
+  Observation,
+  ScheduleRow,
+  Session,
+  Turn,
+} from './types.ts';
 
 export interface TurnSpec {
   /** The work agent this turn belongs to. */
@@ -53,6 +61,16 @@ export interface TurnSpec {
   entries: Observation[];
   /** Where the session opens. Defaults to the agent's own home. */
   workspace?: string;
+  /**
+   * Called when this turn's `schedule` tool writes a row.
+   *
+   * The timer sleeps toward one stated instant, so a row written for sooner
+   * than that instant would otherwise wait for the further one. Re-arming is
+   * the engine's (`comparator.ts`, `refresh()`); this is the seam that tells it,
+   * and it is absent when nothing owns a comparator — a bare `runTurn` in a
+   * test, for one.
+   */
+  onScheduleWritten?: (row: ScheduleRow) => void;
   /** An injectable clock, so a test does not depend on wall time. */
   now?: string;
 }
@@ -148,7 +166,12 @@ export async function runTurn(
   // §12: the tool over the one table, bound the same way. A row written here is
   // saved with the turn — the `store.save()` in the `finally` below makes both
   // the row and the turn's own ledger durable together.
-  const schedule = scheduleAs(store, agent.bot_id, agent.id);
+  const schedule = scheduleAs(
+    store,
+    agent.bot_id,
+    agent.id,
+    spec.onScheduleWritten,
+  );
 
   try {
     await decide({
@@ -190,6 +213,7 @@ export function makeTurn(
   store: SeekStore,
   botId: Id,
   decide: Decide = sayNothing,
+  onScheduleWritten?: (row: ScheduleRow) => void,
 ): RunTurn {
   return async (entries: Observation[]) => {
     if (entries.length === 0) return;
@@ -212,7 +236,11 @@ export function makeTurn(
     }
 
     for (const [roomId, group] of byRoom) {
-      await runTurn(store, { agentId: agent.id, roomId, entries: group }, decide);
+      await runTurn(
+        store,
+        { agentId: agent.id, roomId, entries: group, onScheduleWritten },
+        decide,
+      );
     }
   };
 }
