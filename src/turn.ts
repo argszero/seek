@@ -75,6 +75,25 @@ export interface TurnSpec {
   now?: string;
 }
 
+/**
+ * One observation as the work agent receives it: the entry, with the watch
+ * side's answer taken off.
+ *
+ * `agent-lifecycle.md` §4, "what crosses the line from watch to work": *"The
+ * observation entries are handed over; the reasoning stays on the record."* The
+ * section gives the reason in one sentence — a reason in the work agent's
+ * context is not advice, it is a premise, and where the watch agent is wrong the
+ * expensive one would amplify rather than correct it — and it gives the remedy:
+ * *"The runtime never puts it in the work agent's context, and the work agent
+ * may go and read it."* The reason is still on the entry in the store; what it
+ * cannot do is ride along in here.
+ *
+ * So this is a copy with `verdict` and `reason` removed, and everything else
+ * kept: the entry is what the turn was woken for, and a work agent that cannot
+ * see whose message it is answering has been handed a riddle instead of a turn.
+ */
+export type HandedEntry = Omit<Observation, 'verdict' | 'reason'>;
+
 /** What the agent is given when the loop calls it. */
 export interface TurnContext {
   botId: Id;
@@ -83,8 +102,14 @@ export interface TurnContext {
   turnId: Id;
   /** Absent on a reminder's turn: a reminder is in no room (§12). */
   roomId?: Id;
-  /** The observations that woke it — the entries and nothing more. */
-  entries: Observation[];
+  /**
+   * The observations that woke it — the entries and nothing more.
+   *
+   * "Nothing more" is meant literally and is enforced above: no verdict, no
+   * reason, because those are the watch side's answer to a question this agent
+   * was never asked (§4).
+   */
+  entries: HandedEntry[];
   /** `say(room, text)`: bound to this bot and this agent, addressed by the caller. */
   say: SayTool;
   /**
@@ -180,7 +205,7 @@ export async function runTurn(
       sessionId: session.id,
       turnId: turn.id,
       roomId: spec.roomId,
-      entries: spec.entries,
+      entries: spec.entries.map(handOver),
       say,
       schedule,
     });
@@ -279,4 +304,19 @@ function openSession(
   };
   store.sessionsOf(agent.id).push(session);
   return session;
+}
+
+/**
+ * The entry as it crosses into the work agent's context.
+ *
+ * A copy, never the stored record: handing over the entry itself would let the
+ * model's turn mutate a queue row it does not own, and would put the watch
+ * side's verdict and reason within reach of a prompt that §4 keeps them out of.
+ */
+function handOver(entry: Observation): HandedEntry {
+  const { verdict, reason, ...crosses } = entry;
+  // Named so a later edit cannot quietly keep one of them and still compile.
+  void verdict;
+  void reason;
+  return crosses;
 }
