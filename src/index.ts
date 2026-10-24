@@ -25,6 +25,16 @@ export {
 export type { ChainBlockReason } from './chain.ts';
 export { assemblePrompt, loadPromptArtifact, shippedPromptPath, skeletonOf } from './prompts.ts';
 export type { DeclaredOperatingPoint, PromptArtifact, PromptPart, PromptValues } from './prompts.ts';
+export {
+  catalogueFor,
+  DEFAULT_LOCALE,
+  joinList,
+  loadCatalogue,
+  locales,
+  shippedCataloguePath,
+  translator,
+} from './i18n.ts';
+export type { Catalogue, Message, Params, Translate } from './i18n.ts';
 export { bindOptions, watchAs } from './watch.ts';
 export type {
   BoundOption,
