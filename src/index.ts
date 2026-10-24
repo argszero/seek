@@ -14,5 +14,5 @@ export type { Delivery, PostMessageInput } from './delivery.ts';
 export { classify, gate } from './gate.ts';
 export type { GateDecision, GateResult } from './gate.ts';
 export { InboxLoop } from './inbox.ts';
-export type { RunTurn, TickResult } from './inbox.ts';
+export type { Judge, RunTurn, TickResult } from './inbox.ts';
 export type * from './types.ts';
