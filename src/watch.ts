@@ -294,10 +294,11 @@ export function watchAs(
     let wrote = false;
 
     for (const [roomId, group] of byRoom) {
-      // The box holds the entries in flight: they were drained out of the queue
-      // before stage 0 saw them, and a box built from the queue alone would be
-      // the room as it looks *after* the reason to look was taken away.
-      const boxOptions: BoxOptions = { window: options.window, inFlight: group };
+      // The box is built from the record, so it already holds this batch: the
+      // drain marked these entries rather than removing them, and a box that had
+      // to be handed them back would be reading the room after the reason to look
+      // was taken away.
+      const boxOptions: BoxOptions = { window: options.window };
       if (options.weigh) boxOptions.weigh = options.weigh;
       if (options.questions !== undefined) boxOptions.questions = options.questions;
       const state = buildBox(store, botId, roomId, boxOptions);

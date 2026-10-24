@@ -175,7 +175,7 @@ test('an observation that arrives during a compaction stays in the delta', async
   assert.equal(delta[0].message_id, world.store.messagesOf(world.room).at(-1)?.id);
 });
 
-test('the delta is the queue after the consumed-to point, and the whole queue once it is gone', async () => {
+test('the delta is the record after the consumed-to point, and the whole record once that entry is gone', async () => {
   const world = makeWorld();
   fill(world, 3);
   const compactor = new RoomCompactor(world.store, {
@@ -190,11 +190,21 @@ test('the delta is the queue after the consumed-to point, and the whole queue on
   fill(world, 2, 3);
   assert.equal(compactor.delta(world.botA, world.room).length, 2);
 
-  // The loop drains the queue; the point leaves with it, so what is queued for
-  // the room afterwards arrived after it.
+  // A tick is not a compaction: draining marks the entries and moves no point, so
+  // the delta a tick leaves behind is exactly the delta it found.
+  const before = compactor.delta(world.botA, world.room).length;
   await world.store.drain(world.botA);
+  assert.equal(compactor.delta(world.botA, world.room).length, before);
+
   fill(world, 1, 5);
-  assert.equal(compactor.delta(world.botA, world.room).length, 1);
+  assert.equal(compactor.delta(world.botA, world.room).length, before + 1);
+
+  // The last case, and why this is a search by id rather than an index: a digest
+  // whose consumed-to entry is not on the record — a file written before the
+  // record kept what it consumed — cannot be sliced by it, and then the delta is
+  // the whole record rather than nothing.
+  world.store.memoriesOf(world.agentA2)[0].consumed_to = 'ob_not_on_the_record';
+  assert.equal(compactor.delta(world.botA, world.room).length, 6);
 });
 
 test('a judgement reading the box never waits for a compaction', async () => {
@@ -330,13 +340,16 @@ test('a bot with no work agent has no writer', async () => {
   assert.equal(compactor.due(world.botB, world.room), false);
 });
 
-test('the entries a tick drained are the delta, though the queue no longer holds them', async () => {
+test('the entries a tick drained are the delta, with nothing handed back in', async () => {
   const world = makeWorld();
   fill(world, 3);
   const arrival = world.store.inbox(world.botA).map((entry) => entry.id);
-  // What a tick does: one atomic pop, and the queue holds none of them after.
+  // What a tick does: take the whole queue. The queue is empty afterwards and the
+  // record is not, because the drain marks what it took instead of splicing it out.
   const drained = await world.store.drain(world.botA);
-  assert.equal(world.store.inbox(world.botA).length, 0);
+  assert.equal(drained.length, 3);
+  assert.equal(world.store.pending(world.botA).length, 0);
+  assert.equal(world.store.inbox(world.botA).length, 3);
 
   const compactor = new RoomCompactor(world.store, {
     summarise: () => 'summary',
@@ -344,18 +357,14 @@ test('the entries a tick drained are the delta, though the queue no longer holds
     now: () => AT,
   });
 
-  // Read off the queue alone, the delta is empty — which is exactly why the
-  // caller hands over what it popped.
-  assert.equal(compactor.delta(world.botA, world.room).length, 0);
+  // The delta is the same set, in the same order, on both sides of a tick — which
+  // is what lets a runtime that compacts *after* a tick fold in the very entries
+  // the tick was woken by, and reach its line at all.
   assert.deepEqual(
-    compactor.delta(world.botA, world.room, drained).map((entry) => entry.id),
+    compactor.delta(world.botA, world.room).map((entry) => entry.id),
     arrival,
   );
-
-  // ... and a line the drained set crosses is reachable after a tick, which a
-  // runtime that compacts after a tick depends on.
-  assert.equal(compactor.due(world.botA, world.room), false);
-  assert.equal(compactor.due(world.botA, world.room, drained), true);
+  assert.equal(compactor.due(world.botA, world.room), true);
 });
 
 test('a compaction over what a tick drained consumes it, and the same entries are never folded in twice', async () => {
@@ -373,15 +382,15 @@ test('a compaction over what a tick drained consumes it, and the same entries ar
     now: () => AT,
   });
 
-  const outcome = await compactor.compact(world.botA, world.room, drained);
+  const outcome = await compactor.compact(world.botA, world.room);
   assert.equal(outcome.ran, true);
   const row = world.store.memoriesOf(world.agentA2)[0];
   assert.equal(row.body, 'covering 3');
   assert.equal(row.consumed_to, drained.at(-1)?.id);
 
-  // Handed the same entries again, they are behind the consumed-to point.
-  assert.equal(compactor.delta(world.botA, world.room, drained).length, 0);
-  assert.deepEqual(await compactor.compact(world.botA, world.room, drained), {
+  // Behind the consumed-to point now, so they are not folded in a second time.
+  assert.equal(compactor.delta(world.botA, world.room).length, 0);
+  assert.deepEqual(await compactor.compact(world.botA, world.room), {
     ran: false,
     reason: 'empty-delta',
   });
@@ -392,9 +401,11 @@ test('an entry the gate put back on the queue is counted once, not twice', async
   const world = makeWorld();
   fill(world, 2);
   const drained = await world.store.drain(world.botA);
-  // What `gate()` does with a held-back entry (§11.4): back on the queue, so it
-  // is both what the tick popped and what is queued now.
-  world.store.inbox(world.botA).unshift(...drained);
+  // What `gate()` does with a held-back entry (§11.4): the mark comes off and the
+  // entry stays where it is. It must not be inserted again — it never left the
+  // record, and a second copy would be counted twice in the delta.
+  for (const entry of drained) entry.state = 'new';
+  await world.store.save();
 
   const compactor = new RoomCompactor(world.store, {
     summarise: () => 'summary',
@@ -403,33 +414,38 @@ test('an entry the gate put back on the queue is counted once, not twice', async
   });
 
   assert.deepEqual(
-    compactor.delta(world.botA, world.room, drained).map((entry) => entry.id),
+    compactor.delta(world.botA, world.room).map((entry) => entry.id),
     drained.map((entry) => entry.id),
+    'each entry once, at its arrival position',
   );
-  // The restored entry opens no turn of its own, and it is not what makes the
-  // delta cross the line a second time.
-  assert.equal(compactor.due(world.botA, world.room, drained), true);
-  await compactor.compact(world.botA, world.room, drained);
-  assert.equal(compactor.delta(world.botA, world.room, drained).length, 0);
+  assert.equal(world.store.inbox(world.botA).length, 2, 'stored once, not twice');
+  assert.equal(compactor.due(world.botA, world.room), true);
+  await compactor.compact(world.botA, world.room);
+  assert.equal(compactor.delta(world.botA, world.room).length, 0);
 });
 
-test('a tick that drained nothing has nothing to fold in', async () => {
+test('a tick that drained nothing leaves the delta where it was', async () => {
   const world = makeWorld();
-  fill(world, 2);
   const compactor = new RoomCompactor(world.store, {
     summarise: () => 'summary',
     lines: { maxObservations: 1 },
     now: () => AT,
   });
 
-  assert.equal(compactor.due(world.botA, world.room, []), true);
-  assert.equal(compactor.due(world.botA, world.room, undefined), true);
-  // An empty report over an empty queue is the idle case, and it is not due.
+  // Nothing delivered: nothing to fold in.
+  assert.equal(compactor.due(world.botA, world.room), false);
+  assert.equal((await world.store.drain(world.botA)).length, 0);
+  assert.equal(compactor.due(world.botA, world.room), false);
+
+  fill(world, 2);
+  assert.equal(compactor.due(world.botA, world.room), true);
+  // And a tick is not a compaction: taking the queue leaves what it took still to
+  // be folded in, because draining and summarising are two different acts.
   await world.store.drain(world.botA);
-  assert.equal(compactor.due(world.botA, world.room, []), false);
+  assert.equal(compactor.due(world.botA, world.room), true);
 });
 
-test('an in-flight entry from another room is not in this room’s delta', async () => {
+test('another room’s entry is not in this room’s delta', async () => {
   const world = makeWorld();
   const elsewhere = secondRoom(world);
   fill(world, 2);
@@ -438,8 +454,8 @@ test('an in-flight entry from another room is not in this room’s delta', async
     senderId: world.me,
     text: 'a different conversation',
   });
-  // One tick spans every room this bot has news from, so the report it makes is
-  // per bot and not per room.
+  // One tick spans every room this bot has news from, so what it takes is per bot
+  // and not per room — and the record keeps all three of them.
   const drained = await world.store.drain(world.botA);
   assert.equal(drained.length, 3);
 
@@ -449,12 +465,12 @@ test('an in-flight entry from another room is not in this room’s delta', async
     now: () => AT,
   });
 
-  const here = compactor.delta(world.botA, world.room, drained);
+  const here = compactor.delta(world.botA, world.room);
   assert.equal(here.length, 2);
   assert.equal(
     here.every((entry) => entry.room_id === world.room),
     true,
     'a room’s delta is that room’s',
   );
-  assert.equal(compactor.delta(world.botA, elsewhere, drained).length, 1);
+  assert.equal(compactor.delta(world.botA, elsewhere).length, 1);
 });

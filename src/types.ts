@@ -167,6 +167,16 @@ export type ObservationKind =
 export type Verdict = 'ignore' | 'snooze' | 'keep' | 'act';
 
 /**
+ * Where an observation stands in the bot's queue (`agent-lifecycle.md` §3).
+ *
+ * Two states, not three: `watched` is `verdict` (see `Observation.verdict`) and
+ * giving it a second field would be two versions of one fact. Absent is `new` —
+ * every entry a file was written before this field existed still reads as waiting,
+ * which is the only reading that is not a guess.
+ */
+export type ObservationState = 'new' | 'consumed';
+
+/**
  * Why the chain wall held an entry back (`agent-lifecycle.md` §11.3).
  *
  * Both readings are facts about the record — the message's `depth`, and the
@@ -205,8 +215,22 @@ export interface Observation {
   /** The schedule row that produced this entry, on a reminder (§12). */
   schedule_id?: Id;
   delivered_at: string;
-  /** Written by the loop or the watch side, never at delivery. */
-  verdict?: Verdict;
+  /**
+   * Where the entry stands in the queue.
+   *
+   * `agent-lifecycle.md` §3 gives the entry a state machine —
+   * `new → watched (act | ignore | snooze | keep) → consumed` — and this field is
+   * the half of it the runtime needs: absent (or `new`) is still waiting, and
+   * `consumed` is a tick that has taken it and will not take it again. The middle
+   * state is not a field, because it already is one: `verdict` is what `watched`
+   * means, and a second copy could disagree with it.
+   *
+   * **A consumed entry stays.** The inbox is append-only (§3), and a verdict lives
+   * on the entry it judged and nowhere else (`decisions.md` default 6) — so an
+   * entry that carried one and were dropped would take the only copy of the
+   * judgement with it, and the box's last-verdict part could never be filled.
+   */
+  state?: ObservationState;
   /**
    * What the judgement said about this entry, when it said anything.
    *

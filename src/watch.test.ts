@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test } from 'node:test';
 
+import { buildBox } from './box.ts';
 import { deliver } from './delivery.ts';
 import { makeWorld, type World } from './fixtures.ts';
-import { newId } from './store.ts';
+import { newId, SeekStore } from './store.ts';
 import type { Id, MembershipRole, Observation } from './types.ts';
 import { bindOptions, watchAs, type Tokeniser, type Watch, type WatchInput, type WatchReading } from './watch.ts';
 
@@ -235,7 +239,7 @@ test('a verdict lands on the entries that were judged and on nothing else', asyn
   const entries = await world.store.drain(world.botA);
   // One more arrives after the pop: nobody has asked about it yet.
   say(world, ['arrived while the tick was running'], world.room);
-  const waiting = world.store.inbox(world.botA).map((entry) => entry.id);
+  const waiting = world.store.pending(world.botA).map((entry) => entry.id);
   assert.equal(waiting.length, 1);
 
   const { model, seen } = stub((input) => ({
@@ -508,4 +512,62 @@ test('the binding is measured once, not on every tick', async () => {
   say(world, ['two']);
   await watch(await world.store.drain(world.botA));
   assert.equal(tokeniser.calls.length, 3, 'and neither does the next one');
+});
+
+test('a verdict a tick wrote survives a restart, and the next box reads it back', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'seek-verdict-'));
+  const path = join(directory, 'seek.json');
+  try {
+    // The same world, on a path: what the tick writes has somewhere to land.
+    const seeded = makeWorld();
+    const world: World = { ...seeded, store: new SeekStore(seeded.store.data, path) };
+    say(world, ['anything I should look at?']);
+
+    const { model } = stub({ probabilities: { act: 0.1, ignore: 0.9 } });
+    const entries = await world.store.drain(world.botA);
+    await bind(world, model)(entries);
+
+    // Not "the object the tick returned": the entry it judged, read back off the
+    // disk by a store that never saw it in memory.
+    const reloaded = await SeekStore.load(path);
+    const record = reloaded.inbox(world.botA);
+    assert.equal(record.length, 1, 'the entry a tick judged is on the disk');
+    assert.equal(record[0].id, entries[0].id);
+    assert.equal(record[0].verdict, 'ignore', 'and the verdict is on it');
+    assert.equal(record[0].state, 'consumed', 'marked as taken, not deleted');
+    assert.equal(reloaded.pending(world.botA).length, 0, 'and nothing is waiting again');
+
+    // The box's last-verdict part is filled from the record — which is the whole
+    // reason the entry stayed: before this, the tick destroyed the only copy.
+    const box = buildBox(reloaded, world.botA, world.room, { window: 10 });
+    assert.equal(box.lastVerdict?.verdict, 'ignore');
+    assert.equal(box.lastVerdict?.entryId, entries[0].id);
+    assert.equal(box.observationsSinceLastVerdict, 0, 'nothing has followed it');
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('a later tick reads the previous verdict, and how stale it is', async () => {
+  const world = makeWorld();
+  say(world, ['first']);
+  const { model: quiet } = stub({ probabilities: { act: 0.1, ignore: 0.9 } });
+  const first = await world.store.drain(world.botA);
+  await bind(world, quiet)(first);
+
+  // A second tick, over messages that arrived after the first was judged. The
+  // earlier judgement is still the record's, and the box says how old it is.
+  say(world, ['second', 'third']);
+  const { seen, model } = stub({ probabilities: { act: 0.1, ignore: 0.9 } });
+  await bind(world, model)(await world.store.drain(world.botA));
+
+  const box = seen.at(-1)!.state;
+  assert.equal(box.lastVerdict?.verdict, 'ignore', 'the verdict an earlier tick wrote');
+  assert.equal(box.lastVerdict?.entryId, first[0].id);
+  assert.equal(box.total, 3, 'the entry it judged, and the two that followed');
+  assert.equal(
+    box.observationsSinceLastVerdict,
+    2,
+    'counted off the record, so a stale verdict cannot read as fresh',
+  );
 });

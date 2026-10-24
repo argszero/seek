@@ -110,43 +110,47 @@ export function digestOf(
 }
 
 /**
- * The delta: this bot's pending entries for this room, after the point the last
+ * The delta: this room's entries on this bot's record, after the point the last
  * summary consumed up to.
  *
- * It is *derived* — read off the queue — and never stored, so there is one copy
+ * It is *derived* — read off the record — and never stored, so there is one copy
  * of every observation and no second log to keep true (`agent-lifecycle.md`
- * §3). The consumed-to point is an id, and the queue is in arrival order, so
- * "after" is a slice. When that entry has already left the queue the loop
- * drained it, which means everything still queued for the room arrived after it.
+ * §3). The consumed-to point is an id, and the record is in arrival order, so
+ * "after" is a slice. When that entry is no longer on the record (a file written
+ * before the record kept what it consumed) everything there arrived after it.
+ *
+ * **Read off the record, not off the queue**, and the two are no longer the same
+ * list: `drain` marks an entry consumed instead of splicing it out, because a
+ * verdict lives on the entry it judged and nowhere else (`decisions.md` default
+ * 6), so discarding the entry would destroy the judgement's only copy. That
+ * changes what this function may read. A tick's own entries used to be gone from
+ * the queue by the time a box or a compaction asked, and a caller had to hand
+ * them back in (`inFlight`) for the delta to be the delta and not "the room after
+ * the reason to look was removed"; on the record they are simply there, at their
+ * arrival position, so no caller passes anything and no second copy exists.
+ *
+ * It also means the delta spans ticks rather than one of them: an entry stays in
+ * it — consumed, awaiting a summary — until a compaction moves the consumed-to
+ * point past it. That is what makes the box's last-verdict part a fact in
+ * operation rather than only in a test, and bounding the span is compaction's
+ * job (`RoomCompactor`), not this slice's.
  */
 export function deltaFor(
   store: SeekStore,
   botId: Id,
   roomId: Id,
   agentId?: Id,
-  inFlight?: Observation[],
 ): Observation[] {
-  const queued = store
+  const record = store
     .inbox(botId)
     .filter((entry) => entry.room_id === roomId);
-
-  // The entries a tick drained are part of the delta even though the queue no
-  // longer holds them: the pop is atomic, so everything still queued arrived
-  // after them. Without this the delta a compaction reads *after* a tick would
-  // hold almost nothing, and a runtime that compacts after a tick could never
-  // cross its line at all.
-  const queuedIds = new Set(queued.map((entry) => entry.id));
-  const held = (inFlight ?? []).filter(
-    (entry) => entry.room_id === roomId && !queuedIds.has(entry.id),
-  );
-  const total = [...held, ...queued];
-  if (total.length === 0) return [];
+  if (record.length === 0) return [];
 
   const point = agentId ? digestOf(store, agentId, roomId)?.consumed_to : undefined;
-  if (!point) return total;
+  if (!point) return record;
 
-  const at = total.findIndex((entry) => entry.id === point);
-  return at === -1 ? total : total.slice(at + 1);
+  const at = record.findIndex((entry) => entry.id === point);
+  return at === -1 ? record : record.slice(at + 1);
 }
 
 /**
@@ -188,11 +192,12 @@ export class RoomCompactor {
   /**
    * What a compaction would fold in right now.
    *
-   * `inFlight` is what the tick just drained for this room — the caller's,
-   * because only the loop knows what it popped.
+   * No argument carries the tick's own entries: `deltaFor` reads the record, and
+   * a drained entry is on it. What a compaction folds in is therefore the same
+   * set whether it runs before, during or after a tick.
    */
-  delta(botId: Id, roomId: Id, inFlight?: Observation[]): Observation[] {
-    return deltaFor(this.store, botId, roomId, this.workAgent(botId)?.id, inFlight);
+  delta(botId: Id, roomId: Id): Observation[] {
+    return deltaFor(this.store, botId, roomId, this.workAgent(botId)?.id);
   }
 
   /** Whether a compaction is in flight for this room. */
@@ -206,12 +211,12 @@ export class RoomCompactor {
    * This is the question the runtime answers for itself and never puts to a
    * model: a count, and an age, both free.
    */
-  due(botId: Id, roomId: Id, inFlight?: Observation[]): boolean {
+  due(botId: Id, roomId: Id): boolean {
     if (!this.summarise) return false;
     if (this.inFlight(botId, roomId)) return false;
     if (!this.workAgent(botId)) return false;
 
-    const delta = this.delta(botId, roomId, inFlight);
+    const delta = this.delta(botId, roomId);
     if (delta.length === 0) return false;
     if (this.failed.get(key(botId, roomId)) === delta.length) return false;
     return this.crosses(delta);
@@ -225,12 +230,12 @@ export class RoomCompactor {
    * is what the summary covers, so an entry that arrives meanwhile is still in
    * the delta afterwards — never summarised by accident and never dropped.
    */
-  async compact(botId: Id, roomId: Id, inFlightEntries?: Observation[]): Promise<CompactOutcome> {
+  async compact(botId: Id, roomId: Id): Promise<CompactOutcome> {
     const room = key(botId, roomId);
     const inFlight = this.running.get(room);
     if (inFlight) return inFlight;
 
-    const run = this.write(botId, roomId, room, inFlightEntries);
+    const run = this.write(botId, roomId, room);
     this.running.set(room, run);
     try {
       return await run;
@@ -253,18 +258,13 @@ export class RoomCompactor {
     return false;
   }
 
-  private async write(
-    botId: Id,
-    roomId: Id,
-    room: string,
-    inFlight?: Observation[],
-  ): Promise<CompactOutcome> {
+  private async write(botId: Id, roomId: Id, room: string): Promise<CompactOutcome> {
     const agent = this.workAgent(botId);
     if (!agent) return { ran: false, reason: 'no-work-agent' };
     const summarise = this.summarise;
     if (!summarise) return { ran: false, reason: 'no-summarise' };
 
-    const snapshot = deltaFor(this.store, botId, roomId, agent.id, inFlight);
+    const snapshot = deltaFor(this.store, botId, roomId, agent.id);
     if (snapshot.length === 0) return { ran: false, reason: 'empty-delta' };
     if (!this.crosses(snapshot)) return { ran: false, reason: 'not-due' };
 

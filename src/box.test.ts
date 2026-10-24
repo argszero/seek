@@ -293,39 +293,36 @@ test('a box is per bot: each bot reads its own queue', () => {
   assert.notEqual(boxA.delta[0].id, boxB.delta[0].id, 'two entries, one per bot');
 });
 
-test('the entries in flight are part of the delta the box reads', async () => {
+test('the entries a tick drained are still in the delta the box reads', async () => {
   const world = makeWorld();
   const ids = fill(world, 2);
-  // The loop pops the whole queue before stage 0 or stage 1 sees anything, so a
-  // box built now from the queue alone would have forgotten what woke the bot.
-  const inFlight = await world.store.drain(world.botA);
+  // The loop takes the whole queue before stage 0 or stage 1 sees anything. What
+  // it takes is marked consumed rather than removed — a verdict lives on the entry
+  // it judged — so the box still holds what woke the bot, with nothing handed back
+  // in by a caller.
+  await world.store.drain(world.botA);
   const later = fill(world, 1);
 
-  const queued = buildBox(world.store, world.botA, world.room, { window: 10 });
-  assert.equal(queued.total, 1, 'the queue alone has forgotten them');
-
-  const box = buildBox(world.store, world.botA, world.room, { window: 10, inFlight });
-  assert.equal(box.total, 3);
+  const box = buildBox(world.store, world.botA, world.room, { window: 10 });
+  assert.equal(box.total, 3, 'the drained entries are still on the record');
   assert.equal(box.read + box.unread, box.total);
   assert.deepEqual(
     box.delta.map((entry) => entry.message_id),
     [later[0], ids[1], ids[0]],
-    'in flight first, because the pop that removed them was atomic',
+    'newest first, and each at its own arrival position',
   );
 });
 
-test('an in-flight entry from another room is not let into this room\'s box', async () => {
+test("another room's entries are not let into this room's box", async () => {
   const world = makeWorld();
   const ids = fill(world, 1);
-  const inFlight = await world.store.drain(world.botA);
-  const stray = { ...inFlight[0], id: 'ob_elsewhere', room_id: 'oc_elsewhere' };
+  await world.store.drain(world.botA);
 
-  const box = buildBox(world.store, world.botA, world.room, {
-    window: 10,
-    inFlight: [stray],
-  });
+  const here = buildBox(world.store, world.botA, world.room, { window: 10 });
+  assert.equal(here.total, 1, 'the room the entry belongs to reads it');
+  assert.deepEqual(here.delta.map((entry) => entry.message_id), ids);
 
-  assert.equal(box.total, 0, 'a box is one room\'s');
-  assert.deepEqual(box.delta, []);
-  assert.equal(ids.length, 1);
+  const elsewhere = buildBox(world.store, world.botA, 'oc_elsewhere', { window: 10 });
+  assert.equal(elsewhere.total, 0, "a box is one room's");
+  assert.deepEqual(elsewhere.delta, []);
 });
