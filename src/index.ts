@@ -49,7 +49,9 @@ export {
 export type { Catalogue, Message, Params, Translate } from './i18n.ts';
 export { llamaWatchModel, bindOverServer, DEFAULT_N_PROBS, strip } from './llama.ts';
 export type { Fetcher, LlamaServer } from './llama.ts';
-export { bindOptions, watchAs } from './watch.ts';
+export { bindOptions, declaredOptions, watchAs } from './watch.ts';
+export { watchOverServer } from './watch-server.ts';
+export type { WatchServerOptions } from './watch-server.ts';
 export type {
   BoundOption,
   OperatingPoint,
