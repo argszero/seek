@@ -98,6 +98,35 @@ export interface Membership {
 
 export type MessageKind = 'text' | 'image' | 'file' | 'tool_card' | 'system';
 
+/**
+ * A message's picture, as a reference rather than as bytes.
+ *
+ * `agent-lifecycle.md` §2 requirement 2 is a measured one — *"Messages carry
+ * screenshots, photos, diagrams and tool cards. Deciding 'is this about me?'
+ * from alt text alone is guessing"* — and until this existed a `kind` could say
+ * `image` while nothing could say *which* image, so the only thing an image
+ * message carried was its `text`.
+ *
+ * **The bytes are not in here.** The store writes its shards whole on every save
+ * (`store.ts`), so a picture inlined would be re-serialised on every unrelated
+ * turn. A picture belongs in a file beside the store, under whatever scheme the
+ * client keeps its blobs, and a message names one: `key` is opaque on purpose,
+ * exactly as a model's name is `agents.yml`'s. What the kernel owns is the link,
+ * and that it survives the trip to the judgement that has to see the picture
+ * (`box.ts`, `BoxMedia`).
+ *
+ * **Present exactly when `kind` is `image`**, which `deliver()` enforces instead
+ * of trusting a caller to remember: this cut carries pictures, and a file or a
+ * tool card gets a carrier when something reads one (`docs/decisions.md`,
+ * default 17).
+ */
+export interface MessageMedia {
+  /** Which blob, in whatever scheme the client keeps its files under. */
+  key: string;
+  /** What the bytes are — `image/png`, `application/pdf` — so a reader can tell. */
+  mime: string;
+}
+
 /** One entry of `Message.mentions` — Feishu's own `{id, name}` pair. */
 export interface Mention {
   id: Id;
@@ -120,6 +149,15 @@ export interface Message {
   agent_id?: Id;
   kind: MessageKind;
   text: string;
+  /**
+   * The picture this message is, when its `kind` says `image`.
+   *
+   * Absent on every other kind, and `deliver()` refuses both halves of that: an
+   * `image` carrying no picture, and a picture on a message whose kind disowns
+   * it. Without the invariant the text of an image message is all a judgement
+   * has, and a verdict reached on it is the guess §2 warns about.
+   */
+  media?: MessageMedia;
   mentions: Mention[];
   /** The message this one answers, when it answers one. */
   root_id?: Id;

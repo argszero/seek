@@ -206,7 +206,11 @@ export interface WatchInput {
    * that lives in the model is an order no version pins and no measurement covers.
    */
   prompt: WatchPrompt;
-  /** The room's box (§3): standing summary, delta, last verdict, unread count. */
+  /**
+   * The room's box (§3): standing summary, delta, last verdict, unread count —
+   * and the pictures in the delta, named there, because a model that is handed
+   * the entries and not their images is judging from text alone.
+   */
   state: RoomBox;
   /**
    * How much of this box the model has already read under the same head.

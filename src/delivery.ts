@@ -23,6 +23,7 @@ import type {
   Mention,
   Message,
   MessageKind,
+  MessageMedia,
   Observation,
   ObservationHints,
   ObservationKind,
@@ -33,6 +34,11 @@ export interface PostMessageInput {
   senderId: Id;
   text: string;
   kind?: MessageKind;
+  /**
+   * The picture this message is. Required by `kind: 'image'`, refused on any
+   * other kind — see `mediaFor` for why the pair is an invariant.
+   */
+  media?: MessageMedia;
   /** The principals this message @-mentions, Feishu's `{id, name}` pairs. */
   mentions?: Mention[];
   /** The message this one answers, when it answers one. */
@@ -76,11 +82,13 @@ export function deliver(store: SeekStore, input: PostMessageInput): Delivery {
   }
 
   const now = input.now ?? new Date().toISOString();
+  const kind = input.kind ?? 'text';
+  const media = mediaFor(kind, input.media);
   const message: Message = {
     id: newId('om'),
     room_id: input.roomId,
     sender_id: input.senderId,
-    kind: input.kind ?? 'text',
+    kind,
     text: input.text,
     mentions: (input.mentions ?? []).map((mention) => ({
       id: mention.id,
@@ -90,6 +98,10 @@ export function deliver(store: SeekStore, input: PostMessageInput): Delivery {
     created_at: now,
   };
   if (input.agentId) message.agent_id = input.agentId;
+  // A copy of the caller's object, not the object: the message is written once
+  // and stays clean, and a caller still holding the reference could otherwise
+  // rename a picture under a message already delivered.
+  if (media) message.media = media;
   if (parent) {
     message.root_id = parent.id;
     message.caused_by = parent.id;
@@ -140,6 +152,56 @@ export function deliver(store: SeekStore, input: PostMessageInput): Delivery {
   }
 
   return { message, observations };
+}
+
+/**
+ * The picture a message carries, checked against the kind that claims it.
+ *
+ * `agent-lifecycle.md` §2 requirement 2 is a measurement this kernel has to make
+ * possible before it can make it: a judgement must **see** an image, because
+ * *"deciding 'is this about me?' from alt text alone is guessing"*. What makes
+ * seeing possible is one invariant — **`media` is present exactly when `kind` is
+ * `image`** — and it is enforced here rather than left to callers, because the
+ * failure is silent in every direction: an image message with nothing behind it
+ * reads downstream as a text message, and no later check can tell that from a
+ * picture nobody sent.
+ *
+ * Three refusals, each one a way the invariant would otherwise be untrue:
+ *
+ * - **An `image` with no picture** — or with a picture whose `key` names no blob.
+ *   That is the alt-text failure itself, and it is refused at the door instead of
+ *   being measured by a model as if it were a message.
+ * - **A picture on any other kind.** A message that says "no picture" while
+ *   carrying one is dropped in silence by everything that dispatches on `kind`.
+ * - **An `image` whose mime is not an image.** The kind would say picture and the
+ *   bytes would say otherwise, and only one of the two can be true.
+ */
+function mediaFor(
+  kind: MessageKind,
+  media: MessageMedia | undefined,
+): MessageMedia | undefined {
+  if (kind !== 'image') {
+    if (media !== undefined) {
+      throw new Error(
+        `media on a ${JSON.stringify(kind)} message: only 'image' carries a picture, ` +
+          'and a kind that disowns its own bytes is one every reader drops in silence',
+      );
+    }
+    return undefined;
+  }
+  if (!media || media.key.trim() === '') {
+    throw new Error(
+      "an image message with no image: `media` is what lets a judgement see it, and " +
+        "judging one from its text alone is the failure src/README.md line 25 names",
+    );
+  }
+  if (!media.mime.startsWith('image/')) {
+    throw new Error(
+      `an image message whose mime is ${JSON.stringify(media.mime)}: the kind says ` +
+        'picture and the bytes say otherwise',
+    );
+  }
+  return { key: media.key, mime: media.mime };
 }
 
 /**
