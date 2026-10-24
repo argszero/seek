@@ -24,13 +24,15 @@
  *   a labelled set, never 0.5"*. A small model's usable cut sits between 0.6 and
  *   0.98, far from even, so a default in here would be a wrong answer wearing the
  *   shape of a considered one. `threshold` has no default and cannot be omitted.
- * - **The question** (checklist line 27, `decisions.md` "the question put to the
- *   watch model is part of the contract"). Rewording alone moved one model's
- *   discrimination from 0.09 to 0.77 and inverted it between Chinese and English,
- *   so the prompt is a versioned artifact handed in whole — never a string
- *   composed at this call site — and the operating point names the version it was
- *   measured against, because a cut measured on another question is not a cut for
- *   this one.
+ * - **The question, and the order it is asked in** (checklist line 27,
+ *   `decisions.md` "the question put to the watch model is part of the contract").
+ *   Rewording alone moved one model's discrimination from 0.09 to 0.77 and
+ *   inverted it between Chinese and English, so the prompt is a versioned artifact
+ *   read from a file (`prompts.ts`, `src/prompts/watch-v1.json`) — never a string
+ *   composed at this call site — and **this file assembles it**, so where each part
+ *   of the box sits is the artifact's decision rather than the model's. The
+ *   operating point names the version it was measured against, because a cut
+ *   measured on another question is not a cut for this one.
  * - **The option tokens** (§4 "one binary question", line 79). The model answers
  *   from the probabilities of two declared tokens, `act` and `ignore`; `keep` and
  *   `snooze` are the loop's to write and are never asked for, because a model that
@@ -72,15 +74,20 @@
 
 import { buildBox, type BoxOptions, type RoomBox } from './box.ts';
 import type { Judge } from './inbox.ts';
+import { assemblePrompt, loadPromptArtifact, skeletonOf, type PromptArtifact } from './prompts.ts';
 import type { SeekStore } from './store.ts';
 import type { Id, Observation, Verdict } from './types.ts';
 
 /**
- * The prompt, as an artifact rather than a string.
+ * The text a judgement continues from, as one string.
  *
  * `version` is part of the value because the operating point is calibrated
  * *against* a prompt: `decisions.md` §"the question put to the watch model" makes
- * the two one contract. `text` is handed to the model exactly as it stands.
+ * the two one contract. `text` is what was actually encoded — handed to the model
+ * exactly as it stands, and **assembled by this runtime** from the versioned
+ * artifact (`prompts.ts`) and the box, never left for the model to lay out. A
+ * `WatchPrompt` is also what a mask is measured against: `bindOptions` reads its
+ * option ids off the end of this text, so the end is the part of it that matters.
  */
 export interface WatchPrompt {
   /** The artifact's identity. The operating point names this string. */
@@ -191,7 +198,13 @@ export interface ResidentContext {
 
 /** One question put to the model. Fields, never prose. */
 export interface WatchInput {
-  /** The versioned artifact. */
+  /**
+   * The text this judgement continues from, already assembled.
+   *
+   * Assembled by the runtime from the artifact and this box: the model is not
+   * asked where the summary, the messages and the question go, because an order
+   * that lives in the model is an order no version pins and no measurement covers.
+   */
   prompt: WatchPrompt;
   /** The room's box (§3): standing summary, delta, last verdict, unread count. */
   state: RoomBox;
@@ -245,10 +258,27 @@ export interface WatchModel {
 export interface WatchOptions {
   /** How much the judgement can read, in `weigh` units. The caller's number. */
   window: number;
-  /** The versioned question artifact. */
-  prompt: WatchPrompt;
-  /** The calibrated cut, and the prompt version it belongs to. */
-  operatingPoint: OperatingPoint;
+  /**
+   * The versioned prompt artifact.
+   *
+   * **Absent means the shipped one** (`src/prompts/watch-v1.json`), which is what
+   * "the prompt is a versioned file" has to mean for a default to exist at all.
+   * A file, a version and a cut are one contract, so passing one here moves the
+   * others with it — an artifact that declares no operating point needs a
+   * threshold supplied, or there is none to apply.
+   */
+  prompt?: PromptArtifact;
+  /**
+   * The calibrated cut, and the prompt version it belongs to.
+   *
+   * **Absent means the artifact's own declaration**: `watch-v1` ships 0.600,
+   * measured on 24 cases written after every prompt choice had been made
+   * (`calibration/measured.json`). That is a default with a source rather than a
+   * convenience — 0.5 is the value that looks reasonable and is measurably wrong,
+   * and a number this file carried itself would be a second copy free to disagree
+   * with the artifact it belongs to.
+   */
+  operatingPoint?: OperatingPoint;
   /** Overrides for the declared option tokens. Defaults to `act` / `ignore`. */
   optionTokens?: Partial<OptionTokens>;
   /**
@@ -324,12 +354,18 @@ export function watchAs(
   options: WatchOptions,
 ): Watch {
   const tokens = declaredOptions(options.optionTokens);
-  // Measured once, here: the ids the answer is read at do not depend on the room or
-  // the tick, and re-deriving them per call would make the mask free to drift from
-  // the prompt it belongs to. Warmth is not this line's doing — that is `resident`
-  // below, and it holds no ids of its own.
-  const mask = bindOptions(options.tokeniser, options.prompt, tokens);
-  checkOperatingPoint(options);
+  // The artifact and the cut are one contract, so both are settled once, here: a
+  // runtime whose prompt could change mid-life would be a runtime whose mask and
+  // threshold belonged to a question it is no longer asking.
+  const artifact = options.prompt ?? loadPromptArtifact();
+  const point = resolveOperatingPoint(artifact, options.operatingPoint);
+  // Measured once, and measured on the assembly's *end*: `skeletonOf` is the same
+  // text with no summary and no entries, and it ends where every real assembly ends
+  // (the artifact's last part is unconditional), so these are the ids the answer is
+  // read at in every room and on every tick. Warmth is not this line's doing — that
+  // is `resident` below, and it holds no ids of its own.
+  const mask = bindOptions(options.tokeniser, skeletonOf(artifact), tokens);
+  const front = frontOf(artifact);
 
   // The resident context, one per room (§4 "the box's tokens are kept warm"). One
   // `watchAs` is one bot, so the bot lives in the instance rather than in the key:
@@ -377,11 +413,28 @@ export function watchAs(
       // prompt, option binding, summary — and the entries are intersected with the
       // box, because an entry the window no longer holds is not something the model
       // is being given again.
-      const head = headKey(botId, roomId, options, tokens, mask, state.summary);
+      const head = headKey(botId, roomId, front, tokens, mask, state.summary);
       const previous = warmFrom(resident.get(roomId), head, state.delta);
 
+      // What this judgement is asked, in the artifact's own order. The record keeps
+      // a message's body on the message and an observation only names it, so the
+      // bodies are read once per room — read, never copied onto the entry: a verdict
+      // is the only thing stage 1 writes. Entries are rendered **oldest first**, so
+      // an arrival can only ever be appended to the head (§4 "the box's tokens are
+      // kept warm"), while `delta` itself is newest first because that is the order
+      // the window filled it in.
+      const bodies = new Map<Id, string>();
+      for (const message of store.messagesOf(roomId)) bodies.set(message.id, message.text);
+      const ask: WatchPrompt = {
+        version: artifact.version,
+        text: assemblePrompt(artifact, {
+          ...(state.summary === undefined ? {} : { summary: state.summary }),
+          texts: [...state.delta].reverse().map((entry) => textOf(entry, bodies)),
+        }),
+      };
+
       const input: WatchInput = {
-        prompt: options.prompt,
+        prompt: ask,
         state,
         options: tokens,
         mask,
@@ -400,7 +453,7 @@ export function watchAs(
       if (probability === undefined) outcome.unparsed += 1;
       // No answer that could be read is no act (§4). The cut is inclusive: a
       // probability exactly at the operating point acts.
-      const acts = probability !== undefined && probability >= options.operatingPoint.threshold;
+      const acts = probability !== undefined && probability >= point.threshold;
       const verdict: Verdict = acts ? 'act' : 'ignore';
       const reason = reasonOf(reading);
 
@@ -439,10 +492,12 @@ export function watchAs(
  * tokens are kept warm"), so a judgement may only be told "you have read this" while
  * all of them are unchanged. Each is here for a reason:
  *
- * - **The prompt** is version *and* text. The version is its identity, and the
- *   operating point is calibrated against it; the text is what was actually encoded,
- *   and a caller who edited the artifact without moving the version would otherwise
- *   get a head it never read.
+ * - **The artifact** is version *and* content. The version is its identity, and the
+ *   operating point is calibrated against it; the content is what the text is
+ *   assembled from, and an artifact edited without moving its version would
+ *   otherwise get a head it never read. What is **not** in the key is the assembled
+ *   text: it carries this tick's messages, so a key built from it would move on
+ *   every arrival and no head would ever stay warm.
  * - **The option tokens** change what the model is asked to continue from.
  * - **The mask ids** stand for the tokeniser: two vocabularies that bind the same ids
  *   read the same answer, and one that binds different ids is a different head even
@@ -462,7 +517,7 @@ export function watchAs(
 function headKey(
   botId: Id,
   roomId: Id,
-  options: WatchOptions,
+  front: string,
   tokens: OptionTokens,
   mask: OptionBinding,
   summary: string | undefined,
@@ -470,8 +525,7 @@ function headKey(
   return JSON.stringify([
     botId,
     roomId,
-    options.prompt.version,
-    options.prompt.text,
+    front,
     tokens.act,
     tokens.ignore,
     mask.act.id,
@@ -608,15 +662,40 @@ function bindOne(
 }
 
 /**
- * The operating point, checked against the question it claims to belong to.
+ * The operating point in force, checked against the question it claims to belong to.
  *
  * A cut outside (0, 1) is not a cut: at 0 every answer acts and at 1 none does,
  * and neither is a decision. A version mismatch is the one `decisions.md` warns
  * about — a well-meant prompt edit that silently moves the threshold — so it is
  * refused here instead of being discovered from the verdicts later.
+ *
+ * **Absent means the artifact's own declaration**, which is the only shape "the
+ * shipped default is 0.600" can take without a second copy of the number in code.
+ * An artifact that declares none and a caller that supplies none is a runtime with
+ * no cut at all, and that is refused rather than guessed: 0.5 always fits, which is
+ * exactly why it cannot be the fallback.
  */
-function checkOperatingPoint(options: WatchOptions): void {
-  const threshold = options.operatingPoint?.threshold;
+function resolveOperatingPoint(
+  artifact: PromptArtifact,
+  supplied: OperatingPoint | undefined,
+): OperatingPoint {
+  const declared = artifact.operatingPoint;
+  if (supplied === undefined && declared === undefined) {
+    throw new Error(
+      `prompt ${JSON.stringify(artifact.version)} declares no operating point and none was ` +
+        'supplied, so there is no cut to apply — the cut comes from a labelled set ' +
+        '(src/README.md line 26), never from a guess',
+    );
+  }
+  const point: OperatingPoint =
+    supplied ??
+    ({
+      threshold: declared?.threshold,
+      promptVersion: artifact.version,
+      ...(declared?.measuredOn === undefined ? {} : { measuredOn: declared.measuredOn }),
+    } as OperatingPoint);
+
+  const threshold = point.threshold;
   if (typeof threshold !== 'number' || !Number.isFinite(threshold)) {
     throw new Error(`the operating point needs a numeric threshold, got ${String(threshold)}`);
   }
@@ -626,14 +705,41 @@ function checkOperatingPoint(options: WatchOptions): void {
         'the cut comes from a labelled set (src/README.md line 26), never from an edge',
     );
   }
-  const measured = options.operatingPoint.promptVersion;
-  if (measured !== options.prompt.version) {
+  const measured = point.promptVersion;
+  if (measured !== artifact.version) {
     throw new Error(
       `the operating point was calibrated against prompt ${JSON.stringify(measured)}, ` +
-        `but the prompt handed in is ${JSON.stringify(options.prompt.version)} — ` +
+        `but the prompt handed in is ${JSON.stringify(artifact.version)} — ` +
         'a cut measured on another question is not a cut for this one',
     );
   }
+  return point;
+}
+
+/**
+ * The artifact's identity, for the head key.
+ *
+ * Version *and* content, so an artifact edited without moving its version is still
+ * a different head: the version is what the operating point names, and the content
+ * is what the text is assembled from.
+ */
+function frontOf(artifact: PromptArtifact): string {
+  return JSON.stringify(artifact);
+}
+
+/**
+ * The line one box entry contributes to the assembled text.
+ *
+ * A message's body lives on the message, and an observation only names it —
+ * `Observation.text` is the reminder's own words and nothing else — so a judgement
+ * that reads one assembled string has to be given the body here. A reminder never
+ * reaches this point (it has no room, so no box), but the fallback keeps that a
+ * property of the loop rather than of this helper.
+ */
+function textOf(entry: Observation, bodies: Map<Id, string>): string {
+  if (entry.text !== undefined) return entry.text;
+  if (entry.message_id === undefined) return '';
+  return bodies.get(entry.message_id) ?? '';
 }
 
 /**

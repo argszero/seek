@@ -7,16 +7,34 @@ import { test } from 'node:test';
 import { buildBox } from './box.ts';
 import { deliver } from './delivery.ts';
 import { makeWorld, type World } from './fixtures.ts';
+import { skeletonOf, type PromptArtifact } from './prompts.ts';
 import { newId, SeekStore } from './store.ts';
 import type { Id, MembershipRole, Observation } from './types.ts';
 import { bindOptions, watchAs, type Tokeniser, type Watch, type WatchInput, type WatchReading } from './watch.ts';
 
-// The trailing space is not cosmetic. The two options are appended to this text, so
-// a prompt that ends mid-word lets the tokeniser merge the option into the prompt's
-// last token — and then no id at "the prompt's own end" is the option's, which
-// `bindOptions` refuses. A real prompt artifact ends at a boundary its suffix
+// The artifact the runtime assembles from, in the shape the shipped one has. The
+// trailing space is not cosmetic: the two options are appended to the assembled
+// text, so a prompt that ends mid-word lets the tokeniser merge the option into the
+// prompt's last token — and then no id at "the prompt's own end" is the option's,
+// which `bindOptions` refuses. A real prompt artifact ends at a boundary its suffix
 // survives.
-const PROMPT = { version: 'watch-v1', text: 'Does this room need you to act? Answer act or ignore. ' };
+const ARTIFACT: PromptArtifact = {
+  version: 'watch-v1',
+  system: 'You watch one room of a payments team.',
+  afterSystem: '\n\n',
+  parts: [
+    { name: 'summary', text: 'Room memory: {summary}', after: '\n\n', when: 'summary' },
+    { name: 'message', text: 'Message: {text}', after: '\n', when: 'always', each: 'observation' },
+    {
+      name: 'question',
+      text: 'Does this room need you to act? Answer act or ignore.',
+      after: ' ',
+      when: 'always',
+    },
+  ],
+};
+// What a mask is measured against: the same artifact with an empty box.
+const PROMPT = skeletonOf(ARTIFACT);
 const POINT = {
   threshold: 0.9,
   promptVersion: 'watch-v1',
@@ -128,7 +146,7 @@ function bind(
 ): Watch {
   return watchAs(world.store, world.botA, model, {
     window: 10,
-    prompt: PROMPT,
+    prompt: ARTIFACT,
     operatingPoint: { ...POINT, threshold },
     tokeniser,
   });
@@ -163,7 +181,7 @@ test('the unread count reaches the model even when the box overflows', async () 
   const { model, seen } = stub({ probabilities: { act: 0.1, ignore: 0.9 } });
   await watchAs(world.store, world.botA, model, {
     window: 2,
-    prompt: PROMPT,
+    prompt: ARTIFACT,
     operatingPoint: POINT,
     tokeniser: makeTokeniser(),
   })(entries);
@@ -361,7 +379,7 @@ test('one save per call, however many rooms were asked about', async () => {
 test('a runtime wired to a cut measured on another question refuses to run', () => {
   const world = makeWorld();
   const { model } = stub({ probabilities: { act: 0.99, ignore: 0.01 } });
-  const options = { window: 10, prompt: PROMPT, tokeniser: makeTokeniser() };
+  const options = { window: 10, prompt: ARTIFACT, tokeniser: makeTokeniser() };
 
   assert.throws(
     () =>
@@ -489,7 +507,7 @@ test('a runtime without a tokeniser refuses to run', () => {
     () =>
       watchAs(world.store, world.botA, model, {
         window: 10,
-        prompt: PROMPT,
+        prompt: ARTIFACT,
         operatingPoint: POINT,
       } as never),
     /needs a tokeniser/,
@@ -678,7 +696,7 @@ test('two bots in one room keep separate heads', async () => {
   const world = makeWorld();
   const options = {
     window: 10,
-    prompt: PROMPT,
+    prompt: ARTIFACT,
     operatingPoint: POINT,
     tokeniser: makeTokeniser(),
   };
@@ -719,7 +737,7 @@ test('an entry the window no longer holds is not claimed as read', async () => {
   const { model, seen } = stub({ probabilities: { act: 0.1, ignore: 0.9 } });
   const watch = watchAs(world.store, world.botA, model, {
     window: 2,
-    prompt: PROMPT,
+    prompt: ARTIFACT,
     operatingPoint: POINT,
     tokeniser: makeTokeniser(),
   });
@@ -736,4 +754,76 @@ test('an entry the window no longer holds is not claimed as read', async () => {
     [seen[0].state.delta[0].id],
     'only what this box still holds can be claimed — the entry the window pushed out is not',
   );
+});
+
+// ---- the prompt is a file, and the cut ships with it (src/README.md lines 26, 27) ----
+
+test('no artifact and no cut given means the shipped file and its 0.600', async () => {
+  async function decideAt(probability: number) {
+    const world = makeWorld();
+    say(world, ['deploy is red']);
+    const entries = await world.store.drain(world.botA);
+    const { model, seen } = stub({ probabilities: { act: probability, ignore: 1 - probability } });
+    // Deliberately no `prompt` and no `operatingPoint`: what a caller who says
+    // nothing gets is the shipped artifact and the cut measured against it.
+    const acting = await watchAs(world.store, world.botA, model, {
+      window: 10,
+      tokeniser: makeTokeniser(),
+    })(entries);
+    return { acting, asked: seen[0] };
+  }
+
+  const at = await decideAt(0.6);
+  assert.equal(at.asked.prompt.version, 'watch-v1', 'the shipped version, not a literal in here');
+  assert.equal(
+    at.asked.prompt.text,
+    'You are the ops bot of a payments team. Your job: catch incidents and answer ' +
+      'questions the team asks. You stay quiet otherwise.\n\nMessage: deploy is red\n' +
+      'Do you need to do something about this message? Answer act or ignore. ',
+    'the measured shape, assembled by the runtime from the file',
+  );
+  assert.equal(at.acting.length, 1, 'exactly at the shipped cut, and the cut is inclusive');
+
+  const below = await decideAt(0.599);
+  assert.equal(below.acting.length, 0, 'and a hair below it does not act');
+});
+
+test('the box is rendered oldest first, one line per entry', async () => {
+  const world = makeWorld();
+  say(world, ['one', 'two', 'three']);
+  const { model, seen } = stub({ probabilities: { act: 0.1, ignore: 0.9 } });
+  await bind(world, model)(await world.store.drain(world.botA));
+
+  const text = seen[0].prompt.text;
+  assert.ok(text.indexOf('Message: one') < text.indexOf('Message: two'), 'oldest first');
+  assert.ok(text.indexOf('Message: two') < text.indexOf('Message: three'));
+  assert.equal(
+    text.match(/^Message: /gm)?.length,
+    3,
+    'one line per entry — an arrival appends a line rather than reflowing the box',
+  );
+  assert.ok(
+    text.trimEnd().endsWith('Answer act or ignore.'),
+    'and the question is still the last thing asked',
+  );
+});
+
+test('a room memory is rendered where the artifact puts it, from the digest', async () => {
+  const world = makeWorld();
+  say(world, ['one']);
+  const first = await world.store.drain(world.botA);
+  const { model: quiet } = stub({ probabilities: { act: 0.1, ignore: 0.9 } });
+  await bind(world, quiet)(first);
+  summarise(world, 'the room is arranging a release', first.at(-1)!.id);
+
+  say(world, ['two']);
+  const { model, seen } = stub({ probabilities: { act: 0.1, ignore: 0.9 } });
+  await bind(world, model)(await world.store.drain(world.botA));
+
+  const text = seen[0].prompt.text;
+  assert.ok(
+    text.includes('Room memory: the room is arranging a release\n\nMessage: two\n'),
+    'the summary arrives in the text, in the order the file lists the parts',
+  );
+  assert.ok(text.endsWith('Answer act or ignore. '), 'and the continuation point has not moved');
 });
