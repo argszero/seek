@@ -164,6 +164,31 @@ test('the last verdict is read off the entry it was written on', () => {
   assert.equal(stale.observationsSinceLastVerdict, 1);
 });
 
+test('the reason comes back with the verdict, and only when there was one', () => {
+  const world = makeWorld();
+  fill(world, 2);
+  const queued = world.store.inbox(world.botA);
+  queued[0].verdict = 'ignore';
+  queued[0].reason = 'not addressed to me, and someone else is answering';
+  queued[1].verdict = 'keep';
+
+  // The newer verdict carries no reason. That must stay absent rather than
+  // become an empty string or the older entry's sentence.
+  const newer = buildBox(world.store, world.botA, world.room, { window: 10 });
+  assert.equal(newer.lastVerdict?.verdict, 'keep');
+  assert.equal('reason' in (newer.lastVerdict ?? {}), false);
+
+  // Drop it, and the older verdict comes back with its own sentence attached.
+  queued[1].verdict = undefined;
+  const older = buildBox(world.store, world.botA, world.room, { window: 10 });
+  assert.equal(older.lastVerdict?.verdict, 'ignore');
+  assert.equal(
+    older.lastVerdict?.reason,
+    'not addressed to me, and someone else is answering',
+  );
+  assert.equal(older.lastVerdict?.entryId, queued[0].id, 'the reason belongs to that entry');
+});
+
 test('no verdict on the record means no last verdict, and no staleness', () => {
   const world = makeWorld();
   fill(world, 2);

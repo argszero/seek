@@ -207,6 +207,18 @@ export interface Observation {
   delivered_at: string;
   /** Written by the loop or the watch side, never at delivery. */
   verdict?: Verdict;
+  /**
+   * What the judgement said about this entry, when it said anything.
+   *
+   * `agent-lifecycle.md` §4: *"The reason is still recorded — on the observation
+   * entry, next to the verdict"*, because it is what makes a bad call
+   * reviewable and the work agent may read it back. Two consequences follow
+   * from the same section: the runtime **never puts it in the work agent's
+   * context** (a reason there is a premise, not advice), and a rule never
+   * writes one — a reason is the judgement's own sentence, so an entry stage 0
+   * settled has a verdict and no reason.
+   */
+  reason?: string;
 }
 
 // --- The rest of the shapes are fixed by the design. Only `ScheduleRow` is
