@@ -3,7 +3,9 @@ import { test } from 'node:test';
 
 import { deliver } from './delivery.ts';
 import { makeWorld } from './fixtures.ts';
+import { agentTurnsIn } from './chain.ts';
 import { InboxLoop } from './inbox.ts';
+import { addRow, fireDue } from './schedule.ts';
 import { newId, SeekStore } from './store.ts';
 import { makeTurn, runTurn, type TurnContext } from './turn.ts';
 import type { Id, MembershipRole } from './types.ts';
@@ -192,23 +194,61 @@ test('entries from two rooms open two turns, one per room', async () => {
   );
 });
 
-test('a reminder has no room, and its turn is the schedule\'s to open', async () => {
+test('a reminder opens the one turn that has no room, and moves no room\'s burst', async () => {
   const world = makeWorld();
-  const reminder = {
-    id: newId('ob'),
-    bot_id: world.botA,
-    message_id: newId('om'),
-    kind: 'reminder' as const,
-    hints: { mentionsMe: false, repliesToMe: false, direct: false },
-    delivered_at: '2026-10-24T00:00:00.000Z',
-  };
+  addRow(world.store, {
+    botId: world.botA,
+    when: '2026-10-24T08:00:00.000Z',
+    text: 'look at the release thread',
+    now: '2026-10-24T08:00:00.000Z',
+  });
+  const [reminder] = fireDue(world.store, '2026-10-24T12:00:00.000Z');
+  assert.ok(reminder);
 
-  await assert.rejects(
-    async () =>
-      makeTurn(world.store, world.botA)([reminder]),
-    /schedule/,
+  await makeTurn(world.store, world.botA)([reminder]);
+
+  // §12 keeps "the turn that fired it" on the record, so the reminder opens a
+  // turn rather than being a waking entry no turn ever took.
+  assert.equal(world.store.data.turns.length, 1);
+  const sessions = world.store.sessionsOf(world.agentA2);
+  assert.equal(sessions.length, 1);
+  // A reminder is in no room, so its session is in no room either.
+  assert.equal(sessions[0]?.room_id, undefined);
+  // §12: a bot reminding itself is not a conversation in a room, so no room's
+  // run of consecutive bot turns moves.
+  assert.equal(agentTurnsIn(world.store, world.room), 0);
+});
+
+test('one batch holding a room entry and a reminder opens two turns, one with no room', async () => {
+  const world = makeWorld();
+  addRow(world.store, {
+    botId: world.botA,
+    when: '2026-10-24T08:00:00.000Z',
+    text: 'and this too',
+    now: '2026-10-24T08:00:00.000Z',
+  });
+  const [reminder] = fireDue(world.store, '2026-10-24T12:00:00.000Z');
+  assert.ok(reminder);
+  const { observations } = deliver(world.store, {
+    roomId: world.room,
+    senderId: world.me,
+    text: '@A and this',
+    mentions: [{ id: world.botA, name: 'A' }],
+  });
+  const fromRoom = observations.find((entry) => entry.bot_id === world.botA);
+  assert.ok(fromRoom);
+
+  await makeTurn(world.store, world.botA)([reminder, fromRoom]);
+
+  assert.equal(world.store.data.turns.length, 2);
+  // The room's session and the reminder's session never merge: one carries the
+  // room, the other carries none.
+  assert.deepEqual(
+    world.store.sessionsOf(world.agentA2).map((session) => session.room_id),
+    [undefined, world.room],
   );
-  assert.equal(world.store.data.turns.length, 0);
+  // Only the room's turn counts toward the room's burst.
+  assert.equal(agentTurnsIn(world.store, world.room), 1);
 });
 
 test('a bot with no work agent cannot open a turn, and an empty batch opens none', async () => {

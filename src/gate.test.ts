@@ -26,13 +26,13 @@ function mute(world: ReturnType<typeof makeWorld>, botId: string): void {
   membership.muted = true;
 }
 
-/** A reminder entry. Nothing produces these yet — schedule rows are schema-only. */
+/** A reminder entry, as `schedule.ts` fires one: no room, no message, its own text. */
 function reminder(botId: string): Observation {
   return {
     id: newId('ob'),
     bot_id: botId,
-    message_id: newId('om'),
     kind: 'reminder',
+    text: 'a note to my future self',
     hints: { mentionsMe: false, repliesToMe: false, direct: false },
     delivered_at: '2026-10-24T00:00:00.000Z',
   };
