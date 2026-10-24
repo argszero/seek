@@ -11,6 +11,8 @@ export { SeekStore, emptyData, newId } from './store.ts';
 export type { SeekData } from './store.ts';
 export { deliver, deriveHints, deriveKind } from './delivery.ts';
 export type { Delivery, PostMessageInput } from './delivery.ts';
+export { classify, gate } from './gate.ts';
+export type { GateDecision, GateResult } from './gate.ts';
 export { InboxLoop } from './inbox.ts';
 export type { RunTurn, TickResult } from './inbox.ts';
 export type * from './types.ts';
