@@ -23,6 +23,19 @@ export {
   resetAgentTurns,
 } from './chain.ts';
 export type { ChainBlockReason } from './chain.ts';
+export { watchAs } from './watch.ts';
+export type {
+  OperatingPoint,
+  OptionTokens,
+  Watch,
+  WatchInput,
+  WatchJudge,
+  WatchModel,
+  WatchOptions,
+  WatchOutcome,
+  WatchPrompt,
+  WatchReading,
+} from './watch.ts';
 export { InboxLoop } from './inbox.ts';
 export type { Judge, RunTurn, TickResult } from './inbox.ts';
 export { addRow, cancelRow, fireDue, listRows } from './schedule.ts';
