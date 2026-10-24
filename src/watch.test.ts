@@ -507,6 +507,17 @@ test('two options that land on one id are refused, because they are one answer',
   );
 });
 
+test('binding refuses a runtime that carries no tokeniser at all', () => {
+  // The runtime refuses this before it ever gets here, so this is the guard on the
+  // exported function rather than on the runtime: a caller that reaches for
+  // `bindOptions` directly is told the same thing, and not left to a crash where the
+  // ids would be read off a tokeniser that is not there.
+  assert.throws(
+    () => bindOptions(undefined as never, PROMPT, { act: 'act', ignore: 'ignore' }),
+    /needs a tokeniser/,
+  );
+});
+
 test('a runtime without a tokeniser refuses to run', () => {
   const world = makeWorld();
   const { model } = stub({ probabilities: { act: 0.9, ignore: 0.1 } });
