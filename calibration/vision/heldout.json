@@ -1,0 +1,141 @@
+{
+ "_what_this_is": "A held-out image set: written after the first image reading was taken and used to pick nothing, so it tests whether that reading generalises.",
+ "_why_they_exist": "the first set both produced the reading and motivated its diagnosis, so on its own it cannot say whether 12/16 was a property of the model or of those sixteen pictures",
+ "source": "hand-written in this project's own session (seek-opensource-task), 2026-10-25, after calibration/vision/measured.json was produced",
+ "question": "Do you need to do something about this message? Answer act or ignore.",
+ "labels": {
+  "act": "the picture shows something this bot must act on",
+  "ignore": "the picture shows nothing this bot must act on"
+ },
+ "design_note": "Same construction rule as cases.json — every caption is deliberately uninformative — but different pictures, and deliberately including the classes the first set missed (a disk gauge, a failed deploy, a Chinese failure screenshot, a traffic chart that fell to zero) so that this set can fail the model rather than flatter it.",
+ "cases": [
+  {
+   "id": "ho-a1",
+   "label": "act",
+   "image": "img/ho-a1.png",
+   "text": "morning check",
+   "note": "顶部 ALERTING 横幅＋44% 失败率",
+   "lang": "en"
+  },
+  {
+   "id": "ho-a2",
+   "label": "act",
+   "image": "img/ho-a2.png",
+   "text": "from the deploy log",
+   "note": "panic 堆栈",
+   "lang": "en"
+  },
+  {
+   "id": "ho-a3",
+   "label": "act",
+   "image": "img/ho-a3.png",
+   "text": "numbers from grafana",
+   "note": "/v1/settle p99 38.5 秒",
+   "lang": "en"
+  },
+  {
+   "id": "ho-a4",
+   "label": "act",
+   "image": "img/ho-a4.png",
+   "text": "k8s",
+   "note": "三个 pod CrashLoopBackOff",
+   "lang": "en"
+  },
+  {
+   "id": "ho-a5",
+   "label": "act",
+   "image": "img/ho-a5.png",
+   "text": "刚发的",
+   "note": "中文：连接池耗尽",
+   "lang": "zh"
+  },
+  {
+   "id": "ho-a6",
+   "label": "act",
+   "image": "img/ho-a6.png",
+   "text": "node 3",
+   "note": "磁盘只剩 2.2 GB",
+   "lang": "en"
+  },
+  {
+   "id": "ho-a7",
+   "label": "act",
+   "image": "img/ho-a7.png",
+   "text": "traffic",
+   "note": "曲线掉到 0 rpm",
+   "lang": "en"
+  },
+  {
+   "id": "ho-a8",
+   "label": "act",
+   "image": "img/ho-a8.png",
+   "text": "cert",
+   "note": "证书两天后过期",
+   "lang": "en"
+  },
+  {
+   "id": "ho-i1",
+   "label": "ignore",
+   "image": "img/ho-i1.png",
+   "text": "pipeline",
+   "note": "全绿",
+   "lang": "en"
+  },
+  {
+   "id": "ho-i2",
+   "label": "ignore",
+   "image": "img/ho-i2.png",
+   "text": "desk plant",
+   "note": "植物照片",
+   "lang": "en"
+  },
+  {
+   "id": "ho-i3",
+   "label": "ignore",
+   "image": "img/ho-i3.png",
+   "text": "sprint board",
+   "note": "进度正常",
+   "lang": "en"
+  },
+  {
+   "id": "ho-i4",
+   "label": "ignore",
+   "image": "img/ho-i4.png",
+   "text": "my day",
+   "note": "日历",
+   "lang": "en"
+  },
+  {
+   "id": "ho-i5",
+   "label": "ignore",
+   "image": "img/ho-i5.png",
+   "text": "expenses",
+   "note": "收据",
+   "lang": "en"
+  },
+  {
+   "id": "ho-i6",
+   "label": "ignore",
+   "image": "img/ho-i6.png",
+   "text": "周会",
+   "note": "中文会议纪要",
+   "lang": "zh"
+  },
+  {
+   "id": "ho-i7",
+   "label": "ignore",
+   "image": "img/ho-i7.png",
+   "text": "haha",
+   "note": "表情包",
+   "lang": "en"
+  },
+  {
+   "id": "ho-i8",
+   "label": "ignore",
+   "image": "img/ho-i8.png",
+   "text": "status page",
+   "note": "全绿状态页",
+   "lang": "en"
+  }
+ ]
+}

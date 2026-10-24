@@ -258,8 +258,221 @@
  },
  "what_was_not_measured": [
   "One message with one image, never a box of several messages or several images.",
-  "Screenshots rendered for this set, not captured from a real chat — the same provenance as the text cases.",
-  "n=16: eight images per label is a wide interval, and the two Chinese cases are too few to make the language split a reading.",
+  "Screenshots rendered for these sets, not captured from a real chat — the same provenance as the text cases.",
+  "32 images in total, 16 per label: enough to say the requirement is unmet twice over, still not enough to rank models on vision. The two Chinese cases in each half cannot carry a language split.",
   "The runtime mask is untouched by this run: the scorer reads the full next-token distribution, the kernel masks one id."
- ]
+ ],
+ "heldout": {
+  "_what_this_is": "The same reading taken a second time, on a set written after the first one was measured — the check that 12/16 was the model and not those particular pictures.",
+  "_where_it_comes_from": "run 2026-10-25 in session seek-opensource-task, against calibration/vision/heldout.json, same checkpoint, same projector, same prompt, same 0.600 cut, nothing tuned",
+  "operating_point": {
+   "threshold": 0.6,
+   "cases": 16,
+   "act": 8,
+   "ignore": 8,
+   "accuracy": 0.8125,
+   "auc": 0.875,
+   "median_eval_ms": 1048,
+   "max_eval_ms": 1064,
+   "split": {
+    "act_correct": 5,
+    "act_total": 8,
+    "ignore_correct": 8,
+    "ignore_total": 8
+   }
+  },
+  "cases": [
+   {
+    "id": "ho-a1",
+    "label": "act",
+    "note": "顶部 ALERTING 横幅＋44% 失败率",
+    "lang": "en",
+    "p_act": 0.8063,
+    "decision": "act",
+    "correct": true,
+    "eval_ms": 1024
+   },
+   {
+    "id": "ho-a2",
+    "label": "act",
+    "note": "panic 堆栈",
+    "lang": "en",
+    "p_act": 0.8206,
+    "decision": "act",
+    "correct": true,
+    "eval_ms": 1010
+   },
+   {
+    "id": "ho-a3",
+    "label": "act",
+    "note": "/v1/settle p99 38.5 秒",
+    "lang": "en",
+    "p_act": 0.6112,
+    "decision": "act",
+    "correct": true,
+    "eval_ms": 1049
+   },
+   {
+    "id": "ho-a4",
+    "label": "act",
+    "note": "三个 pod CrashLoopBackOff",
+    "lang": "en",
+    "p_act": 0.7347,
+    "decision": "act",
+    "correct": true,
+    "eval_ms": 1056
+   },
+   {
+    "id": "ho-a5",
+    "label": "act",
+    "note": "中文：连接池耗尽",
+    "lang": "zh",
+    "p_act": 0.0238,
+    "decision": "ignore",
+    "correct": false,
+    "eval_ms": 1043
+   },
+   {
+    "id": "ho-a6",
+    "label": "act",
+    "note": "磁盘只剩 2.2 GB",
+    "lang": "en",
+    "p_act": 0.7639,
+    "decision": "act",
+    "correct": true,
+    "eval_ms": 1059
+   },
+   {
+    "id": "ho-a7",
+    "label": "act",
+    "note": "曲线掉到 0 rpm",
+    "lang": "en",
+    "p_act": 0.2825,
+    "decision": "ignore",
+    "correct": false,
+    "eval_ms": 1034
+   },
+   {
+    "id": "ho-a8",
+    "label": "act",
+    "note": "证书两天后过期",
+    "lang": "en",
+    "p_act": 0.2172,
+    "decision": "ignore",
+    "correct": false,
+    "eval_ms": 1023
+   },
+   {
+    "id": "ho-i1",
+    "label": "ignore",
+    "note": "全绿",
+    "lang": "en",
+    "p_act": 0.0334,
+    "decision": "ignore",
+    "correct": true,
+    "eval_ms": 1042
+   },
+   {
+    "id": "ho-i2",
+    "label": "ignore",
+    "note": "植物照片",
+    "lang": "en",
+    "p_act": 0.0898,
+    "decision": "ignore",
+    "correct": true,
+    "eval_ms": 1044
+   },
+   {
+    "id": "ho-i3",
+    "label": "ignore",
+    "note": "进度正常",
+    "lang": "en",
+    "p_act": 0.1061,
+    "decision": "ignore",
+    "correct": true,
+    "eval_ms": 1048
+   },
+   {
+    "id": "ho-i4",
+    "label": "ignore",
+    "note": "日历",
+    "lang": "en",
+    "p_act": 0.0815,
+    "decision": "ignore",
+    "correct": true,
+    "eval_ms": 1059
+   },
+   {
+    "id": "ho-i5",
+    "label": "ignore",
+    "note": "收据",
+    "lang": "en",
+    "p_act": 0.1278,
+    "decision": "ignore",
+    "correct": true,
+    "eval_ms": 1022
+   },
+   {
+    "id": "ho-i6",
+    "label": "ignore",
+    "note": "中文会议纪要",
+    "lang": "zh",
+    "p_act": 0.0861,
+    "decision": "ignore",
+    "correct": true,
+    "eval_ms": 1060
+   },
+   {
+    "id": "ho-i7",
+    "label": "ignore",
+    "note": "表情包",
+    "lang": "en",
+    "p_act": 0.0817,
+    "decision": "ignore",
+    "correct": true,
+    "eval_ms": 1064
+   },
+   {
+    "id": "ho-i8",
+    "label": "ignore",
+    "note": "全绿状态页",
+    "lang": "en",
+    "p_act": 0.0516,
+    "decision": "ignore",
+    "correct": true,
+    "eval_ms": 1048
+   }
+  ],
+  "which_missed": [
+   "ho-a5",
+   "ho-a7",
+   "ho-a8"
+  ]
+ },
+ "pooled": {
+  "_what_this_is": "Both image sets read together — the figure src/README.md line 25 now quotes.",
+  "sets": "calibration/vision/cases.json (16) + calibration/vision/heldout.json (16)",
+  "cases": 32,
+  "act": 16,
+  "ignore": 16,
+  "accuracy": 0.78125,
+  "auc": 0.890625,
+  "split": {
+   "act_correct": 9,
+   "act_total": 16,
+   "ignore_correct": 16,
+   "ignore_total": 16
+  },
+  "per_half": {
+   "first": {
+    "accuracy": 0.75,
+    "auc": 0.875
+   },
+   "heldout": {
+    "accuracy": 0.8125,
+    "auc": 0.875
+   }
+  },
+  "reading": "the two halves agree: the same AUC to three places, all sixteen images with nothing to act on judged correctly, and roughly half the images that carry an incident missed. The gap is the model, not the set."
+ }
 }
