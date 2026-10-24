@@ -20,6 +20,15 @@
  * choice of model measured rather than assumed. It takes a `baseUrl` and speaks the
  * three endpoints that shape was measured through.
  *
+ * **It does not show the model a picture either, and it says so instead of dropping
+ * one.** The box carries the pictures in the delta (`BoxMedia`), and until this file
+ * noticed them nothing read that field: a screenshot was judged from its caption and
+ * the verdict looked exactly like one reached with the picture in front of the model.
+ * `/completion` takes no projector, so the image figures were taken on the one-shot
+ * `llama-mtmd-cli` rig and were never replayed over HTTP, and an unmeasured route is
+ * not a route this transport may quietly use — see `refusePictures` and
+ * `docs/decisions.md` row 22.
+ *
  * **The estimator is the calibration's, not a convenient one.** The shipped cut was
  * measured as the full next-token distribution summed over *every* token whose
  * decoded form strips to the option — `calibration/provenance.md`, and now
@@ -129,6 +138,7 @@ export function llamaWatchModel(server: LlamaServer): WatchModel {
   const artifact = server.artifact;
   return {
     async read(input: WatchInput): Promise<WatchReading> {
+      refusePictures(input);
       const templated = await applyTemplate(server, userTurn(artifact, input.prompt.text));
       const candidates = await completion(server, templated);
       // No `reason`: see above. What the kernel does with an absent one is its
@@ -136,6 +146,45 @@ export function llamaWatchModel(server: LlamaServer): WatchModel {
       return { probabilities: readingOf(candidates, input.options) };
     },
   };
+}
+
+/**
+ * A box carrying a picture is refused, because this transport cannot show it one.
+ *
+ * `box.ts` hands the judgement its pictures — `BoxMedia[]`, a key and a mime — and
+ * `agent-lifecycle.md` §2 requirement 2 asks a judgement to **see** an image. What
+ * arrives here is that box, and until now `read` used `state` not at all: the
+ * entries were rendered into text, the pictures were named in a field nothing read,
+ * and the model answered `act` or `ignore` about a screenshot it had never been
+ * given. That is the defect this refusal exists for — not a missing feature but a
+ * confident verdict from half the evidence, which looks exactly like a verdict.
+ *
+ * **Why it refuses instead of sending the picture.** `/completion` — the endpoint
+ * the shipped cut was measured through — takes no projector, so the image figures
+ * in `calibration/vision/` were taken on the one-shot `llama-mtmd-cli` rig and were
+ * never replayed over HTTP (`calibration/vision/server-transport.json`,
+ * *"Nothing about images … they are unmeasured through this transport"*). Reading a
+ * probability for an image-bearing judgement over a route nobody measured would be a
+ * reading the threshold was never calibrated against — `docs/decisions.md` row 19's
+ * failure, one layer down. So the route is refused until it is measured, and
+ * `docs/decisions.md` row 22 records the default with the words that would change it.
+ *
+ * The refusal is at read time rather than at construction because whether a picture
+ * is in the box is a fact about the room's current delta, not about the wiring: a
+ * room can be judged for months and then be sent a screenshot.
+ */
+function refusePictures(input: WatchInput): void {
+  const media = input.state?.media ?? [];
+  if (media.length === 0) return;
+  const first = media[0];
+  throw new Error(
+    `this judgement's box carries ${media.length} picture(s), the first being ` +
+      `${JSON.stringify(first.mime)} at ${JSON.stringify(first.key)}, and this transport ` +
+      'has no measured route for one: the image figures were taken on the llama-mtmd-cli ' +
+      'rig, /completion takes no projector, and reading a probability here anyway would ' +
+      'answer from text alone while looking like a verdict the model reached ' +
+      '(src/README.md line 25; docs/decisions.md row 22)',
+  );
 }
 
 /**
@@ -185,6 +234,14 @@ export interface ServerShape {
   nCtx: number;
   /** The build that answered, e.g. `0.7.0-dev`. */
   buildInfo: string;
+  /**
+   * Whether a projector is loaded, so an image could be seen at all.
+   *
+   * Read and recorded, never relied on to imply that one *is* sent: the transport
+   * has no measured route for a picture (`refusePictures` below, decisions row 22),
+   * so `true` here means "this server could", and nothing more.
+   */
+  vision: boolean;
 }
 
 /**
@@ -390,6 +447,7 @@ async function propsOf(server: LlamaServer): Promise<ServerShape> {
   const answer = (await request(server, '/props', 'GET')) as {
     chat_template?: unknown;
     build_info?: unknown;
+    modalities?: unknown;
     default_generation_settings?: { n_ctx?: unknown };
   } | null;
   const props = answer ?? {};
@@ -412,7 +470,17 @@ async function propsOf(server: LlamaServer): Promise<ServerShape> {
     chatTemplate,
     nCtx,
     buildInfo: typeof props.build_info === 'string' ? props.build_info : 'build unknown',
+    // `/props` reports this as an object of booleans (`{vision, video, audio}`); a
+    // server too old to report it is read as unable to see, which is the safe way
+    // round: it refuses rather than claims a capability nobody confirmed.
+    vision: visionOf(props.modalities),
   };
+}
+
+/** `modalities.vision`, read as a fact about the server rather than as a promise. */
+function visionOf(modalities: unknown): boolean {
+  if (typeof modalities !== 'object' || modalities === null) return false;
+  return (modalities as { vision?: unknown }).vision === true;
 }
 
 /** One POST, refused loudly when it did not arrive. */

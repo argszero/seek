@@ -3,7 +3,14 @@ import { test } from 'node:test';
 
 import { deliver } from './delivery.ts';
 import { makeWorld } from './fixtures.ts';
-import { bindOverServer, llamaWatchModel, strip, type Fetcher, type LlamaServer } from './llama.ts';
+import {
+  bindOverServer,
+  llamaWatchModel,
+  requireServerShape,
+  strip,
+  type Fetcher,
+  type LlamaServer,
+} from './llama.ts';
 import type { PromptArtifact } from './prompts.ts';
 import { watchAs, type OptionTokens, type WatchPrompt } from './watch.ts';
 
@@ -50,7 +57,10 @@ function fakeServer(
   const calls: Call[] = [];
   const fetcher: Fetcher = async (url, init) => {
     const path = new URL(url).pathname;
-    const body = JSON.parse(init.body) as Record<string, unknown>;
+    // `/props` is read with a GET and carries no body, so the recorder has to accept
+    // a request without one rather than parse `undefined`.
+    const body =
+      init.body === undefined ? {} : (JSON.parse(init.body) as Record<string, unknown>);
     calls.push({ path, body });
     const handler = routes[path];
     const payload = handler ? handler(body) : { error: 'no such route' };
@@ -433,4 +443,89 @@ test('the strip rule is the calibration\'s: letters and digits anywhere, lowerca
   assert.equal(strip('(act)'), 'act');
   assert.equal(strip('Action'), 'action');
   assert.equal(strip('!ignore.'), 'ignore');
+});
+
+test('a box that carries a picture is refused, because this transport cannot show it one', async () => {
+  // `box.ts` hands the judgement its pictures and `read` used not to look: the
+  // entries became text, the picture stayed a field, and the verdict came back as
+  // though the model had seen a screenshot it was never given.
+  const recorder = renderingServer();
+  const model = llamaWatchModel(serverOf(recorder));
+
+  await assert.rejects(
+    () =>
+      model.read({
+        prompt: PROMPT,
+        state: {
+          read: 1,
+          total: 1,
+          unread: 0,
+          delta: [],
+          media: [{ entryId: 'obs_1', messageId: 'msg_1', key: 'blob/shot.png', mime: 'image/png' }],
+        } as never,
+        options: TOKENS,
+        mask: { act: { token: 'act', id: 1 }, ignore: { token: 'ignore', id: 2 } },
+      }),
+    /carries 1 picture\(s\)[\s\S]*image\/png[\s\S]*no measured route/,
+  );
+  assert.equal(recorder.calls.length, 0, 'nothing is asked about a box half of which cannot travel');
+});
+
+test('a box with no picture in it judges exactly as it did before', async () => {
+  const recorder = renderingServer({ candidates: [
+    { token: 'act', logprob: Math.log(0.9) },
+    { token: 'ignore', logprob: Math.log(0.05) },
+  ] });
+  const model = llamaWatchModel(serverOf(recorder));
+
+  const reading = await model.read({
+    prompt: PROMPT,
+    state: { read: 1, total: 1, unread: 0, delta: [], media: [] } as never,
+    options: TOKENS,
+    mask: { act: { token: 'act', id: 1 }, ignore: { token: 'ignore', id: 2 } },
+  });
+
+  assert.ok(
+    (reading.probabilities[TOKENS.act] ?? 0) > 0.8,
+    'the text-only path is untouched by the refusal',
+  );
+  assert.equal(recorder.calls.filter((call) => call.path === '/completion').length, 1);
+});
+
+test('the server shape records whether a projector is loaded', async () => {
+  // `/props` reports `modalities: {vision, video, audio}`, and a server too old to
+  // report it is read as unable to see — the safe way round, since nothing here can
+  // send a picture anyway. The rest of the routes are present because the preflight
+  // also renders the question and counts it against the window.
+  const shapeOf = (modalities: unknown) => {
+    const tokenise = makeVocab();
+    return fakeServer({
+      '/props': () => ({
+        chat_template: 'a template',
+        build_info: 'test',
+        ...(modalities === undefined ? {} : { modalities }),
+        default_generation_settings: { n_ctx: 4096 },
+      }),
+      '/apply-template': () => ({ prompt: `${TEMPLATE_HEAD}a question${TEMPLATE_TAIL}` }),
+      '/tokenize': (body) => ({ tokens: tokenise(String(body.content)) }),
+    });
+  };
+
+  const seen = await requireServerShape(
+    serverOf(shapeOf({ vision: true, video: false, audio: false })),
+    SKELETON,
+  );
+  assert.equal(seen.vision, true);
+  assert.equal(seen.nCtx, 4096);
+  assert.equal(seen.buildInfo, 'test');
+
+  assert.equal(
+    (await requireServerShape(serverOf(shapeOf({ vision: false })), SKELETON)).vision,
+    false,
+  );
+  assert.equal(
+    (await requireServerShape(serverOf(shapeOf(undefined)), SKELETON)).vision,
+    false,
+    'no modalities reported is read as no projector',
+  );
 });
