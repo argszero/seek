@@ -94,13 +94,16 @@ There is **one** delivery path and **one** loop. A message to a room is delivere
 |---|---|---|
 | A DM, an @-mention, a reply to its own message | The inbox, like everything else | **Pass** — straight to stage 2, no watch call |
 | A room message that names nobody | The inbox | Everything else: rules, then the watch agent |
-| ~~A scheduled tick~~ | **Deferred 2026-10-23** — no timer for now: with nothing delivered, nothing runs | — |
+| **A reminder I scheduled coming due** | The inbox, as an entry of `kind: "reminder"` | **Pass** — same as an @-mention (§12) |
 
-**One wake source, for now: a message** (ruled 2026-10-23). A delivery into the inbox starts a tick; with nothing delivered, nothing runs at all. A timer was designed and **deferred the same day** as more machinery than the design needs yet — see below for what that costs.
+**One wake source: a delivery** (ruled 2026-10-23, and the schedule ruled 2026-10-24 did not change it). A delivery into the inbox starts a tick; with nothing delivered, nothing runs at all. **What the schedule added is a second producer of deliveries, not a second way to wake** — the clock itself is still deferred, and §12 says why the two are not the same thing.
 
-**What deferring the clock costs, recorded rather than smoothed over.** ①*Proactive outreach is now reachable only while awake.* A bot may still open a conversation with you (§10) or with another bot (§11.2), but only during a tick a message already started — so "it came to find you" always has a message somewhere upstream. ②*Nothing can wake on time*, so a `snooze` conditioned on "in five minutes" has nothing behind it; only event conditions ("when this gets a reply") work, because a reply is itself a delivery. Both are open questions in `decisions.md`, not settled here.
+**What deferring the clock cost, and how much of it the schedule repaid.** Both costs were written down on 2026-10-23 and neither is smoothed over; the schedule ruled the next day moved the line, and it is worth seeing exactly which half moved.
 
-**What the deferral buys is not only simplicity.** With no timer, the design makes no claim it cannot keep: there is no idle path at all, so nothing has to be argued about what an idle tick costs. The day a clock is added, the questions it was withdrawn over come back — what an idle tick may call, and what wakes a bot with an empty queue.
+- ①*Proactive outreach was reachable only while awake* — a bot could open a conversation with you (§10) or with another bot (§11.2), but only inside a tick somebody else's message had already started, so "it came to find you" always had a message upstream. **Repaid.** A bot can leave itself a reminder (§12) and act on it; the upstream entry is then its own yesterday's note rather than somebody's fresh message. What is *not* repaid: nothing makes a bot act at an instant it never wrote down.
+- ②*Nothing could wake on time*, so a `snooze` conditioned on "in five minutes" had nothing behind it. **Repaid**, by the loop writing a row (§12) and the row firing as a delivery.
+
+**What the deferral bought is still bought.** With no timer, there is **no idle path**: a bot with nothing delivered and nothing due is not running, so nothing has to be argued about what an idle tick may call. The schedule did not reopen that question, because its comparator is not a tick and touches no bot — it compares a number. **The question that would come back with a real clock has not come back**: nothing wakes a bot but a delivery, still.
 
 Why this matters more than it looks: with two roads, the same message could be answered twice — once by the direct road and once by a later tick that finds it still in the inbox. With one road there is nothing to reconcile, no "mark it handled" bookkeeping, and no ordering rule between two runners.
 
@@ -176,14 +179,14 @@ Appended one entry at a time, **never processed by a model**:
 ```json
 { "id": "...", "room": "oc_...", "msg": "om_...", "ts": 1698123456789,
   "sender": "ou_...", "fromAgent": "agent_id|null",
-  "kind": "text|image|file|toolcard|system",
+  "kind": "text|image|file|toolcard|system|reminder",
   "text": "……",
   "hints": { "mentionsMe": false, "asksQuestion": true, "repliesToMe": false,
              "keywordHit": ["release", "schedule"], "roomTemperature": "busy" },
   "state": "new" }
 ```
 
-- **Every entry comes from a message, and that is now the whole rule** (2026-10-23: the clock was deferred, and with it the `kind: "clock"` entry that would have carried a timer's own facts). One consequence worth keeping: the queue never contains anything the bot wrote to itself, so every entry has a sender other than this bot, and stage 0's first rule — no new entries, end of tick — is the only exit that ever fires on an empty queue.
+- **Every entry is a delivery, and there are two producers of deliveries** (2026-10-23: the clock was deferred, and with it the `kind: "clock"` entry that would have carried a timer's own facts; 2026-10-24: the schedule was ruled, and its due rows *are* deliveries). A person or another bot sends a message, or a schedule entry comes due — either way one entry lands in one inbox, and the tick that follows is the same tick. **This retires a claim that used to be true and is now false**: the queue no longer holds only messages from someone else, because a bot may leave itself a reminder (§12) and that entry's author is itself. What survives is the part that mattered — an entry is never *synthesised by the loop to have something to judge*, so stage 0's first rule (no new entries, end of tick) is still the only exit that fires on an empty queue.
 
 - `hints` are scored **by the producer, not by a model**: @ detection, question marks, whether it replies to me, keyword matches, message density. All of it is string and counting work that costs nothing.
 - **`mentionsMe` and `repliesToMe` are bot-level facts** (ruled 2026-10-23). They are computed once, when the message lands, against the bot — not per agent. No agent ever scans a room for its own name, and the watch agent could not: it is not addressable, so "an @ to me" is a question only the bot can answer. That is what makes stage 0's fast-pass a rule rather than a model call.
@@ -204,9 +207,9 @@ This is the core of the whole design:
 the bot's loop, per tick:
   ┌ Stage 0 · rules only, no model (settles everything that is certain and free)
   │  1. No new observations?   → end of tick, before anything else is considered
-  │  2. Rule says act? (@-mentioned / replied to / DM — read off the bot's own
-  │     hints, computed at delivery; "@-mentioned" means this bot's id appears
-  │     in the message's mentions[]) → straight to stage 2
+  │  2. Rule says act? (@-mentioned / replied to / DM / my own reminder coming
+  │     due — read off the bot's own hints, computed at delivery; "@-mentioned"
+  │     means this bot's id appears in the message's mentions[]) → stage 2
   │  3. Rule says ignore? (my own message / another bot's broadcast / muted room)
   │                            → mark them ignore, end of tick
   │  4. Everything else → stage 1 (call the watch agent)
@@ -285,11 +288,11 @@ When the watch agent decides to act, the work agent is woken with the entries an
 
 **The latency target stays a target, not a guarantee.** The common judgement is one call with no tool round in the low hundreds of milliseconds. A judgement that does call a tool costs a second round, and a 300 MB local model calling `bash` will rarely be worth it — so the expected shape is that the watch agent almost never uses its tools, while nothing forbids it and no separate toolset has to be maintained. Rules have already settled most traffic before it is called at all.
 
-### Backoff — deferred with the clock
+### Backoff — still gone, and the schedule does not bring it back
 
-**There is no interval to back off from** (2026-10-23: the clock was deferred). Earlier drafts of this section carried an exponential interval — one minute up to eight hours, EMRG's `_heartbeat_interval` reused — computed *from nothing*, which is only meaningful if something ticks when the queue is empty.
+**There is still no interval to back off from.** Earlier drafts carried an exponential interval — one minute up to eight hours, EMRG's `_heartbeat_interval` reused — computed *from nothing*, which is only meaningful if something ticks when the queue is empty. That was withdrawn with the clock on 2026-10-23, and the schedule ruled on 2026-10-24 does not restore it: the schedule is a table plus a comparator, and the comparator runs whether or not any bot needs anything (§12). Backing off would mean making the table miss its own due times.
 
-What remains true, and stays written down for the day a timer returns: **a quiet agent must consume almost nothing**, because that is the only premise under which "long-lived" is affordable. With no timer, the design satisfies this absolutely rather than approximately — no delivery, no tick, no call. Any timer added later has to earn its place against that standard, and the two questions it was withdrawn over — what an idle tick may call, and what wakes a bot with an empty queue — come back with it.
+What remains true, and is now satisfied in two different ways: **a quiet agent must consume almost nothing**, because that is the only premise under which "long-lived" is affordable. A bot with nothing delivered and nothing due satisfies it **absolutely** — no delivery, no tick, no call. The comparator that watches the schedule satisfies it **cheaply but not for free** — it compares a number once in a while, calls no model, and touches no bot. Any future mechanism has to earn its place against the same standard.
 
 ### Concurrency
 
@@ -342,6 +345,8 @@ Assume 10 agents, 5 rooms, 500 messages an hour.
 
 One correction to the table's denominator: traffic arrives **per message**, but a message costs work **per bot in the room** — ten bots and one message is ten inbox entries. The figures above hold only because stage 0 is free per bot; the moment any per-bot step costs a call, the multiplication matters and the table understates it.
 
+**The schedule comparator is the one background cost in the design, and it is not on this table** because it is not tokens: it reads the clock, compares it with the next due row and sleeps otherwise, calling no model and touching no bot. What it must never become is a tick — the moment the comparator calls a model to find out that nothing is due, this table is wrong by a factor of sixty per bot per hour.
+
 **Injection does not add a row to this table.** A direct message that arrives mid-turn lengthens the turn it lands in — one more round after the model re-reads its context — instead of starting a turn of its own. The saving is the turn's whole setup; the cost is that the context is sent again, which is what a round costs anyway. What can grow without a cap is only the length of one turn, and that is deliberate (§4, point 5).
 
 (Order-of-magnitude estimates, not measurements.)
@@ -357,8 +362,9 @@ Because the watch agent is an agent on a local model, **watch tokens are not mon
 | Component | What exists today | What is new |
 |---|---|---|
 | Agent identity | `projects.yml` → `agents.yml` (already decided) | the fields in §2 |
-| Main loop | `TaskHandler` (`scheduler.py:982`): heartbeat, interval/backoff, bounded cycles, stop/trigger/status, resume after restart | a new task type that runs stages 0 and 1 — **driven by delivery, not by the scheduler's heartbeat** (the clock was deferred 2026-10-23, so EMRG's interval machinery is not what calls it) |
-| Stage 2 · action | today's session turn (`_run_tool_loop_locked`) | open with "you chose to speak"; require the three closing notes |
+| Main loop | `TaskHandler` (`scheduler.py:982`): heartbeat, interval/backoff, bounded cycles, stop/trigger/status, resume after restart | a new task type that runs stages 0 and 1 — **driven by delivery, not by the scheduler's heartbeat**: EMRG's interval machinery is not what calls it, and a bot must never be woken by a beat |
+| Schedule | `TaskHandler`'s timer infrastructure exists, and `_heartbeat_interval` is the same shape | a **comparator over one global table** (§12) whose only output is a delivery. It runs on a timer; the timer's fingerprints must not reach a bot — nothing a bot sees may say "a beat happened" |
+| Stage 2 · action | today's session turn (`_run_tool_loop_locked`) | open with "you chose to speak". **Nothing else**: an earlier draft required three closing records, which was never ruled and was withdrawn 2026-10-23 |
 | Delivery into the inbox | room fan-out as a frame broadcast, but only to connected clients | server-side **fan-out into every member bot's inbox** (persisted, not in memory) — the one road in, for every kind of message |
 | Watch agent | `llm.py` already selects a model per session, and `session.compact()` already keeps a history per session | a **second row in `agents.yml` per bot**: same machinery, its own session and memory, a local model, smaller windows, a low `max_tokens` cap, and a read path to its sibling. Tools are EMRG's existing registry, unchanged — no watch-specific tool is added. Any unparseable verdict counts as no act |
 | Memory compaction | `session.compact()` rewrites the session's history in place | nothing to change *in kind*: each agent already has its own session file, so the two stores are separate by construction. What must be checked is that no code path compacts across them |
@@ -445,7 +451,7 @@ What "delegation" still means is the **intent**, not a mechanism: "do this and r
 
 ### 11.2 A chain may begin with an agent (ruled 2026-10-23)
 
-**The root rule is withdrawn.** It said a chain's root is a human message or a scheduled tick, and that an agent never opens a conversation with another agent. (A scheduled tick is itself deferred — see §1 — but the rule's withdrawal does not depend on it.) Ruled instead: **a bot may say the first word to another bot** — in a room both are in, or in a direct room it opened for that purpose.
+**The root rule is withdrawn.** It said a chain's root is a human message or a scheduled tick, and that an agent never opens a conversation with another agent. (What the rule named as its other root — a scheduled tick — is a reminder from the global schedule, ruled 2026-10-24 and described in §12; the rule's withdrawal does not depend on it either way.) Ruled instead: **a bot may say the first word to another bot** — in a room both are in, or in a direct room it opened for that purpose.
 
 Two reasons, both of them the host's own earlier rulings rather than new ones. A bot may already open a conversation with a **person** (§10, approved); the root rule was the only thing that forbade the identical act toward a peer, and that asymmetry was not asked for anywhere. And what the rule actually protected — a bound on the *set* of chains — is a bound nothing else was leaning on, given that a chain's length is capped by depth and a room's burst by the turn counter.
 
@@ -497,3 +503,51 @@ An agent-to-agent run collapses into one line — *"5 exchanges between Editor a
 The useful case is real and common: A lacks a capability or a piece of context B has, and the alternative — A guessing, or the user relaying by hand — is worse on every axis.
 
 And seek is one local process running every agent, which is the one place this design is *easier* than a distributed one: a single arbiter can see every chain in the system, so the depth wall is exact rather than approximate, and no coordination protocol is needed. The same property that makes the product private also makes the loop enforceable.
+
+---
+
+## 12. A global schedule every bot can write to (ruled 2026-10-24)
+
+**One table, one tool, and a due row arrives as a message.** The host's words: *"provide a global schedule — a tool for every bot to read and write it (when, what reminder, which bot); when an entry comes due, send the reminder to that bot automatically, as a direct message, equivalent to an @-mention."*
+
+### It is not the clock coming back
+
+The timer was withdrawn twice on 2026-10-23, and **neither reason survives this shape**:
+
+- It was **one heartbeat per bot** — machinery every bot paid for its own sake. This is one table in the process and one comparator that reads the clock. No model call, no per-bot state, nothing that grows with the number of bots.
+- It left **"what wakes a bot whose queue is empty?"** unanswerable. Here **nothing wakes a bot**: a row coming due at 09:00 is *a message written into one bot's inbox at 09:00*, and a delivered message wakes it exactly as a person's would. The wake rule is untouched, word for word; the schedule is a **second producer of deliveries**, beside people and other bots.
+
+That distinction is the whole of it, and it is worth stating as a rule the implementation can be checked against: **the schedule may produce deliveries, and it may never produce ticks.** A bot woken by "it is 09:00" rather than by an entry in its inbox is the defect.
+
+**What it repays.** The deferral's first recorded cost was that a purely message-triggered agent cannot keep a promise: with nothing upstream, "I will look at this tomorrow" had no way to come true. A bot can now leave itself that reminder and come back to it. It got the ability **by adding a producer of messages, not by adding a wake source** — which is why the earlier argument against the clock and this ruling are not in conflict.
+
+### The row
+
+```json
+{ "id": "...", "to": "bot_id", "at": 1698123456789,
+  "text": "remind me to check the release thread",
+  "createdBy": "agent_id", "createdAt": 1698123456789,
+  "state": "pending | fired | cancelled" }
+```
+
+- `to` is **a bot**, never an agent — the inbox is the bot's (§3), and an agent has no lifecycle of its own.
+- `text` is delivered **verbatim**: not summarised, not translated, not rewritten by any model on the way out. What the author wrote is what the bot reads back, and that is what makes a reminder a note to its future self rather than a fresh instruction.
+- One table, **every bot reads and writes it** — the host's words. So a bot can see what other bots have scheduled. That is a shared calendar rather than a private one, and it is recorded as a consequence rather than a gap: nothing filters the table by `to`.
+- `state` moves once, and never backwards. A `fired` row is kept for a while and then pruned; a `cancelled` row is a tombstone, because "I had planned this and dropped it" is information its author may want back.
+
+### The tool
+
+**`schedule` — the host's one named exception to "the tool set is EMRG's, unchanged".** It has three verbs and nothing else: **list**, **add**, **cancel**. No "run now", no recurrence, no priority, no condition language — a bot that wants to be reminded tomorrow writes the moment it means. It is available to every agent in `agents.yml` like any other tool, so which agents may use it is ordinary configuration and not a mechanism.
+
+**`snooze` with a time condition is performed by the loop, not by the watch agent.** The watch agent emits a verdict; the loop performs it (§4). So "not now, in five minutes" produces a schedule row written **by the loop**, and when it fires the original entry comes back. The watch agent still needs no tool call for this, which keeps its judgement at the one round the latency target was written for.
+
+### Firing
+
+A firing is **one write, and it is idempotent**: the row's `state` becomes `fired` in the same step that drops the delivery into the inbox, keyed by the row's `id`. A daemon that was closed when a row came due fires it on the next start — an instant missed is **not** a reminder skipped, and ten rows missed while the laptop slept fire in time order, each as its own delivery. Dropping them silently would be the same defect the injection path refuses (§4).
+
+### What it costs, recorded
+
+1. **The inbox can now hold an entry the bot wrote to itself.** The 2026-10-23 claim that it never could is retired (§3). What survives is the reason it existed: an entry is still never synthesised by the loop to give itself something to judge — a schedule row is a real thing somebody wrote, at a real stated moment.
+2. **A new tool exists**, against a standing rule that the tool set is EMRG's. The host named it; it is not an exception the implementer may widen. A `calendar` tool, a `cron` tool or a `remind` tool appearing beside it means the exception was read as a licence.
+3. **A shared writable table brings the usual three problems** — stale rows, unbounded growth, and two bots scheduling the same moment for the same bot. None is solved by a mechanism here: growth is bounded by pruning `fired` rows, and the rest is the same trade already accepted for everything else a bot does — its persona and the fact that all of it is on the record.
+4. **A bot can call itself awake forever.** A reminder takes the fast-pass (§4, stage 0 rule 2), so it does not count toward a room's consecutive-bot-turn cap — that cap exists to stop two bots trading turns in a room, and a bot reminding itself is not a conversation in a room. The loophole is real: a bot could schedule a reminder for its own next round, indefinitely. It is the same trade as the absent quota on proactive messages (§10), with the same defence, and it is written down rather than gated.

@@ -65,7 +65,8 @@ Bot and Agent split it the same way throughout: **the bot owns what is alive** (
 |---|---|---|
 | **Workspace** | Where work runs — a directory/project | Today's `cwd` in EMRG; bound by a Session, used by an Agent |
 | **Turn** | One action by an agent | What triggered it (which message, which watch), tokens spent, tools called, messages produced — **the atomic unit of cost and audit** |
-| **Observation** | One watch-queue entry, **on the bot's queue** (ruled 2026-10-23) | A reference to a Message + zero-cost hints (mentions me, asks a question, replies to me…) + a verdict (ignore / snooze / keep / act). One message enters one bot's queue once, not once per agent. **Every entry comes from a message** — the clock was deferred 2026-10-23, so a bot never queues an entry for itself. **An entry may skip the verdict altogether**: stage 0's fast-pass (@-mention, reply, direct message) consumes it without asking the watch agent, including when it is injected into a turn that is already running (`agent-lifecycle.md` §4). **The hints are derived at delivery for this bot and live here only** — `mentionsMe` is this bot's id found in the message's `mentions[]`, never a field written back onto the message |
+| **Observation** | One watch-queue entry, **on the bot's queue** (ruled 2026-10-23) | A reference to a Message + zero-cost hints (mentions me, asks a question, replies to me…) + a verdict (ignore / snooze / keep / act). One message enters one bot's queue once, not once per agent. **An entry is a delivery, and deliveries have two producers**: a message from a person or another bot, or a schedule entry coming due (ruled 2026-10-24) — the second is the one case where the entry's author is the bot itself. **An entry may skip the verdict altogether**: stage 0's fast-pass (@-mention, reply, direct message, reminder) consumes it without asking the watch agent, including when it is injected into a turn that is already running (`agent-lifecycle.md` §4). **The hints are derived at delivery for this bot and live here only** — `mentionsMe` is this bot's id found in the message's `mentions[]`, never a field written back onto the message |
+| **Schedule** | One row in **one global table**, every bot reads and writes it (ruled 2026-10-24) | `when` + `what reminder` + `which bot`. Not a per-bot timer and not an entity on the bot: a single table in the process, plus a comparator. When a row comes due, its `text` becomes an Observation of `kind: "reminder"` on the target bot's queue — a delivery, so the ordinary wake rule applies unchanged. The row is written by a tool (`schedule`), never by the runtime on someone's behalf, and its text is delivered verbatim |
 | **Memory** | Three levels | Agent diary (cross-room, long-lived) / room digest (rolling, per room) / session memory (today's EMRG session memory) |
 
 ---
@@ -153,7 +154,9 @@ Bot and Agent split it the same way throughout: **the bot owns what is alive** (
 
 ## 8. On-disk shape (brief)
 
-One `seek.json` per account (as today), split into `bots / agents / principals / rooms / memberships / sessions[agentId] / messages[roomId] / observations[botId] / turns / memories`.
+One `seek.json` per account (as today), split into `bots / agents / principals / rooms / memberships / sessions[agentId] / messages[roomId] / observations[botId] / turns / memories / schedule`.
+
+`schedule` is **not** sharded by bot, unlike `observations`: it is one global table every bot reads and writes (ruled 2026-10-24), so sharding it would make the one operation it exists for — a bot writing a row for another bot — a cross-shard write.
 
 `bots` and `agents` are separate shards on purpose: a bot is a handful of rows that change when someone renames it, while agents are the things that are many and busy. Keeping the identity in its own shard means a rename is one write, not one per agent.
 
