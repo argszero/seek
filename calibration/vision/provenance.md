@@ -36,6 +36,7 @@ and a green status board — the ordinary traffic of an ops room.
 | `img/*.png` | the images themselves, at the size they were measured |
 | `heldout.json` | the second 16 cases, written after the first 16 had been measured and used to pick nothing |
 | `measured.json` | the readings: model files and their hashes, the runner, per-case `p_act`, accuracy, AUC, latency, and the diagnostic below |
+| `probe.json` | the prompt probe: four wordings of the ask over the same 32 cases, and the operating-point finding below |
 | `provenance.md` / `provenance.zh-CN.md` | this record |
 
 ## How the reading was taken
@@ -87,11 +88,50 @@ with an ops screenshot, not an accident of sixteen pictures. That is the other h
 failure line 25 warns about, so the multimodal requirement is **measured and still not met**,
 and line 25 stays unticked with the number beside it instead of with the word "unmeasured".
 
+**But those seven misses are not the model's ceiling on these pictures, and this record was
+wrong to imply a bare model limit.** `probe.json` holds the experiment: with the model, the
+prompt and the 32 cases all fixed, a cut of **0.150** scores the same checkpoint **29/32 =
+0.906** — act 13/16 rather than 9/16, with `ignore` still perfect. No `ignore` case anywhere
+in either half exceeds p_act 0.134, while act cases have medians of 0.616 and 0.735, so the
+classes barely overlap and it is the **0.600 cut slicing through the middle of the act range**
+that produces most of the misses, not a failure to see. The cut was calibrated on text cases
+(`docs/decisions.md` row 12) and does not transfer to image-bearing messages. Choosing it on
+one half and scoring the other gives 0.150 from each half independently, cross-validated at
+0.906 — so the finding is not a cut picked on the cases that then scored it, though two folds
+of sixteen synthetic screenshots still is not a calibrated operating point.
+
 **Resolution was ruled out as the cause.** Measured on the first set: raising the image token budget from the
 projector's default to 1024 does not fix the misses and costs about three times the latency:
 `a4` rises 0.438 → 0.739 and becomes correct, `a1` falls 0.616 → 0.585 and becomes wrong, and
 `a5`/`a6`/`a8` rise but stay under the cut. The default budget is the better operating point
 and the misses are judgement, not sampling.
+
+## Does the wording or the cut carry the gap?
+
+Two explanations survive a reading of 9/16: the model cannot see what an ops screenshot
+means, or the ask does not point it at the screenshot. `calibration/provenance.md` records
+that for the text path *rewording alone moved one model's discrimination from 0.09 to 0.77*,
+so the second is not a straw man. `probe.json` tests it: the model and all 32 cases held
+fixed, four wordings of the ask, the variants written before any of them was run, and the
+answer a single token from `{act, ignore}` in every one, as line 26 requires.
+
+| variant | at 0.600 | AUC | `act` | `ignore` | its own best cut | there |
+|---|---|---|---|---|---|---|
+| V0 the shipped ask (control) | 0.781 | 0.891 | 9/16 | 16/16 | 0.150 | **0.906** |
+| V1 the attachment is named in the ask | 0.656 | 0.922 | 5/16 | 16/16 | 0.150 | 0.875 |
+| V2 the system line says screenshots matter | 0.781 | 0.914 | 9/16 | 16/16 | 0.175 | 0.906 |
+| V3 on-call incident framing | 0.688 | 0.957 | 6/16 | 16/16 | 0.075 | 0.906 |
+
+**Wording is not the lever.** Naming the screenshot in the ask makes it *worse* at the shipped
+cut, and once each variant is allowed its own best cut they all land at 0.906 or below — V3
+buys one more act case by giving back one ignore case, which is a trade rather than an
+improvement. Note what the AUC column does: it climbs to 0.957 while accuracy falls, because
+the rewording pushes the whole distribution down; an AUC gain the kernel cannot spend at its
+operating point is not a gain.
+
+**The cut is.** That is the finding worth carrying: the vision gap is mostly an
+operating-point mismatch, and an operating point is cheap to question and expensive to
+assume.
 
 ## What this material does not settle
 

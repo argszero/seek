@@ -1,0 +1,1121 @@
+{
+ "_what_this_is": "A prompt probe on the image corpus: the model and the 32 cases held fixed, only the words of the ask varied — the experiment that decides whether the vision gap belongs to the ask or to the model.",
+ "_why_they_exist": "the reading on cases.json and heldout.json left act at 9/16, and two explanations survive it: the model cannot see what an ops screenshot means, or the ask does not point it at the screenshot. calibration/provenance.md records that for the text path, rewording alone moved one model's discrimination from 0.09 to 0.77, so the question is not academic.",
+ "_how_to_read_it": "Variants V1-V3 were written before any of them was run. The answer stays one word from {act, ignore} in every variant, because src/README.md line 26 requires the option to be a single token — this probes the wording of the ask, not the shape of the question.",
+ "model": "the same shipped Q4_0 checkpoint and Q8 projector, the same 32 cases, cut 0.600 unless stated",
+ "cases": 32,
+ "variants": [
+  {
+   "id": "V0",
+   "name": "shipped (control)",
+   "system": "You are the ops bot of a payments team. Your job: catch incidents and answer questions the team asks. You stay quiet otherwise.",
+   "question": "Do you need to do something about this message? Answer act or ignore.",
+   "accuracy_at_0_600": 0.7812,
+   "auc": 0.8906,
+   "act_correct": 9,
+   "act_total": 16,
+   "ignore_correct": 16,
+   "ignore_total": 16,
+   "best_cut": 0.15,
+   "accuracy_at_best_cut": 0.9062,
+   "act_at_best_cut": 13,
+   "ignore_at_best_cut": 16,
+   "cases": [
+    {
+     "id": "a1",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.615714,
+     "decision": "act",
+     "correct": true
+    },
+    {
+     "id": "a2",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.81906,
+     "decision": "act",
+     "correct": true
+    },
+    {
+     "id": "a3",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.679118,
+     "decision": "act",
+     "correct": true
+    },
+    {
+     "id": "a4",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.438493,
+     "decision": "ignore",
+     "correct": false
+    },
+    {
+     "id": "a5",
+     "label": "act",
+     "lang": "zh",
+     "p_act": 0.105189,
+     "decision": "ignore",
+     "correct": false
+    },
+    {
+     "id": "a6",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.095066,
+     "decision": "ignore",
+     "correct": false
+    },
+    {
+     "id": "a7",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.861876,
+     "decision": "act",
+     "correct": true
+    },
+    {
+     "id": "a8",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.167987,
+     "decision": "ignore",
+     "correct": false
+    },
+    {
+     "id": "i1",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.110922,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "i2",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.073992,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "i3",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.044357,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "i4",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.068728,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "i5",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.056261,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "i6",
+     "label": "ignore",
+     "lang": "zh",
+     "p_act": 0.134009,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "i7",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.126194,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "i8",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.109916,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "ho-a1",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.806265,
+     "decision": "act",
+     "correct": true
+    },
+    {
+     "id": "ho-a2",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.820554,
+     "decision": "act",
+     "correct": true
+    },
+    {
+     "id": "ho-a3",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.611176,
+     "decision": "act",
+     "correct": true
+    },
+    {
+     "id": "ho-a4",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.734717,
+     "decision": "act",
+     "correct": true
+    },
+    {
+     "id": "ho-a5",
+     "label": "act",
+     "lang": "zh",
+     "p_act": 0.023839,
+     "decision": "ignore",
+     "correct": false
+    },
+    {
+     "id": "ho-a6",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.763871,
+     "decision": "act",
+     "correct": true
+    },
+    {
+     "id": "ho-a7",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.282517,
+     "decision": "ignore",
+     "correct": false
+    },
+    {
+     "id": "ho-a8",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.217157,
+     "decision": "ignore",
+     "correct": false
+    },
+    {
+     "id": "ho-i1",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.033397,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "ho-i2",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.08979,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "ho-i3",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.106066,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "ho-i4",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.081456,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "ho-i5",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.127804,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "ho-i6",
+     "label": "ignore",
+     "lang": "zh",
+     "p_act": 0.086111,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "ho-i7",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.081742,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "ho-i8",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.051585,
+     "decision": "ignore",
+     "correct": true
+    }
+   ]
+  },
+  {
+   "id": "V1",
+   "name": "the attachment is named in the ask",
+   "system": "You are the ops bot of a payments team. Your job: catch incidents and answer questions the team asks. You stay quiet otherwise.",
+   "question": "A screenshot is attached to this message. Consider what it shows as well as what the text says: do you need to do something? Answer act or ignore.",
+   "accuracy_at_0_600": 0.6562,
+   "auc": 0.9219,
+   "act_correct": 5,
+   "act_total": 16,
+   "ignore_correct": 16,
+   "ignore_total": 16,
+   "best_cut": 0.15,
+   "accuracy_at_best_cut": 0.875,
+   "act_at_best_cut": 12,
+   "ignore_at_best_cut": 16,
+   "cases": [
+    {
+     "id": "a1",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.617278,
+     "decision": "act",
+     "correct": true
+    },
+    {
+     "id": "a2",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.652334,
+     "decision": "act",
+     "correct": true
+    },
+    {
+     "id": "a3",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.694118,
+     "decision": "act",
+     "correct": true
+    },
+    {
+     "id": "a4",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.140736,
+     "decision": "ignore",
+     "correct": false
+    },
+    {
+     "id": "a5",
+     "label": "act",
+     "lang": "zh",
+     "p_act": 0.053817,
+     "decision": "ignore",
+     "correct": false
+    },
+    {
+     "id": "a6",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.065878,
+     "decision": "ignore",
+     "correct": false
+    },
+    {
+     "id": "a7",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.823958,
+     "decision": "act",
+     "correct": true
+    },
+    {
+     "id": "a8",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.464151,
+     "decision": "ignore",
+     "correct": false
+    },
+    {
+     "id": "i1",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.089885,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "i2",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.011359,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "i3",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.010191,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "i4",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.01834,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "i5",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.025412,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "i6",
+     "label": "ignore",
+     "lang": "zh",
+     "p_act": 0.021064,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "i7",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.041781,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "i8",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.038406,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "ho-a1",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.863231,
+     "decision": "act",
+     "correct": true
+    },
+    {
+     "id": "ho-a2",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.559296,
+     "decision": "ignore",
+     "correct": false
+    },
+    {
+     "id": "ho-a3",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.333374,
+     "decision": "ignore",
+     "correct": false
+    },
+    {
+     "id": "ho-a4",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.207504,
+     "decision": "ignore",
+     "correct": false
+    },
+    {
+     "id": "ho-a5",
+     "label": "act",
+     "lang": "zh",
+     "p_act": 0.019465,
+     "decision": "ignore",
+     "correct": false
+    },
+    {
+     "id": "ho-a6",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.521262,
+     "decision": "ignore",
+     "correct": false
+    },
+    {
+     "id": "ho-a7",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.294502,
+     "decision": "ignore",
+     "correct": false
+    },
+    {
+     "id": "ho-a8",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.260429,
+     "decision": "ignore",
+     "correct": false
+    },
+    {
+     "id": "ho-i1",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.020217,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "ho-i2",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.02545,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "ho-i3",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.021036,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "ho-i4",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.035131,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "ho-i5",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.097544,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "ho-i6",
+     "label": "ignore",
+     "lang": "zh",
+     "p_act": 0.129841,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "ho-i7",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.127498,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "ho-i8",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.015316,
+     "decision": "ignore",
+     "correct": true
+    }
+   ]
+  },
+  {
+   "id": "V2",
+   "name": "the system line says screenshots matter",
+   "system": "You are the ops bot of a payments team. Your job: catch incidents and answer questions the team asks. You stay quiet otherwise. Messages may carry screenshots; what a screenshot shows matters as much as the words that come with it.",
+   "question": "Do you need to do something about this message? Answer act or ignore.",
+   "accuracy_at_0_600": 0.7812,
+   "auc": 0.9141,
+   "act_correct": 9,
+   "act_total": 16,
+   "ignore_correct": 16,
+   "ignore_total": 16,
+   "best_cut": 0.175,
+   "accuracy_at_best_cut": 0.9062,
+   "act_at_best_cut": 13,
+   "ignore_at_best_cut": 16,
+   "cases": [
+    {
+     "id": "a1",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.705788,
+     "decision": "act",
+     "correct": true
+    },
+    {
+     "id": "a2",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.832373,
+     "decision": "act",
+     "correct": true
+    },
+    {
+     "id": "a3",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.703247,
+     "decision": "act",
+     "correct": true
+    },
+    {
+     "id": "a4",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.567158,
+     "decision": "ignore",
+     "correct": false
+    },
+    {
+     "id": "a5",
+     "label": "act",
+     "lang": "zh",
+     "p_act": 0.170409,
+     "decision": "ignore",
+     "correct": false
+    },
+    {
+     "id": "a6",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.11941,
+     "decision": "ignore",
+     "correct": false
+    },
+    {
+     "id": "a7",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.841902,
+     "decision": "act",
+     "correct": true
+    },
+    {
+     "id": "a8",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.222185,
+     "decision": "ignore",
+     "correct": false
+    },
+    {
+     "id": "i1",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.139268,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "i2",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.083914,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "i3",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.044465,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "i4",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.063931,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "i5",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.053746,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "i6",
+     "label": "ignore",
+     "lang": "zh",
+     "p_act": 0.155691,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "i7",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.140096,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "i8",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.115465,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "ho-a1",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.80126,
+     "decision": "act",
+     "correct": true
+    },
+    {
+     "id": "ho-a2",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.807483,
+     "decision": "act",
+     "correct": true
+    },
+    {
+     "id": "ho-a3",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.674569,
+     "decision": "act",
+     "correct": true
+    },
+    {
+     "id": "ho-a4",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.703707,
+     "decision": "act",
+     "correct": true
+    },
+    {
+     "id": "ho-a5",
+     "label": "act",
+     "lang": "zh",
+     "p_act": 0.035692,
+     "decision": "ignore",
+     "correct": false
+    },
+    {
+     "id": "ho-a6",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.758895,
+     "decision": "act",
+     "correct": true
+    },
+    {
+     "id": "ho-a7",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.338338,
+     "decision": "ignore",
+     "correct": false
+    },
+    {
+     "id": "ho-a8",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.313434,
+     "decision": "ignore",
+     "correct": false
+    },
+    {
+     "id": "ho-i1",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.041921,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "ho-i2",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.139876,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "ho-i3",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.130331,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "ho-i4",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.101636,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "ho-i5",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.153947,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "ho-i6",
+     "label": "ignore",
+     "lang": "zh",
+     "p_act": 0.08641,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "ho-i7",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.106898,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "ho-i8",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.063987,
+     "decision": "ignore",
+     "correct": true
+    }
+   ]
+  },
+  {
+   "id": "V3",
+   "name": "on-call incident framing",
+   "system": "You are the ops bot of a payments team. Your job: catch incidents and answer questions the team asks. You stay quiet otherwise.",
+   "question": "You are on call for this team. Does this message, or the screenshot attached to it, show an incident or a request you must handle now? Answer act or ignore.",
+   "accuracy_at_0_600": 0.6875,
+   "auc": 0.957,
+   "act_correct": 6,
+   "act_total": 16,
+   "ignore_correct": 16,
+   "ignore_total": 16,
+   "best_cut": 0.075,
+   "accuracy_at_best_cut": 0.9062,
+   "act_at_best_cut": 14,
+   "ignore_at_best_cut": 15,
+   "cases": [
+    {
+     "id": "a1",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.589875,
+     "decision": "ignore",
+     "correct": false
+    },
+    {
+     "id": "a2",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.436994,
+     "decision": "ignore",
+     "correct": false
+    },
+    {
+     "id": "a3",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.874671,
+     "decision": "act",
+     "correct": true
+    },
+    {
+     "id": "a4",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.090821,
+     "decision": "ignore",
+     "correct": false
+    },
+    {
+     "id": "a5",
+     "label": "act",
+     "lang": "zh",
+     "p_act": 0.054737,
+     "decision": "ignore",
+     "correct": false
+    },
+    {
+     "id": "a6",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.706174,
+     "decision": "act",
+     "correct": true
+    },
+    {
+     "id": "a7",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.717639,
+     "decision": "act",
+     "correct": true
+    },
+    {
+     "id": "a8",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.238438,
+     "decision": "ignore",
+     "correct": false
+    },
+    {
+     "id": "i1",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.013506,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "i2",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.010968,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "i3",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.025042,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "i4",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.057026,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "i5",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.018866,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "i6",
+     "label": "ignore",
+     "lang": "zh",
+     "p_act": 0.005874,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "i7",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.03364,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "i8",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.025174,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "ho-a1",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.865361,
+     "decision": "act",
+     "correct": true
+    },
+    {
+     "id": "ho-a2",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.744133,
+     "decision": "act",
+     "correct": true
+    },
+    {
+     "id": "ho-a3",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.172917,
+     "decision": "ignore",
+     "correct": false
+    },
+    {
+     "id": "ho-a4",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.277707,
+     "decision": "ignore",
+     "correct": false
+    },
+    {
+     "id": "ho-a5",
+     "label": "act",
+     "lang": "zh",
+     "p_act": 0.033334,
+     "decision": "ignore",
+     "correct": false
+    },
+    {
+     "id": "ho-a6",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.739904,
+     "decision": "act",
+     "correct": true
+    },
+    {
+     "id": "ho-a7",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.121321,
+     "decision": "ignore",
+     "correct": false
+    },
+    {
+     "id": "ho-a8",
+     "label": "act",
+     "lang": "en",
+     "p_act": 0.144365,
+     "decision": "ignore",
+     "correct": false
+    },
+    {
+     "id": "ho-i1",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.017122,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "ho-i2",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.010377,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "ho-i3",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.036205,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "ho-i4",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.018354,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "ho-i5",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.052805,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "ho-i6",
+     "label": "ignore",
+     "lang": "zh",
+     "p_act": 0.059973,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "ho-i7",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.143756,
+     "decision": "ignore",
+     "correct": true
+    },
+    {
+     "id": "ho-i8",
+     "label": "ignore",
+     "lang": "en",
+     "p_act": 0.008239,
+     "decision": "ignore",
+     "correct": true
+    }
+   ]
+  }
+ ],
+ "what_the_variants_say": {
+  "headline": "Wording does not close the gap. Every variant that names the screenshot scores no better at 0.600, and none beats the control's accuracy once each is allowed its own best cut.",
+  "auc_rises_but_accuracy_falls": "AUC climbs from 0.891 to 0.957 while accuracy at 0.600 falls from 0.781 to 0.688: the rewording pushes the whole distribution down, improving the ordering while moving fewer act cases over a fixed bar. An AUC gain the kernel cannot spend is not a gain.",
+  "best_cut_flat": "At each variant's own best cut all four land on 0.906 or below: V0 0.906, V1 0.875, V2 0.906, V3 0.906. V3 buys one more act case (14/16) by giving back one ignore case (15/16), which is a trade, not an improvement."
+ },
+ "the_finding_that_matters": {
+  "what": "The control's 9/16 at the shipped 0.600 is not the model's ceiling on these cases. At a cut of 0.150 the same checkpoint, same prompt, same cases score 0.906 with act 13/16 and ignore still 16/16 perfect.",
+  "why_the_cut_is_wrong_here": "0.600 was calibrated on text cases (docs/decisions.md row 12). On image-bearing messages the probabilities sit lower: across both halves no ignore case ever exceeds p_act 0.134, while act cases have medians of 0.616 and 0.735 and minimums of 0.095 and 0.024. The classes barely overlap — AUC 0.891 — but 0.600 slices through the middle of the act range.",
+  "not_self_chosen": "The cut was not picked on the cases that then scored it: choosing it on one half and scoring the other gives 0.150 from each half independently, with cross-validated accuracy 0.906 (heldout 15/16, first 14/16).",
+  "still_a_32_case_result": "Two folds of sixteen is not a calibrated operating point, and both halves are synthetic screenshots. What it establishes is where the gap lives, not what the cut should be."
+ },
+ "what_was_not_measured": [
+  "The text path was not re-measured, so the claim that image verdicts sit lower than text ones rests on the two sets' own earlier readings (text AUC 1.000 at 0.600 on set4) rather than on a run that interleaves them.",
+  "No cut for image-bearing messages is proposed here. Changing the operating point is docs/decisions.md row 12, and choosing it needs a set written for that purpose.",
+  "One message with one image, rendered screenshots, 32 cases — the same limits the two reading files carry."
+ ]
+}
