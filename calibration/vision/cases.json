@@ -1,0 +1,141 @@
+{
+ "_what_this_is": "Image-bearing act-or-not cases for the watch gate: the label is derivable only from the picture, never from the caption.",
+ "_why_they_exist": "src/README.md line 25 requires the watch model to see images and be scored on real watch cases; calibration/provenance.md recorded that no image case had ever been run.",
+ "source": "hand-written in this project's own session (seek-opensource-task), 2026-10-25",
+ "question": "Do you need to do something about this message? Answer act or ignore.",
+ "labels": {
+  "act": "the picture shows something this bot must act on",
+  "ignore": "the picture shows nothing this bot must act on"
+ },
+ "design_note": "Every caption is deliberately uninformative ('fyi', 'just landed', 'lol'): if a label could be read from the words, the case would not test vision at all.",
+ "cases": [
+  {
+   "id": "a1",
+   "label": "act",
+   "image": "img/a1.png",
+   "text": "look at this",
+   "note": "图里才有 5xx 11.4%，文字看不出",
+   "lang": "en"
+  },
+  {
+   "id": "a2",
+   "label": "act",
+   "image": "img/a2.png",
+   "text": "attached the graph",
+   "note": "曲线崩了才是信号",
+   "lang": "en"
+  },
+  {
+   "id": "a3",
+   "label": "act",
+   "image": "img/a3.png",
+   "text": "anyone seen this",
+   "note": "截图里是宕机",
+   "lang": "en"
+  },
+  {
+   "id": "a4",
+   "label": "act",
+   "image": "img/a4.png",
+   "text": "this is from prod node 3",
+   "note": "盘满了",
+   "lang": "en"
+  },
+  {
+   "id": "a5",
+   "label": "act",
+   "image": "img/a5.png",
+   "text": "群里发的，你看下",
+   "note": "中文截图，只有图能看出是支付故障",
+   "lang": "zh"
+  },
+  {
+   "id": "a6",
+   "label": "act",
+   "image": "img/a6.png",
+   "text": "just landed",
+   "note": "部署失败",
+   "lang": "en"
+  },
+  {
+   "id": "a7",
+   "label": "act",
+   "image": "img/a7.png",
+   "text": "saw this on the board",
+   "note": "登录全挂",
+   "lang": "en"
+  },
+  {
+   "id": "a8",
+   "label": "act",
+   "image": "img/a8.png",
+   "text": "fyi",
+   "note": "积压爆了",
+   "lang": "en"
+  },
+  {
+   "id": "i1",
+   "label": "ignore",
+   "image": "img/i1.png",
+   "text": "green board for today",
+   "note": "全绿，没事",
+   "lang": "en"
+  },
+  {
+   "id": "i2",
+   "label": "ignore",
+   "image": "img/i2.png",
+   "text": "photo from yesterday",
+   "note": "聚餐照片",
+   "lang": "en"
+  },
+  {
+   "id": "i3",
+   "label": "ignore",
+   "image": "img/i3.png",
+   "text": "slide from standup",
+   "note": "纯会议幻灯片",
+   "lang": "en"
+  },
+  {
+   "id": "i4",
+   "label": "ignore",
+   "image": "img/i4.png",
+   "text": "lol",
+   "note": "无关图片",
+   "lang": "en"
+  },
+  {
+   "id": "i5",
+   "label": "ignore",
+   "image": "img/i5.png",
+   "text": "dashboard looks fine",
+   "note": "正常增长",
+   "lang": "en"
+  },
+  {
+   "id": "i6",
+   "label": "ignore",
+   "image": "img/i6.png",
+   "text": "周四的纪要",
+   "note": "会议纪要，无关",
+   "lang": "zh"
+  },
+  {
+   "id": "i7",
+   "label": "ignore",
+   "image": "img/i7.png",
+   "text": "board after the meeting",
+   "note": "白板照片",
+   "lang": "en"
+  },
+  {
+   "id": "i8",
+   "label": "ignore",
+   "image": "img/i8.png",
+   "text": "expense report",
+   "note": "付款凭证，非故障",
+   "lang": "en"
+  }
+ ]
+}
