@@ -210,18 +210,41 @@ test('who spoke is counted off the messages, not stored on the box', () => {
   assert.equal(box.whoSpoke.length, 2);
 });
 
-test('who spoke puts the busiest speaker first', () => {
+test('who spoke puts the busiest speaker first, whatever the ids say', () => {
   const world = makeWorld();
-  fill(world, 1, world.botB);
-  fill(world, 3, world.me);
+  // The ids are fixed, and deliberately the wrong way round: the speaker who says
+  // the most sorts *last* by id. `newId` is a random UUID slice, so a test over
+  // `makeWorld`'s own principals agreed with an id sort about half the time and
+  // pinned nothing — which is how a mutation survived a green suite.
+  const quiet = 'ou_0000000000000001';
+  const busy = 'ou_0000000000000002';
+  const speakers: [string, string][] = [
+    [quiet, 'quiet'],
+    [busy, 'busy'],
+  ];
+  for (const [id, name] of speakers) {
+    world.store.data.principals[id] = { id, kind: 'human', name };
+    const membership = `mb_${name}`;
+    world.store.data.memberships[membership] = {
+      id: membership,
+      room_id: world.room,
+      principal_id: id,
+      joined_at: '2026-10-24T00:00:00.000Z',
+      role: 'member',
+    };
+  }
+  fill(world, 1, quiet);
+  fill(world, 3, busy);
 
   // The order is part of what the box says: a judgement reads the room’s
   // shape, so the speaker it hears most has to come first.
   const box = buildBox(world.store, world.botA, world.room, { window: 10 });
   assert.deepEqual(
     box.whoSpoke.map((speaker) => speaker.principalId),
-    [world.me, world.botB],
+    [busy, quiet],
+    'by how much they said, not by id',
   );
+  assert.deepEqual(box.whoSpoke.map((speaker) => speaker.count), [3, 1]);
 });
 
 test('the question set is the caller’s, and absent when nobody has one', () => {
@@ -268,4 +291,41 @@ test('a box is per bot: each bot reads its own queue', () => {
   assert.equal(boxA.total, 2);
   assert.equal(boxB.total, 2);
   assert.notEqual(boxA.delta[0].id, boxB.delta[0].id, 'two entries, one per bot');
+});
+
+test('the entries in flight are part of the delta the box reads', async () => {
+  const world = makeWorld();
+  const ids = fill(world, 2);
+  // The loop pops the whole queue before stage 0 or stage 1 sees anything, so a
+  // box built now from the queue alone would have forgotten what woke the bot.
+  const inFlight = await world.store.drain(world.botA);
+  const later = fill(world, 1);
+
+  const queued = buildBox(world.store, world.botA, world.room, { window: 10 });
+  assert.equal(queued.total, 1, 'the queue alone has forgotten them');
+
+  const box = buildBox(world.store, world.botA, world.room, { window: 10, inFlight });
+  assert.equal(box.total, 3);
+  assert.equal(box.read + box.unread, box.total);
+  assert.deepEqual(
+    box.delta.map((entry) => entry.message_id),
+    [later[0], ids[1], ids[0]],
+    'in flight first, because the pop that removed them was atomic',
+  );
+});
+
+test('an in-flight entry from another room is not let into this room\'s box', async () => {
+  const world = makeWorld();
+  const ids = fill(world, 1);
+  const inFlight = await world.store.drain(world.botA);
+  const stray = { ...inFlight[0], id: 'ob_elsewhere', room_id: 'oc_elsewhere' };
+
+  const box = buildBox(world.store, world.botA, world.room, {
+    window: 10,
+    inFlight: [stray],
+  });
+
+  assert.equal(box.total, 0, 'a box is one room\'s');
+  assert.deepEqual(box.delta, []);
+  assert.equal(ids.length, 1);
 });
