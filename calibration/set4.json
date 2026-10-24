@@ -1,0 +1,108 @@
+{
+ "source": "validate.py:SET4",
+ "role": "the set written after all prompt selection",
+ "labels": {
+  "act": "this bot should speak or do work now",
+  "ignore": "nothing to do with this bot",
+  "keep": "relevant, but nothing to do yet",
+  "snooze": "decide later / needs a clock"
+ },
+ "cases": [
+  {
+   "label": "act",
+   "text": "对账任务今天凌晨跑失败了，需要人看一下"
+  },
+  {
+   "label": "act",
+   "text": "The settlement batch failed at 03:00, nothing was sent to the bank."
+  },
+  {
+   "label": "act",
+   "text": "@ops-bot 退款申请一直卡在审核中，客户催了两次"
+  },
+  {
+   "label": "act",
+   "text": "We're getting 429s from the upstream PSP on every retry."
+  },
+  {
+   "label": "act",
+   "text": "支付成功的订单没有回调，订单状态一直是待支付"
+  },
+  {
+   "label": "act",
+   "text": "Can someone check why the CSV export is empty for yesterday?"
+  },
+  {
+   "label": "act",
+   "text": "线上支付页面白屏了，用户下不了单"
+  },
+  {
+   "label": "act",
+   "text": "Our nightly reconciliation is 3 hours late and still running."
+  },
+  {
+   "label": "act",
+   "text": "@ops-bot what's the retry policy for failed payouts?"
+  },
+  {
+   "label": "act",
+   "text": "Alert fired: dispute rate above threshold for merchant 8842."
+  },
+  {
+   "label": "act",
+   "text": "有个商户说钱扣了但订单没生成"
+  },
+  {
+   "label": "act",
+   "text": "The webhook consumer is dead, no events processed since 09:14."
+  },
+  {
+   "label": "ignore",
+   "text": "我下周一到周三休假，有事找小李"
+  },
+  {
+   "label": "ignore",
+   "text": "There's cake in the kitchen for the new hire."
+  },
+  {
+   "label": "ignore",
+   "text": "今天的例会取消"
+  },
+  {
+   "label": "ignore",
+   "text": "New badge policy starts next month, card needed at all doors."
+  },
+  {
+   "label": "ignore",
+   "text": "笑死，这个 bug 的复现路径太离谱了"
+  },
+  {
+   "label": "ignore",
+   "text": "Lunch order closes at 11:30."
+  },
+  {
+   "label": "ignore",
+   "text": "是谁把我的杯子拿走了"
+  },
+  {
+   "label": "ignore",
+   "text": "The offsite photos are uploaded to the shared album."
+  },
+  {
+   "label": "ignore",
+   "text": "明天上午十点全员会"
+  },
+  {
+   "label": "ignore",
+   "text": "刚看了下招聘进度，简历收了不少"
+  },
+  {
+   "label": "keep",
+   "text": "I'm looking into it now, will update in 30 min."
+  },
+  {
+   "label": "keep",
+   "text": "已经联系了银行，等他们回复"
+  }
+ ]
+}

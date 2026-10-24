@@ -1,0 +1,132 @@
+{
+ "source": "cases.py:CASES",
+ "role": "the prompt-search training set",
+ "labels": {
+  "act": "this bot should speak or do work now",
+  "ignore": "nothing to do with this bot",
+  "keep": "relevant, but nothing to do yet",
+  "snooze": "decide later / needs a clock"
+ },
+ "cases": [
+  {
+   "label": "act",
+   "text": "We're seeing 502s on the checkout callback since 14:02, about 3% of orders. Anyone?",
+   "note": "人不明"
+  },
+  {
+   "label": "act",
+   "text": "pa-ops 这个回调重试队列积压到 4 万条了，谁看一下",
+   "note": "中文群"
+  },
+  {
+   "label": "act",
+   "text": "@ops-bot 昨天那笔退款为什么还在 pending",
+   "note": "直接点名"
+  },
+  {
+   "label": "act",
+   "text": "The merchant onboarding webhook started returning 401 after we rotated the key.",
+   "note": "告警"
+  },
+  {
+   "label": "act",
+   "text": "Can someone confirm whether settlement for 10-22 already closed? Finance is asking.",
+   "note": "向团队提问"
+  },
+  {
+   "label": "act",
+   "text": "payment-service p99 jumped from 180ms to 2.4s in the last 10 minutes",
+   "note": "指标"
+  },
+  {
+   "label": "act",
+   "text": "退款接口报错 E10032，客户在等，能不能马上看下",
+   "note": "紧急"
+  },
+  {
+   "label": "act",
+   "text": "staging 的 db migration 卡住了，谁有权限回滚",
+   "note": "运维"
+  },
+  {
+   "label": "ignore",
+   "text": "哈哈这个梗图太好笑了",
+   "note": "闲聊"
+  },
+  {
+   "label": "ignore",
+   "text": "lunch anyone? the noodle place downstairs",
+   "note": "吃饭"
+  },
+  {
+   "label": "ignore",
+   "text": "happy birthday 老张！",
+   "note": "社交"
+  },
+  {
+   "label": "ignore",
+   "text": "我明天请假一天，有事微信我",
+   "note": "人事"
+  },
+  {
+   "label": "ignore",
+   "text": "the design doc v3 is in the shared drive, no rush",
+   "note": "信息通报"
+  },
+  {
+   "label": "ignore",
+   "text": "刚看到个新闻说某支付公司被罚了",
+   "note": "新闻"
+  },
+  {
+   "label": "ignore",
+   "text": "周会改到周四下午三点",
+   "note": "日程"
+  },
+  {
+   "label": "ignore",
+   "text": "this keyboard is so much better than the old one",
+   "note": "闲聊"
+  },
+  {
+   "label": "keep",
+   "text": "关于回调重试的策略，我觉得指数退避比固定间隔好",
+   "note": "已在讨论中"
+  },
+  {
+   "label": "keep",
+   "text": "Let's put the incident review on Friday, I'll send the invite.",
+   "note": "别人已接手"
+  },
+  {
+   "label": "keep",
+   "text": "我已经在看了，先别动集群",
+   "note": "有人在做"
+  },
+  {
+   "label": "keep",
+   "text": "We deployed the fix at 14:20, monitoring for the next hour.",
+   "note": "已在处理"
+  },
+  {
+   "label": "snooze",
+   "text": "Settlement report will be ready tomorrow morning, remind me then.",
+   "note": "要等"
+  },
+  {
+   "label": "snooze",
+   "text": "Let's revisit the retry policy next sprint.",
+   "note": "以后再说"
+  },
+  {
+   "label": "snooze",
+   "text": "今晚八点之后才能做灰度，先记一下",
+   "note": "待办"
+  },
+  {
+   "label": "ignore",
+   "text": "The build for main passed.",
+   "note": "构建通知"
+  }
+ ]
+}

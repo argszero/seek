@@ -1,0 +1,76 @@
+{
+ "source": "round3.py:VAL",
+ "role": "the third set",
+ "labels": {
+  "act": "this bot should speak or do work now",
+  "ignore": "nothing to do with this bot",
+  "keep": "relevant, but nothing to do yet",
+  "later": "decide later / needs a clock"
+ },
+ "cases": [
+  {
+   "label": "act",
+   "text": "灰度环境里下单直接 500，日志一片红"
+  },
+  {
+   "label": "act",
+   "text": "能不能看下昨夜的对账任务为什么没跑"
+  },
+  {
+   "label": "act",
+   "text": "Alert: error rate on /pay/confirm crossed 5% for 10 minutes"
+  },
+  {
+   "label": "act",
+   "text": "有个客户投诉扣了两次钱，谁能查"
+  },
+  {
+   "label": "act",
+   "text": "我们的 webhook 签名校验全部失败了，从早上开始"
+  },
+  {
+   "label": "act",
+   "text": "Who owns the settlement cron? It skipped twice."
+  },
+  {
+   "label": "ignore",
+   "text": "刚看完那部剧，结局有点烂"
+  },
+  {
+   "label": "ignore",
+   "text": "谁有充电器借我用下"
+  },
+  {
+   "label": "ignore",
+   "text": "Quarterly all-hands moved to the big room"
+  },
+  {
+   "label": "ignore",
+   "text": "我刚提交了报销单，麻烦审批一下"
+  },
+  {
+   "label": "ignore",
+   "text": "this standing desk is amazing"
+  },
+  {
+   "label": "ignore",
+   "text": "下周三我不在公司，有事找小刘"
+  },
+  {
+   "label": "keep",
+   "text": "I'm on it, will report back in 20 minutes"
+  },
+  {
+   "label": "keep",
+   "text": "已经让运维去看了"
+  },
+  {
+   "label": "later",
+   "text": "等这波流量过去再说"
+  },
+  {
+   "label": "later",
+   "text": "Let's pick this up after the release."
+  }
+ ]
+}

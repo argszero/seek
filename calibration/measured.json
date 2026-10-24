@@ -1,0 +1,59 @@
+{
+ "_what_this_is": "The measured readings the shipped prompt and operating point rest on, copied out of the session that produced them. Nothing in this repository re-derives them: there is no inference here, no model, no download.",
+ "_where_they_come_from": "session s_261023_1731_109509b5 (tmp/work), run 2026-10-24 on the host's own laptop",
+ "_why_this_file_exists": "four of the scripts that produced these numbers print them and write no file (validate.py, round3.py, lang.py, zhconfirm.py), so the figures survived only in that session's transcript; this file is the persisted copy",
+ "model": {
+  "shipped": "LFM2.5-VL-3B Q4_0, 1.52 GB as downloaded",
+  "vision_projector": "not shipped: vision is unmeasured (src/README.md line 25)"
+ },
+ "operating_point": {
+  "threshold": 0.6,
+  "set": "set4.json",
+  "ask": "q6 — \"Do you need to do something about this message? Answer act or ignore.\"",
+  "shots": 0,
+  "auc": 1.0,
+  "accuracy_at_this_cut": 1.0,
+  "per_message_ms": 96,
+  "how": "validate.py swept thresholds in steps of 0.025 over 1/40..39/40 and reported the best; 0.600 is that best, on a set written after every prompt choice had been made"
+ },
+ "other_models_on_the_same_set": {
+  "LFM2.5-VL-450M Q4_K_M": {
+   "auc": 0.681,
+   "accuracy_at_best_cut": 0.75,
+   "best_cut": 0.7,
+   "per_message_ms": 18,
+   "note": "the ≤300 MB target was withdrawn because of readings like this one"
+  },
+  "Qwen3.5-0.8B Q4_K_M": {
+   "note": "run in this pass at 6 and 4 shots with a different ask, not at q6 zero-shot, so it contributes no figure to the shipped cut"
+  }
+ },
+ "language_split": {
+  "_what": "zhconfirm.py, pooled Chinese cases across all four sets (44 of them: 16 act, 28 other), and the same model asked in English",
+  "_why_it_matters": "one model, two languages, two different usable cuts — so a single global cut is a choice, not a measurement",
+  "LFM2.5-VL-3B Q4_0": {
+   "en": { "auc": 0.96, "accuracy_at_best_cut": 0.955, "best_cut": 0.53 },
+   "zh": { "auc": 0.998, "accuracy_at_best_cut": 0.977, "best_cut": 0.88 }
+  },
+  "LFM2.5-VL-450M Q4_K_M": {
+   "en": { "auc": 0.647, "accuracy_at_best_cut": 0.727, "best_cut": 0.68 },
+   "zh": { "auc": 0.277, "accuracy_at_best_cut": 0.614, "best_cut": 0.97 },
+   "note": "below chance in Chinese and above it in English: the model inverts, which is why it was not shipped"
+  },
+  "Qwen3.5-0.8B Q4_K_M": {
+   "en": { "auc": 0.598, "accuracy_at_best_cut": 0.636, "best_cut": 0.97 },
+   "zh": { "auc": 0.504, "accuracy_at_best_cut": 0.636, "best_cut": 0.97 }
+  }
+ },
+ "how_the_probability_was_read": {
+  "_load_bearing": "the measurement and the runtime do not read the same estimator today, and this file says so rather than smoothing it over",
+  "measurement": "vocab.py built a map keyed by the tokeniser's decoded text with .strip().lower(), so ids_for('act') returns every id whose decoding strips to 'act' — six of them for this checkpoint (598, 901, 3619, 7372, 15674, 32234). P(act) was the sum over all of them, and P(ignore) likewise, normalised over the pair.",
+  "runtime": "bindOptions (src/watch.ts) requires the option to survive as exactly ONE token past the prompt and masks that single id, which is what agent-lifecycle.md §4 line 79 asks for.",
+  "consequence": "the shipped cut was chosen under a summed-over-variants estimator and is applied under a single-id one. That is a stated open tension, not a settled fact — docs/decisions.md carries it with the word that would change it. It is also why a replacement model must clear the same measurement before it ships: the number is only meaningful together with the way it was read."
+ },
+ "what_was_not_measured": [
+  "vision: no image case was ever run; the requirement stands unmet",
+  "a box holding more than one message: the measured shape is one message at a time, so a multi-entry box is an extrapolation from the same ask",
+  "per-room summary variation: every measured run used one fixed digest string"
+ ]
+}

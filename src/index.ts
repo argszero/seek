@@ -23,6 +23,8 @@ export {
   resetAgentTurns,
 } from './chain.ts';
 export type { ChainBlockReason } from './chain.ts';
+export { assemblePrompt, loadPromptArtifact, shippedPromptPath, skeletonOf } from './prompts.ts';
+export type { DeclaredOperatingPoint, PromptArtifact, PromptPart, PromptValues } from './prompts.ts';
 export { bindOptions, watchAs } from './watch.ts';
 export type {
   BoundOption,
