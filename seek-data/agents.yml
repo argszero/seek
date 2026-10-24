@@ -1,0 +1,29 @@
+# agents.yml — the roster of agents (`host-rulings.md`, "Bot and agent as two objects").
+#
+# What is registered here is agents, not bots. Each bot is the grouping, its rows
+# are its workers, and nothing caps a bot at two: a bot that later needs a third
+# role gets a third row and the two that were there first need no migration.
+#
+# This file is the roster, and the store's agents are rebuilt from it every time
+# the kernel opens the store beside it (`docs/decisions.md`, defaults 14 and 15).
+# A row's id is derived from its bot and its role, so a row keeps the sessions
+# and memories it had before the rebuild.
+#
+# Two spaces for `- `, four for a field, whole-line comments only, lists in one
+# line. Anything outside that subset is an error naming the line: this parser
+# would rather stop than quietly drop a field it did not understand.
+#
+# `model` and `prompt` are absent below, which means `unset` — choosing a model
+# is a measurement (`src/README.md` line 26), and this file has no standing to
+# pick one.
+agents:
+  - bot: Echo
+    role: watch
+    # The half that cannot write: a decision model produces no text and calls no
+    # tool. `[]` is a real answer here, not a placeholder.
+    tools: []
+  - bot: Echo
+    role: work
+    # `say` is the only way into a room (checklist line 14), so a work agent
+    # without it could not answer at all.
+    tools: [say]

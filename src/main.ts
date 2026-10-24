@@ -34,10 +34,12 @@
  *   without reading demonstrates the plumbing, and is no evidence about the
  *   design question — that needs a model, and the model is the slice after this
  *   one.
- * - **No roster.** `agents.yml` has neither a settled shape nor a parser, so the
- *   bot's two agents are seeded from the entity types instead. `seedOneRoom` is
- *   the function that goes away when the roster is ruled; nothing here invents a
- *   YAML key.
+ * - **The agents are the roster's, not this file's.** `seedOneRoom` builds the
+ *   people, the bot and the room and stops there; `src/roster.ts` reads
+ *   `agents.yml` beside the store and rebuilds the store's agents from it
+ *   (checklist lines 13 and 20, `docs/decisions.md` defaults 14 and 15). A run
+ *   with no roster file is a bot with no agents, and it says so rather than
+ *   falling back on rows written here.
  * - **No interface.** The checklist line says "no interface", so this writes to
  *   stdout and has no other surface. It is a harness for watching the kernel,
  *   not the beginning of the client.
@@ -60,7 +62,7 @@
  * run appends to the room the first one made.
  */
 
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import type { CompactLines, Summarise } from './compact.ts';
@@ -77,6 +79,7 @@ import {
 } from './i18n.ts';
 import type { Judge } from './inbox.ts';
 import { Kernel, type KernelFailure } from './kernel.ts';
+import { applyRoster, readRosterFor, rosterPath, type AgentRow } from './roster.ts';
 import { newId, SeekStore } from './store.ts';
 import type { Decide } from './turn.ts';
 import type { Id } from './types.ts';
@@ -124,8 +127,8 @@ export const stubDecide: Decide = (context) => {
   context.say(context.roomId, STUB_REPLY);
 };
 
-/** The one room the milestone is about, and who is in it. */
-export interface MilestoneScene {
+/** The people, the bot and the room — everything a run needs that is not an agent. */
+export interface SeedWorld {
   /** The person who speaks. */
   me: Id;
   /**
@@ -139,10 +142,21 @@ export interface MilestoneScene {
    */
   other: Id;
   bot: Id;
+  room: Id;
+}
+
+/**
+ * The one room the milestone is about, and who is in it.
+ *
+ * A `SeedWorld` plus the two roles the run needs. The roles are looked up on the
+ * bot's rows rather than assumed to be its only rows: a bot may carry a third
+ * agent (checklist line 20), and this shape is what a run reads, not a claim
+ * about how many there are.
+ */
+export interface MilestoneScene extends SeedWorld {
   /** The bot's two halves: the one that reads the room, and the one that writes. */
   watch: Id;
   work: Id;
-  room: Id;
 }
 
 /** One line of a room's log, as a person would read it. */
@@ -189,21 +203,30 @@ export interface MilestoneOptions {
   compactLines?: CompactLines;
   /** Override what the person says. */
   said?: string;
+  /**
+   * The roster to apply, for a store that has no file to read one from.
+   *
+   * An in-memory store has no directory, so it has no `agents.yml` beside it;
+   * this is how a caller hands rows over instead. On disk the file wins, because
+   * that is where the roster lives.
+   */
+  roster?: AgentRow[];
   /** Where the printed run goes. stdout by default; a test passes a collector. */
   out?: (text: string) => void;
 }
 
 /**
- * Seed one room: a person, one bot, its two agents, and a group to talk in.
+ * Seed one room: two people, one bot, and a group to talk in.
  *
  * Everything written here is an entity `data-model.md` already fixes — a
- * `Principal`, a `Bot`, two `Agent` rows and a `Membership` per principal — so
- * this seeds a world rather than stating a rule. **The roster replaces it.**
- * `agents.yml` is where a bot's agents are meant to come from, and it has no
- * settled format and no parser (`src/README.md` lines 13 and 20 are open on
- * exactly that), so the two rows are written here instead of invented there.
+ * `Principal` per person, a `Bot`, and a `Membership` per principal — so this
+ * seeds a world rather than stating a rule. **The bot's agents are not here.**
+ * They are the roster's (`src/roster.ts`), and a seed that also wrote them would
+ * be a second place agents come from — disagreeing with `agents.yml` the first
+ * time someone edited the file. The bot is created first and the roster applied
+ * after it, because a row names the bot it serves.
  */
-export function seedOneRoom(store: SeekStore): MilestoneScene {
+export function seedOneRoom(store: SeekStore): SeedWorld {
   const me = newId('ou');
   store.data.principals[me] = { id: me, kind: 'human', name: 'me' };
   const other = newId('ou');
@@ -214,36 +237,6 @@ export function seedOneRoom(store: SeekStore): MilestoneScene {
     id: bot,
     name: 'Echo',
     description: 'the bot this milestone is about',
-  };
-
-  // A home per agent, beside the store: nothing reads it yet, and a row with no
-  // home would be a row no session could open in later.
-  const home = join(dirname(store.path ?? '.'), 'agents', bot);
-  const watch = newId('ag');
-  store.data.agents[watch] = {
-    id: watch,
-    bot_id: bot,
-    role: 'watch',
-    home: join(home, 'watch'),
-    // `unset` on both: choosing a model is a measurement (`src/README.md` line
-    // 26), and naming one here would be a decision this file has no standing to
-    // take.
-    model: 'unset',
-    prompt: 'unset',
-    // The half that cannot write: it produces no text and calls no tool.
-    tools: [],
-  };
-  const work = newId('ag');
-  store.data.agents[work] = {
-    id: work,
-    bot_id: bot,
-    role: 'work',
-    home: join(home, 'work'),
-    model: 'unset',
-    prompt: 'unset',
-    // `say` is the only way into a room (checklist line 14), so a work agent
-    // without it could not answer at all.
-    tools: ['say'],
   };
 
   const room = newId('oc');
@@ -268,21 +261,22 @@ export function seedOneRoom(store: SeekStore): MilestoneScene {
     };
   }
 
-  return { me, other, bot, watch, work, room };
+  return { me, other, bot, room };
 }
 
 /**
- * The scene a store already holds, when it has one.
+ * The world a store already holds, when it holds one.
  *
  * Read back rather than remembered, so a second run continues the conversation
  * the first one started instead of seeding a second bot: the store is the
  * product's own thesis — the data stays local and outlives the process — and a
  * harness that grew a room per run would contradict it.
  *
- * The first room, the first bot in it, and its agents by role. Anything else is
- * a shape this milestones does not claim to read.
+ * The first room, the first bot in it, and the two people. **The agents are not
+ * part of this**: they are read from the roster, and a world that is complete
+ * without them is what lets a roster be applied after the bot exists.
  */
-export function sceneOf(store: SeekStore): MilestoneScene | undefined {
+export function worldOf(store: SeekStore): SeedWorld | undefined {
   const room = Object.values(store.data.rooms)[0];
   if (!room) return undefined;
 
@@ -300,10 +294,7 @@ export function sceneOf(store: SeekStore): MilestoneScene | undefined {
       row.role === 'owner' &&
       store.data.principals[row.principal_id],
   );
-  const agents = store.agentsOf(bot);
-  const watch = agents.find((agent) => agent.role === 'watch');
-  const work = agents.find((agent) => agent.role === 'work');
-  if (!human || !watch || !work) return undefined;
+  if (!human) return undefined;
 
   const others = Object.values(store.data.memberships).find(
     (row) =>
@@ -316,10 +307,28 @@ export function sceneOf(store: SeekStore): MilestoneScene | undefined {
     me: human.principal_id,
     other: others?.principal_id ?? human.principal_id,
     bot,
-    watch: watch.id,
-    work: work.id,
     room: room.id,
   };
+}
+
+/**
+ * The scene a store holds: the world, plus the two roles a run needs.
+ *
+ * A bot with no `work` agent is not a scene — something would have to guess who
+ * answers. A bot with a third row is: the roles are looked up by name and the
+ * others are left alone, because the roster is a roster of agents and nothing
+ * here may assume it holds exactly two (checklist line 20).
+ */
+export function sceneOf(store: SeekStore): MilestoneScene | undefined {
+  const world = worldOf(store);
+  if (!world) return undefined;
+
+  const agents = store.agentsOf(world.bot);
+  const watch = agents.find((agent) => agent.role === 'watch');
+  const work = agents.find((agent) => agent.role === 'work');
+  if (!watch || !work) return undefined;
+
+  return { ...world, watch: watch.id, work: work.id };
 }
 
 /** A room's log, oldest first, with the sender's name resolved. */
@@ -348,7 +357,19 @@ export async function runFirstMilestone(
   store: SeekStore,
   options: MilestoneOptions = {},
 ): Promise<MilestoneRun> {
-  const scene = sceneOf(store) ?? seedOneRoom(store);
+  // The bot has to exist before a row can name it, so the world is seeded first
+  // and only when there is none; the roster then says what the bot's agents are.
+  if (!worldOf(store)) seedOneRoom(store);
+  const rows = options.roster ?? (await readRosterFor(store));
+  if (rows !== undefined) applyRoster(store, rows);
+
+  const scene = sceneOf(store);
+  if (!scene) {
+    const where = store.path ? rosterPath(store.path) : 'no path, so no file beside it';
+    throw new Error(
+      `this bot has no watch and work agent, so nothing can run — the roster read from ${where} did not supply both`,
+    );
+  }
 
   deliver(store, {
     roomId: scene.room,

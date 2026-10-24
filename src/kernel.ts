@@ -59,6 +59,7 @@
 import { RoomCompactor, type CompactLines, type Summarise } from './compact.ts';
 import { ScheduleComparator, type Timers } from './comparator.ts';
 import { InboxLoop, type Judge, type TickResult } from './inbox.ts';
+import { applyRoster, readRosterFor } from './roster.ts';
 import { SeekStore } from './store.ts';
 import { makeTurn, type Decide } from './turn.ts';
 import type { Id, Observation } from './types.ts';
@@ -154,13 +155,21 @@ export class Kernel {
    * Open the kernel over a store on disk.
    *
    * A path with no file yet is not an error: `SeekStore.load` starts empty and
-   * remembers where to write, so a first run needs no fixture. Nothing here
-   * reads a roster — `agents.yml` has no parser yet and its shape is not
-   * settled — so a kernel over an empty store starts, arms nothing and does
-   * nothing, which is the honest state of the roster question.
+   * remembers where to write, so a first run needs no fixture.
+   *
+   * The roster is read here, from `agents.yml` beside the store, and the store's
+   * agents are rebuilt from it before anything can wake a bot — the file is the
+   * roster and the shard is derived from it (`docs/decisions.md`, default 14).
+   * A store with no roster file beside it keeps whatever agents it already has:
+   * a missing file says nothing, while a file with no rows says the bot has no
+   * agents. A store over an empty directory therefore starts, arms nothing and
+   * does nothing, which is the honest state of a kernel nobody has given a bot.
    */
   static async open(path: string, options: KernelOptions = {}): Promise<Kernel> {
-    return new Kernel(await SeekStore.load(path), options);
+    const store = await SeekStore.load(path);
+    const rows = await readRosterFor(store);
+    if (rows !== undefined) applyRoster(store, rows);
+    return new Kernel(store, options);
   }
 
   /** Whether the comparator is sweeping. */

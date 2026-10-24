@@ -8,8 +8,11 @@ build/
 .emrg/
 
 # The kernel's default store, written by `npm start` (same reason: it is the
-# room's log, not source)
-seek-data/
+# room's log, not source). `agents.yml` is the exception: it is configuration
+# rather than state, and a fresh clone has to come with a roster or the kernel
+# opens over a bot with no agents.
+seek-data/*
+!seek-data/agents.yml
 
 # OS and editor
 .DS_Store

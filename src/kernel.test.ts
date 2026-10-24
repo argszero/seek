@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -354,8 +354,10 @@ test('a store with no file yet is a legal kernel', async () => {
     const timers = makeTimers();
     const kernel = await Kernel.open(path, { now: () => MORNING, timers });
 
-    // No roster is read: `agents.yml` has no settled shape, so an empty store
-    // must start rather than throw. It arms nothing and does nothing.
+    // Nothing is written beside this store, so there is no roster to read:
+    // a missing `agents.yml` says nothing about the store, and a kernel over an
+    // empty directory must start rather than throw. It arms nothing and does
+    // nothing.
     await kernel.start();
     assert.equal(kernel.running, true);
     assert.equal(kernel.comparator.wakeAt, undefined);
@@ -364,6 +366,38 @@ test('a store with no file yet is a legal kernel', async () => {
     const ticked = await kernel.tick('ou_nobody');
     assert.equal(ticked.woke, false);
     assert.deepEqual(timers.armed, []);
+    kernel.stop();
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('opening a store reads the roster beside it', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'seek-kernel-'));
+  try {
+    const path = join(directory, 'seek.json');
+    // A bot in the store, and a roster beside it naming that bot by name — the
+    // two files a real run has, and the reason `open` is the place the roster is
+    // applied: it is the one call that knows where the store lives.
+    const store = new SeekStore(undefined, path);
+    const bot = 'ou_echo';
+    store.data.bots[bot] = { id: bot, name: 'Echo', description: 'the one' };
+    await store.save();
+    await writeFile(
+      join(directory, 'agents.yml'),
+      `agents:
+  - bot: Echo
+    role: work
+    tools: [say]
+`,
+    );
+
+    const kernel = await Kernel.open(path, { now: () => MORNING, timers: makeTimers() });
+    const agents = kernel.store.agentsOf(bot);
+    assert.deepEqual(
+      agents.map((agent) => [agent.role, agent.tools]),
+      [['work', ['say']]],
+    );
     kernel.stop();
   } finally {
     await rm(directory, { recursive: true, force: true });
