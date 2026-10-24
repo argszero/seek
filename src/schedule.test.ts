@@ -201,12 +201,12 @@ test('one global calendar: nothing filters the table by bot, and each row fires 
   assert.equal(listRows(world.store).length, 2);
 
   const delivered = fireDue(world.store, NOON);
+  // Two rows written for the same instant have no order between them: the
+  // tie-break is `created_at`, then the id, and both rows were written at the
+  // same moment. What this asserts is that each one fired for its own bot.
   assert.deepEqual(
-    delivered.map((entry) => [entry.bot_id, entry.text]),
-    [
-      [world.botA, 'for A'],
-      [world.botB, 'for B'],
-    ],
+    delivered.map((entry) => `${entry.bot_id}: ${entry.text}`).sort(),
+    [`${world.botA}: for A`, `${world.botB}: for B`].sort(),
   );
   assert.deepEqual(
     world.store.inbox(world.botB).map((entry) => entry.text),
