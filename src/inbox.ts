@@ -5,47 +5,111 @@
  * There is no clock here and no idle path. A timer creeping back in as a
  * per-bot heartbeat is the defect this file exists to keep out (the schedule
  * adds a second *producer of deliveries*, never a second wake source).
+ *
+ * **Stage 0 is consulted before anything else.** The loop drains the queue and
+ * hands it to `gate()` (`gate.ts`), which settles everything certain and free:
+ * an @-mention, a reply, a direct message or a due reminder goes straight to
+ * stage 2; a muted room or another bot's broadcast is recorded as `ignore` and
+ * opens no turn; only the genuinely ambiguous remainder reaches stage 1. That
+ * ordering is the whole economy of the design — an observed but unaddressed
+ * message must never cost a call — so a loop that runs a turn straight off the
+ * drain skips the one thing that makes aliveness affordable.
  */
 
+import { gate, type GateResult } from './gate.ts';
 import type { SeekStore } from './store.ts';
 import type { Id, Observation } from './types.ts';
 
 export type RunTurn = (entries: Observation[]) => Promise<void> | void;
 
+/**
+ * Stage 1: the watch agent's judgement, as this loop sees it.
+ *
+ * It is handed the entries stage 0 could not settle and returns the ones that
+ * act. It never sees what stage 0 already settled — that is what the rules are
+ * for.
+ *
+ * The real stage 1 is a decision model (`agent-lifecycle.md` §4): one forward
+ * pass over the room's box, an answer per named question, "unparseable counts
+ * as no act". It is not built yet, so the default below is a placeholder that
+ * acts on nothing — **no model is called this round**, and no verdict is
+ * written, because the verdict for a judged entry is the watch side's to write
+ * and a placeholder has nothing to record.
+ */
+export type Judge = (
+  entries: Observation[],
+) => Promise<Observation[]> | Observation[];
+
+/** Stage 1 until it exists: no act. Nothing is spent and nothing is written. */
+const judgeNothing: Judge = () => [];
+
 export interface TickResult {
   /** Whether a turn was opened. */
   woke: boolean;
-  /** The entries that turn was opened with. */
+  /**
+   * The entries that turn was opened with — never every entry the tick drained.
+   * An entry stage 0 ignored, or one stage 1 declined, is not in here.
+   */
   entries: Observation[];
+  /**
+   * What stage 0 settled, per bucket, so a caller can see who was ignored
+   * without re-deriving it. Empty on a tick that drained nothing.
+   */
+  settled: GateResult | undefined;
 }
 
 export class InboxLoop {
   store: SeekStore;
   run: RunTurn;
+  /** Stage 1. Injectable, so its absence never hides behind a model call. */
+  judge: Judge;
   /** Turns actually opened. A tick over an empty inbox opens none. */
   turns = 0;
 
-  constructor(store: SeekStore, run: RunTurn) {
+  constructor(store: SeekStore, run: RunTurn, judge: Judge = judgeNothing) {
     this.store = store;
     this.run = run;
+    this.judge = judge;
   }
 
   /**
    * One pass for one bot: no entry, no wake.
    *
-   * What the turn receives is the whole queue taken in one atomic step, so
-   * anything delivered while the turn is running waits for the next round
-   * instead of being cleared out from under it.
+   * What the turn receives is what survived the rules, taken in one atomic
+   * step, so anything delivered while the turn is running waits for the next
+   * round instead of being cleared out from under it.
+   *
+   * The order is the table's: drain, settle with the rules, ask stage 1 about
+   * the remainder only, and open a turn only if something still acts.
    */
   async tick(botId: Id): Promise<TickResult> {
-    if (!this.store.hasPending(botId)) return { woke: false, entries: [] };
+    if (!this.store.hasPending(botId)) {
+      return { woke: false, entries: [], settled: undefined };
+    }
 
-    const entries = await this.store.drain(botId);
+    const drained = await this.store.drain(botId);
     // A second drainer took the queue between the check and the pop.
-    if (entries.length === 0) return { woke: false, entries: [] };
+    if (drained.length === 0) {
+      return { woke: false, entries: [], settled: undefined };
+    }
+
+    const settled = gate(this.store, botId, drained);
+
+    // Row 2 is already decided: nothing is asked about it.
+    const acting = [...settled.act];
+    // Row 4 is the only row that costs anything, and it costs it here. A tick
+    // where the rules settled everything never reaches this line.
+    if (settled.judge.length > 0) {
+      acting.push(...(await this.judge(settled.judge)));
+    }
+
+    // Row 3's ending, and stage 1's "no act": nothing was asked to happen.
+    if (acting.length === 0) {
+      return { woke: false, entries: [], settled };
+    }
 
     this.turns += 1;
-    await this.run(entries);
-    return { woke: true, entries };
+    await this.run(acting);
+    return { woke: true, entries: acting, settled };
   }
 }
