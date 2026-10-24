@@ -121,9 +121,9 @@ The names come from vocabulary the design already had — the watch queue, the w
 *"Do not share one memory. Each is independent, and each knows the other exists and can read the other's history, memory and so on."*
 Each agent's own store stays its own: the work agent's sessions and diary, and the watch agent's box per room. **They share exactly one thing, and it has one writer**: a room's standing summary, written by the work agent because it is the half that can write, and read by the watch agent (§3). **The read path covers everything either agent writes, including a verdict and the reason behind it** — it is how the work agent can find out why it was woken without that reason being handed to it.
 
-**The tool set is EMRG's, unchanged.**
+**The tool set is EMRG's, unchanged, with what the host named added.**
 *"It has tools — otherwise how would it read and write memory, compress its session?"* [asked: whether the watch agent is given tools at all. It is not: a decision model answers in a single pass and produces no text, so it has no tool call to make. What that sentence asked for is discharged elsewhere — the memory is the box, and the compaction is the work agent's.] / *"Just use the EMRG set."*
-The work agent's tools are the kernel's registry (bash / read / write / edit / glob / grep / subagent / submit_rant / boss), and which agent may call which is ordinary per-agent configuration in `agents.yml`. No watch-specific tool, no memory tool, no compaction tool: memory writes and compaction are runtime behaviour, as for any agent. **One exception, named by the host: `schedule`.** A second one beside it would mean the exception was read as a licence.
+The work agent's tools are the kernel's registry (bash / read / write / edit / glob / grep / subagent / submit_rant / boss), and which agent may call which is ordinary per-agent configuration in `agents.yml`. No watch-specific tool, no memory tool, no compaction tool: memory writes and compaction are runtime behaviour, as for any agent. **Two exceptions, both named by the host: `schedule` (§12) and the tool that speaks in a room** — the second is not an addition to how an agent acts but the only way anything reaches a room at all. Two is where the count stops being a coincidence: a third would mean the registry was being rebuilt one exception at a time.
 
 **The watch agent reads its own outcome, and is not expected to improve.**
 *"The judge relies on the observation data: say it judged wrong and the working agent then said nothing in the room — next time the judge sees that it handed this over and nothing was done. Also, do not agonise over the judge learning; it is fine if it never learns."*
@@ -157,6 +157,10 @@ One queue, one "already handled" state and one tick, all bot-level; an agent sta
 
 ## Messages and delivery
 
+**Speaking is a tool call.**
+*"The work agent sends a message only by calling the speaking tool — who it goes to (a group or a direct chat) and what it says. Emitting text must not put anything in the IM."*
+A turn that ends without that call has said nothing, and the text it produced stays in the turn's own record. Nothing is posted to a room on the agent's behalf: not its final answer, not a streamed fragment, not a summary of what it did.
+
 **One path, one loop.**
 *"Direct is not skipping the judgement; it is that the judgement notices an @ and lets it through. There is really only one path."*
 One delivery path and one loop. An @-mention, a reply and a direct message are a **fast-pass inside stage 0**, not a second road; the double-reply problem does not exist.
@@ -171,7 +175,7 @@ The running turn keeps its lock, and the message joins it **at the round boundar
 
 **A stage-2 turn is an ordinary turn.**
 *"What do you mean, when was it decided that three records must be written?"*
-It writes nothing extra. It is an ordinary turn with one difference — it opens knowing nobody called it.
+It writes nothing extra. It is an ordinary turn with one difference — it opens knowing nobody called it. And, like any turn, it may end having said nothing: speaking is a tool call (see above), so silence is what happens when the agent decides there is nothing worth saying.
 
 ---
 

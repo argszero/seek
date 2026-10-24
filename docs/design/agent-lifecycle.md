@@ -31,7 +31,7 @@ One watches, one works. **They are not the same kind of runnable** — the watch
 |---|---|---|
 | Model | `model.watch` — local, bundled, small, decision-only | `model.work` — whatever expensive model the bot is configured with |
 | Window | small (thousands of tokens) | large (as much as the model offers) |
-| What it does | answers named questions in one forward pass, generating nothing | does the work, speaks in the room, uses tools |
+| What it does | answers named questions in one forward pass, generating nothing | does the work and speaks by calling the speaking tool, addressed to a room |
 | What it costs | wall-clock, tens to low hundreds of milliseconds | money |
 | What it remembers | the box per room: the standing summary, the delta since it, the last verdict | its sessions, its diary, and the summary it writes into the box |
 
@@ -227,11 +227,22 @@ the bot's loop, per tick:
   │
   └ Stage 2 · run the work agent (expensive)
      Stage 2 calls the work agent and lets it run — one ordinary turn: full context,
-     tools, streaming, memory write at the end. It receives the observation entries and
-     nothing else: the watch agent's reason is not handed over; it stays on the record,
-     where the work agent may go and read it if it wants to (see "what crosses the line").
-     One difference: it opens with "you decided to say this yourself; nobody called you",
-     because nothing called it and the reason it woke is context, not a request.
+     tools, memory write at the end. It receives the observation entries and nothing
+     else: the watch agent's reason is not handed over; it stays on the record, where
+     the work agent may go and read it if it wants to (see "what crosses the line").
+     **To say anything it must call the speaking tool** — `send(room, text)`, where a
+     direct chat is a room like any other. Text it emits is its own working record, and
+     it never becomes a message: nothing is posted on its behalf, and a turn that ends
+     without that call has said nothing at all.
+
+     That is the whole delivery rule, and it has three consequences worth stating: the
+     agent cannot speak by accident, a turn can say several things (three calls, three
+     messages), and the room may see nothing at all when the agent decided there was
+     nothing worth saying.
+     
+     One difference from an ordinary turn: it opens with "you decided to say this
+     yourself; nobody called you", because nothing called it and the reason it woke is
+     context, not a request.
 ```
 
 ### Why two stages
@@ -246,7 +257,7 @@ It raises a risk honestly: a weak local model can produce a confident wrong verd
 
 ### How the watch agent finds out it was wrong
 
-**It reads the outcome off the record it already has.** When the watch agent forwards an observation and the work agent then says nothing in that room, that is visible: the entry it dispatched has no message after it. That is a fact about the record, and the box carries it forward — next time the watch agent meets the same room, the box's last-verdict field says how long ago it forwarded and that nothing followed, and it can weigh that before deciding again.
+**It reads the outcome off the record it already has.** When the watch agent forwards an observation and the work agent then sends nothing in that room, that is visible: the entry it dispatched has no message after it. This is the easy case by construction — silence is the default, since speaking costs a tool call — so "nothing came of it" needs no inference. That is a fact about the record, and the box carries it forward — next time the watch agent meets the same room, the box's last-verdict field says how long ago it forwarded and that nothing followed, and it can weigh that before deciding again.
 
 No new machinery is built for this. The outcome is not reported to the watch agent by anyone: **it is already on the board**, because a turn that produced no message is a fact of the same data model everything else reads.
 
@@ -264,7 +275,9 @@ No new machinery is built for this. The outcome is not reported to the watch age
 
 **The watch agent does not perform its own verdicts.** It emits a decision; the loop performs the consequence — `ignore` consumes, `snooze` re-queues, `keep` appends the line. That is why the verdict's shape is free: a word is enough, because the runtime already knows what each one means.
 
-**The tool set is EMRG's, unchanged, and it belongs to the work agent.** There is no watch-specific tool, no memory tool and no compaction tool to build — the registry is the one already in the kernel, plus the host's single addition, `schedule` (§12). Which tools a given agent may use is ordinary per-agent configuration in `agents.yml`, and today one answer is "none": a decision model makes no tool call.
+**The tool set is EMRG's, unchanged, plus the two the host named.** There is no watch-specific tool, no memory tool and no compaction tool to build — the registry is the one already in the kernel, plus `schedule` (§12) and the speaking tool. Which tools a given agent may use is ordinary per-agent configuration in `agents.yml`, and today one answer is "none": a decision model makes no tool call.
+
+**The speaking tool is the only way into a room, and that is why it exists.** There is no path from a turn's output to a message: the runtime does not post the agent's answer, does not post a streamed fragment, and does not post a summary of what it did. So a bot's every word in a room was something it chose to send, addressed to a room it named — which is also what makes a silent turn meaningful, and what keeps "it said nothing there" a readable fact rather than a guess about what a stream meant.
 
 **Memory writes and compaction are not tools, and they will not be here.** They are what the runtime does when a turn ends, and an agent does not choose to do them.
 
@@ -377,9 +390,11 @@ Because the watch agent is a decision model, **watch tokens are not money and th
 ## 8. What the interface must show
 
 1. **A state dot**: watching / working / asleep / needy, as an avatar badge.
-2. **Proactive messages are marked**: not a reply to you, but something it chose to say.
-3. **"Why did it ignore me?" is expandable**: translate the `reason` into plain language ("this was not addressed to me, and someone else is already answering"). This is both the product difference and the only way to debug the thing.
-4. **Spend visible**: how much it has spent today. There is no remainder, because there is no limit — the number is there to be read, not enforced.
+2. **Proactive messages are marked**: not a reply to you, but something it chose to say. Every message is deliberate — speaking is a tool call — so the mark distinguishes "it came to find you" from "it answered you", not "it meant it" from "it didn't".
+3. **A message appears whole, never token by token.** The agent writes into its turn, then sends; there is nothing to stream into a room, and a half-sent sentence would be a message nobody chose to finish. While it is working, the state dot is what shows it.
+4. **"Why did it ignore me?" is expandable**: translate the `reason` into plain language ("this was not addressed to me, and someone else is already answering"). This is both the product difference and the only way to debug the thing.
+5. **"Why is it silent?" has an answer too**: a turn that ended without sending is a turn on the record, so the same expansion can say what the bot decided instead of speaking.
+6. **Spend visible**: how much it has spent today. There is no remainder, because there is no limit — the number is there to be read, not enforced.
 
 ---
 
@@ -467,7 +482,7 @@ Otherwise the message still lands in that bot's inbox, at zero cost, marked `hin
 
 At the depth cap or the room's turn cap the agent does exactly one of these, deliberately:
 
-- **escalate** — a proactive DM, subject to nothing but its own persona and sandbox;
+- **escalate** — a send to a direct room, subject to nothing but its own persona and sandbox;
 - **say so in the room** — one system line: *"this exchange reached its limit and needs a person"*;
 - **stop and record** — write to the diary and let the thread rest.
 
