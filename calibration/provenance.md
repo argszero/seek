@@ -71,7 +71,9 @@ place a repository can cite.
 
 ## What this material does not settle
 
-- **Vision.** No image case was ever run. The requirement stands unmet, and nothing here
+- **Vision.** No image case was ever run **in this directory**. The image set lives beside it
+  in `vision/`, measured 2026-10-25: 12/16 at the 0.600 cut, AUC 0.875 — the requirement still
+  stands unmet, and nothing here
   may be read as saying images are handled.
 - **A box with more than one message.** Every measured run judged one message at a time.
   The shipped prompt renders a box's delta as one `Message:` line per entry, which equals

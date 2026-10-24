@@ -1,0 +1,265 @@
+{
+ "_what_this_is": "The measured act-or-not reading for image-bearing watch cases: the number src/README.md line 25 was missing.",
+ "_where_it_comes_from": "run 2026-10-25 in session seek-opensource-task on the host's own laptop, against calibration/vision/cases.json",
+ "_why_this_file_exists": "so the claim that images were measured is inspectable rather than a paragraph asserting it",
+ "model": {
+  "checkpoint": "LiquidAI/LFM2.5-VL-3B-GGUF",
+  "file": "LFM2.5-VL-3B-Q4_0.gguf",
+  "bytes": 1593894944,
+  "sha256": "364224c6bd45b4ff4bf8af71f7be384ea166fa0f573d68bc0b6e10ef9ae7ae58",
+  "quant": "Q4_0 — the quant docs/decisions.md names as the bundled one, so this reading describes the shipped artifact",
+  "projector": {
+   "file": "mmproj-LFM2.5-VL-3B-Q8_0.gguf",
+   "bytes": 583109984,
+   "sha256": "ecbbe7097f696dba67172738d79c9f01132cdb6c0b457606315e268df3d67e64",
+   "note": "the smallest projector the checkpoint publishes (the other two are F16 and BF16)"
+  },
+  "both_verified": "both files were checked against the sha256 the hub publishes for them"
+ },
+ "runner": {
+  "what": "llama.cpp built from source at 701fd25 (ggml-org/llama.cpp), libmtmd + libllama, one-shot scorer",
+  "why_not_the_earlier_harness": "provenance.md records llama-cpp-python with a LogitsProcessor; that cannot take an image, so the reading is taken through libmtmd instead",
+  "how_the_probability_was_read": "the next-token distribution at the end of the formatted prompt, summed over every token whose decoded form strips to 'act' — the same estimator the text run used",
+  "prompt_shape": "the shipped watch-v1 shape: system, then 'Message: <text>', then the image, then 'Do you need to do something about this message? Answer act or ignore.'",
+  "shots": 0,
+  "temperature": 0,
+  "image_token_budget": "the projector's own default"
+ },
+ "operating_point": {
+  "threshold": 0.6,
+  "source": "src/prompts/watch-v1.json",
+  "set": "calibration/vision/cases.json",
+  "cases": 16,
+  "act": 8,
+  "ignore": 8,
+  "accuracy": 0.75,
+  "auc": 0.875,
+  "median_eval_ms": 1052,
+  "max_eval_ms": 1069,
+  "split": {
+   "act_correct": 4,
+   "act_total": 8,
+   "ignore_correct": 8,
+   "ignore_total": 8
+  }
+ },
+ "cases": [
+  {
+   "id": "a1",
+   "label": "act",
+   "note": "图里才有 5xx 11.4%，文字看不出",
+   "lang": "en",
+   "p_act": 0.6157,
+   "decision": "act",
+   "correct": true,
+   "eval_ms": 1069
+  },
+  {
+   "id": "a2",
+   "label": "act",
+   "note": "曲线崩了才是信号",
+   "lang": "en",
+   "p_act": 0.8191,
+   "decision": "act",
+   "correct": true,
+   "eval_ms": 1052
+  },
+  {
+   "id": "a3",
+   "label": "act",
+   "note": "截图里是宕机",
+   "lang": "en",
+   "p_act": 0.6791,
+   "decision": "act",
+   "correct": true,
+   "eval_ms": 1068
+  },
+  {
+   "id": "a4",
+   "label": "act",
+   "note": "盘满了",
+   "lang": "en",
+   "p_act": 0.4385,
+   "decision": "ignore",
+   "correct": false,
+   "eval_ms": 1044
+  },
+  {
+   "id": "a5",
+   "label": "act",
+   "note": "中文截图，只有图能看出是支付故障",
+   "lang": "zh",
+   "p_act": 0.1052,
+   "decision": "ignore",
+   "correct": false,
+   "eval_ms": 1057
+  },
+  {
+   "id": "a6",
+   "label": "act",
+   "note": "部署失败",
+   "lang": "en",
+   "p_act": 0.0951,
+   "decision": "ignore",
+   "correct": false,
+   "eval_ms": 1047
+  },
+  {
+   "id": "a7",
+   "label": "act",
+   "note": "登录全挂",
+   "lang": "en",
+   "p_act": 0.8619,
+   "decision": "act",
+   "correct": true,
+   "eval_ms": 1063
+  },
+  {
+   "id": "a8",
+   "label": "act",
+   "note": "积压爆了",
+   "lang": "en",
+   "p_act": 0.168,
+   "decision": "ignore",
+   "correct": false,
+   "eval_ms": 1039
+  },
+  {
+   "id": "i1",
+   "label": "ignore",
+   "note": "全绿，没事",
+   "lang": "en",
+   "p_act": 0.1109,
+   "decision": "ignore",
+   "correct": true,
+   "eval_ms": 1048
+  },
+  {
+   "id": "i2",
+   "label": "ignore",
+   "note": "聚餐照片",
+   "lang": "en",
+   "p_act": 0.074,
+   "decision": "ignore",
+   "correct": true,
+   "eval_ms": 1062
+  },
+  {
+   "id": "i3",
+   "label": "ignore",
+   "note": "纯会议幻灯片",
+   "lang": "en",
+   "p_act": 0.0444,
+   "decision": "ignore",
+   "correct": true,
+   "eval_ms": 1044
+  },
+  {
+   "id": "i4",
+   "label": "ignore",
+   "note": "无关图片",
+   "lang": "en",
+   "p_act": 0.0687,
+   "decision": "ignore",
+   "correct": true,
+   "eval_ms": 1051
+  },
+  {
+   "id": "i5",
+   "label": "ignore",
+   "note": "正常增长",
+   "lang": "en",
+   "p_act": 0.0563,
+   "decision": "ignore",
+   "correct": true,
+   "eval_ms": 1062
+  },
+  {
+   "id": "i6",
+   "label": "ignore",
+   "note": "会议纪要，无关",
+   "lang": "zh",
+   "p_act": 0.134,
+   "decision": "ignore",
+   "correct": true,
+   "eval_ms": 1055
+  },
+  {
+   "id": "i7",
+   "label": "ignore",
+   "note": "白板照片",
+   "lang": "en",
+   "p_act": 0.1262,
+   "decision": "ignore",
+   "correct": true,
+   "eval_ms": 1051
+  },
+  {
+   "id": "i8",
+   "label": "ignore",
+   "note": "付款凭证，非故障",
+   "lang": "en",
+   "p_act": 0.1099,
+   "decision": "ignore",
+   "correct": true,
+   "eval_ms": 1047
+  }
+ ],
+ "diagnosed": {
+  "why_some_images_are_missed": "raising the image token budget to 1024 does not fix them and costs about 3x the time: a4 rises 0.438 -> 0.739 (now correct) while a1 falls 0.616 -> 0.585 (now wrong), and a5/a6/a8 rise but stay under the cut. The misses are judgement, not resolution.",
+  "rows": [
+   {
+    "id": "a4",
+    "default_budget": 0.438,
+    "budget_1024": 0.739,
+    "eval_ms_default": 1044,
+    "eval_ms_1024": 3252
+   },
+   {
+    "id": "a5",
+    "default_budget": 0.105,
+    "budget_1024": 0.181,
+    "eval_ms_default": 1056,
+    "eval_ms_1024": 3228
+   },
+   {
+    "id": "a6",
+    "default_budget": 0.095,
+    "budget_1024": 0.136,
+    "eval_ms_default": 1033,
+    "eval_ms_1024": 3259
+   },
+   {
+    "id": "a8",
+    "default_budget": 0.168,
+    "budget_1024": 0.209,
+    "eval_ms_default": 1051,
+    "eval_ms_1024": 3257
+   },
+   {
+    "id": "a1",
+    "default_budget": 0.616,
+    "budget_1024": 0.585,
+    "eval_ms_default": 1046,
+    "eval_ms_1024": 3275
+   },
+   {
+    "id": "i1",
+    "default_budget": 0.111,
+    "budget_1024": 0.16,
+    "eval_ms_default": 1052,
+    "eval_ms_1024": 3259
+   }
+  ]
+ },
+ "other_quant": {
+  "quant": "Q4_K_M",
+  "note": "the same 16 cases scored 12/16, AUC 0.891 on Q4_K_M before the shipped quant was downloaded; the verdict does not turn on the quant"
+ },
+ "what_was_not_measured": [
+  "One message with one image, never a box of several messages or several images.",
+  "Screenshots rendered for this set, not captured from a real chat — the same provenance as the text cases.",
+  "n=16: eight images per label is a wide interval, and the two Chinese cases are too few to make the language split a reading.",
+  "The runtime mask is untouched by this run: the scorer reads the full next-token distribution, the kernel masks one id."
+ ]
+}

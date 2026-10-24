@@ -4,7 +4,7 @@
  "_why_this_file_exists": "four of the scripts that produced these numbers print them and write no file (validate.py, round3.py, lang.py, zhconfirm.py), so the figures survived only in that session's transcript; this file is the persisted copy",
  "model": {
   "shipped": "LFM2.5-VL-3B Q4_0, 1.52 GB as downloaded",
-  "vision_projector": "not shipped: vision is unmeasured (src/README.md line 25)"
+  "vision_projector": "not shipped: vision was measured 2026-10-25 and came up short — 12/16 at the 0.600 cut on the image set in calibration/vision/ (src/README.md line 25)"
  },
  "operating_point": {
   "threshold": 0.6,
