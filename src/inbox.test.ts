@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
+import { AGENT_TURN_CAP } from './chain.ts';
 import { deliver } from './delivery.ts';
 import { makeWorld } from './fixtures.ts';
 import { InboxLoop } from './inbox.ts';
+import { say } from './say.ts';
 import { SeekStore } from './store.ts';
+import { runTurn } from './turn.ts';
 import type { Id, Observation } from './types.ts';
 
 function textOf(store: SeekStore, roomId: Id, messageId: Id): string {
@@ -61,6 +64,7 @@ test('an empty inbox opens no turn', async () => {
 
   assert.equal(result.woke, false);
   assert.deepEqual(result.entries, []);
+  assert.deepEqual(result.drained, []);
   assert.equal(result.settled, undefined);
   assert.equal(seen.length, 0);
   assert.equal(loop.turns, 0);
@@ -361,4 +365,63 @@ test('a mixed tick runs one turn carrying what acted, and nothing else', async (
   assert.equal(result.settled?.ignore.length, 1);
   assert.equal(result.settled?.act.length, 1);
   assert.equal(result.settled?.judge.length, 1);
+});
+
+test('a tick reports what it consumed, which is not what its turn carried', async () => {
+  const world = makeWorld();
+  // Another bot talking to the room: stage 0 settles it as an ignore, so the
+  // tick opens no turn — and the entry is still consumed rather than held.
+  deliver(world.store, {
+    roomId: world.room,
+    senderId: world.botB,
+    text: 'standup now',
+    agentId: world.agentB1,
+  });
+
+  const loop = new InboxLoop(world.store, () => {
+    throw new Error('a settled broadcast opens no turn');
+  });
+  const result = await loop.tick(world.botA);
+
+  assert.equal(result.woke, false);
+  assert.deepEqual(result.entries, []);
+  assert.equal(result.drained.length, 1);
+  assert.equal(result.drained[0].verdict, 'ignore');
+  assert.equal(world.store.hasPending(world.botA), false);
+});
+
+test('an entry the chain wall held back is not reported as consumed', async () => {
+  const world = makeWorld();
+  for (let index = 0; index < AGENT_TURN_CAP; index += 1) {
+    await runTurn(world.store, {
+      agentId: world.agentA2,
+      roomId: world.room,
+      entries: [],
+    });
+  }
+  const byB = say(world.store, {
+    botId: world.botB,
+    agentId: world.agentB1,
+    roomId: world.room,
+    text: 'B speaking first',
+  });
+  const answer = say(world.store, {
+    botId: world.botA,
+    agentId: world.agentA2,
+    roomId: world.room,
+    text: 'A answering B',
+    replyTo: byB.id,
+  });
+
+  const loop = new InboxLoop(world.store, () => {
+    throw new Error('a held-back entry opens no turn');
+  });
+  const result = await loop.tick(world.botB);
+
+  assert.equal(result.woke, false);
+  assert.equal(result.settled?.blocked.length, 1);
+  // Kept rather than consumed, so a summary written now must not fold it in:
+  // nothing has been decided about it, only postponed.
+  assert.deepEqual(result.drained, []);
+  assert.equal(world.store.inbox(world.botB)[0].message_id, answer.id);
 });

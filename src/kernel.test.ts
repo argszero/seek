@@ -444,3 +444,181 @@ test('a delivery wakes the bots it was for, and nobody else', async () => {
   assert.equal(kernel.loopFor(world.botA).turns, 1);
   assert.equal(wakes, 0);
 });
+
+/** Another bot talking to the room: stage 0 settles it, so no turn opens. */
+function broadcast(store: SeekStore, world: ReturnType<typeof makeWorld>): void {
+  deliver(store, {
+    roomId: world.room,
+    senderId: world.botB,
+    text: 'standup now',
+    agentId: world.agentB1,
+    now: MORNING,
+  });
+}
+
+test('a tick that opens no turn still compacts the room it settled', async () => {
+  const world = makeWorld();
+  broadcast(world.store, world);
+  const pending = world.store.inbox(world.botA)[0].id;
+
+  const covered: number[] = [];
+  const { kernel } = makeKernel(world.store, {
+    decide: () => {
+      throw new Error('a settled broadcast opens no turn');
+    },
+    summarise: ({ delta }) => {
+      covered.push(delta.length);
+      return 'the standup, and what was settled';
+    },
+    compactLines: { maxObservations: 1 },
+  });
+
+  await kernel.tick(world.botA);
+  await kernel.whenIdle();
+
+  // §3 makes compaction a runtime action: reachable on a tick that opened no
+  // turn, which is the whole point of it not being a turn.
+  assert.equal(covered.length, 1);
+  assert.equal(covered[0], 1);
+  assert.equal(kernel.loopFor(world.botA).turns, 0);
+
+  const rows = world.store
+    .memoriesOf(world.agentA2)
+    .filter((row) => row.level === 'room_digest');
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].body, 'the standup, and what was settled');
+  // The port is the drained entry's, so the entry this tick settled is never
+  // folded in a second time.
+  assert.equal(rows[0].consumed_to, pending);
+  assert.equal(kernel.compactor.delta(world.botA, world.room).length, 0);
+});
+
+test('a tick does not wait for the compaction it starts, and whenIdle does', { timeout: 5000 }, async () => {
+  const world = makeWorld();
+  const gate = makeGate();
+  let written = false;
+  broadcast(world.store, world);
+
+  const { kernel } = makeKernel(world.store, {
+    decide: () => {},
+    summarise: async () => {
+      await gate.promise;
+      written = true;
+      return 'summary';
+    },
+    compactLines: { maxObservations: 1 },
+  });
+
+  await kernel.tick(world.botA);
+  await settle();
+
+  // The tick has settled and the summary is still being written: a summary is
+  // nobody's wake, so nothing waits on it.
+  assert.equal(written, false);
+  assert.equal(kernel.compactor.inFlight(world.botA, world.room), true);
+
+  let idle = false;
+  const waiting = kernel.whenIdle().then(() => {
+    idle = true;
+  });
+  await settle();
+  // "What is this process doing" still has one answer.
+  assert.equal(idle, false, 'whenIdle waits for the background action');
+
+  gate.release();
+  await waiting;
+  assert.equal(written, true);
+  assert.equal(world.store.memoriesOf(world.agentA2).length, 1);
+});
+
+test('a summariser that throws is a skip with a back-off, not a failure of the process', async () => {
+  const world = makeWorld();
+  broadcast(world.store, world);
+  let calls = 0;
+
+  const { kernel } = makeKernel(world.store, {
+    decide: () => {},
+    summarise: () => {
+      calls += 1;
+      throw new Error('the model is offline');
+    },
+    compactLines: { maxObservations: 1 },
+  });
+
+  const result = await kernel.tick(world.botA);
+  await kernel.whenIdle();
+  assert.equal(result.woke, false);
+  assert.equal(calls, 1);
+  assert.equal(world.store.memoriesOf(world.agentA2).length, 0);
+
+  // Nothing to retry against: the delta did not grow, so the next tick does not
+  // fire the writer at the same delta again.
+  broadcast(world.store, world);
+  await kernel.tick(world.botA);
+  await kernel.whenIdle();
+  assert.equal(calls, 1, 'a failed writer is not re-fired every tick');
+
+  // And it is a skip, not a crash: the kernel's failure record stays empty.
+  assert.equal(kernel.failures.length, 0);
+});
+
+test('a background action that throws outside the writer is recorded and leaves the tick alone', async () => {
+  const world = makeWorld();
+  broadcast(world.store, world);
+  const reported: unknown[] = [];
+
+  /** A store whose save the test can fail — the one throw the compactor does not absorb. */
+  class FailingStore extends SeekStore {
+    fail = false;
+    async save(): Promise<void> {
+      if (this.fail) throw new Error('the disk is full');
+      await super.save();
+    }
+  }
+  const store = new FailingStore(world.store.data);
+
+  const { kernel } = makeKernel(store, {
+    decide: () => {},
+    summarise: () => {
+      // After the drain: from here on every save fails.
+      store.fail = true;
+      return 'summary';
+    },
+    compactLines: { maxObservations: 1 },
+    onError: (error) => {
+      reported.push(error);
+    },
+  });
+
+  // The tick still resolves, and the throw behind it is reported rather than
+  // swallowed (§@: nothing is ever dropped silently).
+  const result = await kernel.tick(world.botA);
+  await kernel.whenIdle();
+
+  assert.equal(result.woke, false);
+  assert.equal(reported.length, 1);
+  assert.equal(kernel.failures.length, 1);
+  assert.equal(kernel.failures[0].botId, world.botA);
+});
+
+test('a reminder belongs to no room, so it is folded into nobody’s summary', async () => {
+  const world = makeWorld();
+  addRow(world.store, { botId: world.botA, when: MORNING, text: 'check the thread' });
+
+  let summarised = 0;
+  const { kernel } = makeKernel(world.store, {
+    decide: () => {},
+    summarise: () => {
+      summarised += 1;
+      return 'summary';
+    },
+    compactLines: { maxObservations: 1 },
+  });
+
+  await kernel.start();
+  await kernel.whenIdle();
+
+  assert.equal(kernel.loopFor(world.botA).turns, 1, 'the reminder did wake the bot');
+  assert.equal(summarised, 0, 'a reminder is no room’s conversation');
+  assert.equal(world.store.memoriesOf(world.agentA2).length, 0);
+});
