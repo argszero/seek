@@ -8,7 +8,7 @@ import { InboxLoop } from './inbox.ts';
 import { addRow, fireDue } from './schedule.ts';
 import { newId, SeekStore } from './store.ts';
 import { makeTurn, runTurn, type TurnContext } from './turn.ts';
-import type { Id, MembershipRole } from './types.ts';
+import type { Id, MembershipRole, ScheduleRow } from './types.ts';
 
 /** A second room this world's bot A and the human share. */
 function addRoom(world: ReturnType<typeof makeWorld>, members: Id[]): Id {
@@ -294,4 +294,26 @@ test('one turn is one agent\'s work in one room, and a stray entry is refused', 
       }),
     /one turn is one agent's work in one room/,
   );
+});
+
+test('a turn holds the schedule tool, bound to its own bot and agent', async () => {
+  const world = makeWorld();
+  world.store.data.agents[world.agentA2]?.tools.push('schedule');
+
+  let written: ScheduleRow | undefined;
+  await runTurn(
+    world.store,
+    { agentId: world.agentA2, roomId: world.room, entries: [] },
+    (context) => {
+      written = context.schedule.add('2026-10-24T08:00:00.000Z', 'come back to this');
+    },
+  );
+
+  // The turn is where a promise is made: the row exists, it names the bot it is
+  // for and the agent that wrote it, and `runTurn`'s own save makes it durable.
+  assert.equal(world.store.data.schedule.length, 1);
+  assert.equal(written?.bot_id, world.botA);
+  assert.equal(written?.created_by, world.agentA2);
+  assert.equal(written?.state, 'pending');
+  assert.equal(world.store.data.turns.length, 1);
 });

@@ -10,6 +10,10 @@
  *   it ("what crosses the line from watch to work").
  * - **To say anything it calls the speaking tool** (`say.ts`). Nothing is
  *   posted on its behalf; a turn that ends without that call has said nothing.
+ * - **To keep a promise it calls `schedule`** (`schedule.ts`). A turn that
+ *   wants to look at something tomorrow writes the row that will wake it, which
+ *   is the only way a purely message-triggered agent can come back to anything
+ *   (§12). A row written here is saved with the turn, not before it.
  * - **Session, turn and cost are the agent's**; the queue, the tick and the
  *   wake are the bot's (`data-model.md` rule 13). So a turn is opened for one
  *   agent in one room, and its ledger row names that agent.
@@ -29,6 +33,7 @@
 import { bumpAgentTurns } from './chain.ts';
 import type { RunTurn } from './inbox.ts';
 import { sayAs, type SayTool } from './say.ts';
+import { scheduleAs, type ScheduleTool } from './schedule.ts';
 import { newId, type SeekStore } from './store.ts';
 import type { Agent, Id, Message, Observation, Session, Turn } from './types.ts';
 
@@ -64,6 +69,15 @@ export interface TurnContext {
   entries: Observation[];
   /** `say(room, text)`: bound to this bot and this agent, addressed by the caller. */
   say: SayTool;
+  /**
+   * `schedule.list() / add() / cancel()`: the one tool over the one global
+   * table (§12), bound to this bot and this agent.
+   *
+   * It is handed over whether or not this agent's tool list carries it, exactly
+   * as `say` is: the tool refuses at the call, and a turn whose agent was never
+   * given the tool is a turn that keeps no promise rather than one that cannot.
+   */
+  schedule: ScheduleTool;
 }
 
 /**
@@ -131,6 +145,10 @@ export async function runTurn(
     produced.push(message);
     turn.produced.push(message.id);
   });
+  // §12: the tool over the one table, bound the same way. A row written here is
+  // saved with the turn — the `store.save()` in the `finally` below makes both
+  // the row and the turn's own ledger durable together.
+  const schedule = scheduleAs(store, agent.bot_id, agent.id);
 
   try {
     await decide({
@@ -141,6 +159,7 @@ export async function runTurn(
       roomId: spec.roomId,
       entries: spec.entries,
       say,
+      schedule,
     });
   } finally {
     turn.ended_at = spec.now ?? new Date().toISOString();

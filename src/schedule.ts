@@ -34,7 +34,7 @@
  */
 
 import { newId, SeekStore } from './store.ts';
-import type { Id, Observation, ScheduleRow } from './types.ts';
+import type { Agent, Id, Observation, ScheduleRow } from './types.ts';
 
 export interface AddRowInput {
   /** The bot the reminder is for. Never an agent: the inbox is the bot's. */
@@ -173,4 +173,156 @@ export function fireDue(store: SeekStore, now?: string): Observation[] {
   }
 
   return delivered;
+}
+
+// --- The tool ---------------------------------------------------------------
+//
+// §12 gives the schedule **one tool and three verbs — list, add, cancel — and
+// nothing else**. No "run now", because a row is read at the moment it states
+// and not poked by hand; no recurrence, because a bot that means "every
+// morning" writes the mornings it means; no priority, because one table in time
+// order is the whole of the ordering. A fourth verb would be a second exception
+// to the registry growing a sibling of its own, and two is where the count
+// stops being a coincidence.
+//
+// The shape follows `say()`: the rule is an ordinary function, the tool is that
+// same function bound to one bot and one agent, and **the tool list decides
+// permission** — an agent that was not given `schedule` cannot read or write
+// the table at all, exactly as an agent without `say` cannot speak. Which
+// agents have it is ordinary per-agent configuration (§12, "it is available
+// like any other tool"); the roster that will say so is `agents.yml`, which is
+// still unwritten and still awaiting its shape. What this file can enforce is
+// the half the model already carries — `Agent.tools` — and the caller it is
+// handed, never where that list was loaded from.
+
+/** Who is calling: the bot, and which of its agents. */
+export interface ScheduleCall {
+  /** The bot whose agent is calling. */
+  botId: Id;
+  /** Which agent of that bot is calling. */
+  agentId: Id;
+}
+
+export interface ScheduleAddOptions {
+  /**
+   * The bot the row is for, when it is not the caller's own.
+   *
+   * §12 makes this one shared calendar rather than a private one — "every bot
+   * reads and writes it" — and the row states *which bot* it is for. So a bot
+   * may leave a reminder for a peer, which `data-model.md` §7 names as the very
+   * operation the table is left unsharded for. The ordinary case is its own
+   * bot, and that is the default.
+   */
+  forBot?: Id;
+  /** An injectable clock, so a test does not depend on wall time. */
+  now?: string;
+}
+
+export interface ScheduleAddInput extends ScheduleCall, ScheduleAddOptions {
+  /** The instant it is due. An ISO string, like every other time here. */
+  when: string;
+  /** Delivered verbatim, exactly as its author wrote it. */
+  text: string;
+}
+
+export interface ScheduleCancelInput extends ScheduleCall {
+  /** The row to drop before it comes due. */
+  rowId: Id;
+}
+
+/**
+ * The tool as a turn holds it: three verbs, and nothing else.
+ *
+ * `list()` takes no arguments because the table is global and nothing filters
+ * it by bot (§12). `add()` and `cancel()` are the only writes, and the state a
+ * row is in is the table's to move, never the caller's.
+ */
+export interface ScheduleTool {
+  list(): ScheduleRow[];
+  add(when: string, text: string, options?: ScheduleAddOptions): ScheduleRow;
+  cancel(rowId: Id): ScheduleRow;
+}
+
+/**
+ * The caller, if it may touch the table at all.
+ *
+ * Two refusals, each a way the tool would otherwise be reachable by something
+ * that was never given it: an agent that belongs to another bot (speaking for a
+ * calendar that is not its own), and an agent whose tool list does not carry
+ * `schedule` — the watch agent, for one, makes no tool call at all.
+ */
+function caller(store: SeekStore, call: ScheduleCall): Agent {
+  const agent = store.data.agents[call.agentId];
+  if (!agent) throw new Error(`unknown agent: ${call.agentId}`);
+  if (agent.bot_id !== call.botId) {
+    throw new Error(
+      `agent ${call.agentId} does not work for bot ${call.botId}, so it cannot schedule as it`,
+    );
+  }
+  if (!agent.tools.includes('schedule')) {
+    throw new Error(
+      `agent ${call.agentId} (role ${agent.role}) cannot use the schedule: 'schedule' is not in its tool list`,
+    );
+  }
+  return agent;
+}
+
+/**
+ * Verb one: the whole table.
+ *
+ * Unfiltered on purpose — §12 makes it a shared calendar, so a bot seeing what
+ * another bot planned is the design rather than a leak.
+ */
+export function scheduleList(store: SeekStore, call: ScheduleCall): ScheduleRow[] {
+  caller(store, call);
+  return listRows(store);
+}
+
+/**
+ * Verb two: write one row.
+ *
+ * The row records **which agent wrote it** (`created_by`), because a later
+ * reader asking "who planned this" is asking about the agent rather than the
+ * bot's name — and because the loop, which also writes rows, is the one author
+ * that leaves this field empty (§12: `snooze` is performed by the loop, not by
+ * the watch agent).
+ *
+ * Every refusal is `addRow`'s and stays there: an unknown bot, an instant that
+ * cannot be read, and empty text.
+ */
+export function scheduleAdd(store: SeekStore, input: ScheduleAddInput): ScheduleRow {
+  const agent = caller(store, input);
+  return addRow(store, {
+    botId: input.forBot ?? agent.bot_id,
+    when: input.when,
+    text: input.text,
+    createdBy: agent.id,
+    now: input.now,
+  });
+}
+
+/**
+ * Verb three: drop a pending row.
+ *
+ * A tombstone, not a deletion, and the row's own one-way state refuses the
+ * rest: cancelling something that already fired is a claim about the past.
+ */
+export function scheduleCancel(store: SeekStore, input: ScheduleCancelInput): ScheduleRow {
+  caller(store, input);
+  return cancelRow(store, input.rowId);
+}
+
+/**
+ * Bind the tool to one bot's agent, as a turn hands it over.
+ *
+ * Unlike `sayAs` there is no `onProduced`: a turn's record lists the messages
+ * it produced (`Turn.produced`), and a schedule row is not a message — it is a
+ * note that will become a delivery later, addressed to nobody in the room.
+ */
+export function scheduleAs(store: SeekStore, botId: Id, agentId: Id): ScheduleTool {
+  return {
+    list: () => scheduleList(store, { botId, agentId }),
+    add: (when, text, options) => scheduleAdd(store, { botId, agentId, when, text, ...options }),
+    cancel: (rowId) => scheduleCancel(store, { botId, agentId, rowId }),
+  };
 }
