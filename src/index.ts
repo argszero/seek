@@ -23,10 +23,13 @@ export {
   resetAgentTurns,
 } from './chain.ts';
 export type { ChainBlockReason } from './chain.ts';
-export { watchAs } from './watch.ts';
+export { bindOptions, watchAs } from './watch.ts';
 export type {
+  BoundOption,
   OperatingPoint,
+  OptionBinding,
   OptionTokens,
+  Tokeniser,
   Watch,
   WatchInput,
   WatchJudge,

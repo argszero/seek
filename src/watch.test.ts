@@ -5,9 +5,14 @@ import { deliver } from './delivery.ts';
 import { makeWorld, type World } from './fixtures.ts';
 import { newId } from './store.ts';
 import type { Id, MembershipRole, Observation } from './types.ts';
-import { watchAs, type Watch, type WatchInput, type WatchReading } from './watch.ts';
+import { bindOptions, watchAs, type Tokeniser, type Watch, type WatchInput, type WatchReading } from './watch.ts';
 
-const PROMPT = { version: 'watch-v1', text: 'Does this room need you to act? Answer act or ignore.' };
+// The trailing space is not cosmetic. The two options are appended to this text, so
+// a prompt that ends mid-word lets the tokeniser merge the option into the prompt's
+// last token — and then no id at "the prompt's own end" is the option's, which
+// `bindOptions` refuses. A real prompt artifact ends at a boundary its suffix
+// survives.
+const PROMPT = { version: 'watch-v1', text: 'Does this room need you to act? Answer act or ignore. ' };
 const POINT = {
   threshold: 0.9,
   promptVersion: 'watch-v1',
@@ -66,11 +71,62 @@ function addRoom(world: World): Id {
   return roomId;
 }
 
-function bind(world: World, model: Stub['model'], threshold = POINT.threshold): Watch {
+/** The tokeniser the suite binds with, and what it was asked to encode. */
+interface StubTokeniser extends Tokeniser {
+  /** Every text encoded, in order — so a test can see the ids were not re-derived. */
+  calls: string[];
+}
+
+/**
+ * A tokeniser shaped like the hazard the design names.
+ *
+ * A word keeps the space in front of it, so `act` and ` act` are different ids —
+ * that is the difference between masking the answer and masking a token the model
+ * never reads. `ids` pins particular chunks; `split` makes a chunk cost more than
+ * one token, which is what `snooze` did. Anything unlisted still gets an id of its
+ * own, so the stub encodes whole sentences rather than only the words a test
+ * happens to care about.
+ */
+function makeTokeniser(
+  options: { ids?: Record<string, number>; split?: Record<string, number> } = {},
+): StubTokeniser {
+  const ids: Record<string, number> = options.ids ?? {};
+  const split = options.split ?? {};
+  const calls: string[] = [];
+  let next = 5000;
+  const idOf = (chunk: string): number => {
+    const known = ids[chunk];
+    if (known !== undefined) return known;
+    const assigned = (ids[chunk] = next);
+    next += 1;
+    return assigned;
+  };
+  return {
+    calls,
+    encode(text: string): number[] {
+      calls.push(text);
+      const out: number[] = [];
+      for (const chunk of text.match(/ ?[^ ]+/g) ?? []) {
+        const pieces = split[chunk];
+        if (pieces === undefined) out.push(idOf(chunk));
+        else for (let index = 0; index < pieces; index += 1) out.push(idOf(`${chunk}#${index}`));
+      }
+      return out;
+    },
+  };
+}
+
+function bind(
+  world: World,
+  model: Stub['model'],
+  threshold = POINT.threshold,
+  tokeniser: Tokeniser = makeTokeniser(),
+): Watch {
   return watchAs(world.store, world.botA, model, {
     window: 10,
     prompt: PROMPT,
     operatingPoint: { ...POINT, threshold },
+    tokeniser,
   });
 }
 
@@ -105,6 +161,7 @@ test('the unread count reaches the model even when the box overflows', async () 
     window: 2,
     prompt: PROMPT,
     operatingPoint: POINT,
+    tokeniser: makeTokeniser(),
   })(entries);
 
   const state = seen[0].state;
@@ -300,7 +357,7 @@ test('one save per call, however many rooms were asked about', async () => {
 test('a runtime wired to a cut measured on another question refuses to run', () => {
   const world = makeWorld();
   const { model } = stub({ probabilities: { act: 0.99, ignore: 0.01 } });
-  const options = { window: 10, prompt: PROMPT };
+  const options = { window: 10, prompt: PROMPT, tokeniser: makeTokeniser() };
 
   assert.throws(
     () =>
@@ -337,4 +394,118 @@ test('a runtime wired to a cut measured on another question refuses to run', () 
       }),
     /must be different tokens/,
   );
+});
+
+// ---- where in the vocabulary the answer is read (agent-lifecycle.md §4, line 79) ----
+
+test("the mask carries the id the option takes past the prompt, not the bare word's", async () => {
+  const world = makeWorld();
+  say(world, ['one']);
+  const entries = await world.store.drain(world.botA);
+
+  // The hazard, measured: a word after a space is a different id from the same word
+  // on its own, and the mask has to be aimed at the position the answer is read from.
+  const tokeniser = makeTokeniser({ ids: { act: 100, ' act': 101, ignore: 200, ' ignore': 201 } });
+  const { model, seen } = stub({ probabilities: { act: 0.1, ignore: 0.9 } });
+  await bind(world, model, POINT.threshold, tokeniser)(entries);
+
+  assert.deepEqual(seen[0].mask.act, { token: 'act', id: 101 }, 'masking 100 leaves " act" unreachable');
+  assert.deepEqual(seen[0].mask.ignore, { token: 'ignore', id: 201 });
+});
+
+test('the default pair binds without the caller declaring anything', async () => {
+  const world = makeWorld();
+  say(world, ['one']);
+  const entries = await world.store.drain(world.botA);
+
+  const { model, seen } = stub({ probabilities: { act: 0.2, ignore: 0.8 } });
+  await bind(world, model)(entries);
+
+  assert.equal(seen[0].mask.act.token, 'act');
+  assert.equal(seen[0].mask.ignore.token, 'ignore');
+  assert.notEqual(seen[0].mask.act.id, seen[0].mask.ignore.id, 'two answers, two ids');
+});
+
+test('the mask follows the options the caller declared, not the defaults', () => {
+  const tokeniser = makeTokeniser({ ids: { ' yes': 11, ' no': 12, yes: 1, no: 2 } });
+  const bound = bindOptions(tokeniser, PROMPT, { act: 'yes', ignore: 'no' });
+
+  assert.deepEqual(bound.act, { token: 'yes', id: 11 });
+  assert.deepEqual(bound.ignore, { token: 'no', id: 12 });
+});
+
+test('an option the tokeniser splits is refused, because it cannot carry a probability', () => {
+  // `snooze` split into four pieces and had to be replaced; this is the check that
+  // would have said so before a single verdict was spent on it.
+  const tokeniser = makeTokeniser({ split: { ' snooze': 4 } });
+
+  assert.throws(
+    () => bindOptions(tokeniser, PROMPT, { act: 'act', ignore: 'snooze' }),
+    /takes 4 tokens at the prompt's end/,
+  );
+});
+
+test("a prompt whose own encoding the suffix rewrites is refused", () => {
+  // No trailing space: appending the option merges it into the prompt's last token,
+  // so nothing at "the prompt's own end" is the option. The prompt is what has to
+  // change, and this is where it gets said.
+  const midWord = { version: 'watch-v1', text: 'Answer act or ignore.' };
+
+  assert.throws(
+    () => bindOptions(makeTokeniser(), midWord, { act: 'act', ignore: 'ignore' }),
+    /rewrites the prompt's own encoding/,
+  );
+});
+
+test('an option that adds no token past the prompt has no id to read', () => {
+  // A truncated context: the prompt fills it, so the option falls outside and there
+  // is nothing to read an answer from.
+  const truncated: Tokeniser = { encode: () => [1, 2, 3] };
+
+  assert.throws(
+    () => bindOptions(truncated, PROMPT, { act: 'act', ignore: 'ignore' }),
+    /adds no token past this prompt/,
+  );
+});
+
+test('two options that land on one id are refused, because they are one answer', () => {
+  const tokeniser = makeTokeniser({ ids: { ' act': 7, ' ignore': 7 } });
+
+  assert.throws(
+    () => bindOptions(tokeniser, PROMPT, { act: 'act', ignore: 'ignore' }),
+    /land on the same id \(7\)/,
+  );
+});
+
+test('a runtime without a tokeniser refuses to run', () => {
+  const world = makeWorld();
+  const { model } = stub({ probabilities: { act: 0.9, ignore: 0.1 } });
+
+  assert.throws(
+    () =>
+      watchAs(world.store, world.botA, model, {
+        window: 10,
+        prompt: PROMPT,
+        operatingPoint: POINT,
+      } as never),
+    /needs a tokeniser/,
+    'without one it cannot say where its own answer is read',
+  );
+});
+
+test('the binding is measured once, not on every tick', async () => {
+  const world = makeWorld();
+  const tokeniser = makeTokeniser();
+  const { model } = stub({ probabilities: { act: 0.1, ignore: 0.9 } });
+  const watch = bind(world, model, POINT.threshold, tokeniser);
+
+  assert.equal(tokeniser.calls.length, 3, 'the prompt and its two suffixes, once each');
+
+  say(world, ['one']);
+  await watch(await world.store.drain(world.botA));
+  assert.equal(tokeniser.calls.length, 3, 'a tick encodes nothing: the ids are already known');
+
+  say(world, ['two']);
+  await watch(await world.store.drain(world.botA));
+  assert.equal(tokeniser.calls.length, 3, 'and neither does the next one');
 });
