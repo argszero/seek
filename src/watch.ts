@@ -10,7 +10,10 @@
  * it judged.
  *
  * **No model is built, bundled or chosen here.** `WatchModel` is the seam and
- * `llama.ts` is the implementation over a local server; which model *ships* is
+ * `llama.ts` is the implementation over a local server; `watch-server.ts` is the
+ * composition that measures the ids over that server and hands back this file's
+ * runtime, so a caller does not have to do the three steps in the right order from
+ * outside. Which model *ships* is
  * `src/README.md` line 25, answered by measurement, and nothing in this file reads
  * that answer. So this file stays the rules, and stays testable without a model.
  *
@@ -629,8 +632,15 @@ function warmFrom(
   return { key, entries: previous.entries.filter((id) => here.has(id)) };
 }
 
-/** The two declared option tokens, checked for the shapes line 79 requires. */
-function declaredOptions(override?: Partial<OptionTokens>): OptionTokens {
+/**
+ * The two declared option tokens, checked for the shapes line 79 requires.
+ *
+ * Exported because the ids are sometimes measured before this runtime exists —
+ * `watch-server.ts` binds the mask over HTTP and then builds the runtime, and it has
+ * to resolve the tokens through this function rather than keep its own copy of the
+ * rules that refuse an empty or repeated option.
+ */
+export function declaredOptions(override?: Partial<OptionTokens>): OptionTokens {
   const tokens: OptionTokens = { act: 'act', ignore: 'ignore', ...override };
   for (const token of [tokens.act, tokens.ignore]) {
     if (typeof token !== 'string' || token.trim().length === 0) {
