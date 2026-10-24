@@ -474,5 +474,6 @@
    }
   },
   "reading": "the two halves agree: the same AUC to three places, all sixteen images with nothing to act on judged correctly, and roughly half the images that carry an incident missed. The gap is the model, not the set."
- }
+ },
+ "_correction": "The text figures here were taken on a different rig (llama-cpp-python, 96 ms/message) and without the question part's trailing space; re-scored on the rig the image readings use, set4.json peaks at (0.3845, 0.3948] with 24/24 rather than at 0.600. The claim below is kept as the record of that run, not as the current reading. See remeasured.json"
 }

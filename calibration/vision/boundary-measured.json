@@ -492,5 +492,6 @@
   "Synthetic screenshots: rendered, not captured. No chrome, scale factor or compression.",
   "n = 56 across the three sets, and this set is balanced 12/12 by construction while a real room is far more lopsided. A cut chosen on a balanced set is not a cut chosen on the traffic the kernel will see, which is why the plateau is reported as an interval and the choice inside it is left to a ruling.",
   "The estimator reads the whole next-token distribution; the kernel masks one id per option. That tension is already recorded in docs/decisions.md."
- ]
+ ],
+ "_correction": "The image figures here were taken with the picture placed after the question. That placement, not the model, produced the AUC 0.701 and the three false positives this file reports at a 0.151 cut. Re-scored with the picture on its message the same cases give AUC 0.840, and no negative in any of the 56 image cases fires at the best cut. See remeasured.json"
 }

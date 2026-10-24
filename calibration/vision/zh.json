@@ -1,0 +1,134 @@
+{
+ "_what_this_is": "Twelve image cases written in Chinese, for the multilingual half of src/README.md line 25.",
+ "_why_they_exist": "line 25 requires the watch model to be multilingual AND multimodal. The multimodal half had 56 cases; the multilingual half rested on 8 Chinese pictures out of those 56 -- 2 + 2 + 4 -- which calibration/vision/measured.json itself says cannot carry a language split. This set gives the Chinese side enough to be read on its own.",
+ "source": "hand-written in Chinese in this project's own session (seek-opensource-task), 2026-10-25",
+ "authorship": "Written in Chinese from the start, as a Chinese ops room's traffic: 对账, 短信通道, 工单, 灰度发布, 演练, 快递柜, 会议室预订. NOT a translation of the English sets. Where a FAMILY is shared with an English case it is recorded per case in shares_family_with, with different content.",
+ "question": "Do you need to do something about this message? Answer act or ignore.",
+ "labels": {
+  "act": "the picture shows something this bot must act on",
+  "ignore": "the picture shows nothing this bot must act on"
+ },
+ "design_note": "Six act (three thin evidence, three clear) against six ignore (three evidence-like, three ordinary), so the set is not easier or harder by construction than the English boundary set. Captions are uninformative Chinese chatter. Every case is reported whatever it scored.",
+ "cases": [
+  {
+   "id": "z-a1",
+   "label": "act",
+   "image": "img/z-a1.png",
+   "text": "早上的",
+   "note": "中文运维大屏：12 个指标里退款积压 1.4k 是琥珀色，其余全绿",
+   "lang": "zh",
+   "family": "thin",
+   "shares_family_with": null
+  },
+  {
+   "id": "z-a2",
+   "label": "act",
+   "image": "img/z-a2.png",
+   "text": "刚出的日报",
+   "note": "中文对账日报：七行里只有银联一行「差异 3 笔」标红",
+   "lang": "zh",
+   "family": "thin",
+   "shares_family_with": null
+  },
+  {
+   "id": "z-a3",
+   "label": "act",
+   "image": "img/z-a3.png",
+   "text": "月度",
+   "note": "中文 SLO 卡片：错误预算已用 96%，按当前速度还够 2 天",
+   "lang": "zh",
+   "family": "thin",
+   "shares_family_with": null
+  },
+  {
+   "id": "z-a4",
+   "label": "act",
+   "image": "img/z-a4.png",
+   "text": "商户发来的",
+   "note": "收银台中文报错弹窗：交易失败 TRX-5099",
+   "lang": "zh",
+   "family": "clear",
+   "shares_family_with": null
+  },
+  {
+   "id": "z-a5",
+   "label": "act",
+   "image": "img/z-a5.png",
+   "text": "看下日志",
+   "note": "结算日志里一行 FATAL 退出 code=137，上下都是 INFO",
+   "lang": "zh",
+   "family": "clear",
+   "shares_family_with": null
+  },
+  {
+   "id": "z-a6",
+   "label": "act",
+   "image": "img/z-a6.png",
+   "text": "刚弹的",
+   "note": "中文告警卡：回调堆积 12,480 条，消费者 0 个在运行",
+   "lang": "zh",
+   "family": "clear",
+   "shares_family_with": null
+  },
+  {
+   "id": "z-i1",
+   "label": "ignore",
+   "image": "img/z-i1.png",
+   "text": "提前通知",
+   "note": "中文维护窗口公告，明确写「期间相关告警请忽略」",
+   "lang": "zh",
+   "family": "evidence_like",
+   "shares_family_with": null
+  },
+  {
+   "id": "z-i2",
+   "label": "ignore",
+   "image": "img/z-i2.png",
+   "text": "月度",
+   "note": "中文审计报告：正文多处「异常」字样，但每行计数都是 0",
+   "lang": "zh",
+   "family": "evidence_like",
+   "shares_family_with": "same family as b-i3 (an audit reporting zero errors), different content"
+  },
+  {
+   "id": "z-i3",
+   "label": "ignore",
+   "image": "img/z-i3.png",
+   "text": "存档",
+   "note": "上个月的事故复盘文档，标着已归档、整改项全部关闭",
+   "lang": "zh",
+   "family": "evidence_like",
+   "shares_family_with": "same family as b-i2 (a closed incident record), different content"
+  },
+  {
+   "id": "z-i4",
+   "label": "ignore",
+   "image": "img/z-i4.png",
+   "text": "收到了",
+   "note": "快递柜取件通知，取件码 8842",
+   "lang": "zh",
+   "family": "ordinary",
+   "shares_family_with": null
+  },
+  {
+   "id": "z-i5",
+   "label": "ignore",
+   "image": "img/z-i5.png",
+   "text": "订一下",
+   "note": "会议室预订表，没有运维信号",
+   "lang": "zh",
+   "family": "ordinary",
+   "shares_family_with": null
+  },
+  {
+   "id": "z-i6",
+   "label": "ignore",
+   "image": "img/z-i6.png",
+   "text": "好啦",
+   "note": "数据导出完成通知，1,204 条已发邮箱",
+   "lang": "zh",
+   "family": "ordinary",
+   "shares_family_with": null
+  }
+ ]
+}
