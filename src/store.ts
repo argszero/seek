@@ -146,6 +146,16 @@ export class SeekStore {
   }
 
   /**
+   * An agent's own stretches of work.
+   *
+   * Sharded by agent, not by bot: a session is the agent's (data-model rule
+   * 13), and two agents behind one bot must never share a thread.
+   */
+  sessionsOf(agentId: Id): Session[] {
+    return (this.data.sessions[agentId] ??= []);
+  }
+
+  /**
    * Whether this bot has anything to wake for.
    *
    * A bot wakes because an entry arrived and for no other reason, so an empty
