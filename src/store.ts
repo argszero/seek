@@ -141,8 +141,30 @@ export class SeekStore {
     return (this.data.messages[roomId] ??= []);
   }
 
+  /**
+   * The bot's observations: everything ever delivered to it, append-only.
+   *
+   * `agent-lifecycle.md` §3: *"The inbox is append-only and the writer never
+   * blocks"*, and *"no entry has to be silently dropped to keep it small"*. What
+   * grows without bound is therefore not bounded here but in what a judgement
+   * *reads* — the delta since the last digest — which is `compact.ts`'s job.
+   *
+   * This array is mutable on purpose: `delivery.ts` and `schedule.ts` append to it.
+   * A caller that wants the queue rather than the record wants `pending()`.
+   */
   inbox(botId: Id): Observation[] {
     return (this.data.observations[botId] ??= []);
+  }
+
+  /**
+   * What is still waiting to be taken: the queue the loop sees.
+   *
+   * A consumed entry stays in the record (its verdict lives on it and nowhere
+   * else — `decisions.md` default 6), so "the queue" and "the inbox" are no longer
+   * the same list. This is the difference, and it is a read: nothing is moved.
+   */
+  pending(botId: Id): Observation[] {
+    return this.inbox(botId).filter((entry) => entry.state !== 'consumed');
   }
 
   /**
@@ -170,23 +192,32 @@ export class SeekStore {
    * Whether this bot has anything to wake for.
    *
    * A bot wakes because an entry arrived and for no other reason, so an empty
-   * inbox is no wake — not an idle tick.
+   * queue is no wake — not an idle tick. It reads `pending()`: the record keeps
+   * what it consumed, and a bot woken again for an entry it already settled would
+   * be the "mark it handled" bookkeeping this design exists to avoid.
    */
   hasPending(botId: Id): boolean {
-    return this.inbox(botId).length > 0;
+    return this.pending(botId).length > 0;
   }
 
   /**
-   * Take the bot's whole queue in one step.
+   * Take everything the bot has waiting, in one step.
    *
-   * The pop is a single synchronous `splice`, and only the save that follows it
-   * is awaited. Anything delivered while that save is in flight lands in the
-   * now-empty queue and is taken by the next round. Reading the queue and then
+   * The queue is emptied in a single synchronous pass, and only the save that
+   * follows it is awaited. Anything delivered while that save is in flight lands in
+   * the queue unmarked and is taken by the next round. Reading the queue and then
    * clearing it would lose exactly that arrival.
+   *
+   * **What is taken is marked `consumed`, not removed.** The entries are returned
+   * to the caller, which is where a verdict is written on them — and a verdict
+   * lives on its entry and nowhere else (`decisions.md` default 6). Splicing them
+   * out here would mean the judgement's only copy is destroyed by the same tick
+   * that produced it, and the box's last-verdict part could never be filled: the
+   * mark is what makes a verdict survive to be read back.
    */
   async drain(botId: Id): Promise<Observation[]> {
-    const queue = this.inbox(botId);
-    const taken = queue.splice(0, queue.length);
+    const taken = this.pending(botId);
+    for (const entry of taken) entry.state = 'consumed';
     if (taken.length > 0) await this.save();
     return taken;
   }

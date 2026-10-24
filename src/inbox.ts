@@ -114,12 +114,18 @@ export class InboxLoop {
     }
 
     // §11.4: an entry the chain wall held back still belongs to this bot's
-    // inbox — "nothing is lost and nothing is spent" — so it goes back on the
-    // queue, ahead of whatever arrived meanwhile, and is reconsidered when the
-    // room moves on. Consuming it here is what would make a held message
-    // disappear instead of wait.
+    // inbox — "nothing is lost and nothing is spent" — so it is left waiting
+    // instead of being consumed, and is reconsidered when the room moves on.
+    // Consuming it here is what would make a held message disappear instead of
+    // wait.
     if (settled.blocked.length > 0) {
-      this.store.inbox(botId).unshift(...settled.blocked);
+      // Back on the queue means waiting again: the entry went nowhere, so its
+      // mark comes off rather than the entry being copied or re-created. It is
+      // *not* re-inserted — it never left the record (`drain` marks, it does not
+      // splice), and putting the same entry back would store one observation
+      // twice and count it twice. Its arrival position is already where the
+      // queue wants it: it was delivered before whatever arrived meanwhile.
+      for (const entry of settled.blocked) entry.state = 'new';
       await this.store.save();
     }
 

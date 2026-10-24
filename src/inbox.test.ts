@@ -93,6 +93,16 @@ test('an idle tick does not touch the queue at all', async () => {
   // Not merely "the turn did not open": the drain — and the save behind it —
   // is never reached, which is what keeps a tick over nothing free.
   assert.equal(store.drains, 0);
+
+  // And a record that has grown is not a queue: what a tick takes stays on the
+  // record for good, so a tick after one has consumed it must not reach the drain
+  // either — otherwise every wake from here on pays for the whole history.
+  deliver(store, { roomId: world.room, senderId: world.me, text: 'hello' });
+  await loop.tick(world.botA);
+  assert.equal(store.drains, 1, 'a real queue is drained once');
+  const after = await loop.tick(world.botA);
+  assert.equal(after.woke, false);
+  assert.equal(store.drains, 1, 'a consumed record is not a reason to drain again');
 });
 
 test('the drain takes the whole queue in one step, and nothing is left behind', async () => {
@@ -121,7 +131,13 @@ test('the drain takes the whole queue in one step, and nothing is left behind', 
 
   assert.equal(result.woke, true);
   assert.deepEqual(seen, [['one', 'two', 'three']]);
-  assert.equal(world.store.inbox(world.botA).length, 0);
+  assert.equal(world.store.pending(world.botA).length, 0, 'nothing is left waiting');
+  assert.equal(world.store.inbox(world.botA).length, 3, 'and nothing is destroyed');
+  assert.equal(
+    world.store.inbox(world.botA).every((entry) => entry.state === 'consumed'),
+    true,
+    'what a tick took is on the record, marked',
+  );
 
   // With nothing left, the next tick does not wake it a second time.
   const again = await loop.tick(world.botA);
@@ -149,7 +165,7 @@ test('an arrival during the drain survives to the next round', async () => {
     taken.map((entry) => textOf(store, world.room, entry.message_id)),
     ['first'],
   );
-  assert.equal(store.inbox(world.botA).length, 1);
+  assert.equal(store.pending(world.botA).length, 1);
 
   const nextRound = await store.drain(world.botA);
   assert.deepEqual(

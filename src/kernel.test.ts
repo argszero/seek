@@ -551,12 +551,14 @@ test('a summariser that throws is a skip with a back-off, not a failure of the p
   assert.equal(calls, 1);
   assert.equal(world.store.memoriesOf(world.agentA2).length, 0);
 
-  // Nothing to retry against: the delta did not grow, so the next tick does not
-  // fire the writer at the same delta again.
+  // The back-off is keyed on this room's delta, so a room that has grown is tried
+  // again. That the *same* delta is not re-fired is pinned in `compact.test.ts`,
+  // where a delta can be held still; here the point is that the writer is
+  // reachable at all after a tick, which a delta emptied by the tick would not be.
   broadcast(world.store, world);
   await kernel.tick(world.botA);
   await kernel.whenIdle();
-  assert.equal(calls, 1, 'a failed writer is not re-fired every tick');
+  assert.equal(calls, 2, 'a room whose delta has grown is retried, not abandoned');
 
   // And it is a skip, not a crash: the kernel's failure record stays empty.
   assert.equal(kernel.failures.length, 0);

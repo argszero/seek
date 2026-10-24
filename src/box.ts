@@ -7,7 +7,7 @@
  * | Part | Where it comes from |
  * |---|---|
  * | **Summary** | the room digest the work agent wrote (`compact.ts`, `digestOf`) |
- * | **Delta** | the queue entries after that digest's consumed-to point (`deltaFor`) |
+ * | **Delta** | the record's entries after that digest's consumed-to point (`deltaFor`) |
  * | **Last verdict** | read off the entry the loop wrote it on — never a second copy |
  * | **Question set** | the caller's (`agents.yml`), absent until a ruling fixes its shape |
  *
@@ -66,21 +66,6 @@ export interface BoxOptions {
    * shape invented here would be a format nobody decided.
    */
   questions?: unknown;
-  /**
-   * Entries of this room that are in flight — delivered, drained, and not yet
-   * settled — put back into the delta they were part of.
-   *
-   * The loop pops the whole queue before anything is decided (`inbox.ts`), so by
-   * the time a judgement runs, the entries that woke the bot are no longer in the
-   * queue `deltaFor` reads. Without them the box would be a box about the room
-   * *after* the reason to look at it was removed: the judgement would be reading
-   * the tail of the conversation and not the line it was woken by.
-   *
-   * They come first because the drain is atomic: everything left in the queue
-   * arrived after the pop, so an in-flight entry always precedes what is still
-   * queued. Entries of another room are dropped — a box is one room's.
-   */
-  inFlight?: Observation[];
 }
 
 /** The last verdict, put in as a fact about the record. */
@@ -156,11 +141,10 @@ export function buildBox(
   options: BoxOptions,
 ): RoomBox {
   const weigh = options.weigh ?? (() => 1);
-  const queued = deltaFor(store, botId, roomId, workAgentId(store, botId));
-  const total = [
-    ...(options.inFlight ?? []).filter((entry) => entry.room_id === roomId),
-    ...queued,
-  ];
+  // No `inFlight` to add: the entries that woke this judgement are on the record
+  // the delta is read from, so the box holds the line that woke it without any
+  // caller handing it back in.
+  const total = deltaFor(store, botId, roomId, workAgentId(store, botId));
 
   const kept: Observation[] = [];
   let spent = 0;

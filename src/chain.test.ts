@@ -378,8 +378,10 @@ test('two bots cannot answer each other forever', async () => {
     agentTurnsIn(world.store, world.room) >= AGENT_TURN_CAP,
     'the room reached its cap rather than the chain running out',
   );
+  // The queue, not the record: what each bot has already consumed stays on its
+  // record for good, so only what is still waiting says whether the wall held.
   const waiting =
-    world.store.inbox(world.botA).length + world.store.inbox(world.botB).length;
+    world.store.pending(world.botA).length + world.store.pending(world.botB).length;
   assert.equal(waiting, 1, 'the last answer waits instead of vanishing');
 });
 

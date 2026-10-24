@@ -278,12 +278,14 @@ export class Kernel {
       else byRoom.set(entry.room_id, [entry]);
     }
 
-    for (const [roomId, inFlight] of byRoom) {
+    // What the tick drained needs no hand-off: it is on the record the delta is
+    // read from, so the grouping only decides *which rooms* this tick touched.
+    for (const roomId of byRoom.keys()) {
       // The question the runtime answers for itself and never puts to a model:
       // a count and an age, both free (§3, `decisions.md` default 3).
-      if (!this.compactor.due(botId, roomId, inFlight)) continue;
+      if (!this.compactor.due(botId, roomId)) continue;
 
-      const run = this.compactor.compact(botId, roomId, inFlight).then(
+      const run = this.compactor.compact(botId, roomId).then(
         () => undefined,
         (error: unknown) => {
           // A background action that threw must not take the process down, and
