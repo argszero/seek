@@ -15,6 +15,7 @@
  *   a room for its own name, and nothing re-derives "was I addressed" later.
  */
 
+import { chainBlock, resetAgentTurns } from './chain.ts';
 import { newId, SeekStore } from './store.ts';
 import type {
   Bot,
@@ -100,11 +101,31 @@ export function deliver(store: SeekStore, input: PostMessageInput): Delivery {
 
   store.messagesOf(input.roomId).push(message);
 
+  // A person speaking in this room ends its run of bot turns (§11.3). Nothing
+  // resets a chain's depth: that is the message's own fact, and a person
+  // rejoining a thread is a new hop in the thread they rejoined.
+  if (store.data.principals[input.senderId]) {
+    resetAgentTurns(store, input.roomId);
+  }
+
   const observations: Observation[] = [];
   for (const bot of store.botsIn(input.roomId)) {
     // A bot does not wake itself with its own words.
     if (bot.id === input.senderId) continue;
     const hints = deriveHints(store, bot, message);
+    // §11.4: the entry still lands, at zero cost, marked with why the wall held
+    // it. The hint is the record taken now; the wake decision is taken again
+    // when the entry is settled (`chain.ts`).
+    const held = chainBlock(store, bot.id, {
+      id: '',
+      bot_id: bot.id,
+      message_id: message.id,
+      room_id: message.room_id,
+      kind: 'message',
+      hints,
+      delivered_at: now,
+    });
+    if (held) hints.chainBlocked = held;
     const observation: Observation = {
       id: newId('ob'),
       bot_id: bot.id,

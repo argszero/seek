@@ -39,6 +39,17 @@ import type { Id, Message } from './types.ts';
 export interface SayOptions {
   /** The message this one answers, when it answers one. */
   replyTo?: Id;
+  /**
+   * The principals this message addresses, Feishu's `{id, name}` pairs.
+   *
+   * A bot that wants another bot to hear it has to name it: §11.4 says a bot
+   * message wakes a bot only when it "@-mentions that bot, replies to one of its
+   * messages, or is a direct message", and §11.2 lets a bot say the first word
+   * to a peer. Without this the first of those three could never happen, so a
+   * bot's opening remark would be indistinguishable from a broadcast — and
+   * `gate.ts` row 3 ignores those.
+   */
+  mentions?: { id: Id; name: string }[];
   /** An injectable clock, so a test does not depend on wall time. */
   now?: string;
 }
@@ -97,6 +108,7 @@ export function say(store: SeekStore, input: SayInput): Message {
     senderId: input.botId,
     agentId: input.agentId,
     text: input.text,
+    mentions: input.mentions,
     rootId: input.replyTo,
     now: input.now,
   });

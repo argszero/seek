@@ -13,6 +13,15 @@ export { deliver, deriveHints, deriveKind } from './delivery.ts';
 export type { Delivery, PostMessageInput } from './delivery.ts';
 export { classify, gate } from './gate.ts';
 export type { GateDecision, GateResult } from './gate.ts';
+export {
+  AGENT_TURN_CAP,
+  DEPTH_CAP,
+  agentTurnsIn,
+  bumpAgentTurns,
+  chainBlock,
+  resetAgentTurns,
+} from './chain.ts';
+export type { ChainBlockReason } from './chain.ts';
 export { InboxLoop } from './inbox.ts';
 export type { Judge, RunTurn, TickResult } from './inbox.ts';
 export { say, sayAs } from './say.ts';

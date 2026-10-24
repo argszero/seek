@@ -71,6 +71,15 @@ export interface Room {
   name?: string;
   chat_mode: ChatMode;
   created_at: string;
+  /**
+   * How many bot turns have run here in a row, with no human message between
+   * them (`agent-lifecycle.md` §11.3). It lives on the Room, never on an agent:
+   * no single agent can see how many times its peers just spoke, so a counter
+   * on one would be that agent measuring itself and calling it a conversation.
+   *
+   * Absent means none have run. A human message resets it.
+   */
+  consecutive_agent_turns?: number;
 }
 
 export type MembershipRole = 'owner' | 'member';
@@ -135,6 +144,17 @@ export interface ObservationHints {
   repliesToMe: boolean;
   /** The room holds exactly this bot and the sender. */
   direct: boolean;
+  /**
+   * Set when this entry would have woken the bot but the chain wall held it
+   * back (`agent-lifecycle.md` §11.4): the message addresses this bot, and
+   * either the chain is at its depth cap or the room's run of consecutive bot
+   * turns is at its cap.
+   *
+   * It records why, at the moment the message landed. The wake decision is
+   * taken again when the entry is settled (`chain.ts`), so an entry held while
+   * a burst was running is reconsidered once the room moves on.
+   */
+  chainBlocked?: ChainBlockReason;
 }
 
 export type ObservationKind =
@@ -145,6 +165,15 @@ export type ObservationKind =
   | 'reminder';
 
 export type Verdict = 'ignore' | 'snooze' | 'keep' | 'act';
+
+/**
+ * Why the chain wall held an entry back (`agent-lifecycle.md` §11.3).
+ *
+ * Both readings are facts about the record — the message's `depth`, and the
+ * room's run of bot turns — so neither needs restoring after a restart.
+ * `depth` is the chain's own length; `room_agent_turns` is the room's burst.
+ */
+export type ChainBlockReason = 'depth' | 'room_agent_turns';
 
 /**
  * One entry on one bot's queue. An entry is a delivery, and a delivery is the

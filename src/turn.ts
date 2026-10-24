@@ -26,6 +26,7 @@
  * two turns rather than one turn with two rooms in it.
  */
 
+import { bumpAgentTurns } from './chain.ts';
 import type { RunTurn } from './inbox.ts';
 import { sayAs, type SayTool } from './say.ts';
 import { newId, type SeekStore } from './store.ts';
@@ -133,6 +134,10 @@ export async function runTurn(
     });
   } finally {
     turn.ended_at = spec.now ?? new Date().toISOString();
+    // §11.3: this room has now had one more bot turn in a row, with no human
+    // message between. Counted when the turn ends so that the third turn's own
+    // words still reach the other side — the cap stops *further* messages.
+    bumpAgentTurns(store, spec.roomId);
     await store.save();
   }
 

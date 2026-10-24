@@ -103,7 +103,18 @@ export class InboxLoop {
       acting.push(...(await this.judge(settled.judge)));
     }
 
-    // Row 3's ending, and stage 1's "no act": nothing was asked to happen.
+    // §11.4: an entry the chain wall held back still belongs to this bot's
+    // inbox — "nothing is lost and nothing is spent" — so it goes back on the
+    // queue, ahead of whatever arrived meanwhile, and is reconsidered when the
+    // room moves on. Consuming it here is what would make a held message
+    // disappear instead of wait.
+    if (settled.blocked.length > 0) {
+      this.store.inbox(botId).unshift(...settled.blocked);
+      await this.store.save();
+    }
+
+    // Row 3's ending, stage 1's "no act", and a tick where everything was held
+    // back: nothing was asked to happen.
     if (acting.length === 0) {
       return { woke: false, entries: [], settled };
     }
