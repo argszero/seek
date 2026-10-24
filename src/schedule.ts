@@ -319,10 +319,24 @@ export function scheduleCancel(store: SeekStore, input: ScheduleCancelInput): Sc
  * it produced (`Turn.produced`), and a schedule row is not a message — it is a
  * note that will become a delivery later, addressed to nobody in the room.
  */
-export function scheduleAs(store: SeekStore, botId: Id, agentId: Id): ScheduleTool {
+export function scheduleAs(
+  store: SeekStore,
+  botId: Id,
+  agentId: Id,
+  onWritten?: (row: ScheduleRow) => void,
+): ScheduleTool {
   return {
     list: () => scheduleList(store, { botId, agentId }),
-    add: (when, text, options) => scheduleAdd(store, { botId, agentId, when, text, ...options }),
+    add: (when, text, options) => {
+      const row = scheduleAdd(store, { botId, agentId, when, text, ...options });
+      // A row written for sooner than the instant the comparator is already
+      // sleeping toward would otherwise wait for that further one, so the
+      // writer is what re-arms it (`comparator.ts`, `refresh()`). Optional
+      // because the table is correct either way: only the moment a reminder
+      // arrives would be wrong, and that is the runtime's to wire.
+      onWritten?.(row);
+      return row;
+    },
     cancel: (rowId) => scheduleCancel(store, { botId, agentId, rowId }),
   };
 }
