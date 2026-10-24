@@ -34,6 +34,7 @@ and a green status board — the ordinary traffic of an ops room.
 |---|---|
 | `cases.json` | the 16 cases: id, label, image path, caption, a note, and the language of the image text |
 | `img/*.png` | the images themselves, at the size they were measured |
+| `heldout.json` | the second 16 cases, written after the first 16 had been measured and used to pick nothing |
 | `measured.json` | the readings: model files and their hashes, the runner, per-case `p_act`, accuracy, AUC, latency, and the diagnostic below |
 | `provenance.md` / `provenance.zh-CN.md` | this record |
 
@@ -59,24 +60,34 @@ them before anything was measured; the hashes are in `measured.json`.
 
 ## The reading
 
+Two sets, the second written only after the first had been read — so the reading is not one set
+flattering the model it was used to diagnose.
+
+| set | accuracy at the 0.600 cut | AUC | `act` | `ignore` |
+|---|---|---|---|---|
+| `cases.json` (16) | 12/16 = 0.750 | 0.875 | 4/8 | 8/8 |
+| `heldout.json` (16) | 13/16 = 0.812 | 0.875 | 5/8 | 8/8 |
+| **both (32)** | **25/32 = 0.781** | **0.891** | **9/16** | **16/16** |
+
+
 | | |
 |---|---|
-| accuracy at the 0.600 cut | **12/16 = 0.750** |
-| AUC | **0.875** |
-| `ignore` cases correct | **8/8** |
-| `act` cases correct | **4/8** |
-| per case, image encoding and forward pass | **1.05 s** median (1.04–1.07 s) |
-| quant check | Q4_K_M scored 12/16, AUC 0.891 on the same set — the verdict does not turn on the quant |
+| per case, image encoding and forward pass | **1.05 s** median, measured across both sets |
+| quant check | Q4_K_M scored 12/16, AUC 0.891 on the first set — the verdict does not turn on the quant |
 
-**What that says.** The model sees images: it never once fired on a picture that carried
-nothing to act on, which is the failure mode that makes a bot noisy. It **under-fires on
-pictures that carry an incident** — a disk at 98%, a stalled queue with a 92k backlog, a
-deploy that failed, and a Chinese payment-failure screenshot all sat under the cut. That is
-the other half of the failure line 25 warns about, so the multimodal requirement is
-**measured and still not met**, and line 25 stays unticked with the number beside it instead
-of with the word "unmeasured".
+**What that says.** The two halves agree, which is the reason there are two. The model sees
+images: it never once fired on a picture that carried nothing to act on, 16 out of 16, and
+that is the failure mode that makes a bot noisy. It **under-fires on pictures that carry an
+incident** — of sixteen such pictures it missed seven, and the misses are not one kind of
+picture: a disk gauge at 98%, a deploy that failed, a queue chart that collapsed, a
+certificate two days from expiry, a traffic chart that fell to zero, and both Chinese
+failure screenshots. The held-out set was written to include exactly those classes after the
+first set had shown them, and the model missed them again — so this is what the model does
+with an ops screenshot, not an accident of sixteen pictures. That is the other half of the
+failure line 25 warns about, so the multimodal requirement is **measured and still not met**,
+and line 25 stays unticked with the number beside it instead of with the word "unmeasured".
 
-**Resolution was ruled out as the cause.** Raising the image token budget from the
+**Resolution was ruled out as the cause.** Measured on the first set: raising the image token budget from the
 projector's default to 1024 does not fix the misses and costs about three times the latency:
 `a4` rises 0.438 → 0.739 and becomes correct, `a1` falls 0.616 → 0.585 and becomes wrong, and
 `a5`/`a6`/`a8` rise but stay under the cut. The default budget is the better operating point
@@ -89,7 +100,7 @@ and the misses are judgement, not sampling.
   the text corpus carries.
 - **Synthetic screenshots.** Rendered, not captured: a real screenshot has chrome, scale
   factors and compression that these do not.
-- **n = 16.** Eight images per label is a wide interval, and two Chinese cases cannot make
+- **n = 32.** Sixteen images per label is a narrower interval than sixteen cases were, and
   a language split. The reading is enough to say the requirement is unmet and not enough to
   rank models on vision.
 - **The estimator.** The scorer reads the whole next-token distribution; the kernel masks a

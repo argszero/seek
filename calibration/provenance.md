@@ -72,7 +72,7 @@ place a repository can cite.
 ## What this material does not settle
 
 - **Vision.** No image case was ever run **in this directory**. The image set lives beside it
-  in `vision/`, measured 2026-10-25: 12/16 at the 0.600 cut, AUC 0.875 — the requirement still
+  in `vision/`, measured 2026-10-25: 25/32 at the 0.600 cut across two sets, AUC 0.891 — the requirement still
   stands unmet, and nothing here
   may be read as saying images are handled.
 - **A box with more than one message.** Every measured run judged one message at a time.
