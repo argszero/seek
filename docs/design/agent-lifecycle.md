@@ -41,7 +41,7 @@ One watches, one works. Both are agents in the full sense: each has a persona, i
 
 **Cross-reading is not free, and the two directions cost different things.** The work agent reading the watch agent's log is billed tokens on an expensive model, so it is **on demand, never injected into every turn** — pulled when it matters (the user asks why it stayed quiet; it is about to speak in a room it has been ignoring). The watch agent reading the work agent's log costs no money but costs latency, so it reads a **bounded** slice.
 
-**There is no watch-specific input pipeline.** The watch agent sends the same shape of request the work agent sends — its own history, its own memory, its own compression — because it is an agent, not a classifier. Nothing is summarised on its behalf and no second context has to be kept in sync.
+**There is no watch-specific input pipeline — there is the watch agent's memory, and the judgement is read off it.** What the watch agent remembers about a room is a **two-part box** (§3): the summary its last compaction produced, and the observations that have arrived since. A judgement is that box — the summary, the delta, the previous verdict — and nothing else. Nothing is assembled for it at decision time, no other agent summarises on its behalf, and no second context has to be kept in sync. It is the same shape any agent's request has, its own history and its own memory, with the delta standing in for the history a small window cannot hold.
 
 The watch model is **shipped with the product** — no download step, no dependence on what the user's machine happens to have installed.
 
@@ -121,7 +121,7 @@ Agent                                   ← a runnable, not a process
 │                                        session was given another
 ├─ memory
 │   diary (its own markdown memory, across sessions and rooms)
-│   roomDigest[room] (rolling summary per room — its own memory)
+│   roomDigest[room] (the box's summary — rolling, per room, its own memory)
 └─ Sessions
     session[room] (its own stretch of work in each room; a new one starts when it
     changes workspace — private bookkeeping, never shown to the user)
@@ -173,9 +173,26 @@ Appended one entry at a time, **never processed by a model**:
 - **`mentionsMe` is derived, not stored on the message.** The message carries Feishu's own field, `mentions[]` — the principals it names, `{id, name}` each — and that is the only stored form. Delivery finds **this bot's id** in that array and records the boolean here, on this bot's entry. Nothing in `hints` is ever written back onto the message: the message is written once and stays clean, and the next bot derives its own answer from the same bytes.
 - State machine: `new → watched (act | ignore | snooze | keep) → consumed`; `snooze` carries a condition. An entry that stage 0 fast-passes skips `watched` and goes `new → consumed`, including one injected into a turn already running (§4).
 - **The inbox is also the running turn's queue.** There is no second, in-memory pending list: every entry is on disk before any turn starts, and a message that arrives mid-turn is the same entry, read again at the next round boundary (§4). One queue, one "already handled" state, nothing to reconcile.
-- **Capacity**: per (bot, room) a cap such as 200 entries / 24 hours. Over the cap, entries are not dropped — they collapse into one line inside the bot's `roomDigest`. Otherwise the inbox becomes a second message log and blows up both disk and context.
+- **Capacity is the box's delta, not a cap on the inbox** (§3, "The observation box"). The inbox may hold what arrives; what stays bounded is the part a judgement reads — the observations since the last compaction. When the delta crosses its line a compaction runs, so the inbox never has to become a second message log and no entry has to be silently dropped to keep it small.
 - The inbox is append-only and the writer **never blocks** (room fan-out must not stall because one bot is busy).
 - A verdict is written on the entry, and it is written by the **loop**, not by the agent that produced it — the watch agent only answers; the loop performs (§4).
+
+### The observation box — what a judgement actually reads
+
+One box per (bot, room). It is the watch agent's memory for that room, and it has exactly four parts:
+
+| Part | What it holds | Written by | How often |
+|---|---|---|---|
+| **Summary** | the last compaction's result: what this room is, who is in it, what has been settled | a compaction | rare, when the delta crosses its line |
+| **Delta** | the observations that arrived after the point the summary consumed up to | nothing — it is read off the inbox | every arrival, for free |
+| **Last verdict** | when it was taken, what it was, and the reason if one came back | the loop | every tick |
+| **Question set** | the named questions the judgement answers, with their options | `agents.yml`, per bot | static |
+
+- **The delta is derived, never stored.** It is the inbox entries after the summary's consumed-to point, so there is one copy of every observation and no second log to keep true. Its `hints` — mentions me, asks a question, replies to me, how long the room has been quiet, how many images — are the same string and counting work already done at delivery.
+- **The state handed to the model is structured, not prose.** A summary paragraph is one field of it. Everything else is fields: how many observations, who spoke, how stale the last verdict is. Decision models are asked with a state that may be any JSON value; handing them a paragraph would throw away the only cheap signal there is.
+- **A judgement never waits for a compaction.** It reads whatever box exists — possibly an empty summary and a long delta — and returns. Compaction is background work, single-flight, committing the new summary and its consumed-to point in one atomic write, so an arrival during compaction is either inside the new summary or still in the delta, and is never dropped.
+- **The last verdict goes in as a fact, never as an instruction.** "You kept this twelve observations ago and have said nothing since" is a fact about the record. "You should keep this" would be the box arguing with the judgement, and it is what would make a stale decision self-perpetuating.
+- **This is what makes the box worth having: `keep` and `snooze` become re-openable.** A room that was kept once is looked at again against a box that now says how long it has been and what changed, instead of being re-judged from scratch or never re-judged at all.
 
 ---
 
@@ -193,8 +210,10 @@ the bot's loop, per tick:
   │  4. Everything else → stage 1 (call the watch agent)
   │
   ├ Stage 1 · the loop calls the watch agent (an agent, so it has tools)
-  │  input: its own history for this room, its own memory, the persona, why it woke,
-  │         plus — when it matters — a bounded slice read from the work agent's log
+  │  input: the room's observation box (§3) — the standing summary, the observations
+  │         since it, and the last verdict as a fact — plus the persona and the named
+  │         questions; when it matters, a bounded slice read from the sibling's log
+  │         (never the sibling's log injected wholesale, and never the whole inbox)
   │  model: model.watch — local, bundled, max_tokens capped
   │  tools: the same registry EMRG already gives an agent (bash / read / write / edit /
   │         glob / grep / subagent / submit_rant / boss / schedule). Memory writes and
@@ -348,7 +367,7 @@ Because the watch agent is an agent on a local model, **watch tokens are not mon
 | **Two bots wake each other and never stop** | ① a bot message does not wake another bot unless it @-mentions it, replies to it, or is a direct message ② a cap on consecutive bot turns per room — **3**, held on the Room, which is what bounds a burst ③ the depth cap, which bounds how long one chain runs (§11). A bot may open a conversation with another bot, so the *number* of chains is bounded by judgement and the record, not by a rule |
 | The watch agent is too cheap → deaf and blind | hit rate observable; what it ignored can be reviewed (entries and reasons are kept) |
 | The watch agent is too expensive → burning money | `spent` is recorded and visible per agent, so a runaway bill is *seen* rather than silently capped. There is no self-stop: a bill that climbs is a defect in the persona or the gate, and it is fixed there |
-| Inbox explosion | a cap plus collapse into the room digest |
+| Inbox explosion | the judgement reads a fixed-size box: the delta crosses its line and a compaction folds it into the summary, so what is spent per judgement stays flat however busy the room gets |
 | Long-lived means creeping corruption | checkpoint at the end of every tick; on restart, self-check (queue, time since it last spoke, spent); persona drift corrected against the diary |
 | No sense of time | every tick injects "how long since you last spoke in this room" and "how old this message is"; without that it asks the same question forever |
 

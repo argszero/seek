@@ -93,6 +93,14 @@ A word, a label or a tiny JSON — whatever the chosen model emits reliably. An 
 *"There is no need to design one specially, because the Agent itself already has a session history, memory and compaction. The judge's request should be essentially the same as the request the Agent sends when it really runs — it gets the agent's session history, memory and compaction."*
 The watch agent sends the same shape of request as any agent. Nothing is summarised on its behalf and no second context is kept in sync.
 
+**The judgement reads a two-part box.**
+*"The observation box splits into two parts: the result of the last compaction, and the observations that have arrived since it. Every judgement sends the last compaction's result together with the observations produced after it, plus the time and the result of the last judgement, to the system-one model, and gets a fast verdict."*
+Per (bot, room), the judgement input is that box and nothing else: the standing summary, the delta since it, and the previous verdict. The previous verdict goes in as a fact — how long ago it was and what it was — never as an instruction.
+
+**Compaction is triggered by a line, not by every message.**
+*"Compaction runs when it is worth running, not on arrival — the host chose the threshold over triggering on every new message."*
+The delta crossing a line starts a compaction, and a judgement never waits for one. Compaction is single-flight: at most one runs at a time, and it commits the new summary and the point it consumed to atomically, so a concurrent arrival is either inside the new summary or still in the delta, never lost. The line itself is a default, settled by measurement, not a ruling.
+
 ---
 
 ## Two agents behind one bot
