@@ -35,6 +35,14 @@
  *   from the probabilities of two declared tokens, `act` and `ignore`; `keep` and
  *   `snooze` are the loop's to write and are never asked for, because a model that
  *   answers by reading token probabilities cannot emit an option it was not given.
+ * - **Where in the vocabulary the answer is read** (§4 line 79, second sentence).
+ *   An option is only answerable if it survives as **one** token past the prompt,
+ *   and the id to mask is the one it takes *there* — not the id of the bare word.
+ *   Both are measured off `prompt.text + option` with the model's own tokeniser
+ *   (`bindOptions`), because masking the wrong form makes an option permanently
+ *   unreachable and reads as a confident wrong answer; nothing here may assume the
+ *   two ids are the same, and nothing here may pick a tokeniser, which is the
+ *   model's.
  * - **Where the verdict lives** (`decisions.md` default 6): on the entry it judged,
  *   and nowhere else. Nothing here keeps a copy.
  *
@@ -98,6 +106,40 @@ export interface OptionTokens {
   ignore: string;
 }
 
+/**
+ * What a tokeniser makes of a piece of text.
+ *
+ * One method, and one is all the mask needs: the ids a string becomes. It is a
+ * seam rather than an import because the tokeniser belongs to the model, and which
+ * model ships is `src/README.md` line 25 — a measurement, so this file may as
+ * little choose a vocabulary as a window. The stub in the tests is the only
+ * implementation in the tree, exactly as `WatchModel`'s is.
+ */
+export interface Tokeniser {
+  /** The ids `text` becomes, in order. */
+  encode(text: string): number[];
+}
+
+/** One declared option, bound to the id it takes where the answer is read. */
+export interface BoundOption {
+  /** The option as it was declared. */
+  token: string;
+  /**
+   * The id this option occupies at the prompt's own end.
+   *
+   * **Not necessarily the id of the bare word.** A tokeniser that reads `act` after
+   * a space gives it a different id than `act` on its own, and the mask is aimed at
+   * the position the answer is actually read from (§4 line 79).
+   */
+  id: number;
+}
+
+/** The two options, each bound to the id it takes at the prompt's own end. */
+export interface OptionBinding {
+  act: BoundOption;
+  ignore: BoundOption;
+}
+
 /** One question put to the model. Fields, never prose. */
 export interface WatchInput {
   /** The versioned artifact. */
@@ -106,6 +148,14 @@ export interface WatchInput {
   state: RoomBox;
   /** The declared options the answer is read from. */
   options: OptionTokens;
+  /**
+   * The ids the mask has to allow, measured at the prompt's own end.
+   *
+   * Handed over rather than left to the model to work out: a binding re-derived per
+   * call site is a binding free to disagree with the prompt it belongs to, and its
+   * failure mode is an option nobody can reach.
+   */
+  mask: OptionBinding;
 }
 
 /**
@@ -143,6 +193,14 @@ export interface WatchOptions {
   operatingPoint: OperatingPoint;
   /** Overrides for the declared option tokens. Defaults to `act` / `ignore`. */
   optionTokens?: Partial<OptionTokens>;
+  /**
+   * The tokeniser the mask ids are measured with. **Required**, and there is no
+   * default: a runtime without one cannot say where its own answer is read, and the
+   * options it cannot place may never be answerable at all. It refuses at
+   * construction for the same reason the operating point does — the defect would
+   * otherwise show up as a bot that always says no.
+   */
+  tokeniser: Tokeniser;
   /** What one observation costs against `window`. Passed through to the box. */
   weigh?: (entry: Observation) => number;
   /** The caller's question set, passed through. `agents.yml` still has no shape. */
@@ -202,6 +260,11 @@ export function watchAs(
   options: WatchOptions,
 ): Watch {
   const tokens = declaredOptions(options.optionTokens);
+  // Measured once, here: the ids the answer is read at do not depend on the room or
+  // the tick, and re-deriving them per call would make the mask free to drift from
+  // the prompt it belongs to. It also keeps the prompt warm (§4 "the box's tokens
+  // are kept warm"): nothing below re-encodes what this line already encoded.
+  const mask = bindOptions(options.tokeniser, options.prompt, tokens);
   checkOperatingPoint(options);
 
   const watch = (async (entries: Observation[]): Promise<Observation[]> => {
@@ -239,7 +302,12 @@ export function watchAs(
       if (options.questions !== undefined) boxOptions.questions = options.questions;
       const state = buildBox(store, botId, roomId, boxOptions);
 
-      const reading = await model.read({ prompt: options.prompt, state, options: tokens });
+      const reading = await model.read({
+        prompt: options.prompt,
+        state,
+        options: tokens,
+        mask,
+      });
       const probability = probabilityOf(reading, tokens);
 
       if (probability === undefined) outcome.unparsed += 1;
@@ -291,6 +359,97 @@ function declaredOptions(override?: Partial<OptionTokens>): OptionTokens {
     );
   }
   return tokens;
+}
+
+/**
+ * Bind the two declared options to the ids they take at the prompt's own end.
+ *
+ * `agent-lifecycle.md` §4, line 79: *"Option tokens must be single tokens, and
+ * masked where they actually land. A word that the tokeniser splits cannot carry a
+ * probability in one pass … And the id to mask is the one the option takes at the
+ * prompt's own end (with its leading space, in its own case), not the id of the
+ * bare word: masking the wrong form makes an option permanently unreachable and
+ * reads as a confident wrong answer."*
+ *
+ * So the measurement is taken on `prompt.text + option` — the exact string the
+ * model is asked to continue — and never on the option alone. Three things can go
+ * wrong, each silent at the call site and each refused here instead:
+ *
+ * - the option **does not survive as one token** past the prompt;
+ * - appending it **rewrites the prompt's own encoding**, so "the prompt's own end"
+ *   names no fixed position and the id read there is not the option's. This is the
+ *   real hazard rather than a theoretical one: a tokeniser that lets the last token
+ *   of the prompt merge with the first of the option produces exactly this, and the
+ *   prompt has to be the thing that changes — end it at a boundary that holds;
+ * - both options **land on the same id**, which makes two answers one answer.
+ *
+ * The first case has a history: `snooze` had to be replaced because it split into
+ * four pieces, and a fourth verdict cannot be asked of a model that answers by
+ * reading probabilities.
+ */
+export function bindOptions(
+  tokeniser: Tokeniser,
+  prompt: WatchPrompt,
+  options: OptionTokens,
+): OptionBinding {
+  if (!tokeniser || typeof tokeniser.encode !== 'function') {
+    throw new Error(
+      'stage 1 needs a tokeniser: the mask ids are read off the prompt\'s own end, and ' +
+        'without them a declared option may be unreachable for good ' +
+        '(src/README.md line 26)',
+    );
+  }
+  // Encoded once for the pair: the prompt is the same text for both suffixes, and
+  // re-encoding it per option is the first step towards re-encoding it per tick.
+  const prefix = tokeniser.encode(prompt.text);
+  const act = bindOne(tokeniser, prompt, prefix, options.act);
+  const ignore = bindOne(tokeniser, prompt, prefix, options.ignore);
+  if (act.id === ignore.id) {
+    throw new Error(
+      `the two options land on the same id (${act.id}) at this prompt's end, so ` +
+        `${JSON.stringify(options.act)} and ${JSON.stringify(options.ignore)} are one ` +
+        'answer wearing two names',
+    );
+  }
+  return { act, ignore };
+}
+
+/** One option, measured where the model will read it. */
+function bindOne(
+  tokeniser: Tokeniser,
+  prompt: WatchPrompt,
+  prefix: number[],
+  token: string,
+): BoundOption {
+  const whole = tokeniser.encode(prompt.text + token);
+  // The prompt has to end where the option begins. Any earlier id differing means
+  // the suffix changed the prefix, and then there is no position that is this
+  // prompt's own end for this option.
+  for (let index = 0; index < prefix.length; index += 1) {
+    if (whole[index] !== prefix[index]) {
+      throw new Error(
+        `the tokeniser rewrites the prompt's own encoding once ${JSON.stringify(token)} ` +
+          `is appended (position ${index} becomes ${whole[index]}, was ${prefix[index]}), ` +
+          "so no id at the prompt's end belongs to this option — end the prompt at a " +
+          'boundary that survives the suffix',
+      );
+    }
+  }
+  const tail = whole.slice(prefix.length);
+  if (tail.length === 0) {
+    throw new Error(
+      `${JSON.stringify(token)} adds no token past this prompt, so there is no id to ` +
+        'read an answer from',
+    );
+  }
+  if (tail.length !== 1) {
+    throw new Error(
+      `${JSON.stringify(token)} takes ${tail.length} tokens at the prompt's end, and an ` +
+        'option that splits cannot carry a probability in one pass ' +
+        '(agent-lifecycle.md §4)',
+    );
+  }
+  return { token, id: tail[0] };
 }
 
 /**
