@@ -20,6 +20,8 @@ export {
   ROSTER_FILE,
 } from './roster.ts';
 export type { AgentRow } from './roster.ts';
+export { identityFor } from './identity.ts';
+export type { AgentIdentity, BotIdentity, SiblingAgent } from './identity.ts';
 export { deliver, deriveHints, deriveKind } from './delivery.ts';
 export type { Delivery, PostMessageInput } from './delivery.ts';
 export { classify, gate } from './gate.ts';
