@@ -29,6 +29,7 @@
  * file only ever consumes them.
  */
 
+import { chainBlock } from './chain.ts';
 import type { SeekStore } from './store.ts';
 import type { Id, Observation } from './types.ts';
 
@@ -40,20 +41,28 @@ import type { Id, Observation } from './types.ts';
  * `ignore` and `act` (see `Verdict` in `types.ts`); `snooze` and `keep` are
  * written by the watch side and the loop, never here.
  */
-export type GateDecision = 'act' | 'ignore' | 'judge';
+export type GateDecision = 'act' | 'ignore' | 'judge' | 'block';
 
 export interface GateResult {
   /**
    * What the tick does next: `act` beats `judge` beats `return`. `return` is
-   * both row 1 (nothing arrived) and row 3's own ending (everything that
-   * arrived was settled without asking anything) — in either case no stage
-   * runs and nothing has been spent.
+   * both row 1 (nothing arrived), row 3's own ending (everything that arrived
+   * was settled without asking anything), and a tick whose every entry was held
+   * back by the chain wall — in each case no stage runs and nothing was spent.
    */
   action: 'return' | 'act' | 'judge';
   /** Fast-pass entries (row 2): certain and free, so stage 2 is called directly. */
   act: Observation[];
   /** Settled as not for this bot (row 3). These are consumed without a call. */
   ignore: Observation[];
+  /**
+   * Held back by the chain wall (`chain.ts`): a bot message that addresses this
+   * bot, while the chain is at its depth cap or the room is at its run of bot
+   * turns. It is **kept, not consumed** — §11.4 says it "still lands in that
+   * bot's inbox ... to be reconsidered the next time a human touches the room.
+   * Nothing is lost and nothing is spent" — so the loop puts it back.
+   */
+  blocked: Observation[];
   /** Everything the rules could not settle (row 4): stage 1's input. */
   judge: Observation[];
 }
@@ -80,9 +89,19 @@ export function classify(
   // Row 2 — certain and free. A reminder has no room and no message: it is the
   // one entry whose author is the bot itself, and it passes for that reason.
   if (entry.kind === 'reminder') return 'act';
-  if (entry.hints.mentionsMe) return 'act';
-  if (entry.hints.repliesToMe) return 'act';
-  if (entry.hints.direct) return 'act';
+
+  // Row 2's four clauses, and then the wall that sits in front of them.
+  if (
+    entry.hints.mentionsMe ||
+    entry.hints.repliesToMe ||
+    entry.hints.direct
+  ) {
+    // §11.4: addressing this bot is not enough when the sender is a bot and a
+    // chain cap holds. The entry is kept rather than consumed, so a room that
+    // moves on reconsiders it.
+    if (chainBlock(store, botId, entry) !== undefined) return 'block';
+    return 'act';
+  }
 
   // Row 3 — settled as not for this bot.
   // Another bot talking to the room. Addressed-to-me was already answered by
@@ -119,6 +138,7 @@ export function gate(
   const act: Observation[] = [];
   const ignore: Observation[] = [];
   const judge: Observation[] = [];
+  const blocked: Observation[] = [];
 
   for (const entry of entries) {
     const decision = classify(store, botId, entry);
@@ -128,13 +148,17 @@ export function gate(
       // Row 3 says "mark them ignore": the decision is the record.
       entry.verdict = 'ignore';
       ignore.push(entry);
+    } else if (decision === 'block') {
+      // Kept, not consumed, and no verdict written: nothing has been decided
+      // about this entry yet, only postponed.
+      blocked.push(entry);
     } else {
       judge.push(entry);
     }
   }
 
   const action = act.length > 0 ? 'act' : judge.length > 0 ? 'judge' : 'return';
-  return { action, act, ignore, judge };
+  return { action, act, ignore, blocked, judge };
 }
 
 /** Whether the message behind this entry was written by another bot. */
