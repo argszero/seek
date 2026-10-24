@@ -10,7 +10,15 @@ import { makeWorld, type World } from './fixtures.ts';
 import { skeletonOf, type PromptArtifact } from './prompts.ts';
 import { newId, SeekStore } from './store.ts';
 import type { Id, MembershipRole, Observation } from './types.ts';
-import { bindOptions, watchAs, type Tokeniser, type Watch, type WatchInput, type WatchReading } from './watch.ts';
+import {
+  bindOptions,
+  watchAs,
+  type Tokeniser,
+  type Watch,
+  type WatchInput,
+  type WatchOptions,
+  type WatchReading,
+} from './watch.ts';
 
 // The artifact the runtime assembles from, in the shape the shipped one has. The
 // trailing space is not cosmetic: the two options are appended to the assembled
@@ -786,6 +794,41 @@ test('no artifact and no cut given means the shipped file and its 0.600', async 
 
   const below = await decideAt(0.599);
   assert.equal(below.acting.length, 0, 'and a hair below it does not act');
+});
+
+test('the question is the artifact’s, and no caller can hand the judgement a second one', async () => {
+  const world = makeWorld();
+  say(world, ['deploy is red']);
+  const entries = await world.store.drain(world.botA);
+  const { model, seen } = stub({ probabilities: { act: 0.9, ignore: 0.1 } });
+
+  // The box used to take a caller's question set and hand it to the model *beside*
+  // the question the artifact already asks. Two questions then reach one forward
+  // pass and only one of them was measured, which is the defect `decisions.md`'s
+  // "the question put to the watch model is part of the contract" was written
+  // against. The seam is gone, and this is the shape a caller still arrives in: an
+  // extra property on an options object — which a JavaScript caller passes happily,
+  // and which TypeScript would refuse.
+  const withQuestions = {
+    window: 10,
+    prompt: ARTIFACT,
+    operatingPoint: POINT,
+    tokeniser: makeTokeniser(),
+    questions: [{ name: 'act', options: ['act', 'ignore'] }],
+  } as unknown as WatchOptions;
+
+  await watchAs(world.store, world.botA, model, withQuestions)(entries);
+
+  assert.equal('questions' in seen[0].state, false, 'the box is told, never asked');
+  assert.ok(
+    seen[0].prompt.text.endsWith('Does this room need you to act? Answer act or ignore. '),
+    'the only question asked is the artifact’s last part, trailing space and all',
+  );
+  assert.deepEqual(
+    seen[0].options,
+    { act: 'act', ignore: 'ignore' },
+    'and it is answered over the declared options, not an invented pair',
+  );
 });
 
 test('the box is rendered oldest first, one line per entry', async () => {

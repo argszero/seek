@@ -58,14 +58,6 @@ export interface BoxOptions {
    * would let the fill loop run past the window it is supposed to respect.
    */
   weigh?: (entry: Observation) => number;
-  /**
-   * The named questions the judgement answers, with their options.
-   *
-   * They live in `agents.yml`, per bot, and that file's shape has no ruling yet —
-   * so they arrive from the caller or not at all. This is deliberately opaque: a
-   * shape invented here would be a format nobody decided.
-   */
-  questions?: unknown;
 }
 
 /** The last verdict, put in as a fact about the record. */
@@ -129,7 +121,18 @@ export interface BoxMedia {
   mime: string;
 }
 
-/** One room's box, as a judgement receives it. Structured, never prose. */
+/**
+ * One room's box, as a judgement receives it. Structured, never prose.
+ *
+ * **The box is what a judgement is told; the question is what it is asked, and it
+ * is not here.** The question is the prompt artifact's own last part (`prompts.ts`):
+ * `watch-v1` declares one binary question, and the trailing space after it is the
+ * boundary the option token is appended at — so the text, the option ids bound to
+ * its end, and the shipped cut are one artifact. A question carried here as well
+ * would be a second one, free to disagree with the text and with the mask measured
+ * against it, and the roster has no field for it either (`docs/decisions.md`,
+ * defaults 15 and 18) — so there is no path by which a caller can ask two.
+ */
 export interface RoomBox {
   botId: Id;
   roomId: Id;
@@ -162,8 +165,6 @@ export interface RoomBox {
   observationsSinceLastVerdict?: number;
   /** Everyone who spoke across the delta. */
   whoSpoke: BoxSpeaker[];
-  /** The caller's question set, when it has one. */
-  questions?: unknown;
 }
 
 /**
@@ -226,7 +227,6 @@ export function buildBox(
     const at = total.findIndex((entry) => entry.id === lastVerdict.entryId);
     box.observationsSinceLastVerdict = at === -1 ? 0 : total.length - 1 - at;
   }
-  if (options.questions !== undefined) box.questions = options.questions;
   return box;
 }
 
