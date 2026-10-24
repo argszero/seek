@@ -91,15 +91,15 @@ A word, a label or a tiny JSON — whatever the chosen model emits reliably. An 
 
 **No special input pipeline for the watch agent.**
 *"There is no need to design one specially, because the Agent itself already has a session history, memory and compaction. The judge's request should be essentially the same as the request the Agent sends when it really runs — it gets the agent's session history, memory and compaction."*
-The watch agent sends the same shape of request as any agent. Nothing is summarised on its behalf and no second context is kept in sync.
+Nothing is assembled for the judgement at decision time: its memory for a room is the observation box, read as it stands. **The one thing the watch side does not do is write** — it is a decision model, answering named questions and producing no text, so the summary in that box is written by the work agent, and the watch side keeps no session of its own.
 
 **The judgement reads a two-part box.**
 *"The observation box splits into two parts: the result of the last compaction, and the observations that have arrived since it. Every judgement sends the last compaction's result together with the observations produced after it, plus the time and the result of the last judgement, to the system-one model, and gets a fast verdict."*
 Per (bot, room), the judgement input is that box and nothing else: the standing summary, the delta since it, and the previous verdict. The previous verdict goes in as a fact — how long ago it was and what it was — never as an instruction.
 
 **Compaction is triggered by a line, not by every message.**
-*"Compaction runs when it is worth running, not on arrival — the host chose the threshold over triggering on every new message."*
-The delta crossing a line starts a compaction, and a judgement never waits for one. Compaction is single-flight: at most one runs at a time, and it commits the new summary and the point it consumed to atomically, so a concurrent arrival is either inside the new summary or still in the delta, never lost. The line itself is a default, settled by measurement, not a ruling.
+Asked whether compaction should run when the delta crosses a threshold or on every new message, the host answered *"A"* — the threshold.
+The delta crossing a line starts a compaction, and a judgement never waits for one. Compaction is single-flight: at most one runs at a time, and it commits the new summary and the point it consumed to atomically, so a concurrent arrival is either inside the new summary or still in the delta, never lost. **Compaction is a runtime action and not a turn** — a room that never needs a word said still has to be compactable — and **the judgement is not asked whether to compact**: that is arithmetic over the delta, and a model that could request a spend could request it every tick. The line itself is a default, settled by measurement, not a ruling.
 
 ---
 
@@ -107,6 +107,7 @@ The delta crossing a line starts a compaction, and a judgement never waits for o
 
 **The watch agent is an agent.**
 *"Let us say the judge is also an Agent, only using a local model."*
+It is a row in `agents.yml` with its own model, its own prompt and its own memory, exactly as the work agent is — a decision model rather than a chat model, so it answers in one pass and generates nothing.
 
 **Two agents per bot.**
 *"Actually each bot has two Agents: one for fast judgement, one that really does the work."*
@@ -116,13 +117,13 @@ The split is between two agents, not two modes of one.
 *"Fine, B then."* [asked: *"What should the two roles be called?"* — B: `watch` / `work`. The implementer's wording.]
 The names come from vocabulary the design already had — the watch queue, the work.
 
-**Separate memories, each readable by the other.**
+**Separate stores, each readable by the other.**
 *"Do not share one memory. Each is independent, and each knows the other exists and can read the other's history, memory and so on."*
-Two stores, each compacted against its own window, plus a read path in both directions. The reason it matters: the windows differ by an order of magnitude and compaction is destructive, so a shared log means the small one compacts first and deletes detail the large one can still read. **The read path covers everything either agent writes, including a verdict and the reason behind it** — it is how the work agent can find out why it was woken without that reason being handed to it.
+Each agent's own store stays its own: the work agent's sessions and diary, and the watch agent's box per room. **They share exactly one thing, and it has one writer**: a room's standing summary, written by the work agent because it is the half that can write, and read by the watch agent (§3). **The read path covers everything either agent writes, including a verdict and the reason behind it** — it is how the work agent can find out why it was woken without that reason being handed to it.
 
-**It has tools — EMRG's set, unchanged.**
-*"It has tools — otherwise how would it read and write memory, compress its session?"* / *"Just use the EMRG set."*
-Tools are the kernel's registry (bash / read / write / edit / glob / grep / subagent / submit_rant / boss), and which agent may call which is ordinary per-agent configuration in `agents.yml`. No watch-specific tool, no memory tool, no compaction tool: memory writes and compaction are not tools in EMRG — the runtime does both at the end of a turn — so they stay runtime behaviour here, as for any agent. **One exception, named by the host: `schedule`.** A second one beside it would mean the exception was read as a licence.
+**The tool set is EMRG's, unchanged.**
+*"It has tools — otherwise how would it read and write memory, compress its session?"* [asked: whether the watch agent is given tools at all. It is not: a decision model answers in a single pass and produces no text, so it has no tool call to make. What that sentence asked for is discharged elsewhere — the memory is the box, and the compaction is the work agent's.] / *"Just use the EMRG set."*
+The work agent's tools are the kernel's registry (bash / read / write / edit / glob / grep / subagent / submit_rant / boss), and which agent may call which is ordinary per-agent configuration in `agents.yml`. No watch-specific tool, no memory tool, no compaction tool: memory writes and compaction are runtime behaviour, as for any agent. **One exception, named by the host: `schedule`.** A second one beside it would mean the exception was read as a licence.
 
 **The watch agent reads its own outcome, and is not expected to improve.**
 *"The judge relies on the observation data: say it judged wrong and the working agent then said nothing in the room — next time the judge sees that it handed this over and nothing was done. Also, do not agonise over the judge learning; it is fine if it never learns."*

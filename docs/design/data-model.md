@@ -40,7 +40,7 @@ Bot and Agent split it the same way throughout: **the bot owns what is alive** (
 
 > **Bot and Agent are two entities, not two views of one**. Names and avatars live on the bot and are **pushed down to its agents**, so renaming a bot renames every agent of it at once and no agent carries a second copy of the identity. An agent has no name of its own: it has a `role` (`watch`, `work`, and whatever comes later) and its bot's face.
 
-> **A bot is N agents**. `agents.yml` registers agents, not bots; each bot is at least two rows today (one watches on a local model, one works on the expensive one) and more are allowed later. Two rows is two of everything the kernel already gives an agent — a model, a session, a memory, a state machine — so nothing needs a new container and nothing that iterates agents needs an exception.
+> **A bot is N agents**. `agents.yml` registers agents, not bots; each bot is at least two rows today (one watches on a local decision model, one works on the expensive one) and more are allowed later. Two rows is two of what the kernel already gives an agent — a model, a prompt, a memory — and the two need not be the same kind of model: the watch row answers in one pass and keeps a box instead of a session. Nothing needs a new container and nothing that iterates agents needs an exception.
 >
 > Three things follow, and they are the whole reason the two models are kept apart: **the bot is the member** (membership, @-mention and the room's list of people are bot-level, so two agents never show as two contacts); **the agents are the workers** (a session, a memory and a turn each, so cost and audit stay per-agent and `sessions[agentId]` needs no change); **the identity is the bot's** (name, avatar, description, and the persona's voice, pushed down to its agents).
 
@@ -104,7 +104,7 @@ Bot and Agent split it the same way throughout: **the bot owns what is alive** (
 5. **Principal N : M Room**, through Membership, which carries per-room state.
 6. **Bot 1 : N Observation**, Observation N : 1 Message (one message may enter several bots' queues, but only once per bot). The queue is bot-level because delivery, the tick and "already handled" are bot-level; an agent never watches a room.
 7. **Agent 1 : N Turn**; Turn 1 : N Message (one action may say several things).
-8. **Agent 1 : 1 memory store** (N room digests + 1 diary). Memory is per agent, not per bot: the two agents of a bot have different windows, so they keep different summaries of the same room.
+8. **Agent 1 : 1 memory store** (N room summaries + 1 diary). Memory is per agent, not per bot: the diary and the sessions are each agent's own. A room's standing summary is written once per (bot, room) and read by both agents — the watch agent produces no text, so a copy of its own would only be a second version to disagree with.
 9. **Human 1 : 1 identity** in v1, with multiple selves left open.
 10. **Id prefixes follow the Feishu convention**: `ou_` principal, `oc_` room, `om_` message, plus `ag_` for agents. Readability over a generic UUID.
 11. **A room needs no human member.** A direct room between two bots is a room; membership is not human-gated. What bounds agent-to-agent traffic is the depth cap and the room's consecutive-agent-turn cap, both readable off the data, neither needing a human present to notice a runaway.

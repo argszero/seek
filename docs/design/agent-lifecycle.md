@@ -25,23 +25,23 @@ So the watch stage is not an optimisation on a design that would work without it
 
 **The two roles are named `watch` and `work`**, taken from vocabulary the design already had: the bot's inbox is the **watch queue**, the bot keeps watching rooms, and the expensive agent's job is the **work**. So `watch` reads the watch queue and `work` does the work, and a third role later — say `recall` — lands in the same register.
 
-One watches, one works. Both are agents in the full sense: each has a persona, its own session history, its own memory store, its own turns on the audit trail. **They do not share memory**, and **each knows the other exists and can read the other's history and memory**.
+One watches, one works. **They are not the same kind of runnable** — the watch side is a decision model that answers in one pass, the work side is a chat model that generates — and that difference is what makes the split work. **They do not share a store**, and **each can read what the other keeps**.
 
 | | The watch agent | The work agent |
 |---|---|---|
-| Model | `model.watch` — local, bundled, small | `model.work` — whatever expensive model the bot is configured with |
+| Model | `model.watch` — local, bundled, small, decision-only | `model.work` — whatever expensive model the bot is configured with |
 | Window | small (thousands of tokens) | large (as much as the model offers) |
-| What it does | answers one question: does anything here concern me? | does the work, speaks in the room, uses tools |
-| What it costs | wall-clock, in the low hundreds of milliseconds | money |
-| What it remembers | its own compact log: what it looked at, what it decided, how the room usually goes | the full record: everything it did and said |
+| What it does | answers named questions in one forward pass, generating nothing | does the work, speaks in the room, uses tools |
+| What it costs | wall-clock, tens to low hundreds of milliseconds | money |
+| What it remembers | the box per room: the standing summary, the delta since it, the last verdict | its sessions, its diary, and the summary it writes into the box |
 
-**Why they do not share one memory: the two windows are an order of magnitude apart, and compaction is destructive.** A shared log means the small-window agent compacts first and, reading its own 4k window, deletes detail the large-window agent can still read. That is amnesia, and it is silent, because nothing in the room shows the moment a memory was thrown away. Two stores, each compacted against its own window, removes the collision rather than managing it.
+**Why the summary has one writer: the half that can write, writes.** A decision model emits a choice, a score or a probability and no text, so a summary of its own is not something it could produce. Resolving it the other way — giving the watch side a small chat model so it could compact itself — buys a paragraph at the price of a generation on every wake, which is the latency the gate exists to avoid. **One writer also removes a collision instead of managing it**: two writers of one summary is a disagreement that only shows up when they differ.
 
 **Why they can read each other: an agent that cannot see its own other half invents a reason.** The failure to design against is the split-brain one: the acting half does something, the half that talks to you has no record of why, and it produces a confident explanation that is simply wrong. The read channel is what keeps the bot honest about *"I said nothing there"* and *"I already answered that"*.
 
 **Cross-reading is not free, and the two directions cost different things.** The work agent reading the watch agent's log is billed tokens on an expensive model, so it is **on demand, never injected into every turn** — pulled when it matters (the user asks why it stayed quiet; it is about to speak in a room it has been ignoring). The watch agent reading the work agent's log costs no money but costs latency, so it reads a **bounded** slice.
 
-**There is no watch-specific input pipeline — there is the watch agent's memory, and the judgement is read off it.** What the watch agent remembers about a room is a **two-part box** (§3): the summary its last compaction produced, and the observations that have arrived since. A judgement is that box — the summary, the delta, the previous verdict — and nothing else. Nothing is assembled for it at decision time, no other agent summarises on its behalf, and no second context has to be kept in sync. It is the same shape any agent's request has, its own history and its own memory, with the delta standing in for the history a small window cannot hold.
+**There is no watch-specific input pipeline — there is the watch agent's memory, and the judgement is read off it.** What the watch agent remembers about a room is a **two-part box** (§3): the standing summary, and the observations that have arrived since it, plus the last verdict. A judgement is that box and nothing else: nothing is assembled for it at decision time, no second context has to be kept in sync, and it reads as it stands even when the summary is empty. The one thing the watch side does not do is write — the summary is the work agent's, because a decision model produces no text (§3).
 
 The watch model is **shipped with the product** — no download step, no dependence on what the user's machine happens to have installed.
 
@@ -183,14 +183,19 @@ One box per (bot, room). It is the watch agent's memory for that room, and it ha
 
 | Part | What it holds | Written by | How often |
 |---|---|---|---|
-| **Summary** | the last compaction's result: what this room is, who is in it, what has been settled | a compaction | rare, when the delta crosses its line |
+| **Summary** | the last compaction's result: what this room is, who is in it, what has been settled | the work agent — the half that can write | rare, when the delta crosses its line |
 | **Delta** | the observations that arrived after the point the summary consumed up to | nothing — it is read off the inbox | every arrival, for free |
 | **Last verdict** | when it was taken, what it was, and the reason if one came back | the loop | every tick |
 | **Question set** | the named questions the judgement answers, with their options | `agents.yml`, per bot | static |
 
+- **The judgement is a decision model, so it writes nothing.** It answers named questions over a state and produces no text and no tokens, which is what makes it cost a forward pass instead of a generation. The consequence is owed an answer rather than hidden: **it cannot write the summary it reads.** The summary is written by the work agent, and the watch side never keeps a session of its own to compact.
+
 - **The delta is derived, never stored.** It is the inbox entries after the summary's consumed-to point, so there is one copy of every observation and no second log to keep true. Its `hints` — mentions me, asks a question, replies to me, how long the room has been quiet, how many images — are the same string and counting work already done at delivery.
 - **The state handed to the model is structured, not prose.** A summary paragraph is one field of it. Everything else is fields: how many observations, who spoke, how stale the last verdict is. Decision models are asked with a state that may be any JSON value; handing them a paragraph would throw away the only cheap signal there is.
 - **A judgement never waits for a compaction.** It reads whatever box exists — possibly an empty summary and a long delta — and returns. Compaction is background work, single-flight, committing the new summary and its consumed-to point in one atomic write, so an arrival during compaction is either inside the new summary or still in the delta, and is never dropped.
+- **Compaction is a runtime action, not a turn.** It produces no message, so it is not a proactive turn: it is not marked as one, it does not open a work session's stretch of work, and it is not something the judgement asked for. Without this, a busy room that never needs a word said could never be compacted at all — which is the hole a model-written summary would otherwise leave.
+- **The judgement is not asked whether to compact.** Whether the delta has outgrown itself is a count — of entries, of tokens, of images, of minutes — and the runtime can take it for free. A model given that question would be answering arithmetic, and one that can ask for a compaction can ask for it every tick, which would turn the component built to stop spending into the one component that spends without a bound.
+- **The box handed over always fits.** The runtime fills it newest-first until the model's window is reached and records how many observations were left beyond it — *"80 of 300 read; 220 unread"*. A judgement therefore never faces a box it cannot read, which is what keeps its failure mode a wrong verdict rather than a guess dressed as a verdict. Compaction normally keeps it from ever being reached; when compaction cannot run at all — no model configured, offline, a call that keeps failing — the box degrades visibly, backs off instead of re-firing every tick, and the unread count is what shows it.
 - **The last verdict goes in as a fact, never as an instruction.** "You kept this twelve observations ago and have said nothing since" is a fact about the record. "You should keep this" would be the box arguing with the judgement, and it is what would make a stale decision self-perpetuating.
 - **This is what makes the box worth having: `keep` and `snooze` become re-openable.** A room that was kept once is looked at again against a box that now says how long it has been and what changed, instead of being re-judged from scratch or never re-judged at all.
 
@@ -209,21 +214,16 @@ the bot's loop, per tick:
   │                            → mark them ignore, end of tick
   │  4. Everything else → stage 1 (call the watch agent)
   │
-  ├ Stage 1 · the loop calls the watch agent (an agent, so it has tools)
+  ├ Stage 1 · the loop asks the watch agent (a decision model: one forward pass, no tools)
   │  input: the room's observation box (§3) — the standing summary, the observations
-  │         since it, and the last verdict as a fact — plus the persona and the named
-  │         questions; when it matters, a bounded slice read from the sibling's log
-  │         (never the sibling's log injected wholesale, and never the whole inbox)
-  │  model: model.watch — local, bundled, max_tokens capped
-  │  tools: the same registry EMRG already gives an agent (bash / read / write / edit /
-  │         glob / grep / subagent / submit_rant / boss / schedule). Memory writes and
-  │         compaction are not tools; the runtime does them at the end of a turn
-  │  output: one decision the loop can act on — the FORM is the implementation's choice
-  │          (a single word, a label from a fixed set, a tiny JSON, whatever this model
-  │           produces reliably). What matters is that it is unambiguous and parseable
+  │         since it, and the last verdict as a fact — plus the named questions
+  │         read-only, and never the whole inbox: the box is fitted to the window
+  │  model: model.watch — local, bundled, one pass, no tokens generated
+  │  output: an answer per named question — a choice, a score or a probability over
+  │          declared options. A word, a label or a tiny JSON all work, as long as the
+  │          answer space was declared in advance. Unparseable counts as no act
   │  effect: act → stage 2, carrying the observation entries and nothing else
   │          no act → record the verdict and the reason if one came back, end of tick
-  │          unparseable → treated as no act, and counted as a watch agent failure
   │
   └ Stage 2 · run the work agent (expensive)
      Stage 2 calls the work agent and lets it run — one ordinary turn: full context,
@@ -238,15 +238,15 @@ the bot's loop, per tick:
 
 Because **the work agent spends money and the watch agent does not.**
 
-The watch agent is a local model on the user's machine, so its tokens cost nothing; the work agent runs whatever expensive model the bot is configured with, and every call is billed. That moves the watch agent's budget from money to **wall-clock** — which is why a verdict in the low hundreds of milliseconds is not a nicety but the real constraint, and why the verdict must stay small: a local model writing a long answer is a local model that makes the app stutter.
+The watch agent is a local decision model on the user's machine: one forward pass, no generated tokens, nothing billed. The work agent runs whatever expensive model the bot is configured with, and every call is billed. That moves the watch agent's budget from money to **wall-clock** — which is why a verdict in the low hundreds of milliseconds is not a nicety but the real constraint, and why the answer must stay small: an answer drawn from declared options is a logit read, while a model asked to write a sentence is a model that makes the app stutter.
 
-It is also why two agents rather than one agent asked two questions: the two windows are an order of magnitude apart. A 4k window cannot hold what a 200k window holds, so the small one needs its own history, compacted to its own shape. Forcing them into one store would either starve the watch agent (fed a log it cannot fit) or truncate the work agent.
+It is also why two agents rather than one agent asked two questions: **they are not the same kind of model.** The watch side answers a fixed set of questions in a single pass and holds a box fitted to a small window; the work side generates, runs tools and carries a large one. Asking the large model the gate's question costs money on every message, and asking the small one to do the work is a 4k window trying to hold a 200k job.
 
-It raises a risk honestly: a weak local model with a history of its own can produce a confident wrong verdict. Two answers: **what the watch agent ignored is reviewable** — every verdict is recorded with the entry it watched, so a deaf gate is visible rather than silent — and **the work agent can read the watch agent's log**, so a wrong call is discoverable by the half that talks to the user.
+It raises a risk honestly: a weak local model can produce a confident wrong verdict. Two answers: **what the watch agent ignored is reviewable** — every verdict is recorded with the entry it watched, so a deaf gate is visible rather than silent — and **the work agent can read that record**, so a wrong call is discoverable by the half that talks to the user.
 
 ### How the watch agent finds out it was wrong
 
-**It reads the outcome off the record it already has.** When the watch agent forwards an observation and the work agent then says nothing in that room, that is visible: the entry it dispatched has no message after it. Next time the watch agent meets the same room, its own memory holds the line it wrote — *"I forwarded this and nothing was said"* — and it can weigh that before deciding again.
+**It reads the outcome off the record it already has.** When the watch agent forwards an observation and the work agent then says nothing in that room, that is visible: the entry it dispatched has no message after it. That is a fact about the record, and the box carries it forward — next time the watch agent meets the same room, the box's last-verdict field says how long ago it forwarded and that nothing followed, and it can weigh that before deciding again.
 
 No new machinery is built for this. The outcome is not reported to the watch agent by anyone: **it is already on the board**, because a turn that produced no message is a fact of the same data model everything else reads.
 
@@ -264,7 +264,7 @@ No new machinery is built for this. The outcome is not reported to the watch age
 
 **The watch agent does not perform its own verdicts.** It emits a decision; the loop performs the consequence — `ignore` consumes, `snooze` re-queues, `keep` appends the line. That is why the verdict's shape is free: a word is enough, because the runtime already knows what each one means.
 
-**Both agents get EMRG's toolset, unchanged.** There is no watch-specific tool, no memory tool and no compaction tool to build — the registry is the one already in the kernel, plus the host's single addition, `schedule` (§12). Which tools a given agent may use is ordinary per-agent configuration in `agents.yml`.
+**The tool set is EMRG's, unchanged, and it belongs to the work agent.** There is no watch-specific tool, no memory tool and no compaction tool to build — the registry is the one already in the kernel, plus the host's single addition, `schedule` (§12). Which tools a given agent may use is ordinary per-agent configuration in `agents.yml`, and today one answer is "none": a decision model makes no tool call.
 
 **Memory writes and compaction are not tools, and they will not be here.** They are what the runtime does when a turn ends, and an agent does not choose to do them.
 
@@ -278,13 +278,13 @@ When the watch agent decides to act, the work agent is woken with the entries an
 
 **The cost, stated plainly:** sometimes the work agent will look at the entries and cannot tell why it was called at all. It may then say something slightly flat-footed, or ask what the point was. That is a real cost and it is the right side of the trade.
 
-**The reason is still recorded** — on the observation entry, next to the verdict — because it is what makes a bad call reviewable, and because the watch agent reads its own log back.
+**The reason is still recorded** — on the observation entry, next to the verdict — because it is what makes a bad call reviewable, and because the work agent may read it back.
 
 **It is not handed over; it is not sealed either.** The runtime never puts it in the work agent's context, and the work agent may go and read it, because the two agents can read each other's records — the lookup is a lookup, not a special channel. That is the difference between an invisible premise and an answerable one: having read it, the work agent knows both what was decided and whose sentence it was, so a wrong judgement carries a name instead of quietly shaping the reply.
 
 ### How slow a judgement is
 
-**The latency target is a target, not a guarantee.** The common judgement is one call with no tool round in the low hundreds of milliseconds. A judgement that does call a tool costs a second round, and a 300 MB local model calling `bash` will rarely be worth it — so the expected shape is that the watch agent almost never uses its tools, while nothing forbids it. Rules have already settled most traffic before it is called at all.
+**The latency target is a target, not a guarantee.** The judgement is one forward pass with no generation and no tool round: tens of milliseconds on a desktop, low hundreds on a slow machine. That is the reason the watch side is a decision model rather than a small chat model — a 300 MB model writing a sentence, with a tool round on top, would be seconds, and the verdict would be latency in the app.
 
 ### A message that arrives while the agent is running
 
@@ -338,7 +338,7 @@ One correction to the table's denominator: traffic arrives **per message**, but 
 
 (Order-of-magnitude estimates, not measurements.)
 
-Because the watch agent is an agent on a local model, **watch tokens are not money.** The billed column is only stage 2 — the expensive model actually acting. What replaced the watch cost is wall-clock: a local inference per watched batch, in the low hundreds of milliseconds, off the GPU, while the room is live. That is the number the watch model is chosen against.
+Because the watch agent is a decision model, **watch tokens are not money and there are none to count**: no generation happens, so the billed column is only stage 2. What replaced the watch cost is wall-clock — one forward pass per watched batch, off the GPU, while the room is live. And one cost that is easy to miss: **compaction is a work-agent call, so a busy room is billed on compaction even when its bot says nothing.** That is the price of a summary written by the half that can write it.
 
 **The gate's hit rate is the product's cost curve.** So it must be observable and tunable: every agent records `watched` (batches watched), `acted` (hits), `ratio` (hit rate) and `spent` (tokens). A hit rate that suddenly jumps to 50% means a persona is written wrong or a room has been flooded by bots — and that has to be visible in the interface.
 
@@ -353,7 +353,7 @@ Because the watch agent is an agent on a local model, **watch tokens are not mon
 | Schedule | `TaskHandler`'s timer infrastructure, `_heartbeat_interval` | a **comparator over one global table** (§12) whose only output is a delivery. It runs on a timer; the timer's fingerprints must not reach a bot — nothing a bot sees may say "a beat happened" |
 | Stage 2 · action | today's session turn (`_run_tool_loop_locked`) | open with "you chose to speak"; nothing else |
 | Delivery into the inbox | room fan-out as a frame broadcast, but only to connected clients | server-side **fan-out into every member bot's inbox** (persisted, not in memory) — the one road in, for every kind of message |
-| Watch agent | `llm.py` already selects a model per session, and `session.compact()` already keeps a history per session | a **second row in `agents.yml` per bot**: same machinery, its own session and memory, a local model, smaller windows, a low `max_tokens` cap, and a read path to its sibling. Tools are EMRG's registry, unchanged. Any unparseable verdict counts as no act |
+| Watch agent | `llm.py` already selects a model per session, and `session.compact()` already keeps a history per session | a **second row in `agents.yml` per bot** whose model is a decision model: the box replaces a session history, the named questions replace a persona's instructions, and the answer is read off the declared options instead of generated. It calls no tools. Its memory is the box, and the summary in it is written by the work agent's `session.compact()` across the two records. Any unparseable verdict counts as no act |
 | Memory compaction | `session.compact()` rewrites the session's history in place | nothing to change *in kind*: each agent already has its own session file, so the two stores are separate by construction. What must be checked is that no code path compacts across them |
 | Memory | `memory_store`: session and project levels | add an **agent level** (across rooms and sessions) |
 | State visibility | frame broadcast | a new frame: `agent_state` (watching / working / asleep / needy) |
@@ -367,6 +367,7 @@ Because the watch agent is an agent on a local model, **watch tokens are not mon
 | **Two bots wake each other and never stop** | ① a bot message does not wake another bot unless it @-mentions it, replies to it, or is a direct message ② a cap on consecutive bot turns per room — **3**, held on the Room, which is what bounds a burst ③ the depth cap, which bounds how long one chain runs (§11). A bot may open a conversation with another bot, so the *number* of chains is bounded by judgement and the record, not by a rule |
 | The watch agent is too cheap → deaf and blind | hit rate observable; what it ignored can be reviewed (entries and reasons are kept) |
 | The watch agent is too expensive → burning money | `spent` is recorded and visible per agent, so a runaway bill is *seen* rather than silently capped. There is no self-stop: a bill that climbs is a defect in the persona or the gate, and it is fixed there |
+| The delta outgrows what the judgement can read | the box handed over always fits — the newest observations, with an unread count for the rest — so the verdict degrades visibly instead of silently. Compaction normally prevents it; when compaction cannot run, it backs off rather than re-firing every tick |
 | Inbox explosion | the judgement reads a fixed-size box: the delta crosses its line and a compaction folds it into the summary, so what is spent per judgement stays flat however busy the room gets |
 | Long-lived means creeping corruption | checkpoint at the end of every tick; on restart, self-check (queue, time since it last spoke, spent); persona drift corrected against the diary |
 | No sense of time | every tick injects "how long since you last spoke in this room" and "how old this message is"; without that it asks the same question forever |
