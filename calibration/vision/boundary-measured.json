@@ -1,0 +1,496 @@
+{
+ "_what_this_is": "The measured reading for calibration/vision/boundary.json, plus what the three image sets say together about where a cut for the image path belongs.",
+ "_where_it_comes_from": "run 2026-10-25 in session seek-opensource-task on the host's own laptop",
+ "_why_this_file_exists": "so that a cut chosen for image-bearing messages is inspectable rather than asserted, and so the cost of moving it is stated rather than implied",
+ "model": {
+  "checkpoint": "LiquidAI/LFM2.5-VL-3B-GGUF",
+  "file": "LFM2.5-VL-3B-Q4_0.gguf",
+  "bytes": 1593894944,
+  "sha256": "364224c6bd45b4ff4bf8af71f7be384ea166fa0f573d68bc0b6e10ef9ae7ae58",
+  "quant": "Q4_0 — the quant docs/decisions.md names as the bundled one, so this reading describes the shipped artifact",
+  "projector": {
+   "file": "mmproj-LFM2.5-VL-3B-Q8_0.gguf",
+   "bytes": 583109984,
+   "sha256": "ecbbe7097f696dba67172738d79c9f01132cdb6c0b457606315e268df3d67e64",
+   "note": "the smallest projector the checkpoint publishes (the other two are F16 and BF16)"
+  },
+  "both_verified": "both files were checked against the sha256 the hub publishes for them"
+ },
+ "runner": {
+  "what": "llama.cpp built from source at 701fd25 (ggml-org/llama.cpp), libmtmd + libllama, one-shot scorer",
+  "why_not_the_earlier_harness": "provenance.md records llama-cpp-python with a LogitsProcessor; that cannot take an image, so the reading is taken through libmtmd instead",
+  "how_the_probability_was_read": "the next-token distribution at the end of the formatted prompt, summed over every token whose decoded form strips to 'act' — the same estimator the text run used",
+  "prompt_shape": "the shipped watch-v1 shape: system, then 'Message: <text>', then the image, then 'Do you need to do something about this message? Answer act or ignore.'",
+  "shots": 0,
+  "temperature": 0,
+  "image_token_budget": "the projector's own default"
+ },
+ "shipped_cut": 0.6,
+ "at_the_shipped_cut": {
+  "accuracy": 0.625,
+  "correct": 15,
+  "n": 24,
+  "act": 3,
+  "act_total": 12,
+  "ignore": 12,
+  "ignore_total": 12,
+  "auc": 0.7013888888888888,
+  "median_eval_ms": 1033
+ },
+ "the_plateau": {
+  "_what_it_is": "every cut that maximises accuracy on this set, and the interval they form; a cut only ever moves between two observed scores, so the cases bound it from both sides",
+  "best_correct": 17,
+  "best_accuracy": 0.7083333333333334,
+  "n": 24,
+  "cut_low": 0.1097,
+  "cut_high": 0.1143,
+  "max_margin": 0.112,
+  "plateau_cuts": 1,
+  "act_at_best": 9,
+  "ignore_at_best": 8
+ },
+ "three_sets": {
+  "pooled": {
+   "n": 56,
+   "auc": 0.8112244897959183,
+   "plateau": {
+    "best": 45,
+    "n": 56,
+    "accuracy": 0.8035714285714286,
+    "low": 0.1356,
+    "high": 0.1667,
+    "max_margin": 0.1512,
+    "pinned_by": [
+     [
+      "b-i4"
+     ],
+     [
+      "b-a9"
+     ]
+    ]
+   }
+  },
+  "easy": {
+   "n": 32,
+   "auc": 0.890625,
+   "plateau": {
+    "best": 29,
+    "n": 32,
+    "accuracy": 0.90625,
+    "low": 0.134009,
+    "high": 0.167987,
+    "max_margin": 0.151,
+    "pinned_by": [
+     [
+      "i6"
+     ],
+     [
+      "a8"
+     ]
+    ]
+   }
+  },
+  "hard": {
+   "n": 24,
+   "auc": 0.7013888888888888,
+   "plateau": {
+    "best": 17,
+    "n": 24,
+    "accuracy": 0.7083333333333334,
+    "low": 0.1097,
+    "high": 0.1143,
+    "max_margin": 0.112,
+    "pinned_by": [
+     [
+      "b-i12"
+     ],
+     [
+      "b-a1"
+     ]
+    ]
+   }
+  },
+  "sensitivity_minus_disputable": {
+   "best": 45,
+   "n": 53,
+   "accuracy": 0.8490566037735849,
+   "low": 0.1356,
+   "high": 0.1667,
+   "max_margin": 0.1512,
+   "pinned_by": [
+    [
+     "b-i4"
+    ],
+    [
+     "b-a9"
+    ]
+   ]
+  },
+  "table": {
+   "0.6": {
+    "easy": [
+     25,
+     9,
+     16,
+     16,
+     16
+    ],
+    "hard": [
+     15,
+     3,
+     12,
+     12,
+     12
+    ],
+    "pooled": [
+     40,
+     12,
+     28,
+     28,
+     28
+    ]
+   },
+   "0.15": {
+    "easy": [
+     29,
+     13,
+     16,
+     16,
+     16
+    ],
+    "hard": [
+     16,
+     7,
+     12,
+     9,
+     12
+    ],
+    "pooled": [
+     45,
+     20,
+     28,
+     25,
+     28
+    ]
+   },
+   "0.134": {
+    "easy": [
+     28,
+     13,
+     16,
+     15,
+     16
+    ],
+    "hard": [
+     15,
+     7,
+     12,
+     8,
+     12
+    ],
+    "pooled": [
+     43,
+     20,
+     28,
+     23,
+     28
+    ]
+   },
+   "0.112": {
+    "easy": [
+     26,
+     13,
+     16,
+     13,
+     16
+    ],
+    "hard": [
+     17,
+     9,
+     12,
+     8,
+     12
+    ],
+    "pooled": [
+     43,
+     22,
+     28,
+     21,
+     28
+    ]
+   }
+  }
+ },
+ "cases": [
+  {
+   "id": "b-a1",
+   "label": "act",
+   "lang": "en",
+   "note": "12 个面板里 queue 1.2k 是琥珀色，其余全绿",
+   "p_act": 0.1143,
+   "p_ignore": 0.6638,
+   "decision": "ignore",
+   "correct": false,
+   "eval_ms": 1044
+  },
+  {
+   "id": "b-a2",
+   "label": "act",
+   "lang": "en",
+   "note": "八行日志里一行 ERROR：batch 8821 重试耗尽",
+   "p_act": 0.8107,
+   "p_ignore": 0.046,
+   "decision": "act",
+   "correct": true,
+   "eval_ms": 1033
+  },
+  {
+   "id": "b-a3",
+   "label": "act",
+   "lang": "en",
+   "note": "磁盘 91%，刚过 90% 警戒线",
+   "p_act": 0.6802,
+   "p_ignore": 0.1803,
+   "decision": "act",
+   "correct": true,
+   "eval_ms": 1019
+  },
+  {
+   "id": "b-a4",
+   "label": "act",
+   "lang": "en",
+   "note": "证书 21 天后到期，续签窗口已开",
+   "p_act": 0.0413,
+   "p_ignore": 0.9133,
+   "decision": "ignore",
+   "correct": false,
+   "eval_ms": 1001
+  },
+  {
+   "id": "b-a5",
+   "label": "act",
+   "lang": "zh",
+   "note": "中文：一条琥珀色横幅，投递延迟 4.8s，排队 1204",
+   "p_act": 0.0337,
+   "p_ignore": 0.5493,
+   "decision": "ignore",
+   "correct": false,
+   "eval_ms": 1021
+  },
+  {
+   "id": "b-a6",
+   "label": "act",
+   "lang": "en",
+   "note": "p99 刚越过 1.0s SLO 线",
+   "p_act": 0.411,
+   "p_ignore": 0.4708,
+   "decision": "ignore",
+   "correct": false,
+   "eval_ms": 1045
+  },
+  {
+   "id": "b-a7",
+   "label": "act",
+   "lang": "en",
+   "note": "四行里 /v1/refund 5xx 3.10%，红色",
+   "p_act": 0.6156,
+   "p_ignore": 0.2517,
+   "decision": "act",
+   "correct": true,
+   "eval_ms": 993
+  },
+  {
+   "id": "b-a8",
+   "label": "act",
+   "lang": "en",
+   "note": "八条 WARN 重试计数递增，趋势向上",
+   "p_act": 0.1879,
+   "p_ignore": 0.7063,
+   "decision": "ignore",
+   "correct": false,
+   "eval_ms": 1005
+  },
+  {
+   "id": "b-a9",
+   "label": "act",
+   "lang": "en",
+   "note": "事故仍 INVESTIGATING，未解决",
+   "p_act": 0.1667,
+   "p_ignore": 0.7021,
+   "decision": "ignore",
+   "correct": false,
+   "eval_ms": 1009
+  },
+  {
+   "id": "b-a10",
+   "label": "act",
+   "lang": "zh",
+   "note": "中文：小琥珀徽标，证书剩 18 天且未开自动续签",
+   "p_act": 0.036,
+   "p_ignore": 0.7757,
+   "decision": "ignore",
+   "correct": false,
+   "eval_ms": 1037
+  },
+  {
+   "id": "b-a11",
+   "label": "act",
+   "lang": "en",
+   "note": "rollout stalled，3 个副本只起来 2 个",
+   "p_act": 0.1188,
+   "p_ignore": 0.822,
+   "decision": "ignore",
+   "correct": false,
+   "eval_ms": 1022
+  },
+  {
+   "id": "b-a12",
+   "label": "act",
+   "lang": "en",
+   "note": "队列深度爬过 autoscale 500 线",
+   "p_act": 0.2332,
+   "p_ignore": 0.6526,
+   "decision": "ignore",
+   "correct": false,
+   "eval_ms": 1010
+  },
+  {
+   "id": "b-i1",
+   "label": "ignore",
+   "lang": "en",
+   "note": "红色品牌头，但组件全绿、all systems operational",
+   "p_act": 0.0717,
+   "p_ignore": 0.8381,
+   "decision": "ignore",
+   "correct": true,
+   "eval_ms": 1017
+  },
+  {
+   "id": "b-i2",
+   "label": "ignore",
+   "lang": "en",
+   "note": "六天前的事故，RESOLVED 状态",
+   "p_act": 0.0174,
+   "p_ignore": 0.0967,
+   "decision": "ignore",
+   "correct": true,
+   "eval_ms": 1046
+  },
+  {
+   "id": "b-i3",
+   "label": "ignore",
+   "lang": "en",
+   "note": "出现 ERROR 字样但计数为 0",
+   "p_act": 0.1985,
+   "p_ignore": 0.6533,
+   "decision": "ignore",
+   "correct": true,
+   "eval_ms": 1036
+  },
+  {
+   "id": "b-i4",
+   "label": "ignore",
+   "lang": "en",
+   "note": "曲线掉下去又自动恢复，已标注 recovered",
+   "p_act": 0.1356,
+   "p_ignore": 0.7884,
+   "decision": "ignore",
+   "correct": true,
+   "eval_ms": 1009
+  },
+  {
+   "id": "b-i5",
+   "label": "ignore",
+   "lang": "en",
+   "note": "红色发布会幻灯片，无运维信号",
+   "p_act": 0.2482,
+   "p_ignore": 0.6215,
+   "decision": "ignore",
+   "correct": true,
+   "eval_ms": 1066
+  },
+  {
+   "id": "b-i6",
+   "label": "ignore",
+   "lang": "en",
+   "note": "staging 环境，种子数据，检查全过",
+   "p_act": 0.0742,
+   "p_ignore": 0.8368,
+   "decision": "ignore",
+   "correct": true,
+   "eval_ms": 1031
+  },
+  {
+   "id": "b-i7",
+   "label": "ignore",
+   "lang": "zh",
+   "note": "中文：全绿服务状态页，写明无异常",
+   "p_act": 0.0272,
+   "p_ignore": 0.6804,
+   "decision": "ignore",
+   "correct": true,
+   "eval_ms": 1076
+  },
+  {
+   "id": "b-i8",
+   "label": "ignore",
+   "lang": "en",
+   "note": "备份任务 COMPLETED",
+   "p_act": 0.3588,
+   "p_ignore": 0.4674,
+   "decision": "ignore",
+   "correct": true,
+   "eval_ms": 1051
+  },
+  {
+   "id": "b-i9",
+   "label": "ignore",
+   "lang": "en",
+   "note": "磁盘 62%，健康",
+   "p_act": 0.0803,
+   "p_ignore": 0.8492,
+   "decision": "ignore",
+   "correct": true,
+   "eval_ms": 1055
+  },
+  {
+   "id": "b-i10",
+   "label": "ignore",
+   "lang": "en",
+   "note": "白板上的架构草图照片",
+   "p_act": 0.0678,
+   "p_ignore": 0.797,
+   "decision": "ignore",
+   "correct": true,
+   "eval_ms": 1065
+  },
+  {
+   "id": "b-i11",
+   "label": "ignore",
+   "lang": "zh",
+   "note": "中文：团建报名群公告",
+   "p_act": 0.0072,
+   "p_ignore": 0.7444,
+   "decision": "ignore",
+   "correct": true,
+   "eval_ms": 1042
+  },
+  {
+   "id": "b-i12",
+   "label": "ignore",
+   "lang": "en",
+   "note": "一个灰色 n/a 面板，其余全绿",
+   "p_act": 0.1097,
+   "p_ignore": 0.3119,
+   "decision": "ignore",
+   "correct": true,
+   "eval_ms": 1024
+  }
+ ],
+ "what_was_not_measured": [
+  "One message, one image. A box carrying several messages or several images is not measured here.",
+  "Synthetic screenshots: rendered, not captured. No chrome, scale factor or compression.",
+  "n = 56 across the three sets, and this set is balanced 12/12 by construction while a real room is far more lopsided. A cut chosen on a balanced set is not a cut chosen on the traffic the kernel will see, which is why the plateau is reported as an interval and the choice inside it is left to a ruling.",
+  "The estimator reads the whole next-token distribution; the kernel masks one id per option. That tension is already recorded in docs/decisions.md."
+ ]
+}
