@@ -247,19 +247,31 @@ test('who spoke puts the busiest speaker first, whatever the ids say', () => {
   assert.deepEqual(box.whoSpoke.map((speaker) => speaker.count), [3, 1]);
 });
 
-test('the question set is the caller’s, and absent when nobody has one', () => {
+test('the box is what the judgement is told, and it carries no question', () => {
   const world = makeWorld();
   fill(world, 1);
 
-  const without = buildBox(world.store, world.botA, world.room, { window: 5 });
-  assert.equal('questions' in without, false, 'no invented question set');
+  const box = buildBox(world.store, world.botA, world.room, { window: 5 });
 
-  const questions = [{ name: 'act', options: ['act', 'not'] }];
-  const with_ = buildBox(world.store, world.botA, world.room, {
-    window: 5,
-    questions,
-  });
-  assert.deepEqual(with_.questions, questions);
+  // Asserted whole rather than one key at a time, because the point is the absence:
+  // the question is what a judgement is *asked*, and it is the prompt artifact's own
+  // last part (`prompts.ts` — `watch-v1`'s third part, whose trailing space is the
+  // boundary the option token is appended at). A field here would be a second
+  // question, free to disagree with the text the shipped cut was measured against,
+  // and a key set spelled out is what makes adding one an edit somebody reviews
+  // rather than a quiet arrival. `summary`, `lastVerdict` and
+  // `observationsSinceLastVerdict` are missing here because this room has been
+  // neither compacted nor judged.
+  assert.deepEqual(Object.keys(box).sort(), [
+    'botId',
+    'delta',
+    'media',
+    'read',
+    'roomId',
+    'total',
+    'unread',
+    'whoSpoke',
+  ]);
 });
 
 test('building a box writes nothing and opens no turn', () => {

@@ -198,7 +198,9 @@ One box per (bot, room). It is the watch agent's memory for that room, and it ha
 | **Summary** | the last compaction's result: what this room is, who is in it, what has been settled | the work agent — the half that can write | rare, when the delta crosses its line |
 | **Delta** | the observations that arrived after the point the summary consumed up to | nothing — it is read off the inbox | every arrival, for free |
 | **Last verdict** | when it was taken, what it was, and the reason if one came back | the loop | every tick |
-| **Question set** | the named questions the judgement answers, with their options | `agents.yml`, per bot | static |
+| **Question set** | the named questions the judgement answers, with their options | the prompt artifact, per version | static |
+
+- **The question set is the prompt artifact's, not the roster's.** `watch-v1` declares one binary question as the assembly's last part, and the shipped cut was measured against exactly that text — the trailing space after it is where the option token is appended, so the question, the option ids bound to its end and the threshold are one artifact (`docs/decisions.md`, default 18). A bot that needs a different question needs a different artifact with its own labelled cases, not a row in `agents.yml`: the roster has no field for one (default 15), and a per-bot question would move what a cut means without moving the number.
 
 - **The judgement is a decision model, so it writes nothing.** It answers named questions over a state and produces no text and no tokens, which is what makes it cost a forward pass instead of a generation. The consequence is owed an answer rather than hidden: **it cannot write the summary it reads.** The summary is written by the work agent, and the watch side never keeps a session of its own to compact.
 
@@ -228,8 +230,9 @@ the bot's loop, per tick:
   │
   ├ Stage 1 · the loop asks the watch agent (a decision model: one forward pass, no tools)
   │  input: the room's observation box (§3) — the standing summary, the observations
-  │         since it, and the last verdict as a fact — plus the named questions
-  │         read-only, and never the whole inbox: the box is fitted to the window
+  │         since it, and the last verdict as a fact — plus the question the artifact
+  │         declares, put last, read-only; never the whole inbox: the box is fitted to
+  │         the window
   │  model: model.watch — local, bundled, one pass, no tokens generated
   │  output: an answer per named question — a choice, a score or a probability over
   │          declared options. A word, a label or a tiny JSON all work, as long as the

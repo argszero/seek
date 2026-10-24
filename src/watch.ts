@@ -295,8 +295,6 @@ export interface WatchOptions {
   tokeniser: Tokeniser;
   /** What one observation costs against `window`. Passed through to the box. */
   weigh?: (entry: Observation) => number;
-  /** The caller's question set, passed through. `agents.yml` still has no shape. */
-  questions?: unknown;
 }
 
 /** What one call did, for a caller or a test that wants to see it. */
@@ -410,7 +408,6 @@ export function watchAs(
       // was taken away.
       const boxOptions: BoxOptions = { window: options.window };
       if (options.weigh) boxOptions.weigh = options.weigh;
-      if (options.questions !== undefined) boxOptions.questions = options.questions;
       const state = buildBox(store, botId, roomId, boxOptions);
 
       // What this judgement may assume was already read. The key names the front —
