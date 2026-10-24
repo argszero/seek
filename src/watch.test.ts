@@ -571,3 +571,169 @@ test('a later tick reads the previous verdict, and how stale it is', async () =>
     'counted off the record, so a stale verdict cannot read as fresh',
   );
 });
+
+/**
+ * A room digest, written the way a compaction writes one: a summary and the point it
+ * consumed up to, together (`agent-lifecycle.md` §3). The box reads the summary as
+ * part of its front, so this is what must invalidate a resident head.
+ */
+function summarise(world: World, body: string, consumedTo: Id, botId: Id = world.botA): void {
+  const agent = world.store.agentsOf(botId).find((row) => row.role === 'work');
+  assert.ok(agent, 'a room digest belongs to the bot work agent');
+  world.store.memoriesOf(agent.id).push({
+    id: newId('mm'),
+    agent_id: agent.id,
+    level: 'room_digest',
+    room_id: world.room,
+    body,
+    consumed_to: consumedTo,
+    updated_at: '2026-10-24T00:00:00.000Z',
+  });
+}
+
+test('a judgement on an unchanged head reads only what arrived since the last one', async () => {
+  const world = makeWorld();
+  say(world, ['one', 'two', 'three']);
+  const { model, seen } = stub({ probabilities: { act: 0.1, ignore: 0.9 } });
+  const watch = bind(world, model);
+
+  await watch(await world.store.drain(world.botA));
+  assert.equal(seen[0].resident, undefined, 'nothing is resident before the first judgement');
+
+  say(world, ['four']);
+  await watch(await world.store.drain(world.botA));
+
+  const warm = seen[1].resident;
+  assert.ok(warm, 'the second judgement reads a head it has already read');
+  assert.deepEqual(
+    warm.entries,
+    seen[0].state.delta.map((entry) => entry.id),
+    'what it has read is the previous box, in that box own order',
+  );
+
+  // The property the design asks for: the judgement pays for the arrival, not for
+  // the box. Everything the last judgement was handed is claimed as read, and the
+  // only line that is not is the one that arrived since.
+  const claimed = new Set(warm.entries);
+  const before = new Set(seen[0].state.delta.map((entry) => entry.id));
+  const arrived = seen[1].state.delta.filter((entry) => !before.has(entry.id));
+  assert.equal(arrived.length, 1, 'one entry arrived since the last judgement');
+  assert.ok(!claimed.has(arrived[0].id), 'and it is the one thing this judgement pays for');
+
+  say(world, ['five']);
+  await watch(await world.store.drain(world.botA));
+  assert.equal(seen[2].resident?.key, warm.key, 'the head has not moved');
+  assert.equal(seen[2].resident?.entries.length, 4, 'and everything the second read is now resident');
+});
+
+test('a compaction that rewrites the summary invalidates the head once', async () => {
+  const world = makeWorld();
+  say(world, ['one', 'two']);
+  const { model, seen } = stub({ probabilities: { act: 0.1, ignore: 0.9 } });
+  const watch = bind(world, model);
+
+  const first = await world.store.drain(world.botA);
+  await watch(first);
+  assert.equal(seen[0].state.summary, undefined, 'there was no summary when it was read');
+
+  // A compaction replaces the consumed entries with a summary, so the front of the
+  // box is now text this model has never read.
+  summarise(world, 'the room is arranging a release', first.at(-1)!.id);
+
+  say(world, ['three']);
+  await watch(await world.store.drain(world.botA));
+  assert.equal(seen[1].resident, undefined, 'a new summary is a new head');
+  assert.equal(seen[1].state.summary, 'the room is arranging a release');
+
+  say(world, ['four']);
+  await watch(await world.store.drain(world.botA));
+  assert.ok(seen[2].resident, 'and the head under the new summary is warm from then on');
+  assert.deepEqual(
+    seen[2].resident?.entries,
+    seen[1].state.delta.map((entry) => entry.id),
+    'warm again over what the judgement after the compaction read',
+  );
+});
+
+test('two rooms of one bot keep separate heads', async () => {
+  const world = makeWorld();
+  const elsewhere = addRoom(world);
+  const { model, seen } = stub({ probabilities: { act: 0.1, ignore: 0.9 } });
+  const watch = bind(world, model);
+
+  say(world, ['here'], world.room);
+  await watch(await world.store.drain(world.botA));
+  assert.equal(seen[0].state.roomId, world.room);
+
+  say(world, ['there'], elsewhere);
+  await watch(await world.store.drain(world.botA));
+  assert.equal(
+    seen[1].resident,
+    undefined,
+    "a room's first judgement is cold beside a warm neighbour: a head is per (bot, room)",
+  );
+});
+
+test('two bots in one room keep separate heads', async () => {
+  const world = makeWorld();
+  const options = {
+    window: 10,
+    prompt: PROMPT,
+    operatingPoint: POINT,
+    tokeniser: makeTokeniser(),
+  };
+  say(world, ['one']);
+  const forA = stub({ probabilities: { act: 0.1, ignore: 0.9 } });
+  await watchAs(world.store, world.botA, forA.model, options)(await world.store.drain(world.botA));
+  assert.equal(forA.seen.length, 1);
+
+  say(world, ['two']);
+  const forB = stub({ probabilities: { act: 0.1, ignore: 0.9 } });
+  await watchAs(world.store, world.botB, forB.model, options)(await world.store.drain(world.botB));
+  assert.equal(
+    forB.seen[0].resident,
+    undefined,
+    'a second bot in the same room has read nothing, whatever its neighbour has',
+  );
+});
+
+test('a runtime built again reads its first judgement cold', async () => {
+  const world = makeWorld();
+  say(world, ['one', 'two']);
+  const before = stub({ probabilities: { act: 0.1, ignore: 0.9 } });
+  await bind(world, before.model)(await world.store.drain(world.botA));
+
+  say(world, ['three']);
+  const after = stub({ probabilities: { act: 0.1, ignore: 0.9 } });
+  await bind(world, after.model)(await world.store.drain(world.botA));
+  assert.equal(
+    after.seen[0].resident,
+    undefined,
+    'a head is warm only in the process that read it: a restart has no cache to resume',
+  );
+});
+
+test('an entry the window no longer holds is not claimed as read', async () => {
+  const world = makeWorld();
+  say(world, ['one', 'two', 'three']);
+  const { model, seen } = stub({ probabilities: { act: 0.1, ignore: 0.9 } });
+  const watch = watchAs(world.store, world.botA, model, {
+    window: 2,
+    prompt: PROMPT,
+    operatingPoint: POINT,
+    tokeniser: makeTokeniser(),
+  });
+
+  await watch(await world.store.drain(world.botA));
+  assert.equal(seen[0].state.read, 2, 'the window holds two entries');
+
+  say(world, ['four']);
+  await watch(await world.store.drain(world.botA));
+  const warm = seen[1].resident;
+  assert.ok(warm, 'the head has not changed');
+  assert.deepEqual(
+    warm.entries,
+    [seen[0].state.delta[0].id],
+    'only what this box still holds can be claimed — the entry the window pushed out is not',
+  );
+});

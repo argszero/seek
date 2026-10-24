@@ -46,6 +46,17 @@
  * - **Where the verdict lives** (`decisions.md` default 6): on the entry it judged,
  *   and nowhere else. Nothing here keeps a copy.
  *
+ * **The resident context is this file's, and the tokens are still the model's.** §4
+ * keeps the box's tokens warm per (bot, room): re-reading a full box at a 3B costs
+ * about a millisecond a token, so a judgement pays only for what arrived since the
+ * last one. What is kept here is the memory of what was handed over — the head's
+ * identity, and the entries that head has read (`ResidentContext`) — and it is
+ * handed over as fields, never as text (`WatchInput.resident`). **The box itself is
+ * still rebuilt in full on every tick**, and stays a pure read of the record: what
+ * is saved is what the *model* re-encodes, and only the model's own context can make
+ * that true. A runtime that kept its own copy of an encoding would be keeping a
+ * second version of a fact the model already holds, free to disagree with it.
+ *
  * **What is written, and when.** `act` and `ignore` both go on the record. The box
  * reads the newest verdict back out of the entries (§3's last-verdict part: *"when
  * it was taken, what it was, and the reason if one came back"*), and a decision
@@ -140,12 +151,59 @@ export interface OptionBinding {
   ignore: BoundOption;
 }
 
+/**
+ * What this judgement has already read, for one (bot, room).
+ *
+ * `agent-lifecycle.md` §4, last line: *"The box's tokens are kept warm … Each (bot,
+ * room) therefore keeps a resident context and pays only for what arrived since its
+ * last judgement."* This is that memory: two facts and no tokens, because the tokens
+ * are the model's.
+ *
+ * **What the head is.** The front of the box, in the order a judgement reads it: the
+ * prompt, the room's summary, then the entries named here — **oldest first**, so an
+ * arrival can only ever be appended to it. Everything else the box carries (the
+ * counts, the last verdict, who spoke, the caller's question set) is per-tick by
+ * nature and is never resident: it is the tail this judgement is asked about.
+ *
+ * **What is not promised.** Whether a cache still holds that head is the model's to
+ * know. A key that matches means this runtime has not invalidated the head, not that
+ * a model must resume over it — a model that dropped its own context is free to
+ * re-read, and one that resumes over a head it was never given is the failure this
+ * field exists to make impossible.
+ */
+export interface ResidentContext {
+  /**
+   * The head's identity.
+   *
+   * Every ingredient of the front is in it (see `headKey`), so a change in any of
+   * them is a different head rather than the same head quietly re-fingered.
+   */
+  key: string;
+  /**
+   * The entries of **this** box the model has already read, in the box's own order.
+   *
+   * In the box's order and not the head's, because it is a statement about this
+   * box — *which of these lines are not new* — and the head's own order is the
+   * reverse of it.
+   */
+  entries: Id[];
+}
+
 /** One question put to the model. Fields, never prose. */
 export interface WatchInput {
   /** The versioned artifact. */
   prompt: WatchPrompt;
   /** The room's box (§3): standing summary, delta, last verdict, unread count. */
   state: RoomBox;
+  /**
+   * How much of this box the model has already read under the same head.
+   *
+   * **Absent means cold**: a room's first judgement, or a head that changed — a
+   * compaction that rewrote the summary, or a runtime wired to a different prompt or
+   * option binding. Then the whole box is new, and a model that resumed anyway would
+   * be answering over a front it was never given.
+   */
+  resident?: ResidentContext;
   /** The declared options the answer is read from. */
   options: OptionTokens;
   /**
@@ -252,6 +310,12 @@ export interface Watch {
  * It refuses at construction, not on the first tick: a runtime wired to an
  * operating point measured against a different question would otherwise run
  * happily, spending verdicts on a threshold that means nothing.
+ *
+ * It is also where the resident context lives (§4): what this (bot, room) has
+ * already read is the runtime's own memory rather than a row. A head is only warm
+ * while the model that read it still holds it, so a persisted one would outlive the
+ * cache that gave it meaning and tell the next process's first judgement to skip a
+ * front it had never seen.
  */
 export function watchAs(
   store: SeekStore,
@@ -262,10 +326,16 @@ export function watchAs(
   const tokens = declaredOptions(options.optionTokens);
   // Measured once, here: the ids the answer is read at do not depend on the room or
   // the tick, and re-deriving them per call would make the mask free to drift from
-  // the prompt it belongs to. It also keeps the prompt warm (§4 "the box's tokens
-  // are kept warm"): nothing below re-encodes what this line already encoded.
+  // the prompt it belongs to. Warmth is not this line's doing — that is `resident`
+  // below, and it holds no ids of its own.
   const mask = bindOptions(options.tokeniser, options.prompt, tokens);
   checkOperatingPoint(options);
+
+  // The resident context, one per room (§4 "the box's tokens are kept warm"). One
+  // `watchAs` is one bot, so the bot lives in the instance rather than in the key:
+  // two bots are two instances and can share nothing, which is what keeps one bot's
+  // warmth from being handed to another that never read it.
+  const resident = new Map<Id, ResidentContext>();
 
   const watch = (async (entries: Observation[]): Promise<Observation[]> => {
     const outcome: WatchOutcome = {
@@ -303,12 +373,28 @@ export function watchAs(
       if (options.questions !== undefined) boxOptions.questions = options.questions;
       const state = buildBox(store, botId, roomId, boxOptions);
 
-      const reading = await model.read({
+      // What this judgement may assume was already read. The key names the front —
+      // prompt, option binding, summary — and the entries are intersected with the
+      // box, because an entry the window no longer holds is not something the model
+      // is being given again.
+      const head = headKey(botId, roomId, options, tokens, mask, state.summary);
+      const previous = warmFrom(resident.get(roomId), head, state.delta);
+
+      const input: WatchInput = {
         prompt: options.prompt,
         state,
         options: tokens,
         mask,
-      });
+      };
+      if (previous) input.resident = previous;
+      const reading = await model.read(input);
+
+      // Read is read: everything in this box has just been handed over, so the next
+      // judgement may claim it. Recorded after the model answered, because a call that
+      // threw read nothing and a head rebuilt on a failed read would let the next
+      // judgement skip a front it never saw.
+      resident.set(roomId, { key: head, entries: state.delta.map((entry) => entry.id) });
+
       const probability = probabilityOf(reading, tokens);
 
       if (probability === undefined) outcome.unparsed += 1;
@@ -344,6 +430,74 @@ export function watchAs(
   }) as Watch;
 
   return watch;
+}
+
+/**
+ * The head's identity: every ingredient of the front of the box, and nothing else.
+ *
+ * The front is the prompt, the option binding and the room's summary (§4 "the box's
+ * tokens are kept warm"), so a judgement may only be told "you have read this" while
+ * all of them are unchanged. Each is here for a reason:
+ *
+ * - **The prompt** is version *and* text. The version is its identity, and the
+ *   operating point is calibrated against it; the text is what was actually encoded,
+ *   and a caller who edited the artifact without moving the version would otherwise
+ *   get a head it never read.
+ * - **The option tokens** change what the model is asked to continue from.
+ * - **The mask ids** stand for the tokeniser: two vocabularies that bind the same ids
+ *   read the same answer, and one that binds different ids is a different head even
+ *   under the same prompt.
+ * - **The summary** is the compaction's result, so a compaction is exactly the event
+ *   that rewrites the front and must invalidate it (`agent-lifecycle.md` §3). A
+ *   summary absent and a summary present are different heads, hence the `null`.
+ *
+ * Not here, deliberately: the counts, the last verdict, who spoke and the caller's
+ * question set. They change with every tick, so a head that claimed them would be
+ * invalidated by the next arrival — which is the cost the whole mechanism exists to
+ * avoid. `decisions.md` default 11 is the row that says so.
+ *
+ * Serialised as a JSON array rather than joined with a separator: a summary is free
+ * text, and a delimiter it can contain is a key two different heads can share.
+ */
+function headKey(
+  botId: Id,
+  roomId: Id,
+  options: WatchOptions,
+  tokens: OptionTokens,
+  mask: OptionBinding,
+  summary: string | undefined,
+): string {
+  return JSON.stringify([
+    botId,
+    roomId,
+    options.prompt.version,
+    options.prompt.text,
+    tokens.act,
+    tokens.ignore,
+    mask.act.id,
+    mask.ignore.id,
+    summary ?? null,
+  ]);
+}
+
+/**
+ * What of this box the head has already read, or `undefined` when it has read none
+ * of it under this head.
+ *
+ * The intersection is the point. A compaction may have consumed entries the model
+ * read, and the window may have pushed others out, so the previous list is filtered
+ * against the box in hand rather than returned as it stands: an id this box does not
+ * hold is not something the judgement can be asked to resume over. What survives is
+ * still what was read, in the order it was read, because filtering preserves it.
+ */
+function warmFrom(
+  previous: ResidentContext | undefined,
+  key: string,
+  delta: Observation[],
+): ResidentContext | undefined {
+  if (!previous || previous.key !== key) return undefined;
+  const here = new Set(delta.map((entry) => entry.id));
+  return { key, entries: previous.entries.filter((id) => here.has(id)) };
 }
 
 /** The two declared option tokens, checked for the shapes line 79 requires. */
