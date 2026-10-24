@@ -1,0 +1,978 @@
+{
+ "_what_this_is": "Every calibration set re-scored in the prompt shape the kernel actually assembles, after two rig defects were found and fixed.",
+ "_why_this_file_exists": "the earlier image readings were taken with the picture placed AFTER the question, and that placement moved every number: AUC 0.701 -> 0.840 on the boundary set alone. The figures in measured.json and boundary-measured.json were produced that way; this file is the corrected reading, and it is the one later work should quote.",
+ "_the_two_defects": [
+  "The picture was appended after the question. calibration/vision/provenance.md said 'then the image, then the question', so the prose and the rig disagreed; the rig was wrong. The picture now rides on the message it belongs to, which is also where the box names it (agent-lifecycle §2, decisions row 17).",
+  "The prompt ended without the question part's trailing space. watch-v1 declares after=' ' for the question, and src/prompts.ts appends it; that space is the boundary the option ids are bound at, so dropping it moves the next-token distribution. It is restored.",
+  "A third shape was tried and rejected on measurement, not taste: the artifact's parts fed to the model as one flat string with no chat template scores set4.json at AUC 0.469 with act 0/12 -- below chance. The model is a chat model and needs its template; the assembled text is the user turn, not the whole prompt."
+ ],
+ "rig": "tmp/vision/scorer.new (llama.cpp @701fd25, libllama/libmtmd), LFM2.5-VL-3B-Q4_0 + mmproj-Q8_0 (unchanged hashes), chat template with the watch-v1 system line as a system message, user turn = message part + picture + question part + its trailing space, P(act) summed over every token stripping to 'act'",
+ "sets": {
+  "text-set4": {
+   "rig": "scorer.new, chat template with the system line as a system message, user turn ending on the artifact's trailing space, picture on its message",
+   "n": 24,
+   "auc": 1.0,
+   "plateau": {
+    "best": 24,
+    "n": 24,
+    "accuracy": 1.0,
+    "low": 0.3845,
+    "high": 0.3948,
+    "max_margin": 0.3896,
+    "pinned_by": [
+     "New badge policy starts ",
+     "Can someone check why th"
+    ]
+   },
+   "at_shipped": [
+    20,
+    8,
+    12,
+    12,
+    12
+   ],
+   "at_151": [
+    15,
+    12,
+    12,
+    3,
+    12
+   ],
+   "at_200": [
+    16,
+    12,
+    12,
+    4,
+    12
+   ]
+  },
+  "zh": {
+   "rig": "scorer.new, chat template with the system line as a system message, user turn ending on the artifact's trailing space, picture on its message",
+   "n": 12,
+   "auc": 0.694,
+   "plateau": {
+    "best": 8,
+    "n": 12,
+    "accuracy": 0.6667,
+    "low": 0.0365,
+    "high": 0.2836,
+    "max_margin": 0.16,
+    "pinned_by": [
+     "z-i2",
+     "z-a2"
+    ]
+   },
+   "at_shipped": [
+    7,
+    1,
+    6,
+    6,
+    6
+   ],
+   "at_151": [
+    6,
+    2,
+    6,
+    4,
+    6
+   ],
+   "at_200": [
+    6,
+    2,
+    6,
+    4,
+    6
+   ]
+  },
+  "img-cases": {
+   "rig": "scorer.new, chat template with the system line as a system message, user turn ending on the artifact's trailing space, picture on its message",
+   "n": 16,
+   "auc": 0.938,
+   "plateau": {
+    "best": 15,
+    "n": 16,
+    "accuracy": 0.9375,
+    "low": 0.3688,
+    "high": 0.4935,
+    "max_margin": 0.4312,
+    "pinned_by": [
+     "i4",
+     "a8"
+    ]
+   },
+   "at_shipped": [
+    13,
+    5,
+    8,
+    8,
+    8
+   ],
+   "at_151": [
+    12,
+    7,
+    8,
+    5,
+    8
+   ],
+   "at_200": [
+    12,
+    7,
+    8,
+    5,
+    8
+   ]
+  },
+  "img-heldout": {
+   "rig": "scorer.new, chat template with the system line as a system message, user turn ending on the artifact's trailing space, picture on its message",
+   "n": 16,
+   "auc": 0.922,
+   "plateau": {
+    "best": 15,
+    "n": 16,
+    "accuracy": 0.9375,
+    "low": 0.2937,
+    "high": 0.5237,
+    "max_margin": 0.4087,
+    "pinned_by": [
+     "ho-i7",
+     "ho-a3"
+    ]
+   },
+   "at_shipped": [
+    13,
+    5,
+    8,
+    8,
+    8
+   ],
+   "at_151": [
+    12,
+    7,
+    8,
+    5,
+    8
+   ],
+   "at_200": [
+    13,
+    7,
+    8,
+    6,
+    8
+   ]
+  },
+  "img-boundary": {
+   "rig": "scorer.new, chat template with the system line as a system message, user turn ending on the artifact's trailing space, picture on its message",
+   "n": 24,
+   "auc": 0.84,
+   "plateau": {
+    "best": 20,
+    "n": 24,
+    "accuracy": 0.8333,
+    "low": 0.1925,
+    "high": 0.2029,
+    "max_margin": 0.1977,
+    "pinned_by": [
+     "b-i3",
+     "b-a8"
+    ]
+   },
+   "at_shipped": [
+    15,
+    3,
+    12,
+    12,
+    12
+   ],
+   "at_151": [
+    19,
+    10,
+    12,
+    9,
+    12
+   ],
+   "at_200": [
+    20,
+    10,
+    12,
+    10,
+    12
+   ]
+  }
+ },
+ "joint": {
+  "pooled_images": {
+   "best": 48,
+   "n": 56,
+   "acc": 0.8571,
+   "lo": 0.3688,
+   "hi": 0.45,
+   "mm": 0.4094,
+   "pin": [
+    "i4",
+    "b-a4"
+   ]
+  },
+  "text_plateau": {
+   "best": 24,
+   "n": 24,
+   "acc": 1.0,
+   "lo": 0.3845,
+   "hi": 0.3948,
+   "mm": 0.3896,
+   "pin": [
+    "New badge policy starts ",
+    "Can someone check why th"
+   ]
+  },
+  "zh_plateau": {
+   "best": 8,
+   "n": 12,
+   "acc": 0.6667,
+   "lo": 0.0365,
+   "hi": 0.2836,
+   "mm": 0.16,
+   "pin": [
+    "z-i2",
+    "z-a2"
+   ]
+  },
+  "joint_best": {
+   "cut": 0.3948,
+   "images": 48,
+   "text": 24,
+   "total": 72
+  },
+  "at": {
+   "0.3896": {
+    "images": [
+     48,
+     20,
+     28,
+     28,
+     28
+    ],
+    "text": [
+     24,
+     12,
+     12,
+     12,
+     12
+    ],
+    "zh": [
+     7,
+     1,
+     6,
+     6,
+     6
+    ]
+   },
+   "0.6": {
+    "images": [
+     41,
+     13,
+     28,
+     28,
+     28
+    ],
+    "text": [
+     20,
+     8,
+     12,
+     12,
+     12
+    ],
+    "zh": [
+     7,
+     1,
+     6,
+     6,
+     6
+    ]
+   },
+   "0.151": {
+    "images": [
+     43,
+     24,
+     28,
+     19,
+     28
+    ],
+    "text": [
+     15,
+     12,
+     12,
+     3,
+     12
+    ],
+    "zh": [
+     6,
+     2,
+     6,
+     4,
+     6
+    ]
+   },
+   "0.4094": {
+    "images": [
+     48,
+     20,
+     28,
+     28,
+     28
+    ],
+    "text": [
+     22,
+     10,
+     12,
+     12,
+     12
+    ],
+    "zh": [
+     7,
+     1,
+     6,
+     6,
+     6
+    ]
+   }
+  },
+  "zh_cases": [
+   {
+    "id": "z-a1",
+    "label": "act",
+    "p_act": 0.0648,
+    "eval_ms": 916
+   },
+   {
+    "id": "z-a2",
+    "label": "act",
+    "p_act": 0.2836,
+    "eval_ms": 930
+   },
+   {
+    "id": "z-a3",
+    "label": "act",
+    "p_act": 0.1382,
+    "eval_ms": 911
+   },
+   {
+    "id": "z-a4",
+    "label": "act",
+    "p_act": 0.0844,
+    "eval_ms": 909
+   },
+   {
+    "id": "z-a5",
+    "label": "act",
+    "p_act": 0.6375,
+    "eval_ms": 906
+   },
+   {
+    "id": "z-a6",
+    "label": "act",
+    "p_act": 0.1347,
+    "eval_ms": 924
+   },
+   {
+    "id": "z-i1",
+    "label": "ignore",
+    "p_act": 0.2127,
+    "eval_ms": 909
+   },
+   {
+    "id": "z-i2",
+    "label": "ignore",
+    "p_act": 0.0365,
+    "eval_ms": 910
+   },
+   {
+    "id": "z-i3",
+    "label": "ignore",
+    "p_act": 0.1286,
+    "eval_ms": 902
+   },
+   {
+    "id": "z-i4",
+    "label": "ignore",
+    "p_act": 0.0693,
+    "eval_ms": 907
+   },
+   {
+    "id": "z-i5",
+    "label": "ignore",
+    "p_act": 0.2599,
+    "eval_ms": 909
+   },
+   {
+    "id": "z-i6",
+    "label": "ignore",
+    "p_act": 0.0266,
+    "eval_ms": 923
+   }
+  ]
+ },
+ "cases": {
+  "text-set4": [
+   {
+    "id": "对账任务今天凌晨跑失败了，需要人看一下",
+    "label": "act",
+    "p_act": 0.5318,
+    "eval_ms": 186
+   },
+   {
+    "id": "The settlement batch fai",
+    "label": "act",
+    "p_act": 0.8253,
+    "eval_ms": 189
+   },
+   {
+    "id": "@ops-bot 退款申请一直卡在审核中，客户催",
+    "label": "act",
+    "p_act": 0.6289,
+    "eval_ms": 190
+   },
+   {
+    "id": "We're getting 429s from ",
+    "label": "act",
+    "p_act": 0.8139,
+    "eval_ms": 192
+   },
+   {
+    "id": "支付成功的订单没有回调，订单状态一直是待支付",
+    "label": "act",
+    "p_act": 0.6193,
+    "eval_ms": 191
+   },
+   {
+    "id": "Can someone check why th",
+    "label": "act",
+    "p_act": 0.3948,
+    "eval_ms": 188
+   },
+   {
+    "id": "线上支付页面白屏了，用户下不了单",
+    "label": "act",
+    "p_act": 0.6513,
+    "eval_ms": 187
+   },
+   {
+    "id": "Our nightly reconciliati",
+    "label": "act",
+    "p_act": 0.5451,
+    "eval_ms": 188
+   },
+   {
+    "id": "@ops-bot what's the retr",
+    "label": "act",
+    "p_act": 0.4073,
+    "eval_ms": 197
+   },
+   {
+    "id": "Alert fired: dispute rat",
+    "label": "act",
+    "p_act": 0.8394,
+    "eval_ms": 189
+   },
+   {
+    "id": "有个商户说钱扣了但订单没生成",
+    "label": "act",
+    "p_act": 0.6201,
+    "eval_ms": 191
+   },
+   {
+    "id": "The webhook consumer is ",
+    "label": "act",
+    "p_act": 0.8371,
+    "eval_ms": 186
+   },
+   {
+    "id": "我下周一到周三休假，有事找小李",
+    "label": "ignore",
+    "p_act": 0.2955,
+    "eval_ms": 188
+   },
+   {
+    "id": "There's cake in the kitc",
+    "label": "ignore",
+    "p_act": 0.2555,
+    "eval_ms": 191
+   },
+   {
+    "id": "今天的例会取消",
+    "label": "ignore",
+    "p_act": 0.3471,
+    "eval_ms": 187
+   },
+   {
+    "id": "New badge policy starts ",
+    "label": "ignore",
+    "p_act": 0.3845,
+    "eval_ms": 188
+   },
+   {
+    "id": "笑死，这个 bug 的复现路径太离谱了",
+    "label": "ignore",
+    "p_act": 0.2886,
+    "eval_ms": 186
+   },
+   {
+    "id": "Lunch order closes at 11",
+    "label": "ignore",
+    "p_act": 0.2335,
+    "eval_ms": 187
+   },
+   {
+    "id": "是谁把我的杯子拿走了",
+    "label": "ignore",
+    "p_act": 0.0651,
+    "eval_ms": 187
+   },
+   {
+    "id": "The offsite photos are u",
+    "label": "ignore",
+    "p_act": 0.2874,
+    "eval_ms": 186
+   },
+   {
+    "id": "明天上午十点全员会",
+    "label": "ignore",
+    "p_act": 0.3085,
+    "eval_ms": 188
+   },
+   {
+    "id": "刚看了下招聘进度，简历收了不少",
+    "label": "ignore",
+    "p_act": 0.1741,
+    "eval_ms": 189
+   },
+   {
+    "id": "I'm looking into it now,",
+    "label": "keep",
+    "p_act": 0.115,
+    "eval_ms": 191
+   },
+   {
+    "id": "已经联系了银行，等他们回复",
+    "label": "keep",
+    "p_act": 0.0493,
+    "eval_ms": 189
+   }
+  ],
+  "zh": [
+   {
+    "id": "z-a1",
+    "label": "act",
+    "p_act": 0.0648,
+    "eval_ms": 916
+   },
+   {
+    "id": "z-a2",
+    "label": "act",
+    "p_act": 0.2836,
+    "eval_ms": 930
+   },
+   {
+    "id": "z-a3",
+    "label": "act",
+    "p_act": 0.1382,
+    "eval_ms": 911
+   },
+   {
+    "id": "z-a4",
+    "label": "act",
+    "p_act": 0.0844,
+    "eval_ms": 909
+   },
+   {
+    "id": "z-a5",
+    "label": "act",
+    "p_act": 0.6375,
+    "eval_ms": 906
+   },
+   {
+    "id": "z-a6",
+    "label": "act",
+    "p_act": 0.1347,
+    "eval_ms": 924
+   },
+   {
+    "id": "z-i1",
+    "label": "ignore",
+    "p_act": 0.2127,
+    "eval_ms": 909
+   },
+   {
+    "id": "z-i2",
+    "label": "ignore",
+    "p_act": 0.0365,
+    "eval_ms": 910
+   },
+   {
+    "id": "z-i3",
+    "label": "ignore",
+    "p_act": 0.1286,
+    "eval_ms": 902
+   },
+   {
+    "id": "z-i4",
+    "label": "ignore",
+    "p_act": 0.0693,
+    "eval_ms": 907
+   },
+   {
+    "id": "z-i5",
+    "label": "ignore",
+    "p_act": 0.2599,
+    "eval_ms": 909
+   },
+   {
+    "id": "z-i6",
+    "label": "ignore",
+    "p_act": 0.0266,
+    "eval_ms": 923
+   }
+  ],
+  "img-cases": [
+   {
+    "id": "a1",
+    "label": "act",
+    "p_act": 0.8142,
+    "eval_ms": 905
+   },
+   {
+    "id": "a2",
+    "label": "act",
+    "p_act": 0.8557,
+    "eval_ms": 909
+   },
+   {
+    "id": "a3",
+    "label": "act",
+    "p_act": 0.8411,
+    "eval_ms": 916
+   },
+   {
+    "id": "a4",
+    "label": "act",
+    "p_act": 0.5334,
+    "eval_ms": 917
+   },
+   {
+    "id": "a5",
+    "label": "act",
+    "p_act": 0.118,
+    "eval_ms": 906
+   },
+   {
+    "id": "a6",
+    "label": "act",
+    "p_act": 0.7931,
+    "eval_ms": 903
+   },
+   {
+    "id": "a7",
+    "label": "act",
+    "p_act": 0.8684,
+    "eval_ms": 918
+   },
+   {
+    "id": "a8",
+    "label": "act",
+    "p_act": 0.4935,
+    "eval_ms": 923
+   },
+   {
+    "id": "i1",
+    "label": "ignore",
+    "p_act": 0.1048,
+    "eval_ms": 909
+   },
+   {
+    "id": "i2",
+    "label": "ignore",
+    "p_act": 0.2209,
+    "eval_ms": 912
+   },
+   {
+    "id": "i3",
+    "label": "ignore",
+    "p_act": 0.1221,
+    "eval_ms": 904
+   },
+   {
+    "id": "i4",
+    "label": "ignore",
+    "p_act": 0.3688,
+    "eval_ms": 923
+   },
+   {
+    "id": "i5",
+    "label": "ignore",
+    "p_act": 0.0815,
+    "eval_ms": 909
+   },
+   {
+    "id": "i6",
+    "label": "ignore",
+    "p_act": 0.0739,
+    "eval_ms": 919
+   },
+   {
+    "id": "i7",
+    "label": "ignore",
+    "p_act": 0.3116,
+    "eval_ms": 908
+   },
+   {
+    "id": "i8",
+    "label": "ignore",
+    "p_act": 0.0925,
+    "eval_ms": 923
+   }
+  ],
+  "img-heldout": [
+   {
+    "id": "ho-a1",
+    "label": "act",
+    "p_act": 0.8812,
+    "eval_ms": 895
+   },
+   {
+    "id": "ho-a2",
+    "label": "act",
+    "p_act": 0.9149,
+    "eval_ms": 911
+   },
+   {
+    "id": "ho-a3",
+    "label": "act",
+    "p_act": 0.5237,
+    "eval_ms": 909
+   },
+   {
+    "id": "ho-a4",
+    "label": "act",
+    "p_act": 0.7857,
+    "eval_ms": 905
+   },
+   {
+    "id": "ho-a5",
+    "label": "act",
+    "p_act": 0.1159,
+    "eval_ms": 903
+   },
+   {
+    "id": "ho-a6",
+    "label": "act",
+    "p_act": 0.8582,
+    "eval_ms": 906
+   },
+   {
+    "id": "ho-a7",
+    "label": "act",
+    "p_act": 0.5873,
+    "eval_ms": 916
+   },
+   {
+    "id": "ho-a8",
+    "label": "act",
+    "p_act": 0.7117,
+    "eval_ms": 917
+   },
+   {
+    "id": "ho-i1",
+    "label": "ignore",
+    "p_act": 0.0516,
+    "eval_ms": 904
+   },
+   {
+    "id": "ho-i2",
+    "label": "ignore",
+    "p_act": 0.1489,
+    "eval_ms": 905
+   },
+   {
+    "id": "ho-i3",
+    "label": "ignore",
+    "p_act": 0.2779,
+    "eval_ms": 892
+   },
+   {
+    "id": "ho-i4",
+    "label": "ignore",
+    "p_act": 0.1772,
+    "eval_ms": 912
+   },
+   {
+    "id": "ho-i5",
+    "label": "ignore",
+    "p_act": 0.116,
+    "eval_ms": 910
+   },
+   {
+    "id": "ho-i6",
+    "label": "ignore",
+    "p_act": 0.1001,
+    "eval_ms": 906
+   },
+   {
+    "id": "ho-i7",
+    "label": "ignore",
+    "p_act": 0.2937,
+    "eval_ms": 903
+   },
+   {
+    "id": "ho-i8",
+    "label": "ignore",
+    "p_act": 0.0795,
+    "eval_ms": 905
+   }
+  ],
+  "img-boundary": [
+   {
+    "id": "b-a1",
+    "label": "act",
+    "p_act": 0.2035,
+    "eval_ms": 913
+   },
+   {
+    "id": "b-a2",
+    "label": "act",
+    "p_act": 0.8055,
+    "eval_ms": 916
+   },
+   {
+    "id": "b-a3",
+    "label": "act",
+    "p_act": 0.6143,
+    "eval_ms": 926
+   },
+   {
+    "id": "b-a4",
+    "label": "act",
+    "p_act": 0.45,
+    "eval_ms": 906
+   },
+   {
+    "id": "b-a5",
+    "label": "act",
+    "p_act": 0.1209,
+    "eval_ms": 912
+   },
+   {
+    "id": "b-a6",
+    "label": "act",
+    "p_act": 0.5664,
+    "eval_ms": 913
+   },
+   {
+    "id": "b-a7",
+    "label": "act",
+    "p_act": 0.7125,
+    "eval_ms": 931
+   },
+   {
+    "id": "b-a8",
+    "label": "act",
+    "p_act": 0.2029,
+    "eval_ms": 908
+   },
+   {
+    "id": "b-a9",
+    "label": "act",
+    "p_act": 0.3206,
+    "eval_ms": 917
+   },
+   {
+    "id": "b-a10",
+    "label": "act",
+    "p_act": 0.0833,
+    "eval_ms": 917
+   },
+   {
+    "id": "b-a11",
+    "label": "act",
+    "p_act": 0.2521,
+    "eval_ms": 918
+   },
+   {
+    "id": "b-a12",
+    "label": "act",
+    "p_act": 0.5367,
+    "eval_ms": 914
+   },
+   {
+    "id": "b-i1",
+    "label": "ignore",
+    "p_act": 0.1132,
+    "eval_ms": 919
+   },
+   {
+    "id": "b-i2",
+    "label": "ignore",
+    "p_act": 0.0877,
+    "eval_ms": 911
+   },
+   {
+    "id": "b-i3",
+    "label": "ignore",
+    "p_act": 0.1925,
+    "eval_ms": 918
+   },
+   {
+    "id": "b-i4",
+    "label": "ignore",
+    "p_act": 0.2705,
+    "eval_ms": 905
+   },
+   {
+    "id": "b-i5",
+    "label": "ignore",
+    "p_act": 0.3372,
+    "eval_ms": 906
+   },
+   {
+    "id": "b-i6",
+    "label": "ignore",
+    "p_act": 0.0984,
+    "eval_ms": 914
+   },
+   {
+    "id": "b-i7",
+    "label": "ignore",
+    "p_act": 0.0303,
+    "eval_ms": 916
+   },
+   {
+    "id": "b-i8",
+    "label": "ignore",
+    "p_act": 0.121,
+    "eval_ms": 922
+   },
+   {
+    "id": "b-i9",
+    "label": "ignore",
+    "p_act": 0.1473,
+    "eval_ms": 924
+   },
+   {
+    "id": "b-i10",
+    "label": "ignore",
+    "p_act": 0.1474,
+    "eval_ms": 917
+   },
+   {
+    "id": "b-i11",
+    "label": "ignore",
+    "p_act": 0.0432,
+    "eval_ms": 913
+   },
+   {
+    "id": "b-i12",
+    "label": "ignore",
+    "p_act": 0.0873,
+    "eval_ms": 908
+   }
+  ]
+ }
+}

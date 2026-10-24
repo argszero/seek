@@ -39,6 +39,8 @@ and a green status board — the ordinary traffic of an ops room.
 | `probe.json` | the prompt probe: four wordings of the ask over the same 32 cases, and the operating-point finding below |
 | `boundary.json` | the third 24 cases, written to **choose** a cut: thin-evidence positives against evidence-like negatives |
 | `boundary-measured.json` | their reading, the plateau they form, and the three sets compared |
+| `zh.json` | twelve Chinese-authored cases, for the multilingual half of the requirement |
+| `remeasured.json` | **every set re-scored in the prompt shape the kernel assembles** — the reading to quote |
 | `provenance.md` / `provenance.zh-CN.md` | this record |
 
 ## How the reading was taken
@@ -184,6 +186,87 @@ about cost. At 0.600 the gate misses 16 of 28 incidents and never fires wrongly;
 8 and fires wrongly 3 times in 28. Which of those the kernel prefers is a ruling, and the cut in
 `src/prompts/watch-v1.json` is unchanged at 0.600.
 
+## The picture sat in the wrong place, and every image number moved
+
+The rigs behind the readings above had two defects, and the second one is not a rounding
+difference.
+
+**The picture was appended after the question.** The shipped shape is the artifact's order:
+the system line, `Message: <caption>`, the picture, the question. The rig put the marker at
+the very end instead, so the model read *"…Answer act or ignore."* and only then met the
+image. `agent-lifecycle.md` §2 and `decisions.md` row 17 both say the picture reaches the
+judgement with the message it belongs to, so the rig was wrong and the prose above was
+right. **The prompt also ended without the question part's trailing space**, which `watch-v1`
+declares as `after: " "` and `src/prompts.ts` appends — that space is the boundary the option
+ids are bound at, so dropping it moves the answer as well.
+
+Both are fixed, and every set was re-scored on one rig: the same scorer, the same quant and
+projector hashes, the chat template with the `watch-v1` system line as a system message, the
+picture on its message, and the user turn ending on that trailing space
+(`remeasured.json`). A third shape was tried and rejected on measurement: the artifact's
+parts fed to the model as one flat string with **no** chat template scores `set4.json` at
+AUC **0.469** with `act` **0/12** — below chance, because this is a chat model and the
+assembled text is its user turn, not its whole prompt.
+
+| set | at 0.600, before | at 0.600, re-measured | AUC before → after |
+|---|---|---|---|
+| `cases.json` (16) | 12/16 | **13/16** | 0.875 → **0.938** |
+| `heldout.json` (16) | 13/16 | **13/16** | 0.875 → **0.922** |
+| `boundary.json` (24) | 15/24 | **15/24** | 0.701 → **0.840** |
+| all images (56) | 40/56 | **41/56** | 0.811 → **0.889** |
+| `set4.json` (24 text) | 24/24 recorded | **20/24** | 1.000 → 1.000 |
+
+**Two published claims do not survive this.** Last set's report said the boundary set showed
+"AUC 0.701" and that buying `act` recall at a 0.151 cut "costs three of 28 negatives". Both
+were properties of the misplaced picture, not of the model: re-measured, that set's AUC is
+**0.840**, and at the best cut **no negative in any of the 56 image cases fires at all**
+(`ignore` 28/28). The price was an artefact, and this record withdraws it.
+
+**And the single cut turns out to exist after all.** With both paths on one rig their plateaus
+overlap:
+
+| cut | images (56) | text (24) |
+|---|---|---|
+| 0.600 (shipped) | 41/56, `act` 13/28, `ignore` 28/28 | **20/24**, `act` 8/12 |
+| **0.3896** | **48/56**, `act` 20/28, `ignore` 28/28 | **24/24** |
+
+The text plateau is **(0.3845, 0.3948]** and the image plateau is **(0.3688, 0.4500]** — the
+first sits inside the second, so one cut serves both. Moving from 0.600 to about 0.39 is
+better on **both** paths and costs no precision on either: text 20/24 → 24/24, images
+41/56 → 48/56, `ignore` 28/28 either way. That is not a trade, so the earlier framing — a
+second cut, or a choice between missing incidents and sending what it should not — was an
+artefact of the wrong rig too. `src/prompts/watch-v1.json` still declares 0.600 and the cut is
+not changed here; choosing it is `decisions.md` row 12's, and this record only says what the
+labelled sets now say.
+
+## The Chinese half, measured on its own
+
+Line 25 asks for **multilingual and multimodal**, and until now the multilingual half rested
+on 8 Chinese pictures out of 56 — which `measured.json` itself says cannot carry a language
+split. `zh.json` adds twelve cases, written in Chinese from the start as a Chinese ops room's
+traffic (对账日报, 短信通道, 工单, 灰度发布演练, 快递柜, 会议室预订), six act — three of them
+thin evidence — against six ignore — three of them evidence-like. Two of them share a family
+with an English case and say so per case; none is a translation.
+
+| | |
+|---|---|
+| AUC | **0.694** (English image pool: 0.889) |
+| at 0.600 | 7/12 — `act` **1/6**, `ignore` 6/6 |
+| at 0.3896 | 7/12 — `act` **1/6**, `ignore` 6/6 |
+| best cut | (0.0365, 0.2836], 8/12 |
+
+**The Chinese side is materially worse, and it fails the same way as the first English set
+did: it under-fires.** Six pictures that carry an incident, one answered. The two clear ones
+it missed are a Chinese point-of-sale error dialog and a Chinese log line reading
+`FATAL 结算进程退出 code=137`; the thin ones — an amber tile among twelve, one reconciliation
+row reading 差异 3 笔, an exhausted error budget — were all missed. Its negatives are perfect
+at every cut above 0.29, so this is not a model that fires at everything in Chinese; it is one
+that does not fire.
+
+Twelve cases is a narrow reading and it is stated as one: it is enough to say the multilingual
+half is **measured and not met**, which is a different sentence from the one line 25 carried
+before, and not enough to rank models on Chinese vision.
+
 ## What this material does not settle
 
 - **One message, one image.** Every case is a single image with a single caption. A box
@@ -197,7 +280,9 @@ about cost. At 0.600 the gate misses 16 of 28 incidents and never fires wrongly;
 - **The estimator.** The scorer reads the whole next-token distribution; the kernel masks a
   single id per option. That difference is already recorded as an open tension in
   `docs/decisions.md`, and this run neither widens nor narrows it.
-- **No rule was changed.** The 0.600 cut is the one measured on the text set. Whether a
-  vision-bearing room wants a different cut is a question the first two sets were not written to
-  answer; `boundary.json` was written to answer it, and narrows it to an interval with a stated
-  cost without choosing — choosing is a ruling.
+- **No rule was changed.** The 0.600 cut is unchanged in `src/prompts/watch-v1.json`. The
+  re-measurement above says one cut near 0.39 serves both paths and dominates 0.600 on each, but
+  choosing it is `decisions.md` row 12's to do, not a measurement's to declare.
+- **The Chinese reading is 12 cases.** Enough to call the multilingual half measured and unmet;
+  not enough to rank models on Chinese vision, and not enough to say whether the deficit is the
+  script, the pictures this set chose, or the model's training mix.
