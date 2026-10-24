@@ -283,8 +283,9 @@ export interface Observation {
   reason?: string;
 }
 
-// --- The rest of the shapes are fixed by the design. Only `ScheduleRow` is
-// written yet (`schedule.ts`); the three below are still schema-only. ---
+// --- The rest of the shapes are fixed by the design, and every one of them is
+// written: `Session` and `Turn` in `turn.ts`, `Memory` in `compact.ts`, and
+// `ScheduleRow` in `schedule.ts`. ---
 
 /** An agent's private stretch of work in one room. Never a user-visible unit. */
 export interface Session {
