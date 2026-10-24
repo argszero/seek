@@ -1,0 +1,60 @@
+{
+ "source": "round3.py:TEST",
+ "role": "the held-out set",
+ "labels": {
+  "act": "this bot should speak or do work now",
+  "ignore": "nothing to do with this bot",
+  "keep": "relevant, but nothing to do yet",
+  "later": "decide later / needs a clock"
+ },
+ "cases": [
+  {
+   "label": "act",
+   "text": "prod 的支付回调又挂了，5xx 一直在涨"
+  },
+  {
+   "label": "act",
+   "text": "@ops-bot 这笔订单的对账差异怎么解释"
+  },
+  {
+   "label": "act",
+   "text": "The refund worker is stuck, queue depth 12k and climbing."
+  },
+  {
+   "label": "act",
+   "text": "结算文件今天没生成，财务在催"
+  },
+  {
+   "label": "ignore",
+   "text": "今天的午饭订哪家"
+  },
+  {
+   "label": "ignore",
+   "text": "新来的同事介绍一下自己"
+  },
+  {
+   "label": "ignore",
+   "text": "the office wifi password changed, it's on the board"
+  },
+  {
+   "label": "ignore",
+   "text": "周末团建报名接龙"
+  },
+  {
+   "label": "keep",
+   "text": "我正在排查，先别重启"
+  },
+  {
+   "label": "keep",
+   "text": "已经修复了，观察一小时"
+  },
+  {
+   "label": "later",
+   "text": "下周再讨论这个方案"
+  },
+  {
+   "label": "later",
+   "text": "等灰度完成再看指标"
+  }
+ ]
+}

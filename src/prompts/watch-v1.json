@@ -1,0 +1,30 @@
+{
+ "version": "watch-v1",
+ "system": "You are the ops bot of a payments team. Your job: catch incidents and answer questions the team asks. You stay quiet otherwise.",
+ "afterSystem": "\n\n",
+ "parts": [
+  {
+   "name": "summary",
+   "text": "Room memory: {summary}",
+   "after": "\n\n",
+   "when": "summary"
+  },
+  {
+   "name": "message",
+   "text": "Message: {text}",
+   "after": "\n",
+   "when": "always",
+   "each": "observation"
+  },
+  {
+   "name": "question",
+   "text": "Do you need to do something about this message? Answer act or ignore.",
+   "after": " ",
+   "when": "always"
+  }
+ ],
+ "operatingPoint": {
+  "threshold": 0.6,
+  "measuredOn": "watch-v1 on calibration/set4.json — 24 hand-written cases written after every prompt choice was made, zero-shot, this exact ask: AUC 1.000, 100% at this cut, 96 ms per message (calibration/measured.json)"
+ }
+}
