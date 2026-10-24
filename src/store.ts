@@ -156,6 +156,17 @@ export class SeekStore {
   }
 
   /**
+   * An agent's own memory rows: diary, room digests, session memory.
+   *
+   * Sharded by agent (data-model rule 8), so one agent's digest is never in
+   * another agent's shard — which is what keeps "one writer per room" a property
+   * of the shape rather than a discipline.
+   */
+  memoriesOf(agentId: Id): Memory[] {
+    return (this.data.memories[agentId] ??= []);
+  }
+
+  /**
    * Whether this bot has anything to wake for.
    *
    * A bot wakes because an entry arrived and for no other reason, so an empty

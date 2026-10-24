@@ -253,6 +253,14 @@ export interface Memory {
   level: MemoryLevel;
   room_id?: Id;
   body: string;
+  /**
+   * The last observation a room digest accounts for.
+   *
+   * It is written in the same operation as `body` (`agent-lifecycle.md` §3), and
+   * the delta a judgement reads is derived from it: the queue entries after this
+   * one. Absent on a diary row and on a digest that has consumed nothing.
+   */
+  consumed_to?: Id;
   updated_at: string;
 }
 
