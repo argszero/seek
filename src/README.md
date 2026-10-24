@@ -1,6 +1,6 @@
 # src — the kernel
 
-The kernel is written: `store`, `delivery`, `gate`, `chain`, `schedule`, `say`, `turn`, `compact`, `box`, `watch`, `kernel`, the comparator, and a runnable first milestone (`npm start`), with 179 tests over them, and **no interface**. By rule 1 in `docs/decisions.md`: **settle the data model before the interface.**
+The kernel is written: `store`, `delivery`, `gate`, `chain`, `schedule`, `say`, `turn`, `compact`, `box`, `watch`, `kernel`, the comparator, and a runnable first milestone (`npm start`), with 185 tests over them, and **no interface**. By rule 1 in `docs/decisions.md`: **settle the data model before the interface.**
 
 ## Checklist
 
