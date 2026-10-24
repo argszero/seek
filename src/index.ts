@@ -34,6 +34,8 @@ export type {
   ScheduleCancelInput,
   ScheduleTool,
 } from './schedule.ts';
+export { ScheduleComparator, msUntilDue, nextDueAt, wallTimers } from './comparator.ts';
+export type { ComparatorOptions, Timers } from './comparator.ts';
 export { say, sayAs } from './say.ts';
 export type { SayInput, SayOptions, SayTool } from './say.ts';
 export { makeTurn, runTurn } from './turn.ts';
