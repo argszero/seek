@@ -52,6 +52,16 @@ export interface TickResult {
    */
   entries: Observation[];
   /**
+   * What the tick took off the queue and consumed — a held-back entry is not in
+   * here, because the chain wall put it back (§11.4).
+   *
+   * The pop is atomic, so by the time anything else looks the queue no longer
+   * holds these. That is why they are reported rather than re-derived: a delta
+   * read from the queue alone has forgotten the very entries the tick was woken
+   * by, and a compaction after a tick would fold in nothing.
+   */
+  drained: Observation[];
+  /**
    * What stage 0 settled, per bucket, so a caller can see who was ignored
    * without re-deriving it. Empty on a tick that drained nothing.
    */
@@ -84,13 +94,13 @@ export class InboxLoop {
    */
   async tick(botId: Id): Promise<TickResult> {
     if (!this.store.hasPending(botId)) {
-      return { woke: false, entries: [], settled: undefined };
+      return { woke: false, entries: [], drained: [], settled: undefined };
     }
 
     const drained = await this.store.drain(botId);
     // A second drainer took the queue between the check and the pop.
     if (drained.length === 0) {
-      return { woke: false, entries: [], settled: undefined };
+      return { woke: false, entries: [], drained: [], settled: undefined };
     }
 
     const settled = gate(this.store, botId, drained);
@@ -113,14 +123,22 @@ export class InboxLoop {
       await this.store.save();
     }
 
+    // What this tick consumed: everything it drained except what went back on the
+    // queue. Reporting the held entries as consumed would fold them into a
+    // summary while they are still waiting to be judged.
+    const consumed =
+      settled.blocked.length === 0
+        ? drained
+        : drained.filter((entry) => !settled.blocked.includes(entry));
+
     // Row 3's ending, stage 1's "no act", and a tick where everything was held
     // back: nothing was asked to happen.
     if (acting.length === 0) {
-      return { woke: false, entries: [], settled };
+      return { woke: false, entries: [], drained: consumed, settled };
     }
 
     this.turns += 1;
     await this.run(acting);
-    return { woke: true, entries: acting, settled };
+    return { woke: true, entries: acting, drained: consumed, settled };
   }
 }

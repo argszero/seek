@@ -124,17 +124,29 @@ export function deltaFor(
   botId: Id,
   roomId: Id,
   agentId?: Id,
+  inFlight?: Observation[],
 ): Observation[] {
   const queued = store
     .inbox(botId)
     .filter((entry) => entry.room_id === roomId);
-  if (queued.length === 0) return [];
+
+  // The entries a tick drained are part of the delta even though the queue no
+  // longer holds them: the pop is atomic, so everything still queued arrived
+  // after them. Without this the delta a compaction reads *after* a tick would
+  // hold almost nothing, and a runtime that compacts after a tick could never
+  // cross its line at all.
+  const queuedIds = new Set(queued.map((entry) => entry.id));
+  const held = (inFlight ?? []).filter(
+    (entry) => entry.room_id === roomId && !queuedIds.has(entry.id),
+  );
+  const total = [...held, ...queued];
+  if (total.length === 0) return [];
 
   const point = agentId ? digestOf(store, agentId, roomId)?.consumed_to : undefined;
-  if (!point) return queued;
+  if (!point) return total;
 
-  const at = queued.findIndex((entry) => entry.id === point);
-  return at === -1 ? queued : queued.slice(at + 1);
+  const at = total.findIndex((entry) => entry.id === point);
+  return at === -1 ? total : total.slice(at + 1);
 }
 
 /**
@@ -173,9 +185,14 @@ export class RoomCompactor {
     return this.store.agentsOf(botId).find((agent) => agent.role === 'work');
   }
 
-  /** What a compaction would fold in right now. */
-  delta(botId: Id, roomId: Id): Observation[] {
-    return deltaFor(this.store, botId, roomId, this.workAgent(botId)?.id);
+  /**
+   * What a compaction would fold in right now.
+   *
+   * `inFlight` is what the tick just drained for this room — the caller's,
+   * because only the loop knows what it popped.
+   */
+  delta(botId: Id, roomId: Id, inFlight?: Observation[]): Observation[] {
+    return deltaFor(this.store, botId, roomId, this.workAgent(botId)?.id, inFlight);
   }
 
   /** Whether a compaction is in flight for this room. */
@@ -189,12 +206,12 @@ export class RoomCompactor {
    * This is the question the runtime answers for itself and never puts to a
    * model: a count, and an age, both free.
    */
-  due(botId: Id, roomId: Id): boolean {
+  due(botId: Id, roomId: Id, inFlight?: Observation[]): boolean {
     if (!this.summarise) return false;
     if (this.inFlight(botId, roomId)) return false;
     if (!this.workAgent(botId)) return false;
 
-    const delta = this.delta(botId, roomId);
+    const delta = this.delta(botId, roomId, inFlight);
     if (delta.length === 0) return false;
     if (this.failed.get(key(botId, roomId)) === delta.length) return false;
     return this.crosses(delta);
@@ -208,12 +225,12 @@ export class RoomCompactor {
    * is what the summary covers, so an entry that arrives meanwhile is still in
    * the delta afterwards — never summarised by accident and never dropped.
    */
-  async compact(botId: Id, roomId: Id): Promise<CompactOutcome> {
+  async compact(botId: Id, roomId: Id, inFlightEntries?: Observation[]): Promise<CompactOutcome> {
     const room = key(botId, roomId);
     const inFlight = this.running.get(room);
     if (inFlight) return inFlight;
 
-    const run = this.write(botId, roomId, room);
+    const run = this.write(botId, roomId, room, inFlightEntries);
     this.running.set(room, run);
     try {
       return await run;
@@ -240,13 +257,14 @@ export class RoomCompactor {
     botId: Id,
     roomId: Id,
     room: string,
+    inFlight?: Observation[],
   ): Promise<CompactOutcome> {
     const agent = this.workAgent(botId);
     if (!agent) return { ran: false, reason: 'no-work-agent' };
     const summarise = this.summarise;
     if (!summarise) return { ran: false, reason: 'no-summarise' };
 
-    const snapshot = deltaFor(this.store, botId, roomId, agent.id);
+    const snapshot = deltaFor(this.store, botId, roomId, agent.id, inFlight);
     if (snapshot.length === 0) return { ran: false, reason: 'empty-delta' };
     if (!this.crosses(snapshot)) return { ran: false, reason: 'not-due' };
 

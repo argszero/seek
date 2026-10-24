@@ -56,11 +56,12 @@
  * startup sweep would be writing behaviour the documents do not state.
  */
 
+import { RoomCompactor, type CompactLines, type Summarise } from './compact.ts';
 import { ScheduleComparator, type Timers } from './comparator.ts';
 import { InboxLoop, type Judge, type TickResult } from './inbox.ts';
 import { SeekStore } from './store.ts';
 import { makeTurn, type Decide } from './turn.ts';
-import type { Id } from './types.ts';
+import type { Id, Observation } from './types.ts';
 
 export interface KernelOptions {
   /**
@@ -72,6 +73,22 @@ export interface KernelOptions {
   decide?: Decide;
   /** Stage 1. Left out, the loop's own "act on nothing" placeholder. */
   judge?: Judge;
+  /**
+   * The room summary's writer — the half that can write (`compact.ts`).
+   *
+   * Left out, nothing can write a summary and no compaction ever runs. That is
+   * the honest state: a summary is a chat model's text, and there is no model
+   * here yet.
+   */
+  summarise?: Summarise;
+  /**
+   * When a delta has outgrown itself: a count, an age, or both.
+   *
+   * §3 and `decisions.md` default 3 give the shape and leave the numbers to
+   * measurement, so they are the caller's — with none configured, nothing is
+   * ever due.
+   */
+  compactLines?: CompactLines;
   /** An injectable clock, so a test does not depend on wall time. */
   now?: () => string;
   /** Injectable timers, for the same reason. They reach the comparator. */
@@ -95,18 +112,34 @@ export class Kernel {
   comparator: ScheduleComparator;
   /** Turns that threw on the wake path, oldest first. */
   failures: KernelFailure[] = [];
+  /** Compaction: a runtime action, never a turn (§3). */
+  compactor: RoomCompactor;
 
   #decide: Decide | undefined;
   #judge: Judge | undefined;
   #onError: KernelOptions['onError'];
   #loops = new Map<Id, InboxLoop>();
   #busy = new Map<Id, Promise<void>>();
+  /**
+   * Compactions in flight, kept apart from `#busy` on purpose.
+   *
+   * In `#busy` they would serialize behind the next wake, and a judgement would
+   * wait for a summary — which §3 forbids. `whenIdle()` still waits for them, so
+   * "what is this process doing" has one answer.
+   */
+  #compacting = new Set<Promise<void>>();
 
   constructor(store: SeekStore, options: KernelOptions = {}) {
     this.store = store;
     this.#decide = options.decide;
     this.#judge = options.judge;
     this.#onError = options.onError;
+
+    this.compactor = new RoomCompactor(store, {
+      summarise: options.summarise,
+      lines: options.compactLines,
+      now: options.now ?? (() => new Date().toISOString()),
+    });
 
     this.comparator = new ScheduleComparator(store, {
       now: options.now ?? (() => new Date().toISOString()),
@@ -170,7 +203,7 @@ export class Kernel {
    * The error reaches the caller here; the comparator's own path records it
    * instead (`#deliver`), because a sweep must not be failed by a bot.
    */
-  tick(botId: Id): Promise<TickResult> {
+  async tick(botId: Id): Promise<TickResult> {
     const previous = this.#busy.get(botId) ?? Promise.resolve();
     const next = previous.then(() => this.loopFor(botId).tick(botId));
 
@@ -185,13 +218,19 @@ export class Kernel {
       if (this.#busy.get(botId) === link) this.#busy.delete(botId);
     });
 
-    return next;
+    const result = await next;
+    // Compaction is a runtime action (§3), so it starts here — once the tick has
+    // settled, and awaited by nobody. It is reachable on a tick that opened no
+    // turn, which is the point: a busy room that never needs a word said still
+    // has to be compactable.
+    this.#compactAfter(botId, result.drained);
+    return result;
   }
 
   /** Resolve when no wake is in flight, including one started while waiting. */
   async whenIdle(): Promise<void> {
-    while (this.#busy.size > 0) {
-      await Promise.all([...this.#busy.values()]);
+    while (this.#busy.size > 0 || this.#compacting.size > 0) {
+      await Promise.all([...this.#busy.values(), ...this.#compacting.values()]);
     }
   }
 
@@ -225,6 +264,39 @@ export class Kernel {
    * can answer "what is this process doing" and a test can wait for the turns
    * this started.
    */
+  #compactAfter(botId: Id, drained: Observation[]): void {
+    if (drained.length === 0) return;
+
+    // One compaction per room, because a summary is per (bot, room). A reminder
+    // has no room and is not folded into anybody's: it belongs to no room's
+    // conversation (`agent-lifecycle.md` §12).
+    const byRoom = new Map<Id, Observation[]>();
+    for (const entry of drained) {
+      if (!entry.room_id) continue;
+      const group = byRoom.get(entry.room_id);
+      if (group) group.push(entry);
+      else byRoom.set(entry.room_id, [entry]);
+    }
+
+    for (const [roomId, inFlight] of byRoom) {
+      // The question the runtime answers for itself and never puts to a model:
+      // a count and an age, both free (§3, `decisions.md` default 3).
+      if (!this.compactor.due(botId, roomId, inFlight)) continue;
+
+      const run = this.compactor.compact(botId, roomId, inFlight).then(
+        () => undefined,
+        (error: unknown) => {
+          // A background action that threw must not take the process down, and
+          // must not vanish either: §@ "nothing is ever dropped silently".
+          this.failures.push({ botId, error });
+          this.#onError?.(error, botId);
+        },
+      );
+      this.#compacting.add(run);
+      void run.then(() => this.#compacting.delete(run));
+    }
+  }
+
   #deliver(botIds: Id[]): void {
     for (const botId of botIds) {
       this.tick(botId).catch((error: unknown) => {
