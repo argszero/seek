@@ -157,6 +157,57 @@ test('sessions are the agent\'s own: the watch agent never gets one', async () =
   assert.deepEqual(world.store.sessionsOf(world.agentA1), []);
 });
 
+test("the watch side's verdict and reason stay behind; the entry itself crosses", async () => {
+  const world = makeWorld();
+  const spoke: TurnContext[] = [];
+  const loop = new InboxLoop(
+    world.store,
+    makeTurn(world.store, world.botA, (context) => {
+      spoke.push(context);
+    }),
+  );
+
+  deliver(world.store, {
+    roomId: world.room,
+    senderId: world.me,
+    text: '@A the release is going out at six',
+    mentions: [{ id: world.botA, name: 'A' }],
+    now: '2026-10-24T01:00:00.000Z',
+  });
+  const result = await loop.tick(world.botA);
+
+  // The watch side answered, on the entry it judged — which is where §4 keeps
+  // that answer. Today nothing writes these (stage 1 is a stub still), so the
+  // test writes them the way the loop will.
+  const judged = result.entries[0];
+  judged.verdict = 'act';
+  judged.reason = 'it concerns the release this bot is waiting on';
+
+  await runTurn(
+    world.store,
+    { agentId: world.agentA2, roomId: world.room, entries: [judged] },
+    (context) => {
+      spoke.push(context);
+    },
+  );
+
+  const handed = spoke.at(-1)?.entries[0];
+  assert.ok(handed);
+  // What crosses: the entry, so the agent knows whose message it is answering.
+  assert.equal(handed.id, judged.id);
+  assert.equal(handed.message_id, judged.message_id);
+  assert.equal(handed.kind, judged.kind);
+  assert.deepEqual(handed.hints, judged.hints);
+  // What does not: the watch side's sentence, in either of its two fields.
+  assert.equal('verdict' in handed, false, 'the verdict did not cross');
+  assert.equal('reason' in handed, false, 'the reason did not cross');
+  // And the record still has both, which is the half §4 insists on.
+  const onRecord = world.store.inbox(world.botA).find((entry) => entry.id === judged.id)
+    ?? judged;
+  assert.equal(onRecord.verdict, 'act');
+  assert.equal(onRecord.reason, 'it concerns the release this bot is waiting on');
+});
+
 test('entries from two rooms open two turns, one per room', async () => {
   const world = makeWorld();
   const other = addRoom(world, [world.me, world.botA]);

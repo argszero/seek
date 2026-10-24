@@ -40,7 +40,7 @@ export type { ComparatorOptions, Timers } from './comparator.ts';
 export { say, sayAs } from './say.ts';
 export type { SayInput, SayOptions, SayTool } from './say.ts';
 export { makeTurn, runTurn } from './turn.ts';
-export type { Decide, TurnContext, TurnRecord, TurnSpec } from './turn.ts';
+export type { Decide, HandedEntry, TurnContext, TurnRecord, TurnSpec } from './turn.ts';
 export { RoomCompactor, deltaFor, digestOf } from './compact.ts';
 export type {
   CompactLines,
