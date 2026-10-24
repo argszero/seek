@@ -530,6 +530,8 @@ That distinction is the whole of it, and it is worth stating as a rule the imple
   "state": "pending | fired | cancelled" }
 ```
 
+**There is no `room` field, and there will not be one** (ruled 2026-10-24: *"no need to display it"*). A reminder is the bot talking to itself; it reaches the inbox and stops there. See "what the user sees" below for the cost of that.
+
 - `to` is **a bot**, never an agent — the inbox is the bot's (§3), and an agent has no lifecycle of its own.
 - `text` is delivered **verbatim**: not summarised, not translated, not rewritten by any model on the way out. What the author wrote is what the bot reads back, and that is what makes a reminder a note to its future self rather than a fresh instruction.
 - One table, **every bot reads and writes it** — the host's words. So a bot can see what other bots have scheduled. That is a shared calendar rather than a private one, and it is recorded as a consequence rather than a gap: nothing filters the table by `to`.
@@ -544,6 +546,14 @@ That distinction is the whole of it, and it is worth stating as a rule the imple
 ### Firing
 
 A firing is **one write, and it is idempotent**: the row's `state` becomes `fired` in the same step that drops the delivery into the inbox, keyed by the row's `id`. A daemon that was closed when a row came due fires it on the next start — an instant missed is **not** a reminder skipped, and ten rows missed while the laptop slept fire in time order, each as its own delivery. Dropping them silently would be the same defect the injection path refuses (§4).
+
+### What the user sees, and what they do not (ruled 2026-10-24)
+
+**A fired reminder is not displayed.** It lands in the bot's inbox; no room shows it, no frame carries it, and the transcript does not gain a line. The user sees what the bot does about it and nothing else.
+
+**Why this does not break "all interaction shows up in IM":** that rule is about how the bot reaches *other principals*, and a reminder reaches nobody. There is no second party to show it to. Putting it in a room would invent one — a system line addressed to everyone in a room, describing a note one bot left for itself.
+
+**The cost, recorded rather than smoothed:** the interface shows **an effect without its cause**. A bot that speaks at 09:00 because of a note it wrote yesterday looks unmotivated on screen, and a user cannot tell "it kept a promise" from "it decided to talk". That is the same shape of cost as the watch agent's withheld reasoning (§4) — the half that talks shows its conclusions, not its workings — and the same answer applies: **it is recoverable by reading, not by showing**. The schedule row and the turn that fired it are both on the record, so the question *"why did it say that just now"* has an answer; the transcript simply does not volunteer it.
 
 ### What it costs, recorded
 
