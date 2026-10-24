@@ -230,7 +230,7 @@ the bot's loop, per tick:
      tools, memory write at the end. It receives the observation entries and nothing
      else: the watch agent's reason is not handed over; it stays on the record, where
      the work agent may go and read it if it wants to (see "what crosses the line").
-     **To say anything it must call the speaking tool** — `send(room, text)`, where a
+     **To say anything it must call the speaking tool** — `say(room, text)`, where a
      direct chat is a room like any other. Text it emits is its own working record, and
      it never becomes a message: nothing is posted on its behalf, and a turn that ends
      without that call has said nothing at all.
@@ -277,7 +277,7 @@ No new machinery is built for this. The outcome is not reported to the watch age
 
 **The tool set is EMRG's, unchanged, plus the two the host named.** There is no watch-specific tool, no memory tool and no compaction tool to build — the registry is the one already in the kernel, plus `schedule` (§12) and the speaking tool. Which tools a given agent may use is ordinary per-agent configuration in `agents.yml`, and today one answer is "none": a decision model makes no tool call.
 
-**The speaking tool is the only way into a room, and that is why it exists.** There is no path from a turn's output to a message: the runtime does not post the agent's answer, does not post a streamed fragment, and does not post a summary of what it did. So a bot's every word in a room was something it chose to send, addressed to a room it named — which is also what makes a silent turn meaningful, and what keeps "it said nothing there" a readable fact rather than a guess about what a stream meant.
+**The speaking tool is the only way into a room, and that is why it exists.** It is `say(room, text)` — a bare single word like the rest of the register, chosen so that it cannot be read as `write`, which is files, or as a Feishu message type. There is no path from a turn's output to a message: the runtime does not post the agent's answer, does not post a streamed fragment, and does not post a summary of what it did. So a bot's every word in a room was something it chose to send, addressed to a room it named — which is also what makes a silent turn meaningful, and what keeps "it said nothing there" a readable fact rather than a guess about what a stream meant.
 
 **Memory writes and compaction are not tools, and they will not be here.** They are what the runtime does when a turn ends, and an agent does not choose to do them.
 

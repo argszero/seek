@@ -59,6 +59,7 @@ Each row is a choice the host did not rule on, listed with the word that changes
 | 6 | Where a verdict is recorded | **On the observation entry it judged**, and nowhere else | Writing it into the work agent's history would put it in the work agent's context every turn, which contradicts "read on demand, never injected". The watch side keeps no history of its own to record it in | "keep it in both" |
 | 7 | The licence | **MIT** | The host delegated it | "Apache-2.0" / another |
 | 8 | What the left list shows | **Rooms** | Feishu's left list is a list of chats | — (a derivation, kept here for the one question it first answered) |
+| 9 | What the speaking tool is called | **`say`, as `say(room, text)`** | It is the register's bare-single-word style (`read` / `write` / `edit` / `glob`), and it cannot be mistaken for the tools it sits beside: not `write`, which is files, and not `post`, which is a Feishu message type and would read as the format rather than the act. `reply` is wrong because most of what it sends is not a reply, and `message` collides with the entity | a different name, settled before the first prompt is written |
 
 ## What is not decided here
 
