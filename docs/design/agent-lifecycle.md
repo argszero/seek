@@ -188,7 +188,8 @@ Appended one entry at a time, **never processed by a model**:
 - `hints` are scored **by the producer, not by a model**: @ detection, question marks, whether it replies to me, keyword matches, message density. All of it is string and counting work that costs nothing.
 - **`mentionsMe` and `repliesToMe` are bot-level facts** (ruled 2026-10-23). They are computed once, when the message lands, against the bot — not per agent. No agent ever scans a room for its own name, and the watch agent could not: it is not addressable, so "an @ to me" is a question only the bot can answer. That is what makes stage 0's fast-pass a rule rather than a model call.
 - **`mentionsMe` is derived, not stored on the message** (ruled 2026-10-23: *"look at `mentions` and see whether its own name is in there"*). The message carries Feishu's own field, `mentions[]` — the principals it names, `{id, name}` each — and that is the only stored form. Delivery finds **this bot's id** in that array and records the boolean here, on this bot's entry. Nothing in `hints` is ever written back onto the message: the message is written once and stays clean, and the next bot derives its own answer from the same bytes.
-- State machine: `new → watched (act | ignore | snooze | keep) → consumed`; `snooze` carries a condition ("when this gets a reply", "in five minutes").
+- State machine: `new → watched (act | ignore | snooze | keep) → consumed`; `snooze` carries a condition ("when this gets a reply", "in five minutes"). An entry that stage 0 fast-passes skips `watched` and goes `new → consumed` — including one injected into a turn already running (§4).
+- **The inbox is also the running turn's queue.** There is no second, in-memory pending list as in EMRG, because every entry is already on disk before any turn starts: a message that arrives mid-turn is the same entry, read again at the next round boundary (§4). One queue, one "already handled" state, no reconciliation between an arrival queue and a work queue.
 - **Capacity**: per (bot, room) a cap such as 200 entries / 24 hours. Over the cap, entries are not dropped — they collapse into one line inside the bot's `roomDigest`. Otherwise the inbox becomes a second message log and blows up both disk and context.
 - The inbox is append-only and the writer **never blocks** (room fan-out must not stall because one bot is busy).
 - A verdict is written on the entry, and it is written by the **loop**, not by the agent that produced it — the watch agent only answers; the loop performs (see §4).
@@ -292,8 +293,34 @@ What remains true, and stays written down for the day a timer returns: **a quiet
 
 ### Concurrency
 
-One agent runs exactly **one** stage 2 at a time. When several rooms want it at once, the requests enter the agent's own action queue, ordered: @-mention > someone waiting for an answer > high salience > the room it has been silent in the longest.
+A bot runs exactly **one** stage 2 at a time — one turn, held by a lock, as in EMRG (`_session_busy[session_id]`, `daemon.py:1759`). When several rooms want it at once, the entries wait in the inbox, ordered: @-mention > someone waiting for an answer > high salience > the room it has been silent in the longest.
 The reason is not performance but **identity consistency**: two parallel conversations would make its persona and memory fight each other.
+
+### A message that arrives while the agent is running (ruled 2026-10-23 — EMRG's steer, kept as it is)
+
+The host's words: *"same as EMRG — when a new direct message arrives, wait for the tool run to finish and then insert the new information."* EMRG does exactly this, and two naive readings of it are both wrong: **the running turn is not cancelled and it does not swallow the message, and the message is not held until the turn ends either.** It is inserted at the **round boundary** — after the current round's tools have returned, before the next model request (`daemon.py:4574-4578`, at the round head inside the tool loop). One turn therefore looks like:
+
+```
+model → tools run → [inject] → model → tools run → [inject] → … → done
+```
+
+never `tools run → the message interrupts`, and never `the turn ends → a new turn starts`.
+
+Six things EMRG does around that insertion, and what carries over:
+
+1. **One turn per session, by a lock.** A second message never starts a second turn; it queues.
+2. **Arrival while busy is queued per session, FIFO** (`daemon.py:1760-1770`), and the sender is told its position (`task_queued` with `position`) — so "queued" is visible, not guessed.
+3. **The drain is one atomic `pop` of the whole list** (`daemon.py:3992`), never read-then-clear. Anything appended while the drain waits on a broadcast lands in a fresh list and goes in at the next boundary; the docstring's own words are *"Never dropped."* This is the part that is easy to get wrong: read-then-clear silently loses exactly the message that arrived during the window.
+4. **Each injected message becomes a real record in the history**, written once with its timestamp at commit, and a `steer_committed` frame carries that same stamp (`daemon.py:4000-4022`). So compaction rebuilding from history keeps it, and nobody has to invent a time for it later.
+5. **The round budget is refreshed for the injected messages, not spent on them.** If the turn has exhausted its round cap and the queue is not empty, the drain hands the new messages a fresh budget instead of stranding them; only an *empty* queue produces the "Exceeded maximum rounds" error (`daemon.py:4540-4548`). seek has no quota anywhere else, so it follows: a message can lengthen a turn, and nothing caps it.
+6. **Nothing is ever dropped silently.** EMRG ends a clean turn by broadcasting the still-queued request ids and letting the **client re-send** them (`queued_requeue`, `daemon.py:4160-4172`), and drops the queue only when the turn was cancelled, errored or disconnected (`queued_cancelled`).
+
+**Two divergences, both of them deletions, both because seek's queue is already on disk.**
+
+- **seek needs no requeue contract.** EMRG's pending list is in-memory only, so the client has to re-send. In seek the delivery wrote a persistent entry into the bot's inbox *before* any turn started, so **the in-flight queue is the inbox**. The turn ends, the loop reads the inbox again, and if anything is left that the gate would act on, the next turn starts at once. No frame, no client contract, nothing to re-send — and one fewer way to lose a message. The hazard `queued_requeue` exists for is still ours to hold, and it is now a line of the loop rather than a protocol: **a delivery that arrives mid-turn must not be stranded when that turn ends.**
+- **An injected message is marked `consumed` at the moment it is injected.** In EMRG a cancelled turn drops its queue, so a queued prompt can vanish unread. Here the entry is already a fact on disk and the human's message is visible in the room either way, so the honest record is "this was taken up" — a stop point after injection does not resurrect it, and the person can simply say it again.
+
+**Which arrivals are injected at all.** In EMRG every inbound prompt is addressed to that session by construction, so the drain injects everything. seek's one inbox holds both *for me* and *possibly not for me*, and pushing the second kind into a running turn is exactly what the gate exists to prevent. So the injected set is stage 0's **fast-pass set** — an @-mention, a reply to its own message, a direct message — and a plain room message waits in the inbox for the next turn. This follows the host's own word (直达, *direct*) and the gate already ruled, and it is the only reading that keeps a message no one has judged from landing in the middle of a job.
 
 ---
 
@@ -314,6 +341,8 @@ Assume 10 agents, 5 rooms, 500 messages an hour.
 **There is no idle row to defend, and that is the deferral's real gift.** A draft ruled earlier the same day added a timer, and with it a `kind: "clock"` entry so an idle bot would reach the watch agent — which meant an idle bot paying one local inference per tick, and the design owing an answer about what a bare tick may call. Dropping the clock withdrew the mechanism and the question together. If a clock is ever added back, both come back with it, and the line to hold will be the same: an idle tick may reach the watch agent and must never reach the *work* agent.
 
 One correction to the table's denominator: traffic arrives **per message**, but a message costs work **per bot in the room** — ten bots and one message is ten inbox entries. The figures above hold only because stage 0 is free per bot; the moment any per-bot step costs a call, the multiplication matters and the table understates it.
+
+**Injection does not add a row to this table.** A direct message that arrives mid-turn lengthens the turn it lands in — one more round after the model re-reads its context — instead of starting a turn of its own. The saving is the turn's whole setup; the cost is that the context is sent again, which is what a round costs anyway. What can grow without a cap is only the length of one turn, and that is deliberate (§4, point 5).
 
 (Order-of-magnitude estimates, not measurements.)
 
