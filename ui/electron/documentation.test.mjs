@@ -10,13 +10,17 @@
  * a property of the repository rather than a matter of care, and a property is something a
  * test can hold.
  *
- * The prose has gone wrong here twice, both times in the same direction and both times
+ * The prose has gone wrong here three times, each time in the same direction and each time
  * silently: the status paragraph said the interface was not wired to a model *after* it was
- * (`#63`), and said it again *after* the second half was wired (`#66`). Nothing failed
- * either time — `src/docs.test.ts` compares the twin documents' sections and points,
- * `src/counts.test.ts` counts files, lines and tests, and a sentence is neither of those.
- * Only a person rereading the paragraph could catch it, which is exactly the kind of check
- * that stops happening.
+ * (`#63`), said it again *after* the second half was wired (`#66`), and went on saying the
+ * window only read a room, drew it and took what you type *after* it had gained a room
+ * composer (`#78`), an add-member panel (`#79`) and an `@` that addresses a message
+ * (`#80`) — so the chapter that tells a reader how to run the interface opened with "pick a
+ * room, type, press Enter" while the window had three more things a person could do in it.
+ * Nothing failed any of the three times — `src/docs.test.ts` compares the twin documents'
+ * sections and points, `src/counts.test.ts` counts files, lines and tests, and a sentence is
+ * neither of those. Only a person rereading the paragraph could catch it, which is exactly
+ * the kind of check that stops happening.
  *
  * So this file pins the measurable half of that prose:
  *
@@ -41,8 +45,20 @@
  * a reader who chose the installer was told to clear a flag on a file the refusal had
  * prevented from existing. Measured on the published `v0.1.1` `.pkg`:
  * `pkgutil --check-signature` answers `no signature` and `spctl -a -t install` answers
- * `rejected` — so the refusal really does come before the app is on disk. The last test in
- * this file holds the remedies against the shapes.
+ * `rejected` — so the refusal really does come before the app is on disk. The test that
+ * holds the remedies against the shapes.
+ *
+ * **A capability is checkable the same way a variable is**, and the third drift above is
+ * what made that worth doing. What the window can *do* is not a matter of prose at all on
+ * the source side: `preload.js` is the renderer's whole vocabulary, `main.js` answers every
+ * call in it, and a call that changes the store says so — it broadcasts `seek:changed` to
+ * the window. So the set of capabilities is derivable from two files, and what the READMEs
+ * owe is one claim per capability, in each language. A fourth write tomorrow is a fourth
+ * claim nothing has written yet, and the tests below say so without being edited.
+ *
+ * The `@` is the one capability that is not a call: a mention rides inside `post` and shows
+ * up in the snapshot's own `mentions`, which is what makes it visible at all. It is pinned
+ * from that end instead, against the sentence that says a message names who it addresses.
  */
 import assert from 'node:assert/strict'
 import { readdirSync, readFileSync } from 'node:fs'
@@ -145,4 +161,103 @@ test('a reader is told what to clear for the shape they downloaded', () => {
       `${document} says what to clear for the .zip's app, which is refused on first launch`,
     )
   }
+})
+
+/**
+ * Every channel the renderer can call, taken from the bridge rather than listed here.
+ *
+ * The `invoke(` prefix without its closing parenthesis on purpose: four of the seven calls
+ * pass an argument, and a pattern that required `)` would silently see only the three that
+ * do not — a scan that under-reported would make every comparison below agree with less
+ * than the truth.
+ */
+function invokedChannels() {
+  const source = readFileSync(join(UI, 'electron', 'preload.js'), 'utf8')
+  const found = [...source.matchAll(/ipcRenderer\.invoke\('(seek:[a-z-]+)'/g)].map(([, channel]) => channel)
+  return [...new Set(found)].sort()
+}
+
+/** Every channel the main process registers a handler for. */
+function handledChannels() {
+  const source = readFileSync(join(UI, 'electron', 'main.js'), 'utf8')
+  const found = [...source.matchAll(/ipcMain\.handle\('(seek:[a-z-]+)'/g)].map(([, channel]) => channel)
+  return [...new Set(found)].sort()
+}
+
+/**
+ * The calls that change the store, derived from the way `main.js` writes one.
+ *
+ * A write here is not a naming convention: it is a handler that broadcasts `seek:changed`
+ * after it returns, because a window that changed something and told nobody would go on
+ * drawing the room it used to have. Each broadcast is attributed to the nearest handler
+ * declared above it, which is the block it sits in — no block boundaries to cut, so a
+ * handler written in a style this file did not anticipate is still read correctly.
+ */
+function storeWritingChannels() {
+  const source = readFileSync(join(UI, 'electron', 'main.js'), 'utf8')
+  const channels = []
+  for (const broadcast of source.matchAll(/win\.webContents\.send\('seek:changed'/g)) {
+    const declared = [...source.slice(0, broadcast.index).matchAll(/ipcMain\.handle\('(seek:[a-z-]+)'/g)].at(-1)
+    if (declared) channels.push(declared[1])
+  }
+  return [...new Set(channels)].sort()
+}
+
+/**
+ * What each store-changing call owes the two READMEs, in each language.
+ *
+ * The claim is a capability and not an API name: a reader is told the window can do the
+ * thing. The keys are checked against the derivation above in both directions, so a write
+ * added tomorrow fails here with the row it needs rather than passing as an absence — and
+ * a row left behind after a call was removed fails the same way.
+ */
+const CLAIMS = {
+  'seek:post': { en: /takes what you type/, zh: /你输入的消息/ },
+  'seek:create-room': { en: /makes a room/, zh: /造一个房间/ },
+  'seek:add-member': { en: /one more person/, zh: /把一个人加进去/ },
+}
+
+test('every call that changes the store is a call the window can reach and main answers', () => {
+  const invoked = invokedChannels()
+  const handled = handledChannels()
+
+  // Anti-vacuity: two empty lists would agree with the comparison below without reading a
+  // single line of either file.
+  assert.ok(invoked.length >= 5, `the bridge exposes ${invoked.length} calls — the scan is broken`)
+  assert.deepEqual(handled, invoked, 'the bridge and the main process disagree about the vocabulary')
+})
+
+test('every call that changes the store is a capability both READMEs claim', () => {
+  const writes = storeWritingChannels()
+
+  // Three: a message, a room, and one more member — the number `preload.js` states in its
+  // own comment. A fourth is not an error in itself, it is one more claim the READMEs owe,
+  // so the assertion that matters is the set comparison below; this one only keeps the
+  // derivation honest if a broadcast stops being recognisable.
+  assert.ok(writes.length >= 3, `only ${writes.length} store-changing calls were found: ${writes.join(', ')}`)
+
+  assert.deepEqual(
+    Object.keys(CLAIMS).sort(),
+    writes,
+    'a call that changes the store and a claim in the READMEs are the same fact seen twice — ' +
+      'add the row here and the sentence it owes in both READMEs',
+  )
+
+  for (const channel of writes) {
+    assert.match(read('README.md'), CLAIMS[channel].en, `README.md never claims ${channel}`)
+    assert.match(
+      read('README.zh-CN.md'),
+      CLAIMS[channel].zh,
+      `README.zh-CN.md never claims ${channel}, so the pair says different things`,
+    )
+  }
+})
+
+test('a message that names who it addresses is a message both READMEs say names them', () => {
+  // The renderer cannot see a mention except through the snapshot, so this is the end that
+  // makes it visible on screen at all — and the end that goes stale if the field is renamed.
+  assert.match(read('ui/electron/snapshot.js'), /mentions:/)
+
+  assert.match(read('README.md'), /names the people it addresses/)
+  assert.match(read('README.zh-CN.md'), /点名它说的是谁/)
 })
