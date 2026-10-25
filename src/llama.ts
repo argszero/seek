@@ -20,14 +20,24 @@
  * choice of model measured rather than assumed. It takes a `baseUrl` and speaks the
  * three endpoints that shape was measured through.
  *
- * **It does not show the model a picture either, and it says so instead of dropping
- * one.** The box carries the pictures in the delta (`BoxMedia`), and until this file
+ * **It shows the model the picture, because the route was measured before it was
+ * used.** The box carries its pictures in the delta (`BoxMedia`), and until this file
  * noticed them nothing read that field: a screenshot was judged from its caption and
  * the verdict looked exactly like one reached with the picture in front of the model.
- * `/completion` takes no projector, so the image figures were taken on the one-shot
- * `llama-mtmd-cli` rig and were never replayed over HTTP, and an unmeasured route is
- * not a route this transport may quietly use — see `refusePictures` and
- * `docs/decisions.md` row 22.
+ * `/completion` takes no projector, so the image figures had been taken on the
+ * one-shot `llama-mtmd-cli` rig and were never replayed over HTTP — and an unmeasured
+ * route is not a route this transport may quietly use. They have been replayed:
+ * all **56** image cases were read through `/v1/chat/completions` to within
+ * **0.0011** per case of the recorded rig, keeping the shipped cut's figures exactly
+ * (41/56 at 0.600, `act` 13/28, `ignore` 28/28 — `remeasured.json`'s own numbers),
+ * which is the condition `docs/decisions.md` row 22 set and row 23 records.
+ *
+ * **The picture's place is the measured one, and it is not "wherever".** It travels
+ * between the box's text and the artifact's last part, because that is where the
+ * replay put it: `calibration/vision/server-transport-images.json` records the shape
+ * as the message text, then the image, then the question, rendered by the same
+ * template. A picture anywhere else is a different prompt with the same question on
+ * the end, and nothing in the tree measured what that reads.
  *
  * **The estimator is the calibration's, not a convenient one.** The shipped cut was
  * measured as the full next-token distribution summed over *every* token whose
@@ -53,6 +63,9 @@
  * same quantity, which is what lets it keep the cut.
  */
 
+import { Buffer } from 'node:buffer';
+
+import type { BoxMedia } from './box.ts';
 import type { PromptArtifact } from './prompts.ts';
 import type {
   BoundOption,
@@ -100,6 +113,20 @@ export interface LlamaServer {
    * the replay above read the recorded value to within 0.0008 at this depth.
    */
   nProbs?: number;
+  /**
+   * The bytes behind a box picture, when the box carries one.
+   *
+   * `box.ts` keeps a picture's `key` opaque on purpose — *"how a client names a file
+   * is its business"* — so this transport cannot resolve one, and must not guess a
+   * path: a store's own layout is not something a chat template's reader knows. The
+   * caller loads, this file encodes and sends.
+   *
+   * Optional, and its absence is a refusal rather than a silent text-only reading: a
+   * box that carries a picture and a transport that cannot read its bytes used to
+   * produce a verdict from the caption alone, which is the defect row 22 was written
+   * for, one layer down.
+   */
+  loadMedia?: (media: BoxMedia) => Promise<Uint8Array>;
   /** What to call instead of `globalThis.fetch`. A test's recorder. */
   fetch?: Fetcher;
 }
@@ -136,11 +163,20 @@ export function strip(token: string): string {
  */
 export function llamaWatchModel(server: LlamaServer): WatchModel {
   const artifact = server.artifact;
+  // Asked once per server: whether a projector is loaded is a fact about the process,
+  // not about the judgement, and a room sent a screenshot a minute should not cost a
+  // `/props` a minute.
+  const canSee = visionProbe(server);
   return {
     async read(input: WatchInput): Promise<WatchReading> {
-      refusePictures(input);
-      const templated = await applyTemplate(server, userTurn(artifact, input.prompt.text));
-      const candidates = await completion(server, templated);
+      const media = input.state?.media ?? [];
+      const candidates =
+        media.length === 0
+          ? await completion(
+              server,
+              await applyTemplate(server, userTurn(artifact, input.prompt.text)),
+            )
+          : await readWithPictures(server, input, media, canSee);
       // No `reason`: see above. What the kernel does with an absent one is its
       // business (`watch.ts`, `reasonOf`).
       return { probabilities: readingOf(candidates, input.options) };
@@ -149,42 +185,147 @@ export function llamaWatchModel(server: LlamaServer): WatchModel {
 }
 
 /**
- * A box carrying a picture is refused, because this transport cannot show it one.
+ * One judgement with a picture in the box, read through the endpoint that takes one.
  *
- * `box.ts` hands the judgement its pictures — `BoxMedia[]`, a key and a mime — and
- * `agent-lifecycle.md` §2 requirement 2 asks a judgement to **see** an image. What
- * arrives here is that box, and until now `read` used `state` not at all: the
- * entries were rendered into text, the pictures were named in a field nothing read,
- * and the model answered `act` or `ignore` about a screenshot it had never been
- * given. That is the defect this refusal exists for — not a missing feature but a
- * confident verdict from half the evidence, which looks exactly like a verdict.
+ * Three things have to be true before a byte is sent, and each is asked rather than
+ * assumed — the same discipline as `requireServerShape`, for the same reason: the
+ * failure mode here is not an error, it is a number that looks like a verdict.
  *
- * **Why it refuses instead of sending the picture.** `/completion` — the endpoint
- * the shipped cut was measured through — takes no projector, so the image figures
- * in `calibration/vision/` were taken on the one-shot `llama-mtmd-cli` rig and were
- * never replayed over HTTP (`calibration/vision/server-transport.json`,
- * *"Nothing about images … they are unmeasured through this transport"*). Reading a
- * probability for an image-bearing judgement over a route nobody measured would be a
- * reading the threshold was never calibrated against — `docs/decisions.md` row 19's
- * failure, one layer down. So the route is refused until it is measured, and
- * `docs/decisions.md` row 22 records the default with the words that would change it.
+ * 1. **The caller can produce the bytes.** `box.ts` keeps `key` opaque, so this file
+ *    has no way to resolve one and will not invent a path. A box with a picture and
+ *    no `loadMedia` is refused, because the alternative is the very thing row 22 was
+ *    written for: `act` or `ignore` read off a caption while the reading looks like
+ *    one the model reached with the picture in front of it.
+ * 2. **The server has a projector.** `/props` `modalities.vision` is the server's own
+ *    statement that an image part will be encoded rather than skipped, and a server
+ *    started without `--mmproj` reports `false` (or reports nothing at all, which is
+ *    read the same safe way round — `visionOf`). Sending anyway would be a data URL
+ *    into a hole.
+ * 3. **Exactly one picture.** The replay measured one per box, which is what every
+ *    set in `calibration/vision/` holds. Where a second picture sits relative to the
+ *    first was never replayed, and the placement is load-bearing (§ the header), so a
+ *    second one is refused instead of guessed at.
  *
- * The refusal is at read time rather than at construction because whether a picture
- * is in the box is a fact about the room's current delta, not about the wiring: a
- * room can be judged for months and then be sent a screenshot.
+ * The route is `/v1/chat/completions` and not `/completion`: only the chat endpoint
+ * takes content parts, and only it reaches the projector. That the two agree was
+ * measured rather than hoped — for text they read the same distribution to
+ * **0.0000**, and the image replay reproduced the rig through the chat endpoint.
  */
-function refusePictures(input: WatchInput): void {
-  const media = input.state?.media ?? [];
-  if (media.length === 0) return;
-  const first = media[0];
+async function readWithPictures(
+  server: LlamaServer,
+  input: WatchInput,
+  media: BoxMedia[],
+  canSee: () => Promise<boolean>,
+): Promise<Candidate[]> {
+  const picture = onePicture(media);
+  const load = server.loadMedia;
+  if (load === undefined) {
+    throw new Error(
+      `this judgement's box carries a picture (${JSON.stringify(picture.mime)} at ` +
+        `${JSON.stringify(picture.key)}) and this transport was given no way to read its ` +
+        'bytes: box.ts keeps a picture key opaque, so the caller supplies a loader ' +
+        '(LlamaServer.loadMedia) rather than have a file path guessed here. Judging the ' +
+        'text alone would answer from the caption while looking like a verdict reached ' +
+        'with the picture in front of the model (docs/decisions.md row 23)',
+    );
+  }
+  if (!(await canSee())) {
+    throw new Error(
+      `this judgement's box carries a picture (${JSON.stringify(picture.mime)} at ` +
+        `${JSON.stringify(picture.key)}) and this server reports no projector: /props ` +
+        'modalities.vision is not true, so the image would be dropped on the way in and ' +
+        'the reading would come from the caption alone. Start the server with an mmproj ' +
+        '(`--mmproj`) so it can see (docs/decisions.md row 23)',
+    );
+  }
+  const user = userTurn(server.artifact, input.prompt.text);
+  const { front, question } = splitAtQuestion(server.artifact, user);
+  const bytes = await load(picture);
+  const parts: unknown[] = [];
+  // The measured shape is text, picture, question. The leading text is omitted only
+  // when the artifact leaves nothing before its last part, which the shipped one never
+  // does — an empty part is not a shape anything was measured in.
+  if (front.length > 0) parts.push({ type: 'text', text: front });
+  parts.push({ type: 'image_url', image_url: { url: dataUriOf(picture, bytes) } });
+  parts.push({ type: 'text', text: question });
+  return chatCompletion(server, parts);
+}
+
+/**
+ * The box's one picture, or a refusal naming what was not measured.
+ *
+ * `media.length === 0` never reaches here: the caller took the text path. So this is
+ * the "two or more" case, and it says why rather than sending the first and dropping
+ * the rest — a dropped picture is the same defect as a dropped box.
+ */
+function onePicture(media: BoxMedia[]): BoxMedia {
+  if (media.length === 1) return media[0] as BoxMedia;
   throw new Error(
-    `this judgement's box carries ${media.length} picture(s), the first being ` +
-      `${JSON.stringify(first.mime)} at ${JSON.stringify(first.key)}, and this transport ` +
-      'has no measured route for one: the image figures were taken on the llama-mtmd-cli ' +
-      'rig, /completion takes no projector, and reading a probability here anyway would ' +
-      'answer from text alone while looking like a verdict the model reached ' +
-      '(src/README.md line 25; docs/decisions.md row 22)',
+    `this judgement's box carries ${media.length} pictures and this transport was ` +
+      'measured on one per box: where a second picture sits relative to the first was ' +
+      'never replayed, and the placement is what the reading depends on ' +
+      '(calibration/vision/server-transport-images.json; docs/decisions.md row 23)',
   );
+}
+
+/** The picture, as the `data:` URL the chat endpoint takes. */
+function dataUriOf(media: BoxMedia, bytes: Uint8Array): string {
+  return `data:${media.mime};base64,${Buffer.from(bytes).toString('base64')}`;
+}
+
+/**
+ * The user turn, cut where the picture goes: before the artifact's last part.
+ *
+ * The last part is the question, and `assertArtifact` already guarantees it is
+ * unconditional and not per-observation — so it is the one place in the assembly that
+ * is present in every box, in the same words. That is what makes it the boundary: a
+ * picture placed before a part that only sometimes exists would sit somewhere
+ * different from one room to the next, and the placement is measured.
+ *
+ * Refuses rather than slicing hopefully, for the reason `userTurn` does: a turn that
+ * does not end with its own artifact's last part was not assembled from that artifact.
+ */
+function splitAtQuestion(
+  artifact: PromptArtifact,
+  user: string,
+): { front: string; question: string } {
+  const last = artifact.parts[artifact.parts.length - 1];
+  if (last === undefined) {
+    throw new Error('this artifact has no parts, so there is no question to put a picture before');
+  }
+  const tail = last.text + last.after;
+  if (!user.endsWith(tail)) {
+    throw new Error(
+      'this judgement was assembled from a different artifact: its user turn does not ' +
+        `end with the artifact's last part (${JSON.stringify(last.name)}), so there is no ` +
+        'measured place to put the picture, which travels between the box text and the ' +
+        'question',
+    );
+  }
+  return { front: user.slice(0, user.length - tail.length), question: tail };
+}
+
+/**
+ * Whether this server has a projector loaded, asked once per server.
+ *
+ * A rejected probe is not remembered: a server that was unreachable for one tick may
+ * be up for the next, and caching the failure would turn a blip into a permanent
+ * refusal. `propsOf` is reused rather than a bare `modalities` read, so a
+ * picture-bearing judgement also gets the window and template checks of row 21 — the
+ * ones a box carrying an image is in more need of, not less.
+ */
+function visionProbe(server: LlamaServer): () => Promise<boolean> {
+  let answer: Promise<boolean> | undefined;
+  return () => {
+    answer ??= propsOf(server).then(
+      (shape) => shape.vision,
+      (error: unknown) => {
+        answer = undefined;
+        throw error;
+      },
+    );
+    return answer;
+  };
 }
 
 /**
@@ -237,9 +378,9 @@ export interface ServerShape {
   /**
    * Whether a projector is loaded, so an image could be seen at all.
    *
-   * Read and recorded, never relied on to imply that one *is* sent: the transport
-   * has no measured route for a picture (`refusePictures` below, decisions row 22),
-   * so `true` here means "this server could", and nothing more.
+   * Read from `/props` and acted on: a box that carries a picture is refused when this
+   * is `false`, because the image part would be dropped on the way in and the reading
+   * would come from the caption alone (`readWithPictures`, decisions row 23).
    */
   vision: boolean;
 }
@@ -432,6 +573,46 @@ async function completion(server: LlamaServer, prompt: string): Promise<Candidat
   if (!Array.isArray(readings) || readings.length === 0) return [];
   const first = readings[0] as { top_logprobs?: unknown } | null;
   const candidates = first?.top_logprobs;
+  return Array.isArray(candidates) ? (candidates as Candidate[]) : [];
+}
+
+/**
+ * One forward pass over content parts, and the candidates it read.
+ *
+ * The same estimator as `completion`, over the one endpoint that takes a picture. The
+ * samplers are neutral for the same reason and `cache_prompt` is still the resident
+ * front; the reply arrives shaped differently — `choices[0].logprobs.content[0]` holds
+ * the candidates where `/completion` puts them at `completion_probabilities[0]` — but
+ * both are the raw next-token distribution, and `readingOf` reads either.
+ *
+ * `logprobs` is what makes the server return the distribution rather than a sampled
+ * token, and llama.cpp keeps it unsmoothed: `post_sampling_probs` is off unless asked
+ * for, so what arrives is the raw softmax the cut was taken on, not a quantity a
+ * temperature could have reshaped.
+ */
+async function chatCompletion(server: LlamaServer, parts: unknown[]): Promise<Candidate[]> {
+  const answer = (await postJson(server, '/v1/chat/completions', {
+    messages: [
+      { role: 'system', content: server.artifact.system },
+      { role: 'user', content: parts },
+    ],
+    max_tokens: 1,
+    temperature: 1,
+    top_k: 0,
+    top_p: 1,
+    min_p: 0,
+    repeat_penalty: 1,
+    logprobs: true,
+    top_logprobs: server.nProbs ?? DEFAULT_N_PROBS,
+    cache_prompt: true,
+  })) as { choices?: unknown };
+
+  const choices = answer.choices;
+  if (!Array.isArray(choices) || choices.length === 0) return [];
+  const content = (choices[0] as { logprobs?: { content?: unknown } } | null)?.logprobs
+    ?.content;
+  if (!Array.isArray(content) || content.length === 0) return [];
+  const candidates = (content[0] as { top_logprobs?: unknown } | null)?.top_logprobs;
   return Array.isArray(candidates) ? (candidates as Candidate[]) : [];
 }
 

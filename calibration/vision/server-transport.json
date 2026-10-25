@@ -52,7 +52,7 @@
  ],
  "what_this_does_not_settle": [
   "Nothing about which model ships: line 25 of src/README.md is still open, and the multilingual half is still measured and unmet (act 1/6 on the twelve Chinese cases).",
-  "Nothing about images. This run is the text set only; the image sets carry a projector path (/completion takes no projector) and are unmeasured through this transport, so no image figure here should be quoted.",
+  "Nothing about images in this file. This run is the text set only -- /completion takes no projector, so the image sets could not travel this way. They have since been replayed through the endpoint that does take one, case by case against the same recorded reading, and every image figure is in server-transport-images.json; none is quoted here.",
   "Nothing about the cut itself. 0.600 is what the artifact declares and what governs; the re-measurement that says one cut near 0.39 serves both paths is calibration/vision/remeasured.json's, and moving the number is docs/decisions.md row 12's to do.",
   "The estimator is summed over the top 64 candidates, not over the whole vocabulary. At this depth the omitted mass is far below any cut in the measured plateaus, but it is not zero and a shallower n_probs would under-report."
  ],

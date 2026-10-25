@@ -26,6 +26,15 @@
  * who supervises that process is stated by no ruling and no measurement, so it is
  * not decided in this file. `docs/decisions.md` row 20 records the default as it
  * stands, together with the word that would change it.
+ *
+ * **A box carrying a picture needs `server.loadMedia`, and that is the caller's.**
+ * `box.ts` keeps a picture's `key` opaque — how a client names a file is its business
+ * — so the bytes come in through a loader travelling on the same `LlamaServer` object
+ * this function is handed. Without one, a picture-bearing judgement is refused rather
+ * than read from its caption (`llama.ts`, `docs/decisions.md` row 23). Nothing else
+ * here changes for it: the four steps above measure the *text*, and a reading is keyed
+ * by the option's own token rather than by an id (`probabilityOf`), so a picture
+ * changes what the model sees and not how its answer is named.
  */
 import type { Judge } from './inbox.ts';
 import { bindOverServer, llamaWatchModel, requireServerShape, type LlamaServer } from './llama.ts';
