@@ -73,7 +73,7 @@ npm start -- --server http://127.0.0.1:8080 --window 24
 
 ## 安装应用
 
-第一个可下载的构建是 **`v0.1.0`**：Apple 芯片的 macOS，**未签名**。从[发布页](https://github.com/argszero/seek/releases)取 `Seek-0.1.0-arm64-mac.zip`，解压，把 `Seek.app` 拖进 `Applications`。
+[发布页](https://github.com/argszero/seek/releases)上是当前这一版，两种形状：`Seek-<version>-arm64-mac.pkg` 直接装进 `Applications`，`Seek-<version>-arm64-mac.zip` 是同一个包，解压后拖进去。Apple 芯片的 macOS，**未签名**。
 
 **从现在起还会打一个安装包，和那个 zip 并列。** 在 `ui/` 里跑 `npm run dist:pkg`，会用 macOS 自己的 `pkgbuild`（`packaging/make-pkg.mjs`）从同一个 bundle 切出 `ui/release/Seek-<版本>-arm64-mac.pkg`；装它就把 `Seek.app` 放进 `Applications`，不必再拖。做成 `.pkg` 而不是 `.dmg`，是因为 electron-builder 的 `dmg` 目标最后要调 `hdiutil create`，而开发这个仓库的环境直接拒绝它（`the operation is not permitted`），`pkgbuild` 则不被拒绝——旁边的 EMRG 项目把 macOS 下载做成 `.pkg`，也是同一个原因。打包也不该是只有某台机器才做得到的事：推一个 `v*` 标签，会在 macOS runner 上跑同一条 `npm run dist:pkg`（`.github/workflows/release.yml`），把 `.pkg` 和 `.zip` 一起挂到发布页。
 
@@ -83,7 +83,7 @@ npm start -- --server http://127.0.0.1:8080 --window 24
 xattr -dr com.apple.quarantine /Applications/Seek.app
 ```
 
-**包里有什么、没有什么。** 内核在应用*里面*，不在旁边：`Contents/Resources/src/` 装的就是这个仓库里那 50 个 TypeScript 文件，`Contents/Resources/app.asar` 装的是构建好的页面和主进程（`docs/decisions.md` 默认值 26）。**包里没有模型、也没有权重**，所以不点名 `llama-server` 时，bot 用的仍是内核自带的占位句，和什么都不点名的 `npm start` 一模一样。`v0.1.0` 是接模型之前打的，所以这个下载本身只有占位句；拿当前源码构建的那一版两段都接得上，靠的是下面那一节点名的那几个变量。首次启动造世界的方式也和下面那次运行一样——一个房间、它的 bot，以及库旁边的名册——而那个房间的 `created_at` 是内核的种子常量，不是你安装的那一刻，只是目前没有任何地方把它画出来。
+**包里有什么、没有什么。** 内核在应用*里面*，不在旁边：`Contents/Resources/src/` 装的就是这个仓库里那 50 个 TypeScript 文件，`Contents/Resources/app.asar` 装的是构建好的页面和主进程（`docs/decisions.md` 默认值 26）。**包里没有模型、也没有权重**，所以不点名 `llama-server` 时，bot 用的仍是内核自带的占位句，和什么都不点名的 `npm start` 一模一样。**`v0.1.0` 及更早**是接模型之前打的，那些包里只有占位句；用这棵树构建出来的两段都接得上，靠的是下面那一节点名的那几个变量。首次启动造世界的方式也和下面那次运行一样——一个房间、它的 bot，以及库旁边的名册——而那个房间的 `created_at` 是内核的种子常量，不是你安装的那一刻，只是目前没有任何地方把它画出来。
 
 应用把数据放在 Electron 自己给这个应用的 user-data 目录里，`SEEK_DATA_DIR` 可以指到别处。
 

@@ -89,10 +89,18 @@ jobs:
             ui/release/*.zip
           if-no-files-found: error
 
+      # A pre-release, and deliberately so: the flag is what the `v0.1.0` download was
+      # published with, and the two reasons still stand — the bundle is unsigned, so macOS
+      # refuses it until the reader clears the quarantine flag, and it carries no model, so
+      # the bot says the kernel's placeholder line until the reader starts a `llama-server`
+      # of their own and names it (defaults 20 and 27). `Latest` would claim a download that
+      # runs out of the box, and this one does not yet. Recorded as default 29 in
+      # `docs/decisions.md`, which is where the word that changes it is written down.
       - name: Publish the release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
+          prerelease: true
           files: |
             ui/release/*.pkg
             ui/release/*.zip

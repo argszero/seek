@@ -28,8 +28,10 @@
  *
  * What it cannot pin is whether a sentence about the *download* is true of the download:
  * that depends on which tag the release page serves, not on this tree. That half stays a
- * hand edit — `#76` of this README names `v0.1.0` in so many words, which is what makes the
- * paragraph checkable by a reader at all.
+ * hand edit, and the edit that survives is the one that cannot go stale: `#86` states what
+ * the releases **up to** `v0.1.0` contain, a historical claim that stays true however many
+ * releases follow, while `#76` names the file shapes and lets the release page carry the
+ * number rather than repeating it here once per release.
  */
 import assert from 'node:assert/strict'
 import { readdirSync, readFileSync } from 'node:fs'
