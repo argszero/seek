@@ -39,7 +39,7 @@ import { dirname, join, resolve, sep } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { pkgPlan, signingPlan } from '../../packaging/make-pkg.mjs'
-import { notarizePlan, verdictOf } from '../../packaging/notarize.mjs'
+import { failureTextOf, notarizePlan, verdictOf } from '../../packaging/notarize.mjs'
 
 const UI = fileURLToPath(new URL('../', import.meta.url))
 const REPO = resolve(UI, '..')
@@ -271,9 +271,22 @@ test('notarization refuses to run on a guess, and never reads an Invalid verdict
   // could come to mean a different file from "build the installer".
   assert.equal(ready.file, pkgPlan().output)
   assert.equal(ready.file, join(UI, 'release', `Seek-${pkg.version}-arm64-mac.pkg`))
-  assert.deepEqual(ready.submitArgv.slice(0, 3), ['notarytool', 'submit', ready.file])
+  assert.deepEqual(ready.submitArgv.slice(0, 3), ['xcrun', 'notarytool', 'submit'])
+  assert.equal(ready.submitArgv[3], ready.file, 'the file comes before the credentials')
   assert.ok(ready.submitArgv.includes('--wait'), 'the step waits rather than polling later')
   assert.deepEqual(ready.submitArgv.slice(-2), ['--output-format', 'json'], 'the verdict is read, not the exit code')
+
+  // `notarytool` is not in `/usr/bin` — it ships inside Xcode — so its bare name is one the
+  // release runner does not have. That is measured, not supposed: `v0.1.2`'s first run failed
+  // at this step on `ENOENT` and printed `notarytool could not complete the submission:`
+  // followed by an empty line, because an `ENOENT` carries no `stdout` for a message to hold.
+  // Every call therefore goes through `xcrun`, which is `/usr/bin/xcrun` on every macOS.
+  assert.equal(ready.submitArgv[0], 'xcrun', 'the tool is reached through xcrun, never by bare name')
+  assert.deepEqual(ready.logArgvFor('sub-1').slice(0, 4), ['xcrun', 'notarytool', 'log', 'sub-1'])
+  assert.deepEqual(ready.stapleArgv.slice(0, 3), ['xcrun', 'stapler', 'staple'])
+  assert.deepEqual(ready.validateArgv.slice(0, 3), ['xcrun', 'stapler', 'validate'])
+  assert.equal(ready.stapleArgv[3], ready.file, 'the ticket is stapled to the file that was submitted')
+  assert.equal(ready.validateArgv[3], ready.file, 'and validated on the same file')
 
   // The trap this exists for: `notarytool submit --wait` exits **0** on `Invalid`, so the
   // status is a value and it is asserted as one. Anything that is not `Accepted` — including
@@ -286,6 +299,23 @@ test('notarization refuses to run on a guess, and never reads an Invalid verdict
   for (const output of ['{"status":"Invalid"}', 'not json', '{}']) {
     assert.notEqual(verdictOf(output).status, 'Accepted', `${output} is not a pass`)
   }
+
+  // The other half of that run: a failure that produced no output at all still has to say
+  // something. A call that never started is the case that has none, so the reason printed is
+  // the error's own code — and the command line comes with it, which is the line a person
+  // needs to see the missing tool in. Before this, a red release's whole message was a colon.
+  const absent = Object.assign(new Error('spawn xcrun ENOENT'), { code: 'ENOENT' })
+  const silent = failureTextOf(absent, ['xcrun', 'notarytool', 'submit', 'Seek-0.0.0.pkg'])
+  assert.match(silent, /ENOENT/, 'the reason is named when there is no output to carry it')
+  assert.match(silent, /xcrun notarytool submit Seek-0\.0\.0\.pkg/, 'and so is the command line')
+  assert.notEqual(silent.trim(), '', 'a failed step never prints nothing')
+
+  // When there *is* output, that is what gets printed: notarytool's own account is the answer,
+  // and this must not talk over it.
+  assert.equal(
+    failureTextOf({ stderr: 'line\nError: HTTP status 401\n' }, ['xcrun', 'notarytool']),
+    'line\nError: HTTP status 401',
+  )
 })
 
 test('the entitlements are well-formed XML, which is a stricter question than plutil asks', () => {
