@@ -227,3 +227,58 @@ test('a text message says it carries no picture rather than leaving the field of
     assert.equal(message.media, null)
   }
 })
+
+/**
+ * Who a room that does not exist yet could be given.
+ *
+ * `rooms[].members` answers "who is in this room", and until this field existed that was
+ * the only roster the window ever saw — so the people it could offer a new room were
+ * exactly the people already in one, and a combination nobody had made yet was
+ * unreachable. The case that proves the two questions differ is a principal in no room at
+ * all: absent from every `members` list, and required here.
+ *
+ * The order is the store's own (`principals`, then `bots`, as written), because a list that
+ * reorders itself between two snapshots moves under the cursor of somebody choosing.
+ */
+test('everyone the store knows is offered to a room that does not exist yet', () => {
+  const store = seeded()
+  // Two principals no room holds: a person and a bot. The picker's whole reason.
+  store.data.principals['pr_later'] = { id: 'pr_later', kind: 'human', name: 'later' }
+  store.data.bots['bo_work'] = { id: 'bo_work', name: 'work-bot' }
+
+  const snapshot = snapshotOf(store, '/tmp/seek.json')
+
+  assert.deepEqual(
+    snapshot.people.map((person) => person.id),
+    ['pr_me', 'pr_later', 'bo_watch', 'bo_work'],
+    "every principal and every bot, people first because that is the order they were written",
+  )
+  assert.deepEqual(
+    snapshot.rooms[0].members.map((member) => member.id),
+    ['pr_me', 'bo_watch'],
+    'and the room still says only who is in it — the two lists are two questions',
+  )
+  assert.deepEqual(
+    snapshot.people.filter((person) => person.bot).map((person) => person.id),
+    ['bo_watch', 'bo_work'],
+    'a bot is marked as a bot, in the roster as in a room',
+  )
+})
+
+/**
+ * A principal the store holds no name for is still somebody a room can be given, and the
+ * id is what the store files them under — the same fallback `members` already makes.
+ */
+test('a person with no name is offered under their id', () => {
+  const store = new SeekStore(emptyData())
+  store.data.principals['pr_anon'] = { id: 'pr_anon', kind: 'human' }
+
+  assert.deepEqual(snapshotOf(store, '/tmp/seek.json').people, [
+    { id: 'pr_anon', name: 'pr_anon', bot: false },
+  ])
+})
+
+/** A store that is not open yet has no roster, and an absent list is not a crash. */
+test('a store that is not open yet offers nobody', () => {
+  assert.deepEqual(snapshotOf(null, null).people, [])
+})

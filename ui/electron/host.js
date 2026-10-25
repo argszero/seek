@@ -48,6 +48,10 @@ async function kernelModules() {
   modules = {
     store: await import('../../src/store.ts'),
     delivery: await import('../../src/delivery.ts'),
+    // The other write the interface makes: a room that does not exist yet. It is the
+    // kernel's own `createRoom()`/`addMember()` (`src/rooms.ts`), added for exactly this
+    // slice — the interface may make a room, and it may not make one any other way.
+    rooms: await import('../../src/rooms.ts'),
     kernel: await import('../../src/kernel.ts'),
     main: await import('../../src/main.ts'),
     roster: await import('../../src/roster.ts'),
@@ -487,4 +491,60 @@ async function postMessage(host, input) {
   return snapshotOf(host.store, host.storeFile, host.stage1, host.stage2)
 }
 
-module.exports = { closeHost, openHost, postMessage }
+/**
+ * Make a room, with the people in it, and hand back the snapshot that has it.
+ *
+ * **This is the kernel's write, not a second one.** `createRoom()` in `src/rooms.ts` appends
+ * the room and every membership in one uninterrupted step, and it refuses — before writing
+ * anything — a member naming no principal in this store, one principal named twice, and an
+ * empty room. All three of those refusals are sentences, and they are what the window shows;
+ * this file re-checks none of them, because a second opinion here could pass what the kernel
+ * then refuses, or refuse with wording no document carries.
+ *
+ * **Three things this file decides, and each is a fact about the interface rather than a rule
+ * about rooms.**
+ *
+ * - **The name is trimmed, and an empty one is no name at all.** `Room.name` is optional in
+ *   the kernel and `snapshotOf` already draws a nameless room by its id, so a person who
+ *   typed spaces asked for the room they get rather than for one called `'   '`. Nothing is
+ *   refused here: an unnamed room is a state the data model has, so this is a formatting
+ *   choice, not a validation.
+ * - **`chat_mode` is not asked for, so the kernel's default stands.** The field is stored and
+ *   never branched on (`src/README.md`, last checklist row), and `direct` is a headcount that
+ *   `deriveHints` takes from the member list — so a picker offering `group`/`topic`/`p2p` would
+ *   be inviting the one thing that row calls the bug: a mode growing behaviour the other modes
+ *   do not have. Two people in a room is a direct message whatever the field says, which is
+ *   why this build never infers `p2p` from a headcount either.
+ * - **The person the window speaks as is the owner, and everyone else is a member.** No
+ *   permission model in the kernel branches on `MembershipRole`, so this changes no behaviour;
+ *   it keeps a room made here shaped like the room a first run seeds, where the person is
+ *   `owner` and the bot is `member`. When that person is not among the chosen members there is
+ *   no owner at all — a state the kernel allows, and one the composer will report honestly:
+ *   `deliver()` refuses a sender who is not a member, in its own sentence.
+ */
+async function createRoom(host, input) {
+  const rawName = typeof input?.name === 'string' ? input.name.trim() : ''
+  const chosen = Array.isArray(input?.members) ? input.members : []
+  // Only strings can name a principal. Anything else reaches the kernel as no member at all,
+  // and an empty list is then refused by the kernel's own "a room with no members" sentence
+  // rather than by a TypeError written here.
+  const ids = chosen.filter((id) => typeof id === 'string' && id !== '')
+  const me = meOf(host.store)
+
+  const mods = await kernelModules()
+  const created = mods.rooms.createRoom(host.store, {
+    ...(rawName === '' ? {} : { name: rawName }),
+    members: ids.map((id) => (id === me ? { principalId: id, role: 'owner' } : { principalId: id })),
+  })
+  // Once, and before the snapshot: the room is on disk before the window draws it, exactly as
+  // a message is. A room drawn but not saved would vanish on the next open while the person
+  // believed they had made it.
+  await host.store.save()
+
+  return {
+    roomId: created.room.id,
+    snapshot: snapshotOf(host.store, host.storeFile, host.stage1, host.stage2),
+  }
+}
+
+module.exports = { closeHost, createRoom, openHost, postMessage }

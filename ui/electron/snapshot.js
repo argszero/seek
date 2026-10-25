@@ -66,10 +66,40 @@ function stageTwoOf(stage2) {
   }
 }
 
+/**
+ * Everyone the store knows, so a room that does not exist yet can be given members.
+ *
+ * A room's own `members` answer "who is in this room"; making one needs the other
+ * question — "who is there to put in it" — and until this existed the window could not
+ * ask it: the only members it ever saw were the ones already somewhere.
+ *
+ * A person and a bot are the same kind of thing here, which is the kernel's own model
+ * (`store.principal()` reads `principals` and `bots` together, and `docs/design/data-model.md`
+ * joins both by `Membership`). `bot` is carried because the interface draws the two
+ * differently, not because membership treats them differently — a room whose only member
+ * is a bot is an ordinary room.
+ *
+ * Read through `Object.values` and not sorted: the store's order is the order they were
+ * written in, and a list that reorders itself between two snapshots would move under a
+ * person's cursor while they are choosing.
+ */
+function peopleOf(store) {
+  const people = [
+    ...Object.values(store.data.principals),
+    ...Object.values(store.data.bots),
+  ].map((who) => ({
+    id: who.id,
+    name: typeof who.name === 'string' && who.name !== '' ? who.name : who.id,
+    bot: Boolean(store.data.bots[who.id]),
+  }))
+  return people
+}
+
 function snapshotOf(store, storeFile, stage1 = null, stage2 = null) {
   if (!store) {
     return {
       rooms: [],
+      people: [],
       me: null,
       storeFile: null,
       stage1: stageOneOf(stage1),
@@ -122,6 +152,7 @@ function snapshotOf(store, storeFile, stage1 = null, stage2 = null) {
 
   return {
     rooms,
+    people: peopleOf(store),
     me: meOf(store),
     storeFile,
     stage1: stageOneOf(stage1),
@@ -129,4 +160,4 @@ function snapshotOf(store, storeFile, stage1 = null, stage2 = null) {
   }
 }
 
-module.exports = { meOf, snapshotOf }
+module.exports = { meOf, peopleOf, snapshotOf }

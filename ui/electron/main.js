@@ -18,7 +18,7 @@ const { app, BrowserWindow, dialog, ipcMain, nativeTheme } = require('electron')
 const { readFile } = require('node:fs/promises')
 const { basename, join } = require('node:path')
 
-const { closeHost, openHost, postMessage } = require('./host.js')
+const { closeHost, createRoom, openHost, postMessage } = require('./host.js')
 const { BY_MIME, mimeForPath, readMedia, saveMedia } = require('./media.js')
 const { snapshotOf } = require('./snapshot.js')
 
@@ -96,6 +96,25 @@ ipcMain.handle('seek:post', async (_event, input) => {
     const snapshot = await postMessage(host, input ?? {})
     if (win && !win.isDestroyed()) win.webContents.send('seek:changed', snapshot)
     return { ok: true, snapshot }
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+  }
+})
+
+/**
+ * Make a room, and tell every window the new snapshot.
+ *
+ * The same envelope as `seek:post`, for the same reason: a room that was refused has to be
+ * *shown*, and a rejected renderer call would put the kernel's sentence in a console nobody
+ * is reading. `roomId` is what the window needs and a snapshot cannot say — "the room that
+ * was just made" is not derivable from a room list that may already have held one with that
+ * name.
+ */
+ipcMain.handle('seek:create-room', async (_event, input) => {
+  try {
+    const made = await createRoom(host, input ?? {})
+    if (win && !win.isDestroyed()) win.webContents.send('seek:changed', made.snapshot)
+    return { ok: true, snapshot: made.snapshot, roomId: made.roomId }
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) }
   }
