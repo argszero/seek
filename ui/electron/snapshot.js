@@ -51,13 +51,29 @@ function stageOneOf(stage1) {
   }
 }
 
-function snapshotOf(store, storeFile, stage1 = null) {
+/**
+ * Which stage 2 the window is looking at — the same two facts, for the other half.
+ *
+ * The halves refuse independently: a store whose watch row is served and whose work row
+ * claims a model the work server does not serve is a real state, and drawing one strip
+ * for both would let the good half hide the broken one. Nothing named is a state; named
+ * and not used is a failure (`docs/decisions.md` row 27, one half over).
+ */
+function stageTwoOf(stage2) {
+  return {
+    server: typeof stage2?.server === 'string' && stage2.server !== '' ? stage2.server : null,
+    refusal: typeof stage2?.refusal === 'string' && stage2.refusal !== '' ? stage2.refusal : null,
+  }
+}
+
+function snapshotOf(store, storeFile, stage1 = null, stage2 = null) {
   if (!store) {
     return {
       rooms: [],
       me: null,
       storeFile: null,
       stage1: stageOneOf(stage1),
+      stage2: stageTwoOf(stage2),
       error: 'the store is not open yet',
     }
   }
@@ -102,6 +118,7 @@ function snapshotOf(store, storeFile, stage1 = null) {
     me: meOf(store),
     storeFile,
     stage1: stageOneOf(stage1),
+    stage2: stageTwoOf(stage2),
   }
 }
 

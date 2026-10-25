@@ -18,12 +18,22 @@
  * it. The one thing the interface adds is a person's write, and that is the kernel's
  * `deliver()` — not a second way into the store.
  *
- * **The bot's answer is the kernel's stub, not a model.** `stubDecide` says one fixed
- * line (`src/main.ts`, `STUB_REPLY`) and `stubJudge` acts on every entry stage 0
- * could not settle. Both are the kernel's own placeholders, taken from the kernel so
- * that "no model is wired to the interface yet" stays one fact in one place. Wiring a
- * model is a later slice, and it lands here: this is the file that constructs the
- * `Kernel`, and `decide`/`judge` are the two options it would pass instead.
+ * **The bot's answer is a model's when a work server is named.** The kernel has two
+ * halves, and each is bound separately: stage 1 decides *whether* the bot acts
+ * (`judge`, `watch-server.ts`) and stage 2 writes *what* it says (`decide`,
+ * `work-server.ts`). With no server named, both are the kernel's own placeholders —
+ * `stubJudge` acting on everything and `stubDecide` saying one fixed line
+ * (`src/main.ts`, `STUB_REPLY`) — taken from the kernel so that "no model is wired"
+ * stays one fact in one place.
+ *
+ * **Two servers, not one, because a server serves one model.** `SEEK_SERVER` names the
+ * watch half's server and `SEEK_WORK_SERVER` the work half's, and the reason is
+ * `docs/decisions.md` row 24: a roster row's `model` is a claim about the server it is
+ * served by, checked by role. One origin reports one `model_alias`, so a store whose
+ * two rows name two models cannot be served by one server — and row 24 already says the
+ * work row's model "belongs to the other server". Springing stage 2 from `SEEK_SERVER`
+ * would have forced every roster onto one model, which is a decision about which model
+ * reads the cut, and that is the host's (`docs/decisions.md` rows 20 and 24).
  */
 
 const { writeFile } = require('node:fs/promises')
@@ -44,6 +54,9 @@ async function kernelModules() {
     // Stage 1 over a server, and the artifact it is bound to. Both are the kernel's,
     // and `watch-server.ts` is the seam the kernel's own command line goes through.
     watchServer: await import('../../src/watch-server.ts'),
+    // Stage 2's seam, one server over: `work-server.ts` is the half that writes the
+    // reply, and it checks the roster's **work** row against the server it is given.
+    workServer: await import('../../src/work-server.ts'),
     prompts: await import('../../src/prompts.ts'),
   }
   return modules
@@ -219,6 +232,53 @@ async function stageOneFor(mods, store, options) {
 }
 
 /**
+ * Who writes what the bot says: the kernel's placeholder, or the work model over the
+ * server `SEEK_WORK_SERVER` names.
+ *
+ * **This is stage 2, and it is a separate server from stage 1's.** Row 24 checks a
+ * roster row's `model` claim against the server that serves that row, and one origin
+ * reports one `model_alias` — so a store whose watch row names one model and whose work
+ * row names another needs two servers, which is what row 24 already calls "the other
+ * server". A single `SEEK_SERVER` serving both would silently collapse that into "one
+ * model does everything", which is a choice about which model reads the cut.
+ *
+ * **No budget is asked of this half, and that is not an omission.** `SEEK_WINDOW` is how
+ * much one *judgement* may read, and it lives with `SEEK_SERVER` because a judgement is
+ * what stage 1 asks for (`box.ts`). A turn's prompt is assembled from the artifact and
+ * the store, and `work-server.ts` re-checks it against the server's own `n_ctx` per
+ * turn — it never asks the caller for a budget, so inventing a second one here would be
+ * a number no measurement stands behind and nothing reads.
+ *
+ * What it costs to be wrong is one refusal at start-up, the same shape stage 1 has: an
+ * artifact offering a tool this runtime cannot execute, a server that cannot hold the
+ * smallest turn, or a work row claiming another model. All three fail here rather than
+ * mid-turn, and `openHost` turns each into a fact the window shows.
+ */
+async function stageTwoFor(mods, store, options) {
+  const server =
+    typeof options?.workServer === 'string' && options.workServer !== '' ? options.workServer : undefined;
+
+  if (server === undefined) return { decide: mods.main.stubDecide };
+
+  const decide = await mods.workServer.workOverServer(
+    store,
+    onlyBotId(store),
+    {
+      baseUrl: server,
+      // Stage 2 reads this for nothing — `work-server.ts` takes the words from its own
+      // artifact (`src/prompts/work-v1.json`) and uses the server only for `/props`,
+      // rendering and the chat call. It is here because `LlamaServer` requires it, and
+      // passing a made-up one would be a second artifact nobody measured.
+      artifact: mods.prompts.loadPromptArtifact(),
+      ...(options?.workFetch === undefined ? {} : { fetch: options.workFetch }),
+    },
+    { prompt: mods.prompts.loadWorkArtifact() },
+  );
+
+  return { decide, server };
+}
+
+/**
  * The one bot stage 1 is bound to.
  *
  * `watchOverServer` binds **one** bot, because two of the facts it checks are that bot's:
@@ -249,9 +309,11 @@ function onlyBotId(store) {
  * path — the roster is read, the bot's agents are rebuilt from it, and the kernel is built
  * over the store — so a first run takes no special route through the interface.
  *
- * `options.server` and `options.window` are what `SEEK_SERVER` and `SEEK_WINDOW` carried;
- * left out, both halves of the run are the kernel's placeholders, as the published build
- * has been until now. `options.fetch` is a test's recorder, handed to the transport.
+ * `options.server` and `options.window` are what `SEEK_SERVER` and `SEEK_WINDOW` carried,
+ * and `options.workServer` is what `SEEK_WORK_SERVER` carried. Left out, the half each
+ * one belongs to is the kernel's placeholder, as the published build has been until now.
+ * `options.fetch` and `options.workFetch` are a test's recorders, handed to the two
+ * transports.
  */
 async function openHost(storeFile, options = {}) {
   const mods = await kernelModules()
@@ -291,15 +353,31 @@ async function openHost(storeFile, options = {}) {
     }
   }
 
+  // Stage 2 is bound the same way and refused in the same shape, because it is a second
+  // server with its own roster row to check: one half refusing must not take the other
+  // with it. A store whose watch row is served and whose work row is not is a real state,
+  // and the window says exactly that rather than closing or pretending both are fine.
+  let stage2 = { decide: mods.main.stubDecide, server: null, refusal: null }
+  try {
+    const bound = await stageTwoFor(mods, store, options)
+    stage2 = { decide: bound.decide, server: bound.server ?? null, refusal: null }
+  } catch (error) {
+    stage2 = {
+      decide: mods.main.stubDecide,
+      server: null,
+      refusal: error instanceof Error ? error.message : String(error),
+    }
+  }
+
   const kernel = new mods.kernel.Kernel(store, {
-    decide: mods.main.stubDecide,
+    decide: stage2.decide,
     judge: stage1.judge,
   })
   // Nothing is woken by starting: this arms the one comparator for rows that came due
   // (`§12 (c)`), and a delivery is what wakes a bot.
   await kernel.start()
 
-  return { store, kernel, storeFile, stage1 }
+  return { store, kernel, storeFile, stage1, stage2 }
 }
 
 /** Stop the comparator. The table is left as it is, so nothing is lost by quitting. */
@@ -367,10 +445,10 @@ async function postMessage(host, input) {
   // writing" has exactly one answer in the kernel.
   await host.kernel.whenIdle()
 
-  // The same three facts the window's first snapshot carried: a send replaces the whole
-  // snapshot in the renderer, so leaving `stage1` out here would make the strip disappear
-  // the moment the person said anything.
-  return snapshotOf(host.store, host.storeFile, host.stage1)
+  // The same facts the window's first snapshot carried, for both halves: a send replaces
+  // the whole snapshot in the renderer, so leaving either out here would make its strip
+  // disappear the moment the person said anything.
+  return snapshotOf(host.store, host.storeFile, host.stage1, host.stage2)
 }
 
 module.exports = { closeHost, openHost, postMessage }

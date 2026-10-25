@@ -134,11 +134,12 @@ body {
 .main-head h2 { margin: 0; font-size: 15px; font-weight: 600; }
 .members { color: var(--N500); font-size: 12px; }
 
-/* What the bot's judgement is on, as a standing strip rather than a toast: it is a fact
+/* What each half of the bot is on, as a standing strip rather than a toast: it is a fact
    about the process, so it stays until the fact changes. `bound` is the measured model and
    `refused` is a server that was named and not used — the second must not read like the
-   first, or a fallback looks like a configuration. */
-.stage1 {
+   first, or a fallback looks like a configuration. Two strips (`stage1`, `stage2`) because
+   the two halves are two servers and either can refuse without the other. */
+.stage1, .stage2 {
   display: flex;
   align-items: baseline;
   gap: 8px;
@@ -148,15 +149,15 @@ body {
   font-size: 12px;
   color: var(--N700);
 }
-.stage1 strong { font-weight: 600; white-space: nowrap; }
-.stage1-why {
+.stage1 strong, .stage2 strong { font-weight: 600; white-space: nowrap; }
+.stage1-why, .stage2-why {
   color: var(--text-caption);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.stage1.bound { background: var(--B50); color: var(--B700); }
-.stage1.refused { background: var(--R50); color: var(--R600); }
+.stage1.bound, .stage2.bound { background: var(--B50); color: var(--B700); }
+.stage1.refused, .stage2.refused { background: var(--R50); color: var(--R600); }
 
 .messages { list-style: none; margin: 0; padding: 16px 20px; overflow-y: auto; flex: 1; }
 
