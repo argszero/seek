@@ -149,3 +149,67 @@ body {
 .msg-body { display: flex; flex-direction: column; min-width: 0; }
 .msg-sender { color: var(--N500); font-size: 12px; }
 .msg-text { color: var(--N900); white-space: pre-wrap; }
+
+/* A bot's avatar is a different shape, not a different colour: the palette has no
+   second accent to spare, and the badge beside the name says the same thing twice. */
+.msg-av.bot { border-radius: 9px; background: var(--B100); color: var(--B700); }
+
+.msg-bot {
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: var(--radius-sm);
+  background: var(--B50);
+  color: var(--B700);
+  font-size: 11px;
+}
+
+/* The composer sits under the messages and is part of the same column, so the room's
+   own width decides it — a fixed width here would drift from the messages above. */
+.composer {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  padding: 10px 20px 16px;
+  border-top: 1px solid var(--line-divider-default);
+}
+
+.composer-input {
+  flex: 1;
+  min-height: 38px;
+  max-height: 160px;
+  padding: 9px 12px;
+  border: 1px solid var(--line-border-component);
+  border-radius: var(--radius-md);
+  background: var(--bg-base);
+  color: var(--N900);
+  font: inherit;
+  resize: none;
+}
+
+.composer-input:focus { outline: none; border-color: var(--primary-fill-default); }
+.composer-input::placeholder { color: var(--text-placeholder); }
+
+.composer-send {
+  height: 38px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--primary-fill-default);
+  color: var(--primary-on-primary-fill);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.composer-send:hover:not(:disabled) { background: var(--primary-fill-hover); }
+.composer-send:disabled { opacity: 0.5; cursor: default; }
+
+/* A refusal is shown as itself, above the box, and never as a silent no-op. */
+.composer-err {
+  margin: 0 20px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--R50);
+  color: var(--R600);
+  font-size: 12px;
+}

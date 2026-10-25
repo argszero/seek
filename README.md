@@ -13,7 +13,7 @@ This is not a Feishu clone. It is a multi-agent product wearing IM clothes.
 
 ## Status
 
-**The kernel exists; the interface has begun.** Three design documents are settled (`docs/design/`), the kernel is written in `src/` (47 TypeScript files, ~16,568 lines, 320 tests), and the previous runnable version is kept as a reference prototype (`prototype/`). The interface is a separate package under `ui/` — Electron running the kernel in its main process, with a React renderer — and it is at its first slice: it reads a room, its members and its messages out of the kernel and draws them. It cannot send anything yet.
+**The kernel exists; the interface has begun.** Three design documents are settled (`docs/design/`), the kernel is written in `src/` (47 TypeScript files, ~16,568 lines, 320 tests), and the previous runnable version is kept as a reference prototype (`prototype/`). The interface is a separate package under `ui/` — Electron running the kernel in its main process, with a React renderer — and it is at its second slice: it reads a room, its members and its messages out of the kernel, draws them, and takes what you type. A message goes in through the kernel's own `deliver()`, the bot in the room is woken by the entry it received, and it answers. That answer is the kernel's stub line, not a model's: nothing in `ui/` is wired to a model server yet.
 
 The prototype exists to prove one thing: that a Feishu-style interface can be carried by purely local data. It can. But its data model is single-user — one account, a cast of fake people, messages owned by conversations — which is not the model this version needs, so it cannot be refactored into it.
 
@@ -70,6 +70,17 @@ npm start -- --server http://127.0.0.1:8080 --window 24
 `--server` is the origin of a process **seek does not start, supervise or stop** (`docs/decisions.md`, default 20), and `--window` is how much one judgement may read — the caller's number, because the runtime does not know a model's window. The two go together: either one alone is refused rather than half-guessed. **No weights ship with this repository**, so this is the one command here that needs something you provide.
 
 A store outside `seek-data/` needs a roster beside it. `agents.yml` is read from the store's own directory (`docs/decisions.md`, defaults 14 and 15), and a store with no roster beside it opens over a bot with no agents and refuses to run rather than inventing one.
+
+## Run the interface
+
+```bash
+cd ui
+npm install     # first time only
+npm run build
+npm start
+```
+
+An Electron window over the same kernel: pick a room, type, press Enter, and the bot in that room answers. The answer is the kernel's own placeholder — `stubDecide` and `stubJudge` in `src/main.ts` — because no model is wired to the interface yet; the two options `ui/electron/host.js` hands to `Kernel` are exactly where a model arrives. It opens `seek-data/seek.json` under Electron's own user-data directory, and `SEEK_DATA_DIR` points it elsewhere — which is how to open the repository's `seek-data/`, roster and all.
 
 ## Run the prototype
 
