@@ -13,7 +13,8 @@
     "start": "electron .",
     "test": "node --test \"electron/**/*.test.mjs\"",
     "dist:dir": "vite build && electron-builder --mac --arm64 --dir",
-    "dist:mac": "vite build && electron-builder --mac --arm64"
+    "dist:mac": "vite build && electron-builder --mac --arm64",
+    "dist:pkg": "vite build && electron-builder --mac --arm64 --dir && node ../packaging/make-pkg.mjs"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^6.1.2",
