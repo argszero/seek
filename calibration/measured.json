@@ -12,9 +12,10 @@
   "ask": "q6 — \"Do you need to do something about this message? Answer act or ignore.\"",
   "shots": 0,
   "auc": 1.0,
-  "accuracy_at_this_cut": 1.0,
+  "accuracy_at_this_cut": 0.833,
+  "accuracy_at_this_cut_note": "corrected 2026-10-25. This field said 1.0, which was the best cut's accuracy recorded as though it were this cut's. At 0.600 four act cases read 0.3948, 0.3956, 0.4074 and 0.5318, so 20 of 24 are correct. Re-derived from the per-case probabilities in calibration/vision/server-transport.json, which agree with the one-shot rig to 0.0003 per case and give the same 20/24. AUC is 1.000 and the two classes separate perfectly, so a cut in (0.3845, 0.3948] scores 24/24 — but 0.600 is not in that interval, and the threshold is unmoved: moving it is the host's word (docs/decisions.md row 12), not a correction's.",
   "per_message_ms": 96,
-  "how": "validate.py swept thresholds in steps of 0.025 over 1/40..39/40 and reported the best; 0.600 is that best, on a set written after every prompt choice had been made"
+  "how": "validate.py swept thresholds in steps of 0.025 over 1/40..39/40 and reported the best, on a set written after every prompt choice had been made. Corrected 2026-10-25: this said 0.600 is that best, and it is not. On that grid the best is 23/24, at 0.35, 0.375 or 0.4; 0.600 earns 20/24. The grid cannot land inside the separating interval (0.3845, 0.3948] at all, because its points step over it — a 0.025 sweep on 24 cases is too coarse to find the cut these cases actually have, which is why the interval above matters more than the grid's best"
  },
  "other_models_on_the_same_set": {
   "LFM2.5-VL-450M Q4_K_M": {

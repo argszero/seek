@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -235,5 +236,69 @@ test('an artifact with no declared cut and no supplied one is refused, not guess
       })(await world.store.drain(world.botA)),
     /declares no operating point and none was supplied/,
     '0.5 would always fit, which is why it cannot be the fallback',
+  );
+});
+
+test('the accuracy the artifact advertises is the one its record gives at that cut', () => {
+  const artifact = loadPromptArtifact();
+  const stated = artifact.operatingPoint?.measuredOn ?? '';
+
+  // The sentence is the provenance of a threshold a verdict is read against, so the
+  // figure inside it has to be one a reader can recompute — and it was not. It said
+  // "100% at this cut" while the per-case record gives 20/24: the best cut's accuracy,
+  // written down as this cut's. A provenance line nobody can check is the same defect
+  // as a number with no set behind it, one layer up.
+  const fraction = /(\d+)\/(\d+) correct at this cut/.exec(stated);
+  assert.ok(
+    fraction !== null,
+    'the artifact states its accuracy at the cut in the form this check reads — a ' +
+      'provenance sentence with no recomputable figure is a claim nobody can check',
+  );
+
+  interface Recorded {
+    readonly cases: ReadonlyArray<{
+      readonly label: string;
+      readonly p_act_recorded: number;
+      readonly p_act_server: number;
+    }>;
+  }
+  const record = JSON.parse(
+    readFileSync(new URL('../calibration/vision/server-transport.json', import.meta.url), 'utf8'),
+  ) as Recorded;
+  assert.ok(record.cases.length >= 24, 'the per-case record was read, not skipped');
+
+  const cut = artifact.operatingPoint?.threshold ?? 0;
+  const correct = (key: 'p_act_recorded' | 'p_act_server'): number =>
+    record.cases.filter((entry) => (entry[key] >= cut) === (entry.label === 'act')).length;
+
+  // The figure in the shipped sentence is the figure this cut earns, counted from the
+  // cases rather than quoted from a summary of them.
+  assert.equal(
+    `${fraction[1]}/${fraction[2]}`,
+    `${correct('p_act_recorded')}/${record.cases.length}`,
+    'the shipped sentence and the per-case record disagree about this cut',
+  );
+
+  // Two readers agree, so the figure is the reading's and not one rig's arithmetic.
+  assert.equal(
+    correct('p_act_server'),
+    correct('p_act_recorded'),
+    'the server and the one-shot rig disagree about how many cases this cut gets right',
+  );
+
+  // The invariant that outlives the number: a cut scores every case exactly when it
+  // lies inside the interval the two classes leave open. Stated as a relationship, so
+  // the day the host moves the cut this test still means something — and so a "24/24"
+  // claim is never accepted on a cut that cannot produce it.
+  const acts = record.cases.filter((entry) => entry.label === 'act').map((e) => e.p_act_recorded);
+  const ignores = record.cases
+    .filter((entry) => entry.label !== 'act')
+    .map((e) => e.p_act_recorded);
+  const lowestAct = Math.min(...acts);
+  const highestIgnore = Math.max(...ignores);
+  assert.equal(
+    correct('p_act_recorded') === record.cases.length,
+    cut > highestIgnore && cut <= lowestAct,
+    `a cut scores every case only inside (${highestIgnore}, ${lowestAct}]; this one is ${cut}`,
   );
 });

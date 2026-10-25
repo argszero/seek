@@ -25,6 +25,6 @@
  ],
  "operatingPoint": {
   "threshold": 0.6,
-  "measuredOn": "watch-v1 on calibration/set4.json — 24 hand-written cases written after every prompt choice was made, zero-shot, this exact ask: AUC 1.000, 100% at this cut, 96 ms per message (calibration/measured.json)"
+  "measuredOn": "watch-v1 on calibration/set4.json — 24 hand-written cases written after every prompt choice was made, zero-shot, this exact ask: AUC 1.000, 20/24 correct at this cut read the way the runtime reads it, 96 ms per message. The classes separate perfectly and a cut in (0.3845, 0.3948] scores 24/24; this threshold is not that cut, and moving it is the host's word rather than this file's (calibration/measured.json, calibration/vision/server-transport.json)"
  }
 }
