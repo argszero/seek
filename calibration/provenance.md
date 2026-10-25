@@ -79,9 +79,17 @@ place a repository can cite.
   The shipped prompt renders a box's delta as one `Message:` line per entry, which equals
   the measured shape when there is one entry and is an extrapolation when there are more.
 - **The estimator.** The measurement summed the probability of *every* token whose decoded
-  form strips to `act`; the runtime masks a single id, because the design requires the
-  option to be one token. `measured.json` records the difference and `docs/decisions.md`
-  carries it as an open tension.
+  form strips to `act`, and the runtime reads it the same way: `llama.ts`'s `readingOf` sums
+  every candidate that spells the option, and `src/llama.test.ts` asserts the sum.
+  `bindOptions` still measures one id per option, but that id is where the answer is read,
+  not the quantity read there — the design's single-token rule is about the option surviving
+  as one token, not about reading one id's probability alone. This bullet used to say the
+  runtime masked a single id and that `docs/decisions.md` carried the difference as an open
+  tension; the row exists (`docs/decisions.md` row 19), it settles the reading the other way,
+  and `calibration/vision/server-transport.json` is the replay that holds it. One difference
+  between the two descriptions is **not** settled: `vocab.py` normalised over the pair and
+  `readingOf` returns the raw sum — `measured.json` records that as a question, not as a
+  finding, because no per-case pre-normalisation value was ever written down.
 - **The language split.** One model wants a different cut in Chinese than in English
   (0.88 against 0.53). The shipped default is a single global cut, chosen deliberately;
   branching on language in code would be inventing a ruling nobody made.
