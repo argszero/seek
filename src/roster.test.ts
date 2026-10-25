@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import {
   agentIdFor,
   applyRoster,
+  KNOWN_TOOLS,
   parseRoster,
   readRoster,
   rosterPath,
@@ -45,6 +46,48 @@ test('the roster shipped with the tree parses: the watch row may call nothing, t
       ['Echo', 'work', ['say']],
     ],
   );
+});
+
+test('a name in tools that no tool has is refused at its line, not at the first turn', () => {
+  // The alternative is what this replaces: a typo parses, the roster rebuilds,
+  // and the bot turns out to be mute when a message finally wakes it.
+  assert.throws(
+    () =>
+      parseRoster(`agents:
+  - bot: Echo
+    role: work
+    tools: [sya]
+`),
+    /agents\.yml:2: 'tools' names 'sya', which is not a tool — a row may name bash, read, write, edit, glob, grep, subagent, submit_rant, boss, schedule, say/,
+  );
+});
+
+test('the two ruled additions sit beside each other in one list', () => {
+  const rows = parseRoster(`agents:
+  - bot: Echo
+    role: work
+    tools: [say, schedule]
+`);
+  assert.deepEqual(rows[0].tools, ['say', 'schedule']);
+});
+
+test('the roster vocabulary is the host\'s closed list, and moving it is a test change', () => {
+  // Pinned literally so that adding or dropping a name has to be said out loud:
+  // the ruling is that two additions is where the count stops being a
+  // coincidence, so a third is a ruling and not an edit.
+  assert.deepEqual(
+    [...KNOWN_TOOLS],
+    ['bash', 'read', 'write', 'edit', 'glob', 'grep', 'subagent', 'submit_rant', 'boss', 'schedule', 'say'],
+  );
+  // And each of them is a name a row may actually write.
+  for (const tool of KNOWN_TOOLS) {
+    const rows = parseRoster(`agents:
+  - bot: Echo
+    role: work
+    tools: [${tool}]
+`);
+    assert.deepEqual(rows[0].tools, [tool]);
+  }
 });
 
 test('the roster is read from beside the store, and nothing else is', () => {
