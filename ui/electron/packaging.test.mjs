@@ -33,6 +33,7 @@
  * repository makes.
  */
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve, sep } from 'node:path'
 import { test } from 'node:test'
@@ -284,5 +285,43 @@ test('notarization refuses to run on a guess, and never reads an Invalid verdict
   assert.equal(verdictOf('error: something went wrong').status, 'unreadable')
   for (const output of ['{"status":"Invalid"}', 'not json', '{}']) {
     assert.notEqual(verdictOf(output).status, 'Accepted', `${output} is not a pass`)
+  }
+})
+
+test('the entitlements are well-formed XML, which is a stricter question than plutil asks', () => {
+  // This case exists because the file shipped broken once, and every check that was here
+  // passed: the keys were all present, the values were all `<true/>`, and `plutil -lint`
+  // answered OK. What failed was `codesign`, on the release runner, with
+  // "Failed to parse entitlements: AMFIUnserializeXML: syntax error near line 7" — the
+  // explanation at the top of the file had written a flag out in full, and two hyphens in a
+  // row are illegal inside an XML comment. A comment is not a safe place to put prose.
+  const path = join(UI, build.mac.entitlements)
+  const plist = readFileSync(path, 'utf8')
+
+  const comments = [...plist.matchAll(/<!--([\s\S]*?)-->/g)].map(([, body]) => body)
+  assert.ok(comments.length > 0, 'the file explains itself in comments, which is why this matters')
+  for (const body of comments) {
+    assert.ok(
+      !body.includes('--'),
+      'two hyphens in a row are illegal inside an XML comment: codesign refuses the whole file while plutil -lint answers OK',
+    )
+  }
+
+  // The rule above is only one way to be malformed, so a real parser is asked as well.
+  // `plutil` is deliberately not used here — it is the reader that said OK on the file
+  // `codesign` refused, so trusting it would reproduce the defect rather than catch it.
+  let xmllint
+  try {
+    execFileSync('xmllint', ['--nonet', '--noout', path], { stdio: ['ignore', 'pipe', 'pipe'] })
+    xmllint = { ran: true, output: '' }
+  } catch (error) {
+    if (error?.code === 'ENOENT') xmllint = { ran: false, output: '' }
+    else xmllint = { ran: true, output: `${error.stdout ?? ''}${error.stderr ?? ''}` }
+  }
+  if (xmllint.ran) {
+    assert.equal(xmllint.output.trim(), '', `xmllint accepts the entitlements: ${xmllint.output.trim()}`)
+  } else {
+    // Recorded rather than silently passing: the double-hyphen rule above still held.
+    console.log('# xmllint is not installed, so only the double-hyphen rule was checked')
   }
 })

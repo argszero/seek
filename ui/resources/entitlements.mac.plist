@@ -4,8 +4,8 @@
   What the app is allowed to do under the hardened runtime.
 
   Hardened runtime is not optional here: it is one of the three conditions a macOS build has
-  to meet before Apple's notary service will look at it (`codesign --options runtime`, a
-  Developer ID certificate, and a timestamp — the same three `packaging/make-pkg.mjs` names).
+  to meet before Apple's notary service will look at it — a Developer ID certificate, a
+  timestamp, and the hardened runtime option (the same three `packaging/make-pkg.mjs` names).
   It is also restrictive in a way V8 cannot live with.
 
   **`allow-jit`** is the one that matters: the renderer is V8, V8 compiles JavaScript to
@@ -25,6 +25,13 @@
   Nothing here is broader than what a stock Electron build already declares — this file exists
   so the answers live in the repository, where the packaging test can read them, rather than
   inside electron-builder's defaults.
+
+  **One thing must stay out of this file: two hyphens in a row, comments included.** XML
+  forbids that sequence inside a comment, and the parser `codesign` uses refuses the entire
+  file with "AMFIUnserializeXML: syntax error near line N" — while `plutil -lint` still
+  answers OK, so the mistake passes the obvious check and surfaces only on the release
+  runner, at the moment signing starts. It was made once here (a flag was written out in
+  full inside this comment) and measured: `ui/electron/packaging.test.mjs` now pins the rule.
 -->
 <plist version="1.0">
 <dict>
