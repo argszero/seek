@@ -44,7 +44,10 @@
         "from": "../src",
         "to": "src",
         "filter": [
-          "**/*.ts"
+          "**/*.ts",
+          "!**/*.test.ts",
+          "prompts/*.json",
+          "i18n/*.json"
         ]
       },
       {

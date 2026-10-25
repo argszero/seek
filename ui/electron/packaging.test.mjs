@@ -16,6 +16,12 @@
  * required to land where `extraResources` puts them. Change the import and the packaging has
  * to follow; change the packaging and this test says which import it stranded.
  *
+ * `extraResources` decides which *files* travel too, and until now it carried only the
+ * kernel's TypeScript: the prompt artifacts and the catalogues the kernel reads beside itself
+ * were in no download, which nothing in the source tree could see, because there they are
+ * simply beside the module. That half is pinned the same derived way — the paths come out of
+ * the kernel's own `new URL(…, import.meta.url)` calls rather than out of a list kept here.
+ *
  * The rest of the file pins the four other things a packaged app gets wrong quietly, each
  * because the source build hides it: a `package.json` with no module type beside the kernel
  * (Node then re-parses all 47 files on every launch and says so on stderr — measured, and the
@@ -34,7 +40,7 @@
  */
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { dirname, join, resolve, sep } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
@@ -79,7 +85,6 @@ test('the kernel is unpacked exactly where the app already looks for it', () => 
 
   assert.ok(kernelEntry, 'extraResources carries ../src')
   assert.equal(kernelEntry.to, 'src')
-  assert.deepEqual(kernelEntry.filter, ['**/*.ts'], 'only the kernel sources travel, not its tests or docs')
 
   // Where a packaged app would be, and where the asar's own `electron/` sits inside it.
   const resources = join('/Applications', 'Seek.app', 'Contents', 'Resources')
@@ -99,6 +104,115 @@ test('the kernel is unpacked exactly where the app already looks for it', () => 
     )
     assert.equal(dirname(packed), join(resources, kernelEntry.to))
   }
+})
+
+/** The kernel's own directory, which is what `extraResources` copies. */
+const SRC = join(REPO, 'src')
+
+/** The part of electron-builder's glob syntax these filters use. */
+function globOf(pattern) {
+  let source = '^'
+  for (let i = 0; i < pattern.length; i += 1) {
+    const char = pattern[i]
+    if (char === '*' && pattern[i + 1] === '*') {
+      // `**/` spans zero or more directories, `**` alone spans anything.
+      if (pattern[i + 2] === '/') {
+        source += '(?:.*/)?'
+        i += 2
+      } else {
+        source += '.*'
+        i += 1
+      }
+    } else if (char === '*') {
+      source += '[^/]*'
+    } else {
+      source += char.replace(/[.+^${}()|[\]\\]/, '\\$&')
+    }
+  }
+  return new RegExp(source + '$')
+}
+
+/**
+ * Whether a filter selects a path: at least one inclusion matches, and no exclusion does.
+ *
+ * electron-builder reads a filter as a list of globs where a `!` prefix removes what an
+ * earlier entry let in, which is how the star-star and `!` pair below is written.
+ */
+function selectBy(filter, relative) {
+  const matching = (patterns) =>
+    patterns.some((pattern) => globOf(pattern).test(relative))
+  const excluded = filter.filter((pattern) => pattern.startsWith('!')).map((pattern) => pattern.slice(1))
+  return matching(filter.filter((pattern) => !pattern.startsWith('!'))) && !matching(excluded)
+}
+
+/**
+ * Every path the kernel computes beside itself, read out of the kernel itself.
+ *
+ * `new URL('./x', import.meta.url)` is how a module names a file that has to travel with it,
+ * so this list grows by an artifact being written rather than by someone remembering to add
+ * it here. A literal holding an interpolation (`./i18n/${locale}.json`) stands for its
+ * directory, because which name it opens is chosen at run time.
+ */
+function kernelArtifacts() {
+  const found = new Set()
+  for (const name of readdirSync(SRC)) {
+    if (!name.endsWith('.ts') || name.endsWith('.test.ts')) continue
+    const source = readFileSync(join(SRC, name), 'utf8')
+    for (const [, literal] of source.matchAll(/new URL\(\s*['`](\.\/[^'`]+)['`]\s*,\s*import\.meta\.url\s*\)/g)) {
+      const interpolation = literal.indexOf('${')
+      found.add(interpolation === -1 ? literal : literal.slice(0, interpolation))
+    }
+  }
+  return [...found].sort()
+}
+
+test('every file the kernel reads beside itself travels in a download', () => {
+  // The defect this exists for, measured on the `v0.1.2` installer and on a bundle built from
+  // this branch: `extraResources` was filtered to `**/*.ts`, so `src/prompts/` and `src/i18n/`
+  // were in no download at all. Nothing in the source tree could see it — there the files are
+  // simply beside the module — and nothing at launch said so either, because the shipped state
+  // names no model server and the kernel's placeholder reads no artifact. Naming one on a
+  // download returned the kernel's own refusal: *the watch prompt artifact could not be read
+  // from …/Resources/src/prompts/watch-v1.json: ENOENT*. So stage 1 and stage 2, which default
+  // 27 and default 28 describe and which are the whole point of naming a server, were
+  // unreachable in every download up to `v0.1.2`.
+  //
+  // Which is why the filter is checked against the kernel rather than counted by hand: an
+  // artifact added tomorrow is covered the moment the module reads it.
+  const selected = (relative) => selectBy(kernelEntry.filter, relative)
+
+  const artifacts = kernelArtifacts()
+  assert.ok(artifacts.length >= 3, `expected the kernel's own artifacts, found ${artifacts.length}`)
+
+  for (const artifact of artifacts) {
+    const relative = artifact.slice('./'.length)
+    if (relative.endsWith('/')) {
+      const directory = join(SRC, relative)
+      assert.ok(existsSync(directory), `${relative} exists in the source tree`)
+      const names = readdirSync(directory)
+      assert.ok(names.length > 0, `${relative} holds the files the kernel opens`)
+      for (const name of names) {
+        assert.ok(
+          selected(relative + name),
+          `${relative}${name} is read at runtime and extraResources does not carry it ` +
+            `(filter: ${kernelEntry.filter.join(', ')})`,
+        )
+      }
+    } else {
+      assert.ok(existsSync(join(SRC, relative)), `${relative} exists in the source tree`)
+      assert.ok(
+        selected(relative),
+        `${relative} is read at runtime and extraResources does not carry it ` +
+          `(filter: ${kernelEntry.filter.join(', ')})`,
+      )
+    }
+  }
+
+  // The other half, so the filter cannot be widened into "carry everything": the tests need
+  // `node --test` and the documents are read by neither half.
+  assert.ok(selected('store.ts'), 'every kernel source travels')
+  assert.ok(!selected('counts.test.ts'), 'the tests stay behind')
+  assert.ok(!selected('README.md'), 'and so do the documents')
 })
 
 test('the unpacked kernel declares the module type it is written in', () => {
