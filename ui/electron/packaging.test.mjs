@@ -37,7 +37,8 @@ import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve, sep } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { pkgPlan } from '../../packaging/make-pkg.mjs'
+import { pkgPlan, signingPlan } from '../../packaging/make-pkg.mjs'
+import { notarizePlan, verdictOf } from '../../packaging/notarize.mjs'
 
 const UI = fileURLToPath(new URL('../', import.meta.url))
 const REPO = resolve(UI, '..')
@@ -226,4 +227,62 @@ test('one command makes the installer, and the release runs that command', () =>
   assert.match(workflow, /runs-on: macos-/, 'on macOS, the only system pkgbuild exists on')
   assert.match(workflow, /refs\/tags\//, 'and it publishes from a tag, not from a branch head')
   assert.match(workflow, /does not name the app's version/, 'a tag and the app must name one version')
+})
+
+test('the package is signed by the installer identity, and unsigned builds stay buildable', () => {
+  // Two identities, two jobs, and the wrong one is refused outright: `productsign` will not
+  // take a `Developer ID Application` certificate, because an installer and a bundle are
+  // assessed by different parts of the system. The identity is a machine's, so it comes from
+  // the environment — set on the runner, absent on a laptop.
+  const unsigned = signingPlan({ environment: {} })
+  assert.equal(unsigned.signed, false)
+  assert.equal(unsigned.identity, '')
+  assert.deepEqual(unsigned.argv, [], 'nothing is run when there is no identity')
+  assert.equal(unsigned.output, unsigned.input, 'and no second file appears beside the package')
+
+  const identity = 'Developer ID Installer: anqing shao (Y55RQ6LU24)'
+  const signed = signingPlan({ environment: { MACOS_INSTALLER_IDENTITY: identity } })
+  assert.equal(signed.signed, true)
+  assert.equal(signed.identity, identity)
+  assert.deepEqual(signed.argv, ['--sign', identity, signed.input, signed.output])
+
+  // `productsign` refuses to write over its own input, so the signed copy is a second name
+  // that replaces the first once `pkgutil --check-signature` has read the chain back.
+  assert.notEqual(signed.output, signed.input)
+  assert.match(signed.output, /-signed\.pkg$/)
+  assert.equal(signed.input, pkgPlan().output, 'the input is the file pkgPlan writes')
+})
+
+test('notarization refuses to run on a guess, and never reads an Invalid verdict as done', () => {
+  // Three values and no defaults: a wrong issuer ID and a missing one fail the same quiet way,
+  // so the plan says which are absent rather than submitting something Apple will reject.
+  const bare = notarizePlan({ environment: {} })
+  assert.equal(bare.ready, false)
+  assert.deepEqual(bare.missing, ['MACOS_NOTARY_KEY', 'MACOS_NOTARY_KEY_ID', 'MACOS_NOTARY_ISSUER_ID'])
+
+  const ready = notarizePlan({
+    environment: { MACOS_NOTARY_KEY: '/tmp/AuthKey.p8', MACOS_NOTARY_KEY_ID: 'KEYID', MACOS_NOTARY_ISSUER_ID: 'ISSUER' },
+  })
+  assert.equal(ready.ready, true)
+  assert.deepEqual(ready.missing, [])
+
+  // The file submitted is the file `dist:pkg` published — one name, or "notarize the installer"
+  // could come to mean a different file from "build the installer".
+  assert.equal(ready.file, pkgPlan().output)
+  assert.equal(ready.file, join(UI, 'release', `Seek-${pkg.version}-arm64-mac.pkg`))
+  assert.deepEqual(ready.submitArgv.slice(0, 3), ['notarytool', 'submit', ready.file])
+  assert.ok(ready.submitArgv.includes('--wait'), 'the step waits rather than polling later')
+  assert.deepEqual(ready.submitArgv.slice(-2), ['--output-format', 'json'], 'the verdict is read, not the exit code')
+
+  // The trap this exists for: `notarytool submit --wait` exits **0** on `Invalid`, so the
+  // status is a value and it is asserted as one. Anything that is not `Accepted` — including
+  // output that is not JSON at all — must not read as accepted.
+  assert.equal(verdictOf('{"status":"Accepted","id":"a-1"}').status, 'Accepted')
+  const rejected = verdictOf('{"status":"Invalid","id":"b-2","message":"see log"}')
+  assert.equal(rejected.status, 'Invalid')
+  assert.equal(rejected.id, 'b-2', 'the id is what `notarytool log` needs for the reasons')
+  assert.equal(verdictOf('error: something went wrong').status, 'unreadable')
+  for (const output of ['{"status":"Invalid"}', 'not json', '{}']) {
+    assert.notEqual(verdictOf(output).status, 'Accepted', `${output} is not a pass`)
+  }
 })

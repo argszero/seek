@@ -111,8 +111,9 @@ export function pkgPlan(options = {}) {
  * and a laptop does not.
  */
 export function signingPlan(options = {}) {
+  const environment = options.environment ?? process.env;
   const plan = pkgPlan(options);
-  const identity = (options.identity ?? process.env.MACOS_INSTALLER_IDENTITY ?? '').trim();
+  const identity = (options.identity ?? environment.MACOS_INSTALLER_IDENTITY ?? '').trim();
   if (identity === '') {
     return { signed: false, identity: '', input: plan.output, output: plan.output, argv: [] };
   }
@@ -161,7 +162,16 @@ function main() {
   // an installer is a specific question — is this signed by a `Developer ID Installer`
   // certificate — and a package signed with some other kind of certificate is one the reader
   // is refused, silently, at the moment they double-click it.
-  const check = execFileSync('pkgutil', ['--check-signature', signing.output], { encoding: 'utf8' });
+  //
+  // `pkgutil --check-signature` exits **1** on a package it finds no signature on (measured on
+  // an unsigned `v0.1.1` `.pkg`), so its output is what gets read, on both paths: the throw is
+  // caught so the release says which chain was missing rather than printing a stack trace.
+  let check = '';
+  try {
+    check = execFileSync('pkgutil', ['--check-signature', signing.output], { encoding: 'utf8' });
+  } catch (error) {
+    check = `${error.stdout ?? ''}${error.stderr ?? ''}`;
+  }
   if (!check.includes('Developer ID Installer')) {
     console.error('the signed package does not carry a Developer ID Installer chain, so macOS');
     console.error('would still refuse it. pkgutil said:');

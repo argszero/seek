@@ -73,11 +73,13 @@ npm start -- --server http://127.0.0.1:8080 --window 24
 
 ## 安装应用
 
-[发布页](https://github.com/argszero/seek/releases)上是当前这一版，两种形状：`Seek-<version>-arm64-mac.pkg` 直接装进 `Applications`，`Seek-<version>-arm64-mac.zip` 是同一个包，解压后拖进去。Apple 芯片的 macOS，**未签名**。
+[发布页](https://github.com/argszero/seek/releases)上是当前这一版，两种形状：`Seek-<version>-arm64-mac.pkg` 直接装进 `Applications`，`Seek-<version>-arm64-mac.zip` 是同一个包，解压后拖进去。Apple 芯片的 macOS。**`v0.1.1` 及更早**的发布是未签名构建的；从这棵树构建出来的包带有 `Developer ID` 证书签名并通过 Apple 公证，下面这一节讲的就是这件事。
 
 **从现在起还会打一个安装包，和那个 zip 并列。** 在 `ui/` 里跑 `npm run dist:pkg`，会用 macOS 自己的 `pkgbuild`（`packaging/make-pkg.mjs`）从同一个 bundle 切出 `ui/release/Seek-<版本>-arm64-mac.pkg`；装它就把 `Seek.app` 放进 `Applications`，不必再拖。做成 `.pkg` 而不是 `.dmg`，是因为 electron-builder 的 `dmg` 目标最后要调 `hdiutil create`，而开发这个仓库的环境直接拒绝它（`the operation is not permitted`），`pkgbuild` 则不被拒绝——旁边的 EMRG 项目把 macOS 下载做成 `.pkg`，也是同一个原因。打包也不该是只有某台机器才做得到的事：推一个 `v*` 标签，会在 macOS runner 上跑同一条 `npm run dist:pkg`（`.github/workflows/release.yml`），把 `.pkg` 和 `.zip` 一起挂到发布页。
 
-**第一次动它时 macOS 会拦着，因为这里什么都没签名。** 包里没有签名、也没有公证——这个项目背后没有签名身份——所以 Gatekeeper 会拒绝它。两种形状被拒的时刻不同，而 `.pkg` 在前：它在被打开时就受到评估，那时还没有任何 `Seek.app` 可以右键，所以属于「已装好的应用」的那条办法，选安装包的人照着做走不通。在已发布的 `v0.1.1` 那个 `.pkg` 上实测：`pkgutil --check-signature` 回答 `no signature`，`spctl -a -t install` 回答 `rejected`，理由是 `no usable signature`。
+**从这棵树构建出来的包，装和开都不用先处理什么。** `release.yml` 从仓库 Secret 里取两张证书，导入一个只为这一次运行存在的钥匙串：`Developer ID Application` 给 bundle 签名，`Developer ID Installer` 给安装包签名（`packaging/make-pkg.mjs` 调 `productsign`，再用 `pkgutil --check-signature` 把链读回来核对），`packaging/notarize.mjs` 用 App Store Connect 的 API 密钥把安装包送交 Apple、等判决，再把票据 stapling 到文件上。这两张证书不能互换——安装包和 bundle 由系统里两个不同的部分来判定，`productsign` 会直接拒绝 Application 证书。本机上两张证书都没有，所以 `npm run dist:pkg` 照样能构建，只是明说这个包未签名、跳过签名那一步，而不是失败。
+
+**`v0.1.1` 及更早的发布会被拦，因为那些都还没签名。** 那些下载里没有签名、也没有公证，所以 Gatekeeper 会拒绝它。两种形状被拒的时刻不同，而 `.pkg` 在前：它在被打开时就受到评估，那时还没有任何 `Seek.app` 可以右键，所以属于「已装好的应用」的那条办法，选安装包的人照着做走不通。在已发布的 `v0.1.1` 那个 `.pkg` 上实测：`pkgutil --check-signature` 回答 `no signature`，`spctl -a -t install` 回答 `rejected`，理由是 `no usable signature`。下面这些是那些发布需要做的。
 
 `.pkg` 要你把**下载下来的那个文件**上的标记清掉，然后再打开一次——或者在被拒之后的一小时内，进「系统设置 → 隐私与安全性」点**仍要打开**：
 
@@ -90,6 +92,8 @@ xattr -d com.apple.quarantine ~/Downloads/Seek-<版本>-arm64-mac.pkg
 ```bash
 xattr -dr com.apple.quarantine /Applications/Seek.app
 ```
+
+**签名之后，一个已签名的发布里还留着一处不对称。** Apple 给的票据是 stapling 到安装包上的，而 `.zip` 不是能贴上票据的东西：里面那个应用由同一张证书签名，但自己不带上票据，所以它第一次启动能不能过，取决于那台机器能不能连上 Apple。什么都不用处理的，是 `.pkg` 这一种形状。
 
 **包里有什么、没有什么。** 内核在应用*里面*，不在旁边：`Contents/Resources/src/` 装的就是这个仓库里那 50 个 TypeScript 文件，`Contents/Resources/app.asar` 装的是构建好的页面和主进程（`docs/decisions.md` 默认值 26）。**包里没有模型、也没有权重**，所以不点名 `llama-server` 时，bot 用的仍是内核自带的占位句，和什么都不点名的 `npm start` 一模一样。**`v0.1.0` 及更早**是接模型之前打的，那些包里只有占位句；用这棵树构建出来的两段都接得上，靠的是下面那一节点名的那几个变量。首次启动造世界的方式也和下面那次运行一样——一个房间、它的 bot，以及库旁边的名册——而那个房间的 `created_at` 是内核的种子常量，不是你安装的那一刻，只是目前没有任何地方把它画出来。
 
@@ -106,7 +110,7 @@ npm start
 
 改页面本身的时候用 `npm run dev`：Vite 带着热更新把 `index.html` 服起来，再把 `SEEK_UI_DEV_URL` 设成那个服务器的地址——`http://localhost:5173`，也就是 `ui/vite.config.mjs` 不写端口时 Vite 自己用的那个——窗口打开的就是服出来的那一页，而不是构建好的那一页，于是改一行不必 `npm run build` 也能看见。
 
-一个压在同一个内核上的 Electron 窗口：选房间、打字、按回车，那个房间里的 bot 就会回应。**要不要回应**是第一段，只要你点名一个模型它就是真模型：把 `SEEK_SERVER` 指向一个跑着的 `llama-server`，`SEEK_WINDOW` 写一次判断能读多少，判断就来自 watch 模型——由内核自己的 `watch-server.ts` 绑在那个服务器上，问的是 `src/prompts/watch-v1.json` 声明的那道题——于是它在自己判断该说话时才说，而不是每条都回。两个都不设（也就是这个构建发布时的样子），判断就是内核自带的占位实现，窗口顶上的一条窄带会说明你现在看的是哪一种。**回什么**是第二段，而且是另一个服务器：把 `SEEK_WORK_SERVER` 指向另一个 `llama-server`，那句话就是模型自己的文字，经由 `src/prompts/work-v1.json` 给它的 `say` 调用说出来——所以名册的 **work** 行必须声称那个服务器在服务的模型，因为一个服务器只服务一个模型，而两行可以各自点名（`docs/decisions.md` 默认值 24）。不设的话，说的就是 `src/main.ts` 里 `stubDecide` 的那句话。两段各要一个 origin 是刻意的，而 `SEEK_WINDOW` 仍跟着 `SEEK_SERVER`，因为它是「一次判断能读多少」，而一轮 turn 的提示词是每轮拿 work 服务器自己的窗口重新校验的。两条窄带各自独立拒绝，所以 watch 行有服务器、work 行没有的库照样打开，用占位实现回话，并且把两件事同时说出来。你点名了、应用却没有用上的服务器（连不上、服务的是另一个模型、或者只给了不成对的一个）不会挡住窗口打开：那条窄带会点名它，并用错误色说明原因——库在本地，里面的消息不依赖那个服务器（`docs/decisions.md` 默认值 27）。每条消息下面都有「reply in thread」：打开的面板就是库里已经记下的那条链，在面板里回复走的是同一个调用，只是点名了它在回应哪条消息。占位实现的回应仍然落在房间里而不是面板里，因为 `stubDecide` 说那句话时不点名它在回应什么；模型的回应则挂回叫醒它的那条消息，所以画在面板里。第一次启动时还没有库，于是它自己造一个：内核自带的那个房间、一个叫 Echo 的 bot，以及写在库旁边的 `agents.yml`——里面是这个 bot 说话要用的那两个 agent。所以窗口一打开就是能说话的地方，而不是一张空列表，那个文件此后也一直留在那里等着被改。它打开 Electron 自己的用户数据目录下的 `seek-data/seek.json`，用 `SEEK_DATA_DIR` 可以指到别处——想把仓库里的 `seek-data/`（连名册一起）打开，就是这么指。`npm run dist:mac` 构建的就是这个仓库发布的应用：electron-builder 把页面和主进程打成未签名的 arm64 应用包，放在 `ui/release/` 下（`docs/decisions.md` 默认值 26）。
+一个压在同一个内核上的 Electron 窗口：选房间、打字、按回车，那个房间里的 bot 就会回应。**要不要回应**是第一段，只要你点名一个模型它就是真模型：把 `SEEK_SERVER` 指向一个跑着的 `llama-server`，`SEEK_WINDOW` 写一次判断能读多少，判断就来自 watch 模型——由内核自己的 `watch-server.ts` 绑在那个服务器上，问的是 `src/prompts/watch-v1.json` 声明的那道题——于是它在自己判断该说话时才说，而不是每条都回。两个都不设（也就是这个构建发布时的样子），判断就是内核自带的占位实现，窗口顶上的一条窄带会说明你现在看的是哪一种。**回什么**是第二段，而且是另一个服务器：把 `SEEK_WORK_SERVER` 指向另一个 `llama-server`，那句话就是模型自己的文字，经由 `src/prompts/work-v1.json` 给它的 `say` 调用说出来——所以名册的 **work** 行必须声称那个服务器在服务的模型，因为一个服务器只服务一个模型，而两行可以各自点名（`docs/decisions.md` 默认值 24）。不设的话，说的就是 `src/main.ts` 里 `stubDecide` 的那句话。两段各要一个 origin 是刻意的，而 `SEEK_WINDOW` 仍跟着 `SEEK_SERVER`，因为它是「一次判断能读多少」，而一轮 turn 的提示词是每轮拿 work 服务器自己的窗口重新校验的。两条窄带各自独立拒绝，所以 watch 行有服务器、work 行没有的库照样打开，用占位实现回话，并且把两件事同时说出来。你点名了、应用却没有用上的服务器（连不上、服务的是另一个模型、或者只给了不成对的一个）不会挡住窗口打开：那条窄带会点名它，并用错误色说明原因——库在本地，里面的消息不依赖那个服务器（`docs/decisions.md` 默认值 27）。每条消息下面都有「reply in thread」：打开的面板就是库里已经记下的那条链，在面板里回复走的是同一个调用，只是点名了它在回应哪条消息。占位实现的回应仍然落在房间里而不是面板里，因为 `stubDecide` 说那句话时不点名它在回应什么；模型的回应则挂回叫醒它的那条消息，所以画在面板里。第一次启动时还没有库，于是它自己造一个：内核自带的那个房间、一个叫 Echo 的 bot，以及写在库旁边的 `agents.yml`——里面是这个 bot 说话要用的那两个 agent。所以窗口一打开就是能说话的地方，而不是一张空列表，那个文件此后也一直留在那里等着被改。它打开 Electron 自己的用户数据目录下的 `seek-data/seek.json`，用 `SEEK_DATA_DIR` 可以指到别处——想把仓库里的 `seek-data/`（连名册一起）打开，就是这么指。`npm run dist:mac` 构建的就是这个仓库发布的应用：electron-builder 把页面和主进程打成一个 arm64 应用包，放在 `ui/release/` 下；机器上有 `Developer ID Application` 身份就签名，没有就留成未签名（`docs/decisions.md` 默认值 26）。
 
 ## 跑原型
 
