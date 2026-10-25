@@ -31,11 +31,18 @@
  *   reaches and `ui/vite.config.mjs` configures no port at all.
  *
  * What it cannot pin is whether a sentence about the *download* is true of the download:
- * that depends on which tag the release page serves, not on this tree. That half stays a
- * hand edit, and the edit that survives is the one that cannot go stale: `#86` states what
- * the releases **up to** `v0.1.0` contain, a historical claim that stays true however many
- * releases follow, while `#76` names the file shapes and lets the release page carry the
- * number rather than repeating it here once per release.
+ * that depends on which tag the release page serves, not on this tree, so that half stays a
+ * hand edit. It went wrong anyway, and the reasoning meant to keep it right is part of why.
+ * The paragraph stood at two release states — before the two halves were wired, and after —
+ * as though naming the boundary at `v0.1.0` made every later release the second one. It does
+ * not: `v0.1.1` and `v0.1.2` are a third, with both halves wired in the code and the four
+ * artifacts they read in no package at all (`docs/decisions.md`, default 26), so naming a
+ * server on either is refused rather than answered — and that was the state the release page
+ * was serving while the paragraph named two. Two things came of it. The paragraph now names
+ * each state a reader can land in, and this comment names that paragraph by its subject
+ * instead of by its line number, because the number it used to carry had already moved once.
+ * `#76` keeps its shape: it names the file shapes and lets the release page carry the number
+ * rather than repeating it here once per release.
  *
  * One part of that half is checkable after all, and it is the part that was wrong. Which
  * shapes a release publishes is `release.yml`'s to say; what macOS does to each of them is
@@ -48,8 +55,17 @@
  * `rejected` — so the refusal really does come before the app is on disk. The test that
  * holds the remedies against the shapes.
  *
- * **A capability is checkable the same way a variable is**, and the third drift above is
- * what made that worth doing. What the window can *do* is not a matter of prose at all on
+ * **Part of that half is derivable after all, and it is the part that was silently absent.**
+ * What a package puts beside the kernel is `ui/package.json`'s `extraResources` filter, and
+ * the artifacts are the entries that name a directory rather than a wildcard — `prompts/` and
+ * `i18n/` today. A reader looking at `Contents/Resources/src/` sees TypeScript files and
+ * cannot tell that any of them are data the kernel reads, so the paragraph that says what a
+ * download contains owes those directory names in both languages. A fifth artifact directory
+ * added to the filter tomorrow is one no README names tomorrow, and the test below says so
+ * without being edited.
+ *
+ * **A capability is checkable the same way a variable is**, and the third drift in that list
+ * is what made that worth doing. What the window can *do* is not a matter of prose at all on
  * the source side: `preload.js` is the renderer's whole vocabulary, `main.js` answers every
  * call in it, and a call that changes the store says so — it broadcasts `seek:changed` to
  * the window. So the set of capabilities is derivable from two files, and what the READMEs
@@ -188,6 +204,59 @@ test('a reader is told what to clear for the shape they downloaded', () => {
       found.some((target) => target.endsWith('Seek.app')),
       `${document} says what to clear for the .zip's app, which is refused on first launch`,
     )
+  }
+})
+
+/**
+ * The artifact directories a package carries, taken from the filter rather than listed here.
+ *
+ * `extraResources` is what fills `Contents/Resources/src/` inside a download, and its entries
+ * are of two kinds: the kernel's own sources, whose directory is a wildcard, and the artifacts
+ * the kernel reads beside itself, which name a real directory. Only the second kind is
+ * invisible in the source tree — there the JSON sits beside the module that reads it and looks
+ * like any other file — and only the second kind was missing from the `v0.1.1` and `v0.1.2`
+ * packages, which is what made naming a server on them a refusal.
+ */
+function artifactDirectories() {
+  const { extraResources } = JSON.parse(read('ui/package.json')).build
+  const entry = extraResources.find((resource) => resource.to === 'src')
+  assert.ok(entry, 'the build still fills Contents/Resources/src/, which the README describes')
+
+  const found = entry.filter
+    .filter((pattern) => !pattern.startsWith('!'))
+    .map((pattern) => pattern.split('/')[0])
+    // A wildcard in the first position names no directory of its own: that is the kernel's
+    // sources, which the paragraph accounts for as this repository's own kernel.
+    .filter((directory) => directory && !directory.includes('*'))
+  return [...new Set(found)].sort()
+}
+
+test('the download paragraph names every artifact directory a package carries', () => {
+  const directories = artifactDirectories()
+
+  // Anti-vacuity: a filter naming no directory would pass every assertion below it, and it
+  // would pass while the paragraph said nothing at all.
+  assert.ok(
+    directories.length >= 2,
+    `expected the filter to name prompts/ and i18n/, read ${directories.join(', ') || 'nothing'}`,
+  )
+
+  for (const document of ['README.md', 'README.zh-CN.md']) {
+    const text = read(document)
+    // Read the paragraph rather than the file: a README that happens to mention a directory
+    // somewhere else has not told the reader what the download contains.
+    const at = text.search(/What is inside the download|包里有什么/)
+    assert.notEqual(at, -1, `${document} keeps the paragraph that says what a download contains`)
+    const paragraph = text.slice(at, text.indexOf('\n', at))
+
+    for (const directory of directories) {
+      assert.ok(
+        paragraph.includes(`${directory}/`),
+        `${document} never says a download carries ${directory}/, which is a directory the ` +
+          'filter packs — the state the v0.1.1 and v0.1.2 packages were in, and the one a ' +
+          'reader who named a server ran into',
+      )
+    }
   }
 })
 
