@@ -18,7 +18,7 @@ const { app, BrowserWindow, dialog, ipcMain, nativeTheme } = require('electron')
 const { readFile } = require('node:fs/promises')
 const { basename, join } = require('node:path')
 
-const { closeHost, createRoom, openHost, postMessage } = require('./host.js')
+const { addMember, closeHost, createRoom, openHost, postMessage } = require('./host.js')
 const { BY_MIME, mimeForPath, readMedia, saveMedia } = require('./media.js')
 const { snapshotOf } = require('./snapshot.js')
 
@@ -115,6 +115,24 @@ ipcMain.handle('seek:create-room', async (_event, input) => {
     const made = await createRoom(host, input ?? {})
     if (win && !win.isDestroyed()) win.webContents.send('seek:changed', made.snapshot)
     return { ok: true, snapshot: made.snapshot, roomId: made.roomId }
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+  }
+})
+
+/**
+ * Put one more person into a room, and tell every window the new snapshot.
+ *
+ * The same envelope as `seek:post`, with one thing `seek:create-room` needs and this does
+ * not: no second return field. A room that just gained a member is the room it already was,
+ * so there is no id here that a snapshot cannot say — `seek:create-room` hands back `roomId`
+ * only because "the room that was just made" is not derivable from a room list.
+ */
+ipcMain.handle('seek:add-member', async (_event, input) => {
+  try {
+    const snapshot = await addMember(host, input ?? {})
+    if (win && !win.isDestroyed()) win.webContents.send('seek:changed', snapshot)
+    return { ok: true, snapshot }
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) }
   }

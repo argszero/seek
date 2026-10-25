@@ -547,4 +547,40 @@ async function createRoom(host, input) {
   }
 }
 
-module.exports = { closeHost, createRoom, openHost, postMessage }
+/**
+ * Put one more person into a room that already exists.
+ *
+ * **This is the kernel's write, not a second one.** `addMember()` in `src/rooms.ts` refuses a
+ * room this store does not hold, a principal it has never heard of, and one who is already in
+ * the room — three sentences, and they are what the window shows. Nothing is re-checked here,
+ * for the reason `createRoom` above gives: a second opinion could pass what the kernel then
+ * refuses, or refuse in wording no document carries.
+ *
+ * **Two things this file decides, and both are facts about the interface.**
+ *
+ * - **No role is asked for, so the kernel's default stands.** `MembershipRole` branches on
+ *   nothing in the kernel, and `createRoom`'s docstring makes the same point about
+ *   `chat_mode`: a picker offering `owner`/`member` would be asking a question with no
+ *   consequence. In particular, adding the person the window speaks as does **not** make them
+ *   the owner — `createRoom` gives that role because it is *making* a room and keeps it shaped
+ *   like the one a first run seeds, while joining somebody else's room is not making it.
+ * - **The two ids reach the kernel as they were given.** A non-string names no room and no
+ *   principal, so the kernel's own `unknown room: …` / `unknown principal: …` answers — a
+ *   better report than a `TypeError` raised here, and the same choice `createRoom` makes about
+ *   the member list.
+ */
+async function addMember(host, input) {
+  const mods = await kernelModules()
+  mods.rooms.addMember(host.store, {
+    roomId: input?.roomId,
+    principalId: input?.principalId,
+  })
+  // Once, and before the snapshot — the same rule a room and a message follow. A member drawn
+  // but not saved is a room that silently loses somebody on the next open, which is the one
+  // outcome the person cannot see and cannot repair.
+  await host.store.save()
+
+  return snapshotOf(host.store, host.storeFile, host.stage1, host.stage2)
+}
+
+module.exports = { addMember, closeHost, createRoom, openHost, postMessage }
