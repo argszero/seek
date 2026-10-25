@@ -14,7 +14,8 @@
     "test": "node --test \"electron/**/*.test.mjs\"",
     "dist:dir": "vite build && electron-builder --mac --arm64 --dir",
     "dist:mac": "vite build && electron-builder --mac --arm64",
-    "dist:pkg": "vite build && electron-builder --mac --arm64 --dir && node ../packaging/make-pkg.mjs"
+    "dist:pkg": "vite build && electron-builder --mac --arm64 --dir && node ../packaging/make-pkg.mjs",
+    "dist:notarize": "node ../packaging/notarize.mjs"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^6.1.2",
@@ -68,7 +69,9 @@
       ],
       "category": "public.app-category.social-networking",
       "icon": "../assets/icon.png",
-      "identity": null,
+      "hardenedRuntime": true,
+      "entitlements": "resources/entitlements.mac.plist",
+      "entitlementsInherit": "resources/entitlements.mac.plist",
       "notarize": false,
       "minimumSystemVersion": "12.0"
     }

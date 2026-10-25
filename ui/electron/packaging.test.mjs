@@ -136,13 +136,54 @@ test('the icon is the repository mark, at the size an icns is cut from', () => {
   assert.equal(png.readUInt32BE(20), 1024, 'height')
 })
 
-test('the build is unsigned and says so, and the version is a release', () => {
-  // No signing identity is available to this project, so the app is unsigned and not
-  // notarized; the release notes carry the consequence rather than the build hiding it.
-  assert.equal(build.mac.identity, null)
+test('the build signs when it is given a certificate, and is honest when it is not', () => {
+  // `identity: null` used to stand here, and it meant "never sign". It was true while this
+  // project had no certificate; it is false now, and worse, it *forbids* the runner from
+  // signing even when `CSC_LINK` is set. What is asserted instead is the arrangement that
+  // makes both machines work: nothing is pinned, electron-builder signs when a certificate is
+  // supplied and skips (with a warning) when none is, which is what a laptop has.
+  assert.equal(build.mac.identity, undefined, 'no identity is hard-coded, so CSC_LINK decides')
+
+  // Hardened runtime is one of the three conditions notarization requires — the other two are
+  // a Developer ID certificate and a timestamp, and they are `codesign`'s flags rather than
+  // this file's.
+  assert.equal(build.mac.hardenedRuntime, true)
+
+  // The app is notarized as the installer that contains it, so electron-builder's own
+  // notarize step would be a second submission of the same code.
   assert.equal(build.mac.notarize, false)
   assert.match(pkg.version, /^\d+\.\d+\.\d+$/)
   assert.notEqual(pkg.version, '0.0.0', 'a download is a release, not an unfilled placeholder')
+})
+
+test('the entitlements an Electron app needs under hardened runtime are in the repository', () => {
+  // V8 compiles JavaScript while it runs, and the hardened runtime refuses to execute that
+  // memory unless the entitlement says so. A signed build that lacks it opens a window and
+  // then dies on the first script — a failure no unsigned build can show, because unsigned
+  // builds are not hardened.
+  const path = join(UI, build.mac.entitlements)
+  assert.ok(existsSync(path), `${build.mac.entitlements} exists`)
+  assert.equal(build.mac.entitlementsInherit, build.mac.entitlements, 'the helpers get the same answers as the app')
+
+  const plist = readFileSync(path, 'utf8')
+  for (const key of [
+    'com.apple.security.cs.allow-jit',
+    'com.apple.security.cs.allow-unsigned-executable-memory',
+    'com.apple.security.cs.disable-library-validation',
+  ]) {
+    assert.match(plist, new RegExp(`<key>${key.replace(/\./g, '\\.')}</key>\\s*<true/>`), `${key} is granted`)
+  }
+
+  // Apple rejects a notarization submission for an entitlement it did not grant, so an
+  // unknown key is a red release rather than a permissive default.
+  // `-` belongs in this class: every entitlement name here has one (`allow-jit`), and a
+  // pattern without it silently matches nothing — which would make this assertion vacuous.
+  const declared = new Set([...plist.matchAll(/<key>([\w.-]+)<\/key>/g)].map(([, key]) => key))
+  assert.deepEqual([...declared].sort(), [
+    'com.apple.security.cs.allow-jit',
+    'com.apple.security.cs.allow-unsigned-executable-memory',
+    'com.apple.security.cs.disable-library-validation',
+  ])
 })
 
 test('the installer is cut from the app bundle, and claims what the app already declares', () => {

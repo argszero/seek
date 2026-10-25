@@ -18,10 +18,18 @@
  * a version the app inside it does not have, and the receipt it leaves is named after the
  * app it installed.
  *
- * **The package is unsigned.** `productsign` would need a `Developer ID Installer` identity
- * and this project has none — the same fact as `docs/decisions.md` default 26, that the
- * download is unsigned and not notarized — so this script does not pretend to sign. The
- * README says what Gatekeeper does about that instead.
+ * **The package is signed when the machine cutting it has an identity.** `pkgbuild` writes an
+ * unsigned component package; `productsign` is what turns it into one macOS will install
+ * without first asking the reader whether they trust it, and it needs a `Developer ID
+ * Installer` certificate — a different one from the `Developer ID Application` that signs the
+ * app inside, because an installer and a bundle are assessed by two different parts of the
+ * system. Neither is present on a development machine, so the two are found by name in
+ * `MACOS_INSTALLER_IDENTITY` and the signature is skipped, loudly, when it is unset: a build
+ * that cannot be signed here must still be buildable here.
+ *
+ * Signing is not the same as notarizing, and the second one is `packaging/notarize.mjs`: a
+ * signed package installs, and a notarized one is also stapled so that the app inside it
+ * launches on a machine that has never seen the developer.
  *
  * Usage, from the repository root after `npm run dist:dir` in `ui/`:
  *
@@ -33,7 +41,7 @@
  * recipe written for the runner.
  */
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, renameSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -93,6 +101,27 @@ export function pkgPlan(options = {}) {
   };
 }
 
+/**
+ * What one run of `productsign` would do, or why it would not run.
+ *
+ * Derived rather than performed, for the same reason `pkgPlan` is: the packaging test reads
+ * this to pin that a signed build signs *this* file with *that* identity, and that an
+ * unsigned one says so instead of quietly shipping. The identity is read from the
+ * environment because a certificate is a machine's, not a repository's — the runner has one
+ * and a laptop does not.
+ */
+export function signingPlan(options = {}) {
+  const plan = pkgPlan(options);
+  const identity = (options.identity ?? process.env.MACOS_INSTALLER_IDENTITY ?? '').trim();
+  if (identity === '') {
+    return { signed: false, identity: '', input: plan.output, output: plan.output, argv: [] };
+  }
+  // `productsign` refuses to write over its own input, so the signed copy is a second file
+  // that replaces the unsigned one once it exists and has been checked.
+  const output = plan.output.replace(/\.pkg$/, '-signed.pkg');
+  return { signed: true, identity, input: plan.output, output, argv: ['--sign', identity, plan.output, output] };
+}
+
 function main() {
   const plan = pkgPlan();
   if (!existsSync(plan.bundle)) {
@@ -117,7 +146,35 @@ function main() {
 
   const megabytes = (statSync(plan.output).size / 1e6).toFixed(1);
   console.log(`==> ${plan.output} (${megabytes} MB), installs ${plan.product}.app into ${plan.installLocation}`);
-  console.log('    unsigned: Gatekeeper asks the first time — see "Install the app" in README.md');
+
+  const signing = signingPlan();
+  if (!signing.signed) {
+    console.log('    unsigned: MACOS_INSTALLER_IDENTITY is not set on this machine, so this');
+    console.log('    package is one Gatekeeper asks about — see "Install the app" in README.md');
+    return;
+  }
+
+  console.log(`==> productsign: ${signing.identity}`);
+  execFileSync('productsign', signing.argv, { stdio: 'inherit' });
+
+  // Read the signature back instead of trusting the exit code. What macOS asks before it runs
+  // an installer is a specific question — is this signed by a `Developer ID Installer`
+  // certificate — and a package signed with some other kind of certificate is one the reader
+  // is refused, silently, at the moment they double-click it.
+  const check = execFileSync('pkgutil', ['--check-signature', signing.output], { encoding: 'utf8' });
+  if (!check.includes('Developer ID Installer')) {
+    console.error('the signed package does not carry a Developer ID Installer chain, so macOS');
+    console.error('would still refuse it. pkgutil said:');
+    console.error(check.trim());
+    process.exitCode = 1;
+    return;
+  }
+
+  // One file, not two: the release publishes `Seek-<version>-arm64-mac.pkg`, and a second name
+  // beside it would leave the reader choosing between a signed and an unsigned build.
+  renameSync(signing.output, plan.output);
+  console.log('    signed: a Developer ID Installer chain, read back with pkgutil');
+  console.log('    notarization is a separate step: node packaging/notarize.mjs');
 }
 
 // Run only when this file is the program, not when a test imports the plan above.
