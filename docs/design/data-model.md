@@ -145,7 +145,7 @@ Bot and Agent split it the same way throughout: **the bot owns what is alive** (
 
 ## 7. On-disk shape (brief)
 
-One `seek.json` per account (as today), split into `bots / agents / principals / rooms / memberships / sessions[agentId] / messages[roomId] / observations[botId] / turns / memories / schedule`.
+One `seek.json` per account (as today), split into `bots / agents / principals / rooms / memberships / sessions[agentId] / messages[roomId] / observations[botId] / turns / memories[agentId] / schedule`.
 
 `schedule` is **not** sharded by bot, unlike `observations`: it is one global table every bot reads and writes, so sharding it would make the one operation it exists for — a bot writing a row for another bot — a cross-shard write.
 
