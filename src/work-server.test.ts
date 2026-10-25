@@ -1,10 +1,14 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import { deliver } from './delivery.ts';
 import { makeWorld, type World } from './fixtures.ts';
 import type { Fetcher, LlamaServer } from './llama.ts';
 import { loadWorkArtifact, type WorkArtifact } from './prompts.ts';
+import { parseRoster } from './roster.ts';
 import { runTurn } from './turn.ts';
 import type { Id, Observation } from './types.ts';
 import { workOverServer } from './work-server.ts';
@@ -242,6 +246,39 @@ test('a prompt that offers a tool this runtime cannot execute is refused at bind
     /offers 'schedule' and this runtime can only execute 'say'/,
     'a model asked to call a tool nobody runs asks for something that cannot happen',
   );
+});
+
+test('a roster whose work row does not allow what the prompt offers is refused at bind', async () => {
+  const world = makeWorld();
+  const recorder = fakeServer({});
+  // One word, in the file `README.md` invites a reader to edit afterwards: `say` taken
+  // out of the row of the agent that is supposed to speak.
+  world.store.data.agents[world.agentA2].tools = [];
+
+  await assert.rejects(
+    () => workOverServer(world.store, world.botA, serverOf(recorder), { prompt: ARTIFACT }),
+    /the turn prompt offers 'say' and the roster's work row allows nothing/,
+    'the prompt and the allowlist are two files, and the bind is the only place both are open',
+  );
+});
+
+test('the roster this repository ships allows everything the prompt it ships offers', async () => {
+  const root = fileURLToPath(new URL('../', import.meta.url));
+  const roster = parseRoster(
+    readFileSync(join(root, 'seek-data', 'agents.yml'), 'utf8'),
+    'seek-data/agents.yml',
+  );
+  const work = roster.find((row) => row.role === 'work');
+  assert.ok(work, 'the shipped roster registers the row that answers');
+
+  // The refusal above is only worth having if the tree it ships in passes it: a fix
+  // that refused the default configuration would be a bot nobody can run.
+  for (const tool of ARTIFACT.tools) {
+    assert.ok(
+      work.tools.includes(tool.name),
+      `the shipped work row allows '${tool.name}', which ${'work-v1.json'} offers`,
+    );
+  }
 });
 
 test('a server whose window cannot hold even the smallest turn is refused at bind', async () => {

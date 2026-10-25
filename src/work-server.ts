@@ -17,7 +17,7 @@
  * calls is its own working record, and `say()` is the only writer of a message
  * (`say.ts`, and the same rule the runtime half states in `turn.ts`).
  *
- * Four things happen before the first turn, and each is a refusal rather than a repair:
+ * Five things happen before the first turn, and each is a refusal rather than a repair:
  *
  * 1. **settle the artifact** — the words, the split between the system line and the
  *    user turn, and the tools the model is offered are one file (`prompts.ts`,
@@ -36,6 +36,12 @@
  *    offering `say` and a runtime that does not run it is a model asked for the
  *    impossible; the turn would produce a call nobody answers and a bot that looks
  *    broken without anything having failed.
+ * 5. **refuse a roster whose work row does not allow what the prompt offers.** The
+ *    tools the model is handed come from the artifact and the allowlist comes from
+ *    `agents.yml` — two files, and nothing compared them. `say.ts` does refuse a call
+ *    an agent's row forbids, but it refuses **at the call**, after the prompt has
+ *    already told the model the tool is there. Bind is the one place both halves are
+ *    open, so it is where they are held against each other.
  *
  * Then, on every turn, three steps in the order the design gives them: assemble from
  * the store (identity read **per turn**, so a rename reaches the next one), check the
@@ -86,10 +92,10 @@ export interface WorkServerOptions {
 /**
  * Bind stage 2 to one bot, over one server, and hand back the loop's `Decide`.
  *
- * Asynchronous only because the four refusals need the server's answers: a model name,
- * a window and a template are facts `/props` holds and this file does not. Every
- * refusal happens here rather than mid-turn, so a misconfiguration is one error at
- * start-up instead of a bot that quietly says nothing for an afternoon.
+ * Asynchronous only because two of the refusals need the server's answers: a model name
+ * and a window are facts `/props` holds and this file does not. Every refusal happens
+ * here rather than mid-turn, so a misconfiguration is one error at start-up instead of
+ * a bot that quietly says nothing for an afternoon.
  *
  * The returned `Decide` holds the artifact and the tool list, and re-reads the store
  * per turn. Nothing of the bot's identity is captured, which is `identity.ts`'s
@@ -132,6 +138,34 @@ export async function workOverServer(
     'the smallest turn prompt',
   );
   requireServedModel(store, botId, 'work', shape);
+
+  // What the model is offered and what this bot's agent may call are two lines in two
+  // files: the artifact names the tools, `agents.yml`'s work row allows them. Nothing
+  // ever compared the pair, and the whole cost of that showed up on the other side of
+  // the bind — a row edited to drop `say` (the README invites exactly that edit) left a
+  // bot that opened, listed its rooms, answered the first thing said to it with a turn
+  // error, and kept doing that for every message after. `say.ts` is not the place to
+  // catch it: by the time it refuses, the prompt has already promised the model the tool
+  // exists, which is the mis-description this refusal is for.
+  //
+  // A bot with no work row is nothing to compare against, and it never reaches here from
+  // `main.ts` — `sceneOf` refuses a store whose bot has no one to answer before stage 2
+  // is bound at all.
+  const work = store.agentsOf(botId).find((agent) => agent.role === 'work');
+  if (work) {
+    const notAllowed = artifact.tools
+      .map((tool) => tool.name)
+      .filter((name) => !work.tools.includes(name));
+    if (notAllowed.length > 0) {
+      const allowed = work.tools.map((name) => `'${name}'`).join(', ') || 'nothing';
+      throw new Error(
+        `the turn prompt offers ${notAllowed.map((name) => `'${name}'`).join(', ')} and ` +
+          `the roster's work row allows ${allowed}: a model told to call a tool its own ` +
+          'row does not list asks for something that cannot happen, and the answer would ' +
+          'arrive mid-turn, as a failed call, rather than here as a line to edit',
+      );
+    }
+  }
 
   const tools: ChatTool[] = artifact.tools.map((tool) => ({
     name: tool.name,
