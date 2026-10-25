@@ -244,7 +244,128 @@ export class SeekStore {
       }
       throw error;
     }
-    const parsed = JSON.parse(raw) as Partial<SeekData>;
-    return new SeekStore({ ...emptyData(), ...parsed }, path);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (error) {
+      throw new Error(
+        `${path} is not JSON, so it is not a store: ${(error as Error).message}. ` +
+          'Nothing was changed or removed — the file is exactly as it was.',
+      );
+    }
+    return new SeekStore({ ...emptyData(), ...assertStoredShape(parsed, path) }, path);
   }
+}
+
+/**
+ * The eleven shards `save()` writes, and the shape each one has.
+ *
+ * Read off `docs/design/data-model.md` §7 rather than invented here: nine are maps
+ * the model shards by a key (`messages` by room, `observations` by bot, `sessions`
+ * and `memories` by agent), and `turns` and `schedule` are whole tables. The list is
+ * what "the on-disk shape is fixed" has to mean mechanically, in the one place that
+ * reads the file back.
+ */
+const SHARDS: Readonly<Record<keyof SeekData, 'map' | 'table'>> = {
+  bots: 'map',
+  agents: 'map',
+  principals: 'map',
+  rooms: 'map',
+  memberships: 'map',
+  sessions: 'map',
+  messages: 'map',
+  observations: 'map',
+  memories: 'map',
+  turns: 'table',
+  schedule: 'table',
+};
+
+/** What a JSON value is, for an error message a reader can act on. */
+function shapeOf(value: unknown): string {
+  if (value === null) return 'null';
+  if (Array.isArray(value)) return 'an array';
+  const kind = typeof value;
+  // "an object" and not "a object": this string is read by the person whose file was
+  // just refused, which is the worst moment to look careless.
+  return kind === 'object' ? 'an object' : `a ${kind}`;
+}
+
+/**
+ * The file `load` was handed, held to the shape `save` writes.
+ *
+ * **This used to validate nothing.** `load` was `JSON.parse(raw) as Partial<SeekData>`
+ * and then `{ ...emptyData(), ...parsed }`, so any JSON object was accepted and every
+ * shard it did not carry became an empty one. The consequence was measured, not
+ * supposed: a store holding six messages across three turns, with its `messages` shard
+ * removed, loaded without a word, ran, and saved — six messages replaced by two, the
+ * ledger grown to four turns naming message ids that no longer exist. The write is
+ * atomic, so `save()` does not lose data; `load()` did, and then committed it.
+ *
+ * That is the one failure a local-only store has no answer for. There is no other copy:
+ * `docs/decisions.md` and the README both put the data in the client and nowhere else,
+ * so a read that silently reinterprets the file is a read that can destroy the only
+ * copy of a person's history, and the next `save()` makes it permanent.
+ *
+ * **So it refuses rather than repairs**, and it refuses *before* constructing anything:
+ * the file is only ever read, never rewritten, never moved, never deleted. A store this
+ * version understands is the only kind it opens. Three refusals, each naming the file:
+ *
+ * - the file is not a JSON object (not a store at all);
+ * - a shard is present but the wrong shape — a map that is an array, a table that is an
+ *   object — which is a corrupt or foreign file, and the next `save()` would write the
+ *   corruption back in the shape this version reads;
+ * - a shard is **absent**. This is the truncation case and the older-file case at once,
+ *   and they are indistinguishable from here, so both are refused: absent reads as
+ *   empty, and empty is exactly what has to stop being guessed at.
+ *
+ * **Absence is a refusal rather than a default on purpose.** Adding a twelfth shard
+ * later will make every file written before it unreadable, and that pressure is the
+ * point: the alternative is a version boundary crossed in silence, which is the same
+ * defect one release later. A migration written when the shard is added is the cost,
+ * and `docs/decisions.md` default 14 already argues that a file read as configuration
+ * should fail loudly rather than quietly mean something else.
+ *
+ * **Keys outside the eleven are kept, not refused.** `save()` writes `this.data`
+ * whole, so an unknown key survives a round trip today; refusing one would turn a
+ * newer file into a dead end for an older build, and keeping a key this version does
+ * not read costs nothing.
+ */
+function assertStoredShape(parsed: unknown, path: string): Partial<SeekData> {
+  const refuse = (detail: string): never => {
+    throw new Error(
+      `${path} is not a store this version can read: ${detail}. Nothing was changed ` +
+        'or removed — the file is exactly as it was. Restore it from a backup, fix it ' +
+        'by hand, or move it aside to start over deliberately ' +
+        '(docs/design/data-model.md §7 fixes the eleven shards)',
+    );
+  };
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    return refuse(`it is ${shapeOf(parsed)}, and a store is a JSON object`);
+  }
+  const file = parsed as Record<string, unknown>;
+  const wrong: string[] = [];
+  const missing: string[] = [];
+  for (const [name, kind] of Object.entries(SHARDS)) {
+    const value = file[name];
+    if (value === undefined) {
+      missing.push(name);
+      continue;
+    }
+    const holds =
+      kind === 'table'
+        ? Array.isArray(value)
+        : typeof value === 'object' && value !== null && !Array.isArray(value);
+    if (!holds) {
+      wrong.push(`${JSON.stringify(name)} should be ${kind === 'table' ? 'an array' : 'a map of ids to rows'} and is ${shapeOf(value)}`);
+    }
+  }
+  if (wrong.length > 0) return refuse(wrong.join('; '));
+  if (missing.length > 0) {
+    return refuse(
+      `${missing.map((name) => JSON.stringify(name)).join(', ')} ` +
+        `${missing.length === 1 ? 'is' : 'are'} absent, and an absent shard would read ` +
+        'as an empty one — which loses whatever it held, silently, on the next save',
+    );
+  }
+  return file as Partial<SeekData>;
 }
