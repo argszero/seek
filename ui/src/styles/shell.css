@@ -1,0 +1,151 @@
+/* The shell's own layout. Colours come from `tokens.css` and nothing here invents one:
+   the palette file states that its values are taken verbatim from the Feishu desktop
+   client, so a hard-coded hex here would be the first drift away from that. */
+
+* { box-sizing: border-box; }
+
+html, body, #root { height: 100%; margin: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Helvetica Neue', sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--N900);
+  background: var(--N50);
+  -webkit-font-smoothing: antialiased;
+}
+
+.booting, .empty {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  color: var(--N500);
+}
+
+/* Four columns is the shape the prototype settled on: 64px rail, conversation list,
+   the message column, and a side panel that this slice does not have yet. */
+.app {
+  display: grid;
+  grid-template-columns: 64px 288px minmax(0, 1fr);
+  height: 100%;
+  background: var(--N00);
+}
+
+.rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 0;
+  background: var(--N100);
+  border-right: 1px solid var(--N300);
+}
+
+.rail-avatar,
+.rail-item {
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--N700);
+  background: var(--N300);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+
+.rail-avatar { background: var(--B500); color: var(--N00); }
+.rail-item.on { background: var(--B100); color: var(--B700); }
+
+.list-col {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--N50);
+  border-right: 1px solid var(--N300);
+}
+
+.list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 10px;
+}
+
+.list-head h1 { margin: 0; font-size: 16px; font-weight: 600; }
+.count { color: var(--N500); font-size: 12px; }
+
+.conv-list { list-style: none; margin: 0; padding: 0 8px 8px; overflow-y: auto; }
+
+.conv {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.conv:hover { background: var(--N100); }
+.conv.on { background: var(--B50); }
+
+.conv-av {
+  width: 34px;
+  height: 34px;
+  flex: none;
+  border-radius: 9px;
+  background: var(--N300);
+  color: var(--N700);
+  font-weight: 600;
+  display: grid;
+  place-items: center;
+}
+
+.conv-body { display: flex; flex-direction: column; min-width: 0; }
+.conv-name { font-weight: 500; color: var(--N900); }
+.conv-last {
+  color: var(--N500);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.main-col { display: flex; flex-direction: column; min-width: 0; background: var(--N00); }
+
+.main-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--N200);
+}
+
+.main-head h2 { margin: 0; font-size: 15px; font-weight: 600; }
+.members { color: var(--N500); font-size: 12px; }
+
+.messages { list-style: none; margin: 0; padding: 16px 20px; overflow-y: auto; flex: 1; }
+
+.msg { display: flex; gap: 10px; padding: 6px 0; }
+
+.msg-av {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--N200);
+  color: var(--N600);
+  font-size: 11px;
+  display: grid;
+  place-items: center;
+}
+
+.msg-body { display: flex; flex-direction: column; min-width: 0; }
+.msg-sender { color: var(--N500); font-size: 12px; }
+.msg-text { color: var(--N900); white-space: pre-wrap; }

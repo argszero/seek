@@ -13,7 +13,7 @@ This is not a Feishu clone. It is a multi-agent product wearing IM clothes.
 
 ## Status
 
-**The kernel exists; the interface does not.** Two design documents are settled (`docs/design/`), the kernel is written in `src/` (47 TypeScript files, ~16,568 lines, 320 tests), and the previous runnable version is kept as a reference prototype (`prototype/`).
+**The kernel exists; the interface has begun.** Three design documents are settled (`docs/design/`), the kernel is written in `src/` (47 TypeScript files, ~16,568 lines, 320 tests), and the previous runnable version is kept as a reference prototype (`prototype/`). The interface is a separate package under `ui/` — Electron running the kernel in its main process, with a React renderer — and it is at its first slice: it reads a room, its members and its messages out of the kernel and draws them. It cannot send anything yet.
 
 The prototype exists to prove one thing: that a Feishu-style interface can be carried by purely local data. It can. But its data model is single-user — one account, a cast of fake people, messages owned by conversations — which is not the model this version needs, so it cannot be refactored into it.
 
