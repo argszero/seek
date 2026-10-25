@@ -435,15 +435,7 @@ export async function requireServerShape(
   server: LlamaServer,
   prompt: WatchPrompt,
 ): Promise<ServerShape> {
-  const shape = await propsOf(server);
-  if (shape.chatTemplate.trim() === '') {
-    throw new Error(
-      "this server renders no chat template, so it would read a flat prompt: the " +
-        'shipped cut was measured on the template\'s own output, and the same model ' +
-        'read flat scores below chance (calibration/vision/remeasured.json). Start ' +
-        "the server with the model's template in effect (`--jinja`)",
-    );
-  }
+  const shape = await requireTemplate(server);
   const templated = await applyTemplate(server, userTurn(server.artifact, prompt.text));
   const spend = (await tokenise(server, templated)).length + 1;
   if (spend > shape.nCtx) {
@@ -453,6 +445,68 @@ export async function requireServerShape(
         'every judgement would overflow: llama-server keeps 0 leading tokens when it ' +
         'shifts a context, and the front it would discard is the system line the ' +
         'measured shape begins with. Start it with a larger `-c`',
+    );
+  }
+  return shape;
+}
+
+/**
+ * Refuse the shape neither half can be read from: a server with no template in effect.
+ *
+ * The one refusal stage 1 and stage 2 share verbatim, which is why it is here rather
+ * than copied into each seam. A server that renders no template answers a flat prompt,
+ * and a chat model fed one flat string is not the measurement anybody took — stage 1
+ * scores below chance on it (`calibration/vision/remeasured.json`), and stage 2 would
+ * be answering a prompt the artifact does not describe.
+ */
+async function requireTemplate(server: LlamaServer): Promise<ServerShape> {
+  const shape = await propsOf(server);
+  if (shape.chatTemplate.trim() === '') {
+    throw new Error(
+      "this server renders no chat template, so it would read a flat prompt: the " +
+        'shipped cut was measured on the template\'s own output, and the same model ' +
+        'read flat scores below chance (calibration/vision/remeasured.json). Start ' +
+        "the server with the model's template in effect (`--jinja`)",
+    );
+  }
+  return shape;
+}
+
+/**
+ * Refuse a prompt that leaves the server no room to write anything.
+ *
+ * The window refusal a **generating** turn needs, stated for a prompt rather than for
+ * a question. Two differences from `requireServerShape`, and both come from what a
+ * turn is rather than from a looser check. Nothing is read off the end of the text, so
+ * no trailing token is reserved. And the bar is `spend >= nCtx` rather than `> nCtx`: a
+ * judgement that exactly fills the window has still been read, while a turn that
+ * exactly fills it has not been answered — llama-server would shift the context to make
+ * room, keep 0 leading tokens, and drop the front of the prompt, which for a turn is
+ * the system line saying how this agent may speak at all.
+ *
+ * `about` names the prompt in the error, because this is called twice in a turn's life
+ * — once on the smallest prompt a bot could ever have, and once on the one this turn is
+ * actually given — and a refusal that did not say which could not be acted on.
+ *
+ * How much room a turn *should* have left is **not** decided here. That would be a
+ * number, and a number chosen at a call site is a number no measurement stands behind
+ * (`box.ts` on `window`, `docs/decisions.md` rows 12 and 21).
+ */
+export async function requireChatShape(
+  server: LlamaServer,
+  prompt: { system: string; user: string },
+  about: string,
+): Promise<ServerShape> {
+  const shape = await requireTemplate(server);
+  const templated = await renderTurn(server, prompt.system, prompt.user);
+  const spend = (await tokenise(server, templated)).length;
+  if (spend >= shape.nCtx) {
+    throw new Error(
+      `this server allows ${shape.nCtx} tokens per prompt (${shape.buildInfo}) and ` +
+        `${about} alone costs ${spend}, so a turn would have no room left to write a ` +
+        'single token: llama-server keeps 0 leading tokens when it shifts a context, ' +
+        'and the front it would discard is the system line that says how this agent ' +
+        'may speak. Start it with a larger `-c`',
     );
   }
   return shape;
@@ -540,9 +594,26 @@ function userTurn(artifact: PromptArtifact, text: string): string {
 
 /** The prompt the model is actually given: the server's own chat template, rendered. */
 async function applyTemplate(server: LlamaServer, user: string): Promise<string> {
+  return renderTurn(server, server.artifact.system, user);
+}
+
+/**
+ * One system line and one user turn, as the server's own template renders them.
+ *
+ * The system block is a **parameter** rather than `server.artifact.system`, because a
+ * turn's system line belongs to a different artifact than the one a `LlamaServer`
+ * carries: stage 2 is assembled from `work-v1.json`, and there is no second
+ * `LlamaServer` type for it. What both halves need from this call is one thing — the
+ * exact bytes the model will be charged for — and that is now here for both.
+ */
+async function renderTurn(
+  server: LlamaServer,
+  system: string,
+  user: string,
+): Promise<string> {
   const answer = await postJson(server, '/apply-template', {
     messages: [
-      { role: 'system', content: server.artifact.system },
+      { role: 'system', content: system },
       { role: 'user', content: user },
     ],
   });
@@ -630,6 +701,116 @@ async function chatCompletion(server: LlamaServer, parts: unknown[]): Promise<Ca
   if (!Array.isArray(content) || content.length === 0) return [];
   const candidates = (content[0] as { top_logprobs?: unknown } | null)?.top_logprobs;
   return Array.isArray(candidates) ? (candidates as Candidate[]) : [];
+}
+
+/**
+ * One tool a generating turn may call, in the shape llama-server's chat template speaks.
+ *
+ * A name, a sentence of description and a JSON Schema: this is the OpenAI tools shape,
+ * and it is what the model is shown when it decides between answering and calling.
+ */
+export interface ChatTool {
+  name: string;
+  description: string;
+  /** JSON Schema for the arguments, as `tools[].function.parameters`. */
+  parameters: unknown;
+}
+
+/** One call a model asked for. The arguments are the model's own bytes, unparsed. */
+export interface ToolCall {
+  name: string;
+  /** Raw JSON as the model produced it — parsed by the caller, so a bad one is its sentence. */
+  arguments: string;
+}
+
+/**
+ * What a generating turn answered: the text it wrote, and the tools it asked for.
+ *
+ * Both are kept because they mean different things. `toolCalls` is the turn's work —
+ * the only way anything reaches a room (`say.ts`) — while `content` is the agent's
+ * own working record, which no code path may turn into a message. A turn with no
+ * calls is a turn that said nothing, which is legal and needs no invention here.
+ */
+export interface ChatTurn {
+  content: string;
+  toolCalls: ToolCall[];
+}
+
+/**
+ * Ask the model for one generating turn.
+ *
+ * **No generation budget is passed, and that is deliberate.** `max_tokens`, a
+ * temperature and the rest of the sampler are numbers, and the record this repository
+ * keeps about numbers is that a value chosen at a call site is a value no measurement
+ * stands behind (`box.ts` on `window`, `docs/decisions.md` rows 12 and 21). A turn's
+ * length is bounded by the server's own window instead — and what a caller can and
+ * cannot afford to read is not this function's to decide.
+ *
+ * **`temperature: 0` is not a sampler choice but a reading of one.** Every other
+ * number here would be a guess about how the bot should sound; this one says the
+ * answer does not change between two runs of the same prompt, which is what makes a
+ * turn's test reproducible at all.
+ *
+ * The route is `/v1/chat/completions`, the same one the picture path takes and for the
+ * same reason: only the chat endpoint takes roles, tools and content parts.
+ */
+export async function chatTurn(
+  server: LlamaServer,
+  messages: { role: 'system' | 'user'; content: string }[],
+  tools: ChatTool[] = [],
+): Promise<ChatTurn> {
+  const body: Record<string, unknown> = { messages, temperature: 0 };
+  if (tools.length > 0) {
+    body.tools = tools.map((tool) => ({
+      type: 'function',
+      function: {
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.parameters,
+      },
+    }));
+    body.tool_choice = 'auto';
+  }
+
+  const answer = (await postJson(server, '/v1/chat/completions', body)) as {
+    choices?: unknown;
+  };
+  const choices = answer.choices;
+  if (!Array.isArray(choices) || choices.length === 0) {
+    throw new Error(
+      'the server answered no choices for a turn: a completion with nothing in it is ' +
+        'not a silent turn, it is a request that arrived nowhere',
+    );
+  }
+  const message = (choices[0] as { message?: unknown } | null)?.message as
+    | { content?: unknown; tool_calls?: unknown }
+    | null
+    | undefined;
+
+  const content = typeof message?.content === 'string' ? message.content : '';
+  const raw = Array.isArray(message?.tool_calls) ? message.tool_calls : [];
+  const toolCalls: ToolCall[] = [];
+  for (const call of raw) {
+    // Two shapes are accepted because llama-server has reported both: the OpenAI
+    // nesting (`{function: {name, arguments}}`) and a flatter one. Refusing either
+    // would make this transport depend on which build answered it.
+    const nested = (call as { function?: { name?: unknown; arguments?: unknown } } | null)?.function;
+    const flat = call as { name?: unknown; arguments?: unknown } | null;
+    const name = typeof nested?.name === 'string' ? nested.name : flat?.name;
+    if (typeof name !== 'string' || name === '') {
+      throw new Error(
+        'the model asked for a tool call with no name, so which tool it wanted cannot ' +
+          'be told — a call this runtime cannot read is not a call it may skip',
+      );
+    }
+    const args = nested?.arguments ?? flat?.arguments;
+    toolCalls.push({
+      name,
+      arguments: typeof args === 'string' ? args : JSON.stringify(args ?? {}),
+    });
+  }
+
+  return { content, toolCalls };
 }
 
 /**
