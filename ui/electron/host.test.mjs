@@ -18,7 +18,7 @@ import { test } from 'node:test'
 import { applyRoster } from '../../src/roster.ts'
 import { seedOneRoom, STUB_REPLY } from '../../src/main.ts'
 import { emptyData, SeekStore } from '../../src/store.ts'
-import { closeHost, createRoom, openHost, postMessage } from './host.js'
+import { addMember, closeHost, createRoom, openHost, postMessage } from './host.js'
 
 /**
  * A store with the kernel's own seeded world beside a roster that gives its bot a work
@@ -378,6 +378,156 @@ test('a member nobody in this store has heard of is refused by name', async () =
   const w = await world()
   try {
     await refused(w, { members: [w.scene.me, 'ou_nobody'] }, /unknown principal: ou_nobody/)
+  } finally {
+    await w.done()
+  }
+})
+
+/**
+ * The third write: somebody joins a room that already exists.
+ *
+ * Until this existed the kernel's `addMember()` had no caller anywhere in the product — a room
+ * could be made with its people and then never gain another, so "two bots in one room" was
+ * reachable only by making the room with both of them. What is measured here is the same whole
+ * path the renderer takes: `host.addMember()` → the kernel's `addMember()` → `store.save()` →
+ * a snapshot that already has the new member.
+ */
+test('a person added through the interface is in the room, in it as a member, and on disk', async () => {
+  const w = await world()
+  try {
+    // A room that does not hold the third person yet, so the add is what puts them there.
+    const made = await createRoom(w.host, { name: 'not everyone', members: [w.scene.bot] })
+    const joined = await addMember(w.host, { roomId: made.roomId, principalId: w.scene.other })
+
+    const room = joined.rooms.find((one) => one.id === made.roomId)
+    assert.deepEqual(
+      room.members.map((member) => member.id),
+      [w.scene.bot, w.scene.other],
+      'the bot it was made with, and the person who just joined',
+    )
+
+    // On disk before the snapshot was handed back, as a message and a room are. A membership
+    // drawn but not saved is a room that loses somebody on the next open, silently.
+    const reloaded = await SeekStore.load(w.storeFile)
+    const row = reloaded
+      .membershipsOf(made.roomId)
+      .find((membership) => membership.principal_id === w.scene.other)
+    assert.ok(row, 'the row is in the store, not only in the snapshot')
+    assert.equal(
+      row.role,
+      'member',
+      'the kernel default, because the interface asks for no role',
+    )
+
+    // The person the window speaks as was not in this room and is not its owner now: joining a
+    // room somebody else made is not making it, which is why `createRoom`'s me-is-owner rule
+    // does not reach here.
+    assert.equal(
+      room.members.filter((member) => member.id === w.scene.me).length,
+      0,
+      'and nobody else joined',
+    )
+  } finally {
+    await w.done()
+  }
+})
+
+/**
+ * A membership is a rule about who may speak, so the test is whether the bot answers.
+ *
+ * This is the room the kernel's own docstring names — one bot joined to a room somebody else
+ * made — and it is measured by behaviour rather than by counting rows: before the add the bot
+ * is not in the room and stage 0 opens no entry for it, so nothing answers; after the add the
+ * same message gets an answer.
+ */
+test('a bot added to a room answers in it, which is what a membership is for', async () => {
+  const w = await world()
+  try {
+    const made = await createRoom(w.host, { name: 'me alone', members: [w.scene.me] })
+
+    const before = await postMessage(w.host, { roomId: made.roomId, text: 'anyone here' })
+    assert.deepEqual(
+      before.rooms.find((one) => one.id === made.roomId).messages.map((m) => m.sender),
+      [w.scene.me],
+      'the bot is not in this room, so it is not woken and does not answer',
+    )
+
+    await addMember(w.host, { roomId: made.roomId, principalId: w.scene.bot })
+
+    const after = await postMessage(w.host, { roomId: made.roomId, text: 'and now' })
+    const messages = after.rooms.find((one) => one.id === made.roomId).messages
+    assert.deepEqual(
+      messages.slice(-2).map((message) => message.sender),
+      [w.scene.me, w.scene.bot],
+      'and now the bot in this room answers',
+    )
+    assert.equal(messages.at(-1).text, STUB_REPLY)
+  } finally {
+    await w.done()
+  }
+})
+
+/**
+ * The three refusals, each in the kernel's words and each writing nothing.
+ *
+ * `host.addMember()` re-checks none of them, which is what makes these worth measuring here:
+ * the sentence has to come from `src/rooms.ts`, and a refused membership must leave the store
+ * exactly as it was — a row that says somebody is in a room they are not in is worse than the
+ * refusal, because nothing later can tell it from a membership somebody meant.
+ */
+async function memberRefused(w, input, expected) {
+  const before = await SeekStore.load(w.storeFile)
+  const membershipsBefore = Object.keys(before.data.memberships).length
+
+  await assert.rejects(() => addMember(w.host, input), expected)
+
+  const after = await SeekStore.load(w.storeFile)
+  assert.equal(
+    Object.keys(after.data.memberships).length,
+    membershipsBefore,
+    'no membership was written',
+  )
+}
+
+test('adding somebody to a room this store does not have is refused by name', async () => {
+  const w = await world()
+  try {
+    await memberRefused(
+      w,
+      { roomId: 'oc_nothing', principalId: w.scene.me },
+      /unknown room: oc_nothing/,
+    )
+  } finally {
+    await w.done()
+  }
+})
+
+test('adding somebody this store has never heard of is refused by name', async () => {
+  const w = await world()
+  try {
+    await memberRefused(
+      w,
+      { roomId: w.scene.room, principalId: 'ou_nobody' },
+      /unknown principal: ou_nobody/,
+    )
+  } finally {
+    await w.done()
+  }
+})
+
+/**
+ * The refusal that protects the one number two other rules read: two rows for one principal is
+ * one person counted twice, and `direct` in `deriveHints` **is** that count — so a duplicated
+ * member would turn a three-person room into a direct message to the gate.
+ */
+test('adding somebody who is already in the room is refused, because a second row is a wrong count', async () => {
+  const w = await world()
+  try {
+    await memberRefused(
+      w,
+      { roomId: w.scene.room, principalId: w.scene.other },
+      /already a member of/,
+    )
   } finally {
     await w.done()
   }

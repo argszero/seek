@@ -495,3 +495,66 @@ body {
 
 /* The refusal, beside the form it belongs to rather than at the composer's margin. */
 .list-col .composer-err { margin: 0 8px 10px; }
+
+/* The member count is a button, because the list of members is also the list of who could be
+   one. Drawn as the quiet grey it already was: an affordance that shouts would make "who is
+   in this room" look like an action rather than a fact you can act on. */
+button.members {
+  padding: 2px 6px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--N500);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+button.members:hover { border-color: var(--line-border-component); color: var(--N700); }
+
+/* Who is in the room, and who could be. It sits above the messages rather than in a dialog,
+   so the room stays readable while the panel is open — the answer to "should this person be
+   here" is the conversation underneath. */
+.people-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 10px 20px 12px;
+  border-bottom: 1px solid var(--N200);
+  background: var(--bg-body);
+}
+
+.people-list { list-style: none; margin: 0; padding: 0; }
+
+.people-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: 13px;
+}
+
+.people-name { color: var(--N900); }
+
+/* A state, not a control: the row says this person is already here, and offers nothing that
+   would only be refused. */
+.people-state { margin-left: auto; color: var(--N500); font-size: 12px; }
+
+.people-add {
+  margin-left: auto;
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--line-border-component);
+  border-radius: var(--radius-sm);
+  background: var(--bg-base);
+  color: var(--N700);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.people-add:hover:not(:disabled) { background: var(--N100); }
+.people-add:disabled { opacity: 0.5; cursor: default; }
+
+.people-panel .composer-err { margin: 0 0 4px; }

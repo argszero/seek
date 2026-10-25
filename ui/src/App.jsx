@@ -49,6 +49,10 @@ export default function App() {
   const [making, setMaking] = useState(false)
   const [newName, setNewName] = useState('')
   const [picked, setPicked] = useState([])
+  // Who is in the room on show, and who could be: the panel the member count opens.
+  // `adding` is only ever the one call in flight, so a second press cannot race the first.
+  const [peopleOpen, setPeopleOpen] = useState(false)
+  const [adding, setAdding] = useState(false)
   const messagesEnd = useRef(null)
   const threadEnd = useRef(null)
 
@@ -154,8 +158,10 @@ export default function App() {
 
   function enterRoom(roomId) {
     setActiveId(roomId)
-    // A thread belongs to a room; leaving the room leaves the thread behind it.
+    // A thread belongs to a room; leaving the room leaves the thread behind it. The member
+    // panel answers "who is in this room", so it belongs to a room the same way.
     setOpenThread(null)
+    setPeopleOpen(false)
     setError(null)
   }
 
@@ -207,6 +213,32 @@ export default function App() {
       }
     } finally {
       setSending(false)
+    }
+  }
+
+  /**
+   * Put somebody into the room on show, and stay in it.
+   *
+   * One call to the main process, which hands it to the kernel's own `addMember()` — the
+   * room's memberships are the kernel's rows and this window holds no copy of them, so the
+   * snapshot that comes back is what says who is in the room now.
+   *
+   * **Nothing here decides who may join.** The panel marks who is already in, because that is
+   * a fact the snapshot states, and any Add it offers goes to the kernel — which is the one
+   * that refuses, in its own words. The panel stays open after a success on purpose: the row
+   * that just changed is the proof the click did something, and closing the panel would hide
+   * it behind a list the person would have to re-open to check.
+   */
+  async function addToRoom(principalId) {
+    if (!active || adding) return
+    setAdding(true)
+    setError(null)
+    try {
+      const outcome = await window.seekHost.addMember({ roomId: active.id, principalId })
+      if (outcome.ok) setSnap(outcome.snapshot)
+      else setError({ where: 'add-member', message: outcome.error })
+    } finally {
+      setAdding(false)
     }
   }
 
@@ -343,8 +375,57 @@ export default function App() {
           <>
             <header className="main-head">
               <h2>{active.name}</h2>
-              <span className="members">{active.members.length} members</span>
+              {/* The count is the way in. The one screen that answers "who is in this room" is
+                  also the one that changes it, because a member list that cannot grow is a
+                  read-only list — and this store's rooms are made by people. */}
+              <button
+                className="members"
+                data-people="open"
+                title="who is in this room"
+                onClick={() => setPeopleOpen((open) => !open)}
+              >
+                {active.members.length} members
+              </button>
             </header>
+
+            {peopleOpen && (
+              <div className="people-panel" data-people="panel">
+                {/* The refusal goes beside the list it belongs to, in the kernel's words. */}
+                {error?.where === 'add-member' && (
+                  <div className="composer-err" data-people="refused">
+                    {error.message}
+                  </div>
+                )}
+                <ul className="people-list">
+                  {(snap.people ?? []).map((person) => {
+                    // `inside` compares two facts the snapshot carries — who this room holds,
+                    // and who the store knows. It decides what to draw, never who may join:
+                    // the Add button goes to the kernel, which refuses in its own sentence.
+                    const inside = active.members.some((member) => member.id === person.id)
+                    return (
+                      <li key={person.id} className="people-row">
+                        <span className="people-name">{person.name}</span>
+                        {person.bot && <span className="msg-bot">bot</span>}
+                        {inside ? (
+                          <span className="people-state" data-people-in={person.id}>
+                            in this room
+                          </span>
+                        ) : (
+                          <button
+                            className="people-add"
+                            data-people-add={person.id}
+                            disabled={adding}
+                            onClick={() => addToRoom(person.id)}
+                          >
+                            Add
+                          </button>
+                        )}
+                      </li>
+                    )
+                  })}
+                </ul>
+              </div>
+            )}
 
             <ol className="messages">
               {messages.map((message) => (
