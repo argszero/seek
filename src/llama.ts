@@ -67,6 +67,7 @@ import { Buffer } from 'node:buffer';
 
 import type { BoxMedia } from './box.ts';
 import type { PromptArtifact } from './prompts.ts';
+import type { TokenUsage } from './types.ts';
 import type {
   BoundOption,
   OptionBinding,
@@ -734,6 +735,18 @@ export interface ToolCall {
 export interface ChatTurn {
   content: string;
   toolCalls: ToolCall[];
+  /**
+   * What the server says this request spent, or `null` when it said nothing.
+   *
+   * This is the only place a real figure can come from: the runtime does not count
+   * tokens — it would have to tokenise the prompt a second time and would then disagree
+   * with the server that actually read it — so what a turn records is what the server
+   * reported here. `null` rather than `0` because a server that reports no usage has
+   * said nothing about spend, and a zero written on its behalf would be a figure no
+   * measurement stands behind (`docs/host-rulings.md`, "No spending cap": recorded, and
+   * no more than that).
+   */
+  usage: TokenUsage | null;
 }
 
 /**
@@ -810,7 +823,30 @@ export async function chatTurn(
     });
   }
 
-  return { content, toolCalls };
+  return { content, toolCalls, usage: readUsage(answer) };
+}
+
+/**
+ * The `usage` block llama-server reports, or `null` when it reported none.
+ *
+ * OpenAI's shape, which llama.cpp implements: `prompt_tokens` is what the request read
+ * and `completion_tokens` what it wrote. Both are required — a block carrying one of
+ * them is not half a report this file may complete with a zero, because the missing half
+ * would then look like a measurement instead of an absence.
+ *
+ * Read off the parsed answer rather than from a second `/tokenize` round: the server
+ * already counted these tokens when it ran the request, and counting them again here
+ * would be this repository measuring its own copy of the prompt and disagreeing with the
+ * one that was actually read.
+ */
+function readUsage(answer: unknown): TokenUsage | null {
+  const usage = (answer as { usage?: unknown } | null)?.usage;
+  if (typeof usage !== 'object' || usage === null) return null;
+  const reported = usage as { prompt_tokens?: unknown; completion_tokens?: unknown };
+  const input = reported.prompt_tokens;
+  const output = reported.completion_tokens;
+  if (typeof input !== 'number' || typeof output !== 'number') return null;
+  return { input_tokens: input, output_tokens: output };
 }
 
 /**

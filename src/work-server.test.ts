@@ -33,15 +33,23 @@ interface Call {
  * without a model. Nothing here starts a process and nothing waits on one.
  *
  * `/v1/chat/completions` is the one answer a caller shapes — it *is* the model's
- * reply — so the generated text and the tool calls are the two knobs here. `/props`
- * defaults to serving `big`, which is the model `makeWorld` puts on the work row: the
- * default has to be a server that *passes* the roster check, or every other test here
- * would be measuring the refusal.
+ * reply — so the generated text, the tool calls and the usage block are the three knobs
+ * here. `/props` defaults to serving `big`, which is the model `makeWorld` puts on the
+ * work row: the default has to be a server that *passes* the roster check, or every
+ * other test here would be measuring the refusal.
  */
 function fakeServer(
   options: {
     content?: string;
     toolCalls?: unknown[];
+    /**
+     * The `usage` block this server reports, left out by default.
+     *
+     * Absent is the interesting default: a real llama-server reports one, but a
+     * recorder that always did would leave "a server that says nothing about spend"
+     * untestable, and that is the case the kernel must not fill in with a zero.
+     */
+    usage?: unknown;
     nCtx?: number;
     modelAlias?: string | null;
     modelPath?: string | null;
@@ -84,6 +92,7 @@ function fakeServer(
             },
           },
         ],
+        ...(options.usage === undefined ? {} : { usage: options.usage }),
       };
     } else {
       return { ok: false, status: 404, text: async () => 'no such route' };
@@ -349,4 +358,62 @@ test('the reply names the message it answers, when one message woke the turn', a
     entries[0].message_id,
     '§11.4 decides “replies to one of its messages” on this link',
   );
+});
+
+/**
+ * A turn carries what it spent, and the server that ran it is the only thing that knows.
+ *
+ * `docs/host-rulings.md` — "No spending cap" — asks for exactly this and nothing more:
+ * the spend **recorded** and visible, never a limit a bot stops at. Until this pair
+ * existed, every turn in every store recorded zero, so the ruling's half of the sentence
+ * that the kernel could satisfy was the half nobody had implemented.
+ */
+test('a turn records the tokens the server reported for it', async () => {
+  const world = makeWorld();
+  const recorder = fakeServer({
+    toolCalls: [sayCall(world.room, 'the batch failed on the retry queue')],
+    usage: { prompt_tokens: 812, completion_tokens: 47, total_tokens: 859 },
+  });
+  const decide = await workOverServer(world.store, world.botA, serverOf(recorder), {
+    prompt: ARTIFACT,
+  });
+
+  const record = await turnWith(world, decide, await entriesOf(world));
+
+  assert.equal(record.turn.input_tokens, 812, 'what the request read, as the server read it');
+  assert.equal(record.turn.output_tokens, 47, 'and what it wrote');
+  // The row the store keeps is the one that carries the figure — a ledger that only told
+  // the caller would leave every later reader, and the window, looking at zeros.
+  assert.equal(world.store.data.turns[0].input_tokens, 812);
+});
+
+test('a server that reports no usage leaves the turn at zero rather than inventing a figure', async () => {
+  const world = makeWorld();
+  // Text and no `usage` block: the shape a build of llama-server without the field has.
+  const recorder = fakeServer({ content: 'thinking about it' });
+  const decide = await workOverServer(world.store, world.botA, serverOf(recorder), {
+    prompt: ARTIFACT,
+  });
+
+  const record = await turnWith(world, decide, await entriesOf(world));
+
+  // `0` is "nothing was reported". The alternative — counting the prompt here — would be
+  // this repository measuring its own copy of it instead of the one the server read.
+  assert.equal(record.turn.input_tokens, 0);
+  assert.equal(record.turn.output_tokens, 0);
+});
+
+test('half a usage block is no report at all, and the half that is there is not believed', async () => {
+  const world = makeWorld();
+  const recorder = fakeServer({ usage: { prompt_tokens: 812 } });
+  const decide = await workOverServer(world.store, world.botA, serverOf(recorder), {
+    prompt: ARTIFACT,
+  });
+
+  const record = await turnWith(world, decide, await entriesOf(world));
+
+  // A figure completed with a zero is a figure that looks measured and is not: 812 read
+  // and 0 written is a claim about the answer nobody made.
+  assert.equal(record.turn.input_tokens, 0);
+  assert.equal(record.turn.output_tokens, 0);
 });

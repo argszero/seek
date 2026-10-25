@@ -43,6 +43,7 @@ import type {
   Observation,
   ScheduleRow,
   Session,
+  TokenUsage,
   Turn,
 } from './types.ts';
 
@@ -139,8 +140,16 @@ export interface TurnContext {
  *
  * The real one runs a model with the kernel's tools; the default below is a
  * turn that stays silent, which is a legal turn in every respect.
+ *
+ * **What it returns is what the turn spent, and it is the only source of that
+ * figure.** The runtime does not count tokens: it would be measuring the prompt it
+ * assembled rather than the one the server read, and the two diverge by the chat
+ * template the server wraps around it. So the decision that ran the model reports back
+ * the usage the model reported, and `runTurn` writes it on the ledger row. A decision
+ * that calls no model returns nothing, which is the placeholder path and is not the same
+ * statement as "spent zero" — the row's zeros are honest there because nothing ran.
  */
-export type Decide = (context: TurnContext) => Promise<void> | void;
+export type Decide = (context: TurnContext) => Promise<TokenUsage | void> | TokenUsage | void;
 
 export interface TurnRecord {
   turn: Turn;
@@ -157,8 +166,13 @@ const sayNothing: Decide = () => {};
  *
  * The ledger row is appended before the agent runs, so a turn that throws is
  * still audited; it is closed and saved in a `finally` for the same reason.
- * Cost stays at zero because no model is called: the numbers are the turn's,
- * and this turn's spend is wall-clock.
+ *
+ * **The two token counts are the decision's report, not this file's estimate.** A turn
+ * is where a cost is recorded — `docs/host-rulings.md`, "No spending cap", says recorded
+ * and visible and never enforced — and only the thing that ran the model knows what it
+ * spent, so `Decide` returns the figure and this file writes it down. A decision that
+ * returns nothing leaves the row's zeros, which is the placeholder path and is honest
+ * there: nothing ran, so nothing was spent.
  */
 export async function runTurn(
   store: SeekStore,
@@ -217,8 +231,12 @@ export async function runTurn(
     spec.onScheduleWritten,
   );
 
+  // What the decision reports having spent, held across the `finally` so a turn that
+  // throws still closes its row. `null` is "nobody reported anything", which is the
+  // placeholder path and also a server that answered without a usage block.
+  let spent: TokenUsage | null = null;
   try {
-    await decide({
+    spent = (await decide({
       botId: agent.bot_id,
       agentId: agent.id,
       sessionId: session.id,
@@ -228,8 +246,16 @@ export async function runTurn(
       entries: spec.entries.map(handOver),
       say,
       schedule,
-    });
+    })) ?? null;
   } finally {
+    // A turn carries what it spent, and this is the only writer of those two numbers
+    // (`docs/host-rulings.md`, "No spending cap": recorded and visible, never enforced).
+    // It is written from the decision's own report and from nothing else — a rule about
+    // what a turn *should* cost would be the spending budget the ruling refuses, wearing
+    // a different hat. A decision that threw has no report, and the row keeps the zeros
+    // it was created with rather than inventing a figure for work it cannot see.
+    turn.input_tokens = spent?.input_tokens ?? 0;
+    turn.output_tokens = spent?.output_tokens ?? 0;
     turn.ended_at = spec.now ?? new Date().toISOString();
     // §11.3: this room has now had one more bot turn in a row, with no human
     // message between. Counted when the turn ends so that the third turn's own

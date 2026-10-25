@@ -305,15 +305,44 @@ export interface Session {
   ended_at?: string;
 }
 
+/**
+ * What one turn spent, in the only currency this product has.
+ *
+ * `docs/host-rulings.md` settles what a cost is here — "No spending cap": no budget
+ * field, no "quiet because spent" state, and the spend **recorded and visible**
+ * instead. What a turn records is these two numbers, so the pair is the whole of cost
+ * rather than a summary of it.
+ *
+ * A named shape because it crosses one seam twice: the ledger row the store keeps, and
+ * the report a `Decide` hands back to the turn that ran it (`turn.ts`). Two loose fields
+ * in two places is how one of them ends up written and the other left at zero — which is
+ * the state this pair was in until it existed.
+ *
+ * There is no money in it. The model runs on the caller's own machine
+ * (`docs/decisions.md` row 20), so nothing is billed, and the only number a server
+ * reports is tokens.
+ */
+export interface TokenUsage {
+  input_tokens: number;
+  output_tokens: number;
+}
+
 /** One action by an agent: the atomic unit of cost and audit. */
-export interface Turn {
+export interface Turn extends TokenUsage {
   id: Id;
   agent_id: Id;
   session_id: Id;
   started_at: string;
   ended_at?: string;
-  input_tokens: number;
-  output_tokens: number;
+  /**
+   * Always `0`, and that is the honest figure rather than a forgotten one.
+   *
+   * Nothing is billed: the model runs on the caller's own machine
+   * (`docs/decisions.md` row 20), so a currency number would have to be invented out of
+   * a price list nobody here quoted — exactly the "a number chosen at a call site is a
+   * number no measurement stands behind" the repository refuses elsewhere. What a turn
+   * spends is its tokens, and they are above it in `TokenUsage`.
+   */
   cost: number;
   /** Messages produced by the speaking tool — never the turn's own output. */
   produced: Id[];

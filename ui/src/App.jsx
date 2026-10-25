@@ -1,6 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 
 /**
+ * Tokens are counts, so they are drawn by `Intl.NumberFormat` rather than by string
+ * arithmetic: `1204` and `1,204` are the same figure and only one of them reads as one.
+ * Constructed once, because a formatter built per render is a locale lookup per message.
+ */
+const TOKENS = new Intl.NumberFormat()
+
+/**
  * The shell: a Feishu-shaped window over the kernel's own store.
  *
  * The room list, the members, the messages and the threads all come from `snapshot()`
@@ -416,6 +423,9 @@ export default function App() {
               >
                 {active.members.length} members
               </button>
+              {/* What this room has cost, next to who is in it. A number and nothing
+                  around it, because the ruling forbids the frame a budget would need. */}
+              <Spend spend={active.spend} />
             </header>
 
             {peopleOpen && (
@@ -785,6 +795,43 @@ function StageTwo({ stage2 }) {
         write the reply
       </span>
     </div>
+  )
+}
+
+/**
+ * What the bots in this room have spent, as a number and nothing else.
+ *
+ * `docs/host-rulings.md` — "No spending cap" — shapes this, and it forbids more than it
+ * asks for: no budget field, no "quiet because spent" state, no limit a bot stops at. So
+ * there is no bar to fill, no percentage of anything, and no remaining figure, because
+ * every one of those would draw a limit the product does not have and a reader would
+ * believe the drawing. A progress bar toward nothing is a promise in a picture.
+ *
+ * What the ruling does require is that the spend be **recorded and visible**, and that is
+ * what this draws: the turns `turn.ts` wrote down, summed by the snapshot. `0 tokens` is
+ * a real reading rather than a hole — the build that ships has no model server, its bot
+ * answers through the kernel's placeholder, and a placeholder calls no model, so nothing
+ * was spent. The title carries the per-bot split: the first question a cost raises is
+ * *who* spent it, and the ruling's answer sends that reader to a persona or a gate, which
+ * one total cannot reach.
+ */
+function Spend({ spend }) {
+  if (!spend) return null
+  const total = spend.input_tokens + spend.output_tokens
+  const perBot = spend.bots
+    .map((bot) => `${bot.name}: ${TOKENS.format(bot.input_tokens + bot.output_tokens)}`)
+    .join(' · ')
+  return (
+    <span
+      className="spend"
+      data-spend={total}
+      data-spend-turns={spend.turns}
+      data-spend-in={spend.input_tokens}
+      data-spend-out={spend.output_tokens}
+      title={perBot === '' ? 'no turn has run in this room yet' : perBot}
+    >
+      {TOKENS.format(total)} tokens
+    </span>
   )
 }
 

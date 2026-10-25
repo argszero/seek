@@ -95,6 +95,71 @@ function peopleOf(store) {
   return people
 }
 
+/**
+ * What the bots in each room have spent, read off the ledger the kernel already keeps.
+ *
+ * `docs/host-rulings.md` — "No spending cap" — settles this whole shape: cost is
+ * **recorded and visible, never enforced**. So this is a read and only a read. There is
+ * no budget to compare against, no remaining figure, and nothing here that could make a
+ * window draw a limit, because the ruling forbids a limit existing at all. A percentage
+ * of anything would be an invention.
+ *
+ * **Every number comes from a turn.** `Turn` carries `input_tokens` and `output_tokens`
+ * (`src/types.ts`), `turn.ts` writes them from the model server's own report, and a turn
+ * that ran no model leaves zeros — so `0` is a real reading (the placeholder path spends
+ * nothing) and not missing data. Nothing here estimates a spend the ledger does not hold.
+ *
+ * The join is the kernel's own three facts rather than a counter kept beside them: a turn
+ * names its session, a session names its agent and its room, and an agent names its bot.
+ * A reminder's turn has no room (§12 — it is the bot's own work, not a contribution to a
+ * room), so it is counted against no room; a room's figure is therefore what was spent
+ * *in* it, which is the only thing a room's header can honestly show.
+ */
+function spendByRoom(store) {
+  const roomOfSession = new Map()
+  for (const sessions of Object.values(store.data.sessions)) {
+    for (const session of sessions) roomOfSession.set(session.id, session.room_id)
+  }
+
+  const byRoom = new Map()
+  for (const turn of store.data.turns) {
+    const roomId = roomOfSession.get(turn.session_id)
+    if (roomId === undefined) continue
+
+    const agent = store.data.agents[turn.agent_id]
+    const botId = agent ? agent.bot_id : null
+    const spend = byRoom.get(roomId) ?? { turns: 0, input_tokens: 0, output_tokens: 0, bots: [] }
+    spend.turns += 1
+    spend.input_tokens += turn.input_tokens
+    spend.output_tokens += turn.output_tokens
+
+    // Per bot as well as per room, because the figure a reader wants when a room costs
+    // something is *who* spent it — the ruling sends that reader to the bot's persona or
+    // its gate, and neither is reachable from one total.
+    const row = spend.bots.find((own) => own.id === botId) ?? null
+    if (row) {
+      row.turns += 1
+      row.input_tokens += turn.input_tokens
+      row.output_tokens += turn.output_tokens
+    } else {
+      const bot = botId === null ? undefined : store.data.bots[botId]
+      spend.bots.push({
+        id: botId,
+        name: bot && typeof bot.name === 'string' && bot.name !== '' ? bot.name : botId,
+        turns: 1,
+        input_tokens: turn.input_tokens,
+        output_tokens: turn.output_tokens,
+      })
+    }
+
+    byRoom.set(roomId, spend)
+  }
+  return byRoom
+}
+
+/** A room nothing has been spent in: no turns, and therefore no tokens. */
+const NOTHING_SPENT = { turns: 0, input_tokens: 0, output_tokens: 0, bots: [] }
+
 function snapshotOf(store, storeFile, stage1 = null, stage2 = null) {
   if (!store) {
     return {
@@ -108,6 +173,7 @@ function snapshotOf(store, storeFile, stage1 = null, stage2 = null) {
     }
   }
 
+  const spent = spendByRoom(store)
   const rooms = Object.values(store.data.rooms).map((room) => ({
     id: room.id,
     // A room's name is optional in the kernel's own type, and a room the roster
@@ -116,6 +182,9 @@ function snapshotOf(store, storeFile, stage1 = null, stage2 = null) {
     // `chat_mode` is the field; it is stored and never branched on
     // (`src/README.md` line 32), which is why the interface may show it.
     kind: room.chat_mode,
+    // What the bots in this room have spent, as the ledger holds it — a number to read,
+    // with nothing to compare it against (`docs/host-rulings.md`, "No spending cap").
+    spend: spent.get(room.id) ?? NOTHING_SPENT,
     members: store.membershipsOf(room.id).map((membership) => {
       const who = store.principal(membership.principal_id)
       const isBot = Boolean(store.data.bots[membership.principal_id])

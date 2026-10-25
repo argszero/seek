@@ -18,6 +18,7 @@ import { test } from 'node:test'
 
 import { deliver } from '../../src/delivery.ts'
 import { emptyData, SeekStore } from '../../src/store.ts'
+import { runTurn } from '../../src/turn.ts'
 import { snapshotOf } from './snapshot.js'
 
 const AT = '2026-10-25T01:00:00.000Z'
@@ -325,4 +326,57 @@ test('a message that names nobody says so rather than leaving the field off', ()
   for (const message of snapshotOf(seeded(), '/tmp/seek.json').rooms[0].messages) {
     assert.deepEqual(message.mentions, [])
   }
+})
+
+/**
+ * What the room has spent, read off the ledger rather than counted here.
+ *
+ * `docs/host-rulings.md` — "No spending cap" — asks for the spend recorded and visible
+ * and for nothing else: no budget, no remaining figure, no limit it stops at. The
+ * snapshot's whole job in that is to carry the numbers the turns already hold. So the
+ * test makes its turns the way the kernel makes them — `runTurn` opens the session and
+ * writes the row — rather than spelling a ledger out here, which is the mistake this
+ * file's own docblock records twice over.
+ */
+test('a room carries what its bots spent, per bot and in total, read off the turns', async () => {
+  const store = seeded()
+  store.data.agents['ag_work'] = {
+    id: 'ag_work',
+    bot_id: 'bo_watch',
+    role: 'work',
+    home: '/tmp/home',
+    model: 'big',
+    prompt: 'work-v1',
+    tools: ['say'],
+  }
+
+  await runTurn(store, { agentId: 'ag_work', roomId: 'rm_ops', entries: [] }, () => ({
+    input_tokens: 1_204,
+    output_tokens: 312,
+  }))
+  // A reminder's turn has no room (§12): it is the bot's own work, counted against no
+  // room — so this second turn must not move the figure the room header shows.
+  await runTurn(store, { agentId: 'ag_work', entries: [] }, () => ({
+    input_tokens: 999,
+    output_tokens: 1,
+  }))
+
+  const room = snapshotOf(store, '/tmp/seek.json').rooms[0]
+
+  assert.deepEqual(
+    { turns: room.spend.turns, input: room.spend.input_tokens, output: room.spend.output_tokens },
+    { turns: 1, input: 1_204, output: 312 },
+  )
+  // Per bot as well as per room: the first question a cost raises is who spent it.
+  assert.deepEqual(room.spend.bots, [
+    { id: 'bo_watch', name: 'watch-bot', turns: 1, input_tokens: 1_204, output_tokens: 312 },
+  ])
+})
+
+test('a room nothing has been spent in reads zeros, which is a reading rather than a gap', () => {
+  // The build that ships names no model server, so its bot answers through the kernel's
+  // placeholder, which calls no model and spends nothing. Drawing nothing at all would
+  // leave a reader unable to tell "nothing spent" from "nothing measured".
+  const room = snapshotOf(seeded(), '/tmp/seek.json').rooms[0]
+  assert.deepEqual(room.spend, { turns: 0, input_tokens: 0, output_tokens: 0, bots: [] })
 })

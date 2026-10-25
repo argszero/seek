@@ -419,3 +419,53 @@ test('the identity is read at the turn, not at the loop: a rename lands on the n
 
   assert.deepEqual(names, ['A', 'Echo']);
 });
+
+/**
+ * A turn is where a cost is recorded, and the decision that ran the model is the only
+ * thing that knows what it spent — so the figure arrives as that decision's return value.
+ *
+ * `docs/host-rulings.md`, "No spending cap": no budget field, no "quiet because spent"
+ * state, and the spend recorded and visible. The two cases below are the two halves of
+ * that sentence as the ledger sees them.
+ */
+test('a turn records the spend its decision reports, and nothing caps the figure', async () => {
+  const world = makeWorld();
+  deliver(world.store, { roomId: world.room, senderId: world.me, text: 'the batch failed' });
+  const entries = await world.store.drain(world.botA);
+
+  // Deliberately far past any plausible ceiling. The way a spending cap would come back
+  // is not a field named `budget` — it is a clamp on the way into the ledger, and a row
+  // that records what was spent however much it was is the ruling's shape.
+  const record = await runTurn(
+    world.store,
+    { agentId: world.agentA2, roomId: world.room, entries },
+    () => ({ input_tokens: 4_000_000, output_tokens: 2_000_000 }),
+  );
+
+  assert.equal(record.turn.input_tokens, 4_000_000);
+  assert.equal(record.turn.output_tokens, 2_000_000);
+  assert.equal(
+    world.store.data.turns[0].input_tokens,
+    4_000_000,
+    'the row the store keeps is the row that carries it, not a copy made for the caller',
+  );
+  // No money beside it: the model runs on the caller's own machine, so there is no bill
+  // to name and a currency field would be a figure nothing measured.
+  assert.equal(record.turn.cost, 0);
+});
+
+test('a decision that ran no model leaves the row at zero, because nothing was spent', async () => {
+  const world = makeWorld();
+  deliver(world.store, { roomId: world.room, senderId: world.me, text: 'the batch failed' });
+
+  // The shipped `sayNothing`, and the placeholder path every build without a server
+  // takes: a legal turn that calls no model at all.
+  const record = await runTurn(world.store, {
+    agentId: world.agentA2,
+    roomId: world.room,
+    entries: await world.store.drain(world.botA),
+  });
+
+  assert.equal(record.turn.input_tokens, 0);
+  assert.equal(record.turn.output_tokens, 0);
+});
