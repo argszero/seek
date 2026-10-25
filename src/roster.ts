@@ -29,10 +29,18 @@
  *   - bot: Echo          # the bot's id, or its name when that is unambiguous
  *     role: watch        # required, unique per bot
  *     tools: []          # required, `[]` is a real answer
- *     model: unset       # optional
+ *     model: unset       # optional; a claim about the server, and checked
  *     prompt: unset      # optional
  *     home: /some/dir    # optional; `agents/<bot>/<role>` beside the store
  * ```
+ *
+ * **`model` is a claim about the server, not a setting on this side.** `unset` — the
+ * default, and what the shipped roster says — claims nothing. Any other value is
+ * checked when stage 1 is bound: it must equal one of the two names the server reports
+ * for itself on `/props`, and a mismatch is refused rather than run (`watch-server.ts`,
+ * `docs/decisions.md` row 24). `prompt` is still read by nothing: the question a
+ * judgement asks belongs to the prompt artifact, not to a roster row
+ * (`agent-lifecycle.md` §"the question set is the prompt artifact's").
  *
  * Blank lines and whole-line `#` comments are skipped anywhere. Lists are the
  * one-line flow form (`[say, schedule]`) and nothing else. Indentation is two

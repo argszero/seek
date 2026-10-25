@@ -364,9 +364,18 @@ export async function bindOverServer(
 /**
  * What the server says it is, from `/props`.
  *
- * Three facts, and only the ones this file can act on: whether it will render a chat
- * template at all, how many tokens one prompt may spend, and which build answered —
- * the last so that a refusal can be pasted into a report exactly as it stands.
+ * Only the facts this file can act on: whether it will render a chat template at all,
+ * how many tokens one prompt may spend, which build answered — the last so that a
+ * refusal can be pasted into a report exactly as it stands — and, since a roster may
+ * name the model it expects, **which model is actually serving**.
+ *
+ * The two model fields were measured against the real binary rather than assumed, on
+ * a server started twice: with `--alias LFM2.5-VL-3B` it reports `model_alias` as
+ * `LFM2.5-VL-3B` and `model_path` as the weights file; with no alias, `model_alias`
+ * is the path, so the two agree. `/v1/models` reports the same string as its `id`
+ * and in `aliases`, which is the second reader agreeing. Neither string is
+ * normalised here: a comparison against them is exact, and anything softer is this
+ * file guessing which model a caller meant.
  */
 export interface ServerShape {
   /** The template the server renders, verbatim. Empty means it has none. */
@@ -375,6 +384,13 @@ export interface ServerShape {
   nCtx: number;
   /** The build that answered, e.g. `0.7.0-dev`. */
   buildInfo: string;
+  /**
+   * The name the server answers to: its `--alias` when it was given one, otherwise
+   * the weights path. Empty means it named itself not at all.
+   */
+  modelAlias: string;
+  /** The weights file it loaded, as the server reports it. */
+  modelPath: string;
   /**
    * Whether a projector is loaded, so an image could be seen at all.
    *
@@ -628,6 +644,8 @@ async function propsOf(server: LlamaServer): Promise<ServerShape> {
   const answer = (await request(server, '/props', 'GET')) as {
     chat_template?: unknown;
     build_info?: unknown;
+    model_alias?: unknown;
+    model_path?: unknown;
     modalities?: unknown;
     default_generation_settings?: { n_ctx?: unknown };
   } | null;
@@ -651,6 +669,12 @@ async function propsOf(server: LlamaServer): Promise<ServerShape> {
     chatTemplate,
     nCtx,
     buildInfo: typeof props.build_info === 'string' ? props.build_info : 'build unknown',
+    // Both read as empty when absent, which is a server that named itself not at all —
+    // not an unknown name that might match. A caller comparing a declared model
+    // against these is asking the server to confirm it, and a server that cannot is
+    // not a server that agreed.
+    modelAlias: typeof props.model_alias === 'string' ? props.model_alias : '',
+    modelPath: typeof props.model_path === 'string' ? props.model_path : '',
     // `/props` reports this as an object of booleans (`{vision, video, audio}`); a
     // server too old to report it is read as unable to see, which is the safe way
     // round: it refuses rather than claims a capability nobody confirmed.

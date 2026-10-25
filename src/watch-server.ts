@@ -2,7 +2,7 @@
  * Stage 1 wired to a server: a running model, in one call, as the loop's `Judge`.
  *
  * `watch.ts` is the rules and asks for a `WatchModel`; `llama.ts` is the transport
- * and produces one. Between the two sit four steps that have to happen in this
+ * and produces one. Between the two sit five steps that have to happen in this
  * order and in one place:
  *
  * 1. settle the artifact — the prompt, the cut and the option ids are one contract
@@ -11,10 +11,15 @@
  *    effect, or a window too small for the question alone (`requireServerShape`,
  *    `docs/decisions.md` row 21). Both failures come back as a number rather than as
  *    an error, which is why the check is here and not left to the caller;
- * 3. measure the option ids against the text the model will actually continue from,
+ * 3. refuse a roster that names one model while this server serves another
+ *    (`requireServedModel`, `docs/decisions.md` row 24) — the one claim in
+ *    `agents.yml` nothing else in the kernel reads, and the one a reader is most
+ *    likely to believe: the cut is calibrated against a model, so a run against a
+ *    different one is not the same measurement;
+ * 4. measure the option ids against the text the model will actually continue from,
  *    which for a tokeniser behind HTTP has to happen *before* the runtime is built
  *    (`bindOverServer`, because `watchAs` binds synchronously);
- * 4. build the runtime with that mask.
+ * 5. build the runtime with that mask.
  *
  * Composing those by hand at each call site is how a mask ends up measured against a
  * different prompt than the one being asked — the failure `agent-lifecycle.md` §4
@@ -37,7 +42,13 @@
  * changes what the model sees and not how its answer is named.
  */
 import type { Judge } from './inbox.ts';
-import { bindOverServer, llamaWatchModel, requireServerShape, type LlamaServer } from './llama.ts';
+import {
+  bindOverServer,
+  llamaWatchModel,
+  requireServerShape,
+  type LlamaServer,
+  type ServerShape,
+} from './llama.ts';
 import { loadPromptArtifact, skeletonOf } from './prompts.ts';
 import type { SeekStore } from './store.ts';
 import type { Id } from './types.ts';
@@ -90,8 +101,69 @@ export async function watchOverServer(
   // Then the server itself, before an id is measured on it: an id measured on a
   // server that will read the prompt flat is the right id in the wrong shape, and
   // the reading that comes back would still look like a reading.
-  await requireServerShape(server, skeleton);
+  const shape = await requireServerShape(server, skeleton);
+
+  // Then the roster's own claim about which model this is — it costs nothing, the
+  // shape is already in hand, and this is the only place the two facts can meet.
+  requireServedModel(store, botId, shape);
 
   const mask = await bindOverServer(server, skeleton, tokens);
   return watchAs(store, botId, llamaWatchModel(server), { ...options, mask });
+}
+
+/**
+ * Refuse a roster that names one model while this server serves another.
+ *
+ * `agents.yml` lets a row declare `model` (defaults 15), `Agent.model` carries it, and
+ * **until now nothing read it** — so a person could write a model name, get no
+ * complaint, and be served by whatever was in front of the port. That is the failure
+ * this repository keeps writing about in another form: a number that looks like a
+ * verdict. The cut is `0.600` calibrated *against a model*, so a judgement taken from
+ * a different one is not the same measurement, and the report would say stage 1 was a
+ * real model read without saying which model did the reading.
+ *
+ * **`unset` is not a claim, so nothing is compared.** It is the roster's default and
+ * the shipped row's state: the file has no standing to pick a model (line 26 of the
+ * checklist), and inventing a requirement here would refuse every store that never
+ * mentioned one.
+ *
+ * **The comparison is exact, against the two strings the server reports** — its
+ * `--alias` and its weights path (`ServerShape`, measured on the real binary). No
+ * basename stripping, no extension trimming, no substring: each of those is this
+ * function deciding which model a caller meant, and the whole point is that the
+ * server is the one who knows. A short name works exactly when the server was
+ * started with `--alias`, which is what that flag is for.
+ *
+ * **A server that names itself not at all cannot confirm a claim, and that is a
+ * refusal rather than a pass.** It is the same direction `visionOf` reads `modalities`
+ * in: silence is not agreement.
+ *
+ * The row consulted is the bot's **watch** row, because stage 1 is the watch half —
+ * the `work` row's model belongs to the other server, and comparing this one against
+ * that would refuse every correct roster. A bot with no watch row declares nothing to
+ * compare, which is the same case as `unset`.
+ */
+function requireServedModel(store: SeekStore, botId: Id, shape: ServerShape): void {
+  const declared = store.agentsOf(botId).find((agent) => agent.role === 'watch')?.model;
+  if (declared === undefined || declared === 'unset') return;
+
+  const served = [shape.modelAlias, shape.modelPath].filter((name) => name !== '');
+  if (served.length === 0) {
+    throw new Error(
+      `the roster declares model '${declared}' and this server names no model at all, ` +
+        'so it cannot confirm the claim: /props carried neither model_alias nor ' +
+        'model_path. Silence is not agreement — restart the server with --alias ' +
+        `'${declared}', or say 'unset' in the roster row and claim no model`,
+    );
+  }
+  if (served.includes(declared)) return;
+
+  throw new Error(
+    `the roster declares model '${declared}' but this server serves ` +
+      `${served.map((name) => `'${name}'`).join(' / ')}: the shipped cut was measured ` +
+      'against one model, so a judgement taken from another is a different ' +
+      'measurement wearing the same number. Restart the server with ' +
+      `--alias '${declared}', write the server's own name in the roster row, or say ` +
+      "'unset' and claim no model",
+  );
 }
