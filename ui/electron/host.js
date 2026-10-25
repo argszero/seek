@@ -409,6 +409,30 @@ function mediaOf(media) {
 }
 
 /**
+ * Who a message addresses, in the kernel's own pair.
+ *
+ * A copy of the `{id, name}` pairs the caller passed, and nothing else — `deliver()` stores
+ * this array on the message exactly as given (`src/delivery.ts`), and the pair is Feishu's
+ * own field for "who was named". **Which ids are people in this room is not a question this
+ * file answers**: `deriveHints()` finds a bot's own id in the array to decide `mentionsMe`,
+ * and a mention naming somebody the room does not hold wakes nobody — which is a fact about
+ * what was typed rather than a refusal some document wrote a sentence for. Inventing one
+ * here would be the window refusing what the kernel accepts, which every other write in
+ * this file avoids.
+ *
+ * `undefined` for anything that is not a list, so a message with no mention reaches
+ * `deliver()` as the empty array its own type gives it; and a pair with no two strings in
+ * it is dropped rather than stored as a mention nobody can draw.
+ */
+function mentionsOf(mentions) {
+  if (!Array.isArray(mentions)) return undefined
+  const pairs = mentions
+    .filter((one) => one && typeof one.id === 'string' && typeof one.name === 'string')
+    .map((one) => ({ id: one.id, name: one.name }))
+  return pairs.length === 0 ? undefined : pairs
+}
+
+/**
  * Say something in a room, and let the kernel answer.
  *
  * `input.rootId` is what makes it a reply: named, the message answers that one and
@@ -470,6 +494,11 @@ async function postMessage(host, input) {
     // about (`docs/decisions.md` row 17).
     kind: isPicture ? 'image' : 'text',
     media: mediaOf(input?.media),
+    // Who the message addresses. The kernel stores the pairs and derives its own answer from
+    // them per receiving bot (`mentionsMe`), so a message that names a bot is the one case
+    // stage 0 settles without asking the watch model — and until this line existed the window
+    // could not produce one (see `snapshot.js` for the other half, the drawing).
+    mentions: mentionsOf(input?.mentions),
     // A reply names the message it answers and the kernel derives the rest of the
     // thread from it: `root_id`, the chain that message belongs to, and one hop more
     // depth (`src/delivery.ts`). Nothing here decides what a thread is. A `rootId`

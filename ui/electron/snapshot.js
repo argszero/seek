@@ -138,6 +138,16 @@ function snapshotOf(store, storeFile, stage1 = null, stage2 = null) {
       media: message.media ? { key: message.media.key, mime: message.media.mime } : null,
       // The kernel's field is `created_at`; `at` is this snapshot's own name for it.
       at: message.created_at,
+      // Who this message addresses, in the kernel's own pairs: `mentions` is Feishu's field,
+      // `{id, name}` each, and rule 15 of `docs/design/data-model.md` says it is "what the
+      // interface draws as blue @-text" — so a snapshot without it is a window that cannot
+      // draw a mention at all, and the message would keep carrying one where nothing reads
+      // it. The pair is copied off the message rather than looked up in the roster, because
+      // a mention records who was named when it was said: renaming somebody afterwards does
+      // not rewrite a message that is already written, which is what "an immutable shared
+      // fact" means. `[]` and never `undefined`, for the reason `media` is `null`: a
+      // renderer facing two kinds of nothing draws whatever `undefined` does.
+      mentions: message.mentions.map((mention) => ({ id: mention.id, name: mention.name })),
       // A thread, in the kernel's own three facts (`src/types.ts`): `root_id` is the
       // message this one answers and is absent on a message that answers nothing;
       // `chain` is the root of the run this message belongs to — a message that caused

@@ -31,6 +31,18 @@ import { useEffect, useRef, useState } from 'react'
  * names the entry that woke the turn and the kernel's own chain follows it there; with
  * no work server the answer lands in the room, because `stubDecide` says its line
  * without naming what it answers.
+ *
+ * **Who a message addresses.** A message may carry `mentions[]` — Feishu's own field, each
+ * entry a `{id, name}` pair (`src/types.ts`) — and rule 15 of `docs/design/data-model.md`
+ * says that field is *"what the interface draws as blue @-text"*. So this file does both
+ * halves: the composer names who it addresses, and a line draws the pairs its message
+ * carries. The drawing reads the message and never the roster, because a mention records
+ * who was named when it was said — renaming somebody today does not rewrite what was sent
+ * last week. **@ is a choice, not a syntax**: typing the character inserts nothing, and a
+ * mention only exists because the person picked a name, which is the same rule `chip` and
+ * `media` follow — the window never guesses a fact out of the text. What the kernel does
+ * with the array is stage 0's free pass: a bot named in `mentions[]` wakes on that pass
+ * instead of waiting for the watch model to judge it (`src/gate.ts`, row 2).
  */
 export default function App() {
   const [snap, setSnap] = useState(null)
@@ -53,6 +65,12 @@ export default function App() {
   // `adding` is only ever the one call in flight, so a second press cannot race the first.
   const [peopleOpen, setPeopleOpen] = useState(false)
   const [adding, setAdding] = useState(false)
+  // Who each composer's next message addresses. Two instances rather than one list, because
+  // the room's composer and the thread's are on screen at the same time when a thread is
+  // open: a chip picked in one box must not silently name somebody in a message sent from
+  // the other. See `useMentions` below for what one of these is.
+  const roomMention = useMentions()
+  const threadMention = useMentions()
   const messagesEnd = useRef(null)
   const threadEnd = useRef(null)
 
@@ -88,7 +106,7 @@ export default function App() {
     if (threadEnd.current) threadEnd.current.scrollIntoView({ block: 'end' })
   }, [thread.length, openThread])
 
-  async function send(text, rootId, media) {
+  async function send(text, rootId, media, mention) {
     const body = typeof text === 'string' ? text.trim() : ''
     // A picture may go with no words at all — the caption is optional (`media` names the
     // bytes, and `deliver()` accepts an image with an empty text); a text message may not.
@@ -104,9 +122,17 @@ export default function App() {
         text: body,
         rootId,
         ...(media ? { kind: 'image', media: { key: media.key, mime: media.mime } } : {}),
+        // Who this message names. Sent as the pairs the person picked, and the kernel stores
+        // them on the message verbatim (`mentionsOf` in `ui/electron/host.js` copies them and
+        // decides nothing); an empty list is a message that addresses the room.
+        mentions: mention.addressed,
       })
       if (result.ok) {
         setSnap(result.snapshot)
+        // The mention belonged to the message that just went out, so the next one starts
+        // addressing nobody — a chip left behind would silently name somebody in a message
+        // written after the person stopped thinking about it.
+        mention.clear()
         if (rootId) setThreadDraft('')
         else setDraft('')
       } else {
@@ -126,7 +152,7 @@ export default function App() {
    * `image` whose reference points at nothing is refused. A cancelled dialog is not a
    * failure and draws nothing; a file the app cannot read is a sentence in the composer.
    */
-  async function attachInto(rootId) {
+  async function attachInto(rootId, mention) {
     if (!active || sending) return
     setSending(true)
     setError(null)
@@ -136,17 +162,17 @@ export default function App() {
         if (!picked.cancelled) setError({ where: rootId ? 'thread' : 'room', message: picked.error })
         return
       }
-      await send(rootId ? threadDraft : draft, rootId, picked.media)
+      await send(rootId ? threadDraft : draft, rootId, picked.media, mention)
     } finally {
       setSending(false)
     }
   }
 
-  function keyDown(event, text, rootId) {
+  function keyDown(event, text, rootId, mention) {
     // Enter sends; Shift+Enter is a newline, which is the rule every chat window has.
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault()
-      send(text, rootId)
+      send(text, rootId, undefined, mention)
     }
   }
 
@@ -162,6 +188,10 @@ export default function App() {
     // panel answers "who is in this room", so it belongs to a room the same way.
     setOpenThread(null)
     setPeopleOpen(false)
+    // So does a mention: the picker lists this room's members, and a name chosen in one room
+    // is not a name the next room holds. Dropping both is why the list can stay the room's.
+    roomMention.clear()
+    threadMention.clear()
     setError(null)
   }
 
@@ -448,17 +478,31 @@ export default function App() {
               className="composer"
               onSubmit={(event) => {
                 event.preventDefault()
-                send(draft)
+                send(draft, undefined, undefined, roomMention)
               }}
             >
+              <Mentions members={active.members} mention={roomMention} />
               <textarea
                 className="composer-input"
                 rows={1}
                 value={draft}
                 placeholder={`Message ${active.name}`}
                 onChange={(event) => setDraft(event.target.value)}
-                onKeyDown={(event) => keyDown(event, draft)}
+                onKeyDown={(event) => keyDown(event, draft, undefined, roomMention)}
               />
+              {/* The @ sits beside the picture for the same reason the picture does: it is a
+                  choice about the message, made before the words, and it survives an empty box
+                  — "hey" typed after naming Echo still addresses Echo. */}
+              <button
+                className="composer-mention"
+                type="button"
+                data-mention="open"
+                title="who this message addresses"
+                onClick={roomMention.toggleOpen}
+                disabled={sending}
+              >
+                @
+              </button>
               {/* Beside the box rather than inside it: a picture is a separate choice
                   from a caption, and the button works with the box empty — which is the
                   whole point of sending a picture. */}
@@ -466,7 +510,7 @@ export default function App() {
                 className="composer-attach"
                 type="button"
                 title="Attach a picture"
-                onClick={() => attachInto()}
+                onClick={() => attachInto(undefined, roomMention)}
                 disabled={sending}
               >
                 Picture
@@ -510,22 +554,36 @@ export default function App() {
             className="thread-composer"
             onSubmit={(event) => {
               event.preventDefault()
-              send(threadDraft, openThread)
+              send(threadDraft, openThread, undefined, threadMention)
             }}
           >
+            <Mentions members={active.members} mention={threadMention} />
             <textarea
               className="thread-composer-input"
               rows={1}
               value={threadDraft}
               placeholder="Reply in thread"
               onChange={(event) => setThreadDraft(event.target.value)}
-              onKeyDown={(event) => keyDown(event, threadDraft, openThread)}
+              onKeyDown={(event) => keyDown(event, threadDraft, openThread, threadMention)}
             />
+            {/* A reply may name somebody too, and needs it more than a room message does: the
+                bot that wrote the message being answered is woken by the reply itself
+                (`repliesToMe`), but anybody else in the room has to be named to hear it. */}
+            <button
+              className="thread-mention"
+              type="button"
+              data-mention="open-thread"
+              title="who this reply addresses"
+              onClick={threadMention.toggleOpen}
+              disabled={sending}
+            >
+              @
+            </button>
             <button
               className="thread-attach"
               type="button"
               title="Attach a picture"
-              onClick={() => attachInto(openThread)}
+              onClick={() => attachInto(openThread, threadMention)}
               disabled={sending}
             >
               Picture
@@ -537,6 +595,101 @@ export default function App() {
         </aside>
       )}
     </div>
+  )
+}
+
+/**
+ * Who one composer's next message addresses.
+ *
+ * Two of these exist — one per composer — because both boxes are on screen while a thread is
+ * open, so one shared list would let a chip picked in one box name somebody in a message sent
+ * from the other. The state belongs to the message being typed, which is why `send()` calls
+ * `clear()` the moment one goes out: a mention that outlived its message would attach itself
+ * to the next one, silently.
+ *
+ * **The pair is the kernel's own `{id, name}`** (`src/types.ts`, `Mention`), built from the
+ * member the snapshot already lists — so no name is invented here and nothing is looked up
+ * when the message is drawn.
+ */
+function useMentions() {
+  const [addressed, setAddressed] = useState([])
+  const [open, setOpen] = useState(false)
+
+  return {
+    addressed,
+    open,
+    toggleOpen: () => setOpen((was) => !was),
+    /**
+     * Name somebody, or unname them — one handler for both directions, which is why the × on
+     * a chip and the name in the picker cannot disagree about what "addressed" means.
+     */
+    toggle: (person) =>
+      setAddressed((current) =>
+        current.some((one) => one.id === person.id)
+          ? current.filter((one) => one.id !== person.id)
+          : [...current, { id: person.id, name: person.name }],
+      ),
+    clear: () => {
+      setAddressed([])
+      setOpen(false)
+    },
+  }
+}
+
+/**
+ * The names this message addresses: the chips chosen so far, and the room's who's-who.
+ *
+ * **Only the room's own members are offered, and that follows from delivery rather than from
+ * a rule invented here.** `deliver()` gives an observation to the bots in the room the message
+ * was written in (`src/delivery.ts`), so a mention naming anybody outside it would be a blue @
+ * that wakes nobody — a name that looks like it did something. The kernel has no refusal about
+ * mentions and this file does not invent one: it offers the list the room already states.
+ *
+ * Both pieces are inside the composer's own form and take a line of it (`flex-basis: 100%`
+ * with `flex-wrap`), so the chips sit above the box without a second container, a second
+ * border, or a second place for this layout to disagree with the messages above.
+ */
+function Mentions({ members, mention }) {
+  return (
+    <>
+      {mention.addressed.length > 0 && (
+        <span className="mention-row" data-mention="picked">
+          <span className="mention-lead">addressing</span>
+          {mention.addressed.map((one) => (
+            <span className="mention-chip" data-mention-chip={one.id} key={one.id}>
+              @{one.name}
+              <button
+                className="mention-drop"
+                type="button"
+                title={`stop addressing ${one.name}`}
+                data-mention-drop={one.id}
+                onClick={() => mention.toggle(one)}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </span>
+      )}
+      {mention.open && (
+        <span className="mention-pick" data-mention="picker">
+          {members.map((member) => (
+            <button
+              key={member.id}
+              className={`mention-who${
+                mention.addressed.some((one) => one.id === member.id) ? ' on' : ''
+              }`}
+              type="button"
+              data-mention-pick={member.id}
+              onClick={() => mention.toggle(member)}
+            >
+              {member.name}
+              {member.bot && <span className="msg-bot">bot</span>}
+            </button>
+          ))}
+        </span>
+      )}
+    </>
   )
 }
 
@@ -657,6 +810,21 @@ function Line({ message, sender, replies, inThread, onOpen, chip = false }) {
           {sender?.bot && <span className="msg-bot">bot</span>}
         </span>
         {picture && <Picture media={picture} />}
+        {/* Who the message named, drawn from the pairs the message carries and never from the
+            roster: `@Echo` said last week keeps the name it was said with, because a message
+            is an immutable shared fact (`docs/design/data-model.md`, rule 15). Drawn above the
+            words rather than inside them: the kernel stores `text` and `mentions[]` as two
+            fields, so threading the names back into the sentence would be a rendering guess
+            this file has no business making. */}
+        {message.mentions.length > 0 && (
+          <span className="msg-mentions">
+            {message.mentions.map((one) => (
+              <span className="msg-mention" data-mention-of={one.id} key={one.id}>
+                @{one.name}
+              </span>
+            ))}
+          </span>
+        )}
         {message.text !== '' && <span className="msg-text">{message.text}</span>}
         {chip && (
           <button className="msg-thread" data-thread-for={message.id} onClick={() => onOpen(message)}>

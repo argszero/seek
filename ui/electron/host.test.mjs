@@ -532,3 +532,60 @@ test('adding somebody who is already in the room is refused, because a second ro
     await w.done()
   }
 })
+
+/**
+ * Who the message addresses, reaching the store through the interface's own write.
+ *
+ * This is the half the window could not do at all: `deliver()` has taken `mentions` since the
+ * first kernel slice, and the renderer's one write passed every other field of a message but
+ * that one — so a person could not name anybody, and `mentionsMe` had no human author in the
+ * product. What is measured here is the whole path: `host.postMessage()` → `deliver()` → one
+ * `store.save()` → a snapshot that draws the pair, and the file that outlives the process.
+ *
+ * The name is passed through rather than resolved, which is what makes `@Echo` said today stay
+ * `@Echo`: the kernel stores the pair the sender gave it (`src/types.ts`, `Mention`).
+ */
+test('a message the person addresses to a bot carries the mention into the store and the snapshot', async () => {
+  const w = await world()
+  try {
+    const snapshot = await postMessage(w.host, {
+      roomId: w.scene.room,
+      text: 'are you there',
+      mentions: [{ id: w.scene.bot, name: 'Echo' }],
+    })
+    const first = snapshot.rooms.find((one) => one.id === w.scene.room).messages[0]
+    assert.deepEqual(first.mentions, [{ id: w.scene.bot, name: 'Echo' }], 'the snapshot draws it')
+
+    const reloaded = await SeekStore.load(w.storeFile)
+    assert.deepEqual(
+      reloaded.messagesOf(w.scene.room)[0].mentions,
+      [{ id: w.scene.bot, name: 'Echo' }],
+      'and it is on disk, where the only reader that deletes a name cannot reach it',
+    )
+  } finally {
+    await w.done()
+  }
+})
+
+/**
+ * A mention that names nobody is no mention at all.
+ *
+ * The renderer sends whatever its picker holds, and a picker is a piece of UI; the kernel's
+ * own type says a mention is a pair of strings. Copying only the pairs — the way `mediaOf`
+ * copies only `key` and `mime` — keeps a broken entry out of a message that is meant to be
+ * immutable, without inventing a refusal no document states.
+ */
+test('a mention that names nobody is stored as no mention rather than as a broken pair', async () => {
+  const w = await world()
+  try {
+    const snapshot = await postMessage(w.host, {
+      roomId: w.scene.room,
+      text: 'nobody in particular',
+      mentions: [{ id: 42 }, null, 'x', { name: 'no-id' }],
+    })
+    const first = snapshot.rooms.find((one) => one.id === w.scene.room).messages[0]
+    assert.deepEqual(first.mentions, [], 'the message carries an empty list, not four broken ones')
+  } finally {
+    await w.done()
+  }
+})
