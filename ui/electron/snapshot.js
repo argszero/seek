@@ -57,6 +57,15 @@ function snapshotOf(store, storeFile) {
       text: message.text,
       // The kernel's field is `created_at`; `at` is this snapshot's own name for it.
       at: message.created_at,
+      // A thread, in the kernel's own three facts (`src/types.ts`): `root_id` is the
+      // message this one answers and is absent on a message that answers nothing;
+      // `chain` is the root of the run this message belongs to — a message that caused
+      // nothing roots its own chain — and `depth` is how many hops from that root
+      // (`src/delivery.ts`). The interface groups by `chain` and never by anything it
+      // computes itself, so "which messages are one thread" has one answer.
+      rootId: message.root_id ?? null,
+      chain: message.chain,
+      depth: message.depth,
     })),
   }))
 

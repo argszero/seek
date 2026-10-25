@@ -3,9 +3,9 @@ import { useEffect, useRef, useState } from 'react'
 /**
  * The shell: a Feishu-shaped window over the kernel's own store.
  *
- * The room list, the members and the messages all come from `snapshot()` in the main
- * process, which is the kernel. Nothing here decides anything about the data — this
- * file draws it and, since this slice, types into it.
+ * The room list, the members, the messages and the threads all come from `snapshot()`
+ * in the main process, which is the kernel. Nothing here decides anything about the
+ * data — this file draws it, types into it, and since this slice opens a thread.
  *
  * **What the composer is.** One call, `post({ roomId, text })`. The main process hands
  * it to the kernel's own `deliver()`, saves, and wakes the bots the message reached; a
@@ -13,14 +13,32 @@ import { useEffect, useRef, useState } from 'react'
  * typed and the answer you get are therefore in the store, in that order, before either
  * is drawn — this window is a view of them, not a second copy. The line the bot answers
  * with is the kernel's stub (`src/main.ts`, `STUB_REPLY`); no model is wired yet.
+ *
+ * **What the thread panel is.** A thread is not a second conversation this file keeps:
+ * the kernel already records it. A message that answers another carries `root_id`, the
+ * `chain` of the run it belongs to and one hop more `depth` (`src/delivery.ts`), and a
+ * message that answers nothing roots its own chain. So the panel groups by `chain` —
+ * the kernel's fact — and a reply is the same `post()` call with a `rootId`. Nothing
+ * here invents a grouping rule, and no thread exists that the store does not have.
+ *
+ * The panel answers the message the thread belongs to, which is what makes every reply
+ * in it one hop from that message, the way Feishu's thread replies sit under the parent.
+ * The bot's answer lands in the room rather than in the panel, because the stub agent
+ * says its line without naming what it answers (`stubDecide`: no `replyTo`); an agent
+ * that answers into the thread is the model-wiring slice, not this one.
  */
 export default function App() {
   const [snap, setSnap] = useState(null)
   const [activeId, setActiveId] = useState(null)
   const [draft, setDraft] = useState('')
+  // The chain root of the thread on show, or null. A chain's root is the message the
+  // whole run belongs to, which is exactly what the panel replies to.
+  const [openThread, setOpenThread] = useState(null)
+  const [threadDraft, setThreadDraft] = useState('')
   const [error, setError] = useState(null)
   const [sending, setSending] = useState(false)
   const messagesEnd = useRef(null)
+  const threadEnd = useRef(null)
 
   useEffect(() => {
     window.seekHost.snapshot().then((next) => {
@@ -33,38 +51,68 @@ export default function App() {
   }, [])
 
   const active = snap?.rooms.find((room) => room.id === activeId) ?? null
+  const messages = active?.messages ?? []
+
+  // The thread, as the kernel groups it: every message whose chain is that root, the
+  // root among them, in the order the store wrote them. A message whose `chain` is its
+  // own id is the root of its chain; any other is a reply in one.
+  const thread = openThread ? messages.filter((message) => message.chain === openThread) : []
+  const repliesIn = {}
+  for (const message of messages) {
+    if (message.chain !== message.id) repliesIn[message.chain] = (repliesIn[message.chain] ?? 0) + 1
+  }
 
   // The newest line is the one you just sent, or the answer to it — so the column
   // follows the conversation instead of leaving it below the fold.
   useEffect(() => {
     if (messagesEnd.current) messagesEnd.current.scrollIntoView({ block: 'end' })
-  }, [active?.messages.length, activeId])
+  }, [messages.length, activeId])
 
-  async function send() {
-    const text = draft.trim()
-    if (!text || !active || sending) return
+  useEffect(() => {
+    if (threadEnd.current) threadEnd.current.scrollIntoView({ block: 'end' })
+  }, [thread.length, openThread])
+
+  async function send(text, rootId) {
+    const body = text.trim()
+    if (!body || !active || sending) return
     setSending(true)
     setError(null)
     try {
-      const result = await window.seekHost.post({ roomId: active.id, text })
+      // A reply is the same call with a parent named; the kernel decides the rest of
+      // the thread from it.
+      const result = await window.seekHost.post({ roomId: active.id, text: body, rootId })
       if (result.ok) {
         setSnap(result.snapshot)
-        setDraft('')
+        if (rootId) setThreadDraft('')
+        else setDraft('')
       } else {
         // Kept in the box, so what was typed is not lost to a refusal.
-        setError(result.error)
+        setError({ where: rootId ? 'thread' : 'room', message: result.error })
       }
     } finally {
       setSending(false)
     }
   }
 
-  function onKeyDown(event) {
+  function keyDown(event, text, rootId) {
     // Enter sends; Shift+Enter is a newline, which is the rule every chat window has.
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault()
-      send()
+      send(text, rootId)
     }
+  }
+
+  function openThreadOf(message) {
+    setOpenThread(message.chain)
+    setThreadDraft('')
+    setError(null)
+  }
+
+  function enterRoom(roomId) {
+    setActiveId(roomId)
+    // A thread belongs to a room; leaving the room leaves the thread behind it.
+    setOpenThread(null)
+    setError(null)
   }
 
   if (!snap) return <div className="booting">opening the store…</div>
@@ -72,7 +120,7 @@ export default function App() {
   const whoSaid = Object.fromEntries((active?.members ?? []).map((member) => [member.id, member]))
 
   return (
-    <div className="app">
+    <div className={`app${openThread ? ' with-thread' : ''}`}>
       <nav className="rail">
         <div className="rail-avatar" title={snap.me ?? 'me'}>
           {(snap.me ?? 'me').slice(0, 1).toUpperCase()}
@@ -82,7 +130,7 @@ export default function App() {
             key={room.id}
             className={`rail-item${room.id === activeId ? ' on' : ''}`}
             title={room.name}
-            onClick={() => setActiveId(room.id)}
+            onClick={() => enterRoom(room.id)}
           >
             {room.name.slice(0, 1).toUpperCase()}
           </button>
@@ -99,7 +147,7 @@ export default function App() {
             <li key={room.id}>
               <button
                 className={`conv${room.id === activeId ? ' on' : ''}`}
-                onClick={() => setActiveId(room.id)}
+                onClick={() => enterRoom(room.id)}
               >
                 <span className="conv-av">{room.name.slice(0, 1).toUpperCase()}</span>
                 <span className="conv-body">
@@ -123,34 +171,27 @@ export default function App() {
             </header>
 
             <ol className="messages">
-              {active.messages.map((message) => {
-                const sender = whoSaid[message.sender]
-                const name = sender?.name ?? message.sender
-                return (
-                  <li key={message.id} className="msg">
-                    <span className={`msg-av${sender?.bot ? ' bot' : ''}`}>
-                      {name.slice(0, 2)}
-                    </span>
-                    <span className="msg-body">
-                      <span className="msg-sender">
-                        {name}
-                        {sender?.bot && <span className="msg-bot">bot</span>}
-                      </span>
-                      <span className="msg-text">{message.text}</span>
-                    </span>
-                  </li>
-                )
-              })}
-              {active.messages.length === 0 && <li className="empty">nothing said here yet</li>}
+              {messages.map((message) => (
+                <Line
+                  key={message.id}
+                  message={message}
+                  sender={whoSaid[message.sender]}
+                  replies={repliesIn[message.chain] ?? 0}
+                  inThread={openThread !== null && message.chain === openThread}
+                  onOpen={openThreadOf}
+                  chip
+                />
+              ))}
+              {messages.length === 0 && <li className="empty">nothing said here yet</li>}
               <li ref={messagesEnd} aria-hidden="true" />
             </ol>
 
-            {error && <div className="composer-err">{error}</div>}
+            {error?.where === 'room' && <div className="composer-err">{error.message}</div>}
             <form
               className="composer"
               onSubmit={(event) => {
                 event.preventDefault()
-                send()
+                send(draft)
               }}
             >
               <textarea
@@ -159,7 +200,7 @@ export default function App() {
                 value={draft}
                 placeholder={`Message ${active.name}`}
                 onChange={(event) => setDraft(event.target.value)}
-                onKeyDown={onKeyDown}
+                onKeyDown={(event) => keyDown(event, draft)}
               />
               <button className="composer-send" type="submit" disabled={sending || draft.trim() === ''}>
                 Send
@@ -170,6 +211,81 @@ export default function App() {
           <div className="empty">no room in this store</div>
         )}
       </section>
+
+      {openThread && active && (
+        <aside className="thread-col">
+          <header className="thread-head">
+            <h3>Thread</h3>
+            <button className="thread-close" title="Close the thread" onClick={() => setOpenThread(null)}>
+              ×
+            </button>
+          </header>
+
+          <ol className="thread-list">
+            {thread.map((message) => (
+              <Line
+                key={message.id}
+                message={message}
+                sender={whoSaid[message.sender]}
+                replies={repliesIn[message.chain] ?? 0}
+                inThread={false}
+                onOpen={openThreadOf}
+              />
+            ))}
+            {thread.length === 0 && <li className="empty">this thread has nothing in it</li>}
+            <li ref={threadEnd} aria-hidden="true" />
+          </ol>
+
+          {error?.where === 'thread' && <div className="composer-err">{error.message}</div>}
+          <form
+            className="thread-composer"
+            onSubmit={(event) => {
+              event.preventDefault()
+              send(threadDraft, openThread)
+            }}
+          >
+            <textarea
+              className="thread-composer-input"
+              rows={1}
+              value={threadDraft}
+              placeholder="Reply in thread"
+              onChange={(event) => setThreadDraft(event.target.value)}
+              onKeyDown={(event) => keyDown(event, threadDraft, openThread)}
+            />
+            <button className="thread-send" type="submit" disabled={sending || threadDraft.trim() === ''}>
+              Reply
+            </button>
+          </form>
+        </aside>
+      )}
     </div>
+  )
+}
+
+/**
+ * One message, drawn the same way in the room and in the panel.
+ *
+ * `chip` is the thread's way in: a count when the chain has replies, and an invitation
+ * when it has none — because a thread that cannot be started from the message it would
+ * belong to is a panel nobody can open.
+ */
+function Line({ message, sender, replies, inThread, onOpen, chip = false }) {
+  const name = sender?.name ?? message.sender
+  return (
+    <li className={`msg${inThread ? ' on' : ''}`}>
+      <span className={`msg-av${sender?.bot ? ' bot' : ''}`}>{name.slice(0, 2)}</span>
+      <span className="msg-body">
+        <span className="msg-sender">
+          {name}
+          {sender?.bot && <span className="msg-bot">bot</span>}
+        </span>
+        <span className="msg-text">{message.text}</span>
+        {chip && (
+          <button className="msg-thread" data-thread-for={message.id} onClick={() => onOpen(message)}>
+            {replies > 0 ? `${replies} ${replies === 1 ? 'reply' : 'replies'}` : 'reply in thread'}
+          </button>
+        )}
+      </span>
+    </li>
   )
 }
