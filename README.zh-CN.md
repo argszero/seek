@@ -77,7 +77,15 @@ npm start -- --server http://127.0.0.1:8080 --window 24
 
 **从现在起还会打一个安装包，和那个 zip 并列。** 在 `ui/` 里跑 `npm run dist:pkg`，会用 macOS 自己的 `pkgbuild`（`packaging/make-pkg.mjs`）从同一个 bundle 切出 `ui/release/Seek-<版本>-arm64-mac.pkg`；装它就把 `Seek.app` 放进 `Applications`，不必再拖。做成 `.pkg` 而不是 `.dmg`，是因为 electron-builder 的 `dmg` 目标最后要调 `hdiutil create`，而开发这个仓库的环境直接拒绝它（`the operation is not permitted`），`pkgbuild` 则不被拒绝——旁边的 EMRG 项目把 macOS 下载做成 `.pkg`，也是同一个原因。打包也不该是只有某台机器才做得到的事：推一个 `v*` 标签，会在 macOS runner 上跑同一条 `npm run dist:pkg`（`.github/workflows/release.yml`），把 `.pkg` 和 `.zip` 一起挂到发布页。
 
-**第一次打开时 macOS 会拦着，因为这里什么都没签名。** 包里没有签名、也没有公证——这个项目背后没有签名身份——所以 Gatekeeper 会拒绝它。可以右键 `Seek.app` 选**打开**，或者清掉浏览器加上的那个标记：
+**第一次动它时 macOS 会拦着，因为这里什么都没签名。** 包里没有签名、也没有公证——这个项目背后没有签名身份——所以 Gatekeeper 会拒绝它。两种形状被拒的时刻不同，而 `.pkg` 在前：它在被打开时就受到评估，那时还没有任何 `Seek.app` 可以右键，所以属于「已装好的应用」的那条办法，选安装包的人照着做走不通。在已发布的 `v0.1.1` 那个 `.pkg` 上实测：`pkgutil --check-signature` 回答 `no signature`，`spctl -a -t install` 回答 `rejected`，理由是 `no usable signature`。
+
+`.pkg` 要你把**下载下来的那个文件**上的标记清掉，然后再打开一次——或者在被拒之后的一小时内，进「系统设置 → 隐私与安全性」点**仍要打开**：
+
+```bash
+xattr -d com.apple.quarantine ~/Downloads/Seek-<版本>-arm64-mac.pkg
+```
+
+`.zip` 要动的则是应用本身：解压、把 `Seek.app` 拖进 `应用程序`，然后右键它选**打开**——或者清掉装好的那个包上的标记：
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/Seek.app

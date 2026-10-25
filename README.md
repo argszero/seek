@@ -77,7 +77,15 @@ The [releases page](https://github.com/argszero/seek/releases) carries the curre
 
 **An installer is built from now on, beside that zip.** `npm run dist:pkg` in `ui/` cuts `ui/release/Seek-<version>-arm64-mac.pkg` out of the same bundle with macOS's own `pkgbuild` (`packaging/make-pkg.mjs`), and installing it puts `Seek.app` in `Applications` without the drag. It is a `.pkg` rather than a `.dmg` because electron-builder's `dmg` target ends in `hdiutil create`, which the environment this repository is developed in refuses outright (`the operation is not permitted`), while `pkgbuild` is not refused — the same reason the neighbouring EMRG project ships its macOS download as a `.pkg`. And a release should not be something one machine has to be able to build: pushing a `v*` tag runs that same `npm run dist:pkg` on a macOS runner (`.github/workflows/release.yml`) and attaches both the `.pkg` and the `.zip` to the release.
 
-**macOS will object the first time, because nothing here is signed.** The bundle carries no signature and no notarisation — there is no signing identity behind this project — so Gatekeeper refuses it. Either right-click `Seek.app` and choose **Open**, or clear the flag the browser set:
+**macOS will object the first time, because nothing here is signed.** The bundle carries no signature and no notarisation — there is no signing identity behind this project — so Gatekeeper refuses it. The two shapes are refused at different moments, and the `.pkg` first: it is assessed when it is opened, before there is any `Seek.app` to right-click, so the fix that belongs to the installed app cannot be followed by a reader who chose the installer. Measured on the published `v0.1.1` `.pkg`: `pkgutil --check-signature` answers `no signature`, and `spctl -a -t install` answers `rejected` for `no usable signature`.
+
+The `.pkg` asks you to clear the flag on **the file you downloaded**, and then to open it again — or, in the hour after the refusal, to take **Open Anyway** in System Settings → Privacy & Security:
+
+```bash
+xattr -d com.apple.quarantine ~/Downloads/Seek-<version>-arm64-mac.pkg
+```
+
+The `.zip` asks for the app: unzip, drag `Seek.app` into `Applications`, then right-click it and choose **Open** — or clear the flag on the installed bundle:
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/Seek.app

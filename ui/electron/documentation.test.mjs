@@ -32,6 +32,17 @@
  * the releases **up to** `v0.1.0` contain, a historical claim that stays true however many
  * releases follow, while `#76` names the file shapes and lets the release page carry the
  * number rather than repeating it here once per release.
+ *
+ * One part of that half is checkable after all, and it is the part that was wrong. Which
+ * shapes a release publishes is `release.yml`'s to say; what macOS does to each of them is
+ * this project's to say back, and the two are one fact seen from two sides — so the pair is
+ * a property rather than a matter of care. They had drifted apart: the remedy named only
+ * `/Applications/Seek.app`, which is where the `.zip` ends and not where a `.pkg` starts, so
+ * a reader who chose the installer was told to clear a flag on a file the refusal had
+ * prevented from existing. Measured on the published `v0.1.1` `.pkg`:
+ * `pkgutil --check-signature` answers `no signature` and `spctl -a -t install` answers
+ * `rejected` — so the refusal really does come before the app is on disk. The last test in
+ * this file holds the remedies against the shapes.
  */
 import assert from 'node:assert/strict'
 import { readdirSync, readFileSync } from 'node:fs'
@@ -99,5 +110,39 @@ test('the dev window is pointed at the port the dev server actually listens on',
     // variable, and a README that happens to name the port somewhere else says nothing.
     const nearby = text.slice(Math.max(0, at - 400), at + 400)
     assert.match(nearby, /5173/, `${document} states the port next to the variable that points at it`)
+  }
+})
+
+/**
+ * What macOS does is decided per shape, so the answer has to be per shape.
+ *
+ * A `.pkg` is assessed when it is opened, before there is any `Seek.app` on disk; a `.zip`
+ * yields an app that is assessed on first launch. One command cannot serve both, and the one
+ * that stood here served only the second — `xattr -dr com.apple.quarantine
+ * /Applications/Seek.app` names a path that a refused install never creates. So every shape
+ * the workflow publishes has to come with a command naming the thing that shape refused: the
+ * downloaded `.pkg` for one, the dragged `Seek.app` for the other. Both READMEs, because a
+ * reader who chose the installer reads one of them and not the other.
+ */
+test('a reader is told what to clear for the shape they downloaded', () => {
+  const workflow = readFileSync(join(REPO, '.github', 'workflows', 'release.yml'), 'utf8')
+  for (const extension of ['pkg', 'zip']) {
+    assert.ok(workflow.includes(`ui/release/*.${extension}`), `the release publishes a .${extension}`)
+  }
+
+  // The target is the last word of the command, which is the path xattr is asked about.
+  const targets = (document) =>
+    [...read(document).matchAll(/^xattr\s+[^\n]*?\s(\S+)$/gm)].map(([, target]) => target)
+
+  for (const document of ['README.md', 'README.zh-CN.md']) {
+    const found = targets(document)
+    assert.ok(
+      found.some((target) => target.endsWith('.pkg')),
+      `${document} says what to clear for the .pkg, which is refused before the app exists`,
+    )
+    assert.ok(
+      found.some((target) => target.endsWith('Seek.app')),
+      `${document} says what to clear for the .zip's app, which is refused on first launch`,
+    )
   }
 })
