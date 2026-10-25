@@ -47,6 +47,30 @@ seek/
 
 **Every document comes in English and Chinese, kept in step.** The Chinese version sits beside the original with a `.zh-CN.md` suffix (`README.zh-CN.md`, `docs/decisions.zh-CN.md`, …); the two are changed together, and a disagreement between them is a defect in the pair rather than one of them winning. `LICENSE` is the exception and stays English only — a translated licence is not the licence. See `CONTRIBUTING.md`.
 
+## Run the kernel
+
+**Nothing to install**: no dependencies and no build step, so a clone runs where it stands. It needs Node 22.18 or newer — the code is TypeScript, and Node strips the types itself.
+
+```bash
+npm start                      # the first milestone
+npm start -- --lang zh-CN      # the same run in Chinese
+npm start -- seek-data/b.json  # a second store, beside the shipped roster
+```
+
+What it prints is one room, a person saying something that names nobody, and whether the bot answered on its own. **Both halves of the bot are placeholders** — the decision to act, and the words said — and the report says so in as many words. What a run demonstrates is the kernel: delivery into one inbox per bot, the gate, the turn. What it cannot demonstrate is whether the design holds up; that needs a model.
+
+State lives in `seek-data/seek.json`, and a second run appends to the room the first one made — the data outliving the process is the product's own thesis, so the room grows instead of resetting. Delete that file to start over.
+
+To ask the measured watch model instead of the placeholder, point the run at a `llama-server` you have started yourself:
+
+```bash
+npm start -- --server http://127.0.0.1:8080 --window 24
+```
+
+`--server` is the origin of a process **seek does not start, supervise or stop** (`docs/decisions.md`, default 20), and `--window` is how much one judgement may read — the caller's number, because the runtime does not know a model's window. The two go together: either one alone is refused rather than half-guessed. **No weights ship with this repository**, so this is the one command here that needs something you provide.
+
+A store outside `seek-data/` needs a roster beside it. `agents.yml` is read from the store's own directory (`docs/decisions.md`, defaults 14 and 15), and a store with no roster beside it opens over a bot with no agents and refuses to run rather than inventing one.
+
 ## Run the prototype
 
 ```bash
