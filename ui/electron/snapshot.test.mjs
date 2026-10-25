@@ -176,3 +176,54 @@ test('the snapshot says which stage 1 it is, and a refusal is not the same readi
   const shut = snapshotOf(null, null, { refusal: 'why not' })
   assert.equal(shut.stage1.refusal, 'why not', 'a store that is not open still says why')
 })
+
+/**
+ * A picture reaches the interface as the kernel's own reference, never as bytes.
+ *
+ * `docs/decisions.md` row 17 gives the kernel `media` on a message — one `{key, mime}` —
+ * and says the bytes are the client's business. The snapshot is the seam between the two,
+ * so it is the one place where getting this wrong is silent: a `kind` dropped here draws a
+ * picture message as a text message with nothing in it, and a `media` dropped here draws a
+ * message that claims a picture and can never show it.
+ *
+ * The message is delivered by the kernel itself, as every message in this file is: a
+ * fixture written out by hand would be this test's idea of the shape.
+ */
+test('a picture message arrives with its kind and its reference, and the bytes stay behind', () => {
+  const store = seeded()
+  deliver(store, {
+    roomId: 'rm_ops',
+    senderId: 'pr_me',
+    text: '',
+    kind: 'image',
+    media: { key: 'om-abc123-ffffffff.png', mime: 'image/png' },
+    now: '2026-10-25T01:02:00.000Z',
+  })
+
+  const snapshot = snapshotOf(store, '/tmp/seek.json')
+  const picture = snapshot.rooms[0].messages.at(-1)
+
+  assert.equal(picture.kind, 'image', 'the kind is what makes the window draw a picture')
+  assert.deepEqual(
+    picture.media,
+    { key: 'om-abc123-ffffffff.png', mime: 'image/png' },
+    'the reference is carried whole — a key without its mime cannot be drawn',
+  )
+  assert.equal(picture.text, '', 'a captionless picture has no words, and the window decides what to say')
+  assert.equal(
+    JSON.stringify(picture).includes('base64'),
+    false,
+    'the bytes are the client’s and never travel in a snapshot, which is taken after every delivery',
+  )
+})
+
+test('a text message says it carries no picture rather than leaving the field off', () => {
+  // `null` rather than `undefined`, because a renderer branching on `kind` should not have
+  // to distinguish "no picture" from "this snapshot predates pictures": one reading draws
+  // nothing, the other is indistinguishable from a bug.
+  const snapshot = snapshotOf(seeded(), '/tmp/seek.json')
+  for (const message of snapshot.rooms[0].messages) {
+    assert.equal(message.kind, 'text')
+    assert.equal(message.media, null)
+  }
+})

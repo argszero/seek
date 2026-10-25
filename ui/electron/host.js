@@ -386,6 +386,25 @@ function closeHost(host) {
 }
 
 /**
+ * The picture reference a caller passed, in the two fields the kernel reads.
+ *
+ * A copy of the two strings and nothing else — no lookup, no check, no default. Whether
+ * they are acceptable is `mediaFor`'s question (`src/delivery.ts`), and it answers with a
+ * sentence that names the failure; a check here would be a second opinion that could pass
+ * what the kernel then refuses, or refuse with wording no document carries.
+ *
+ * `undefined` for anything that is not a pair of strings, so an `image` posted without a
+ * picture reaches `mediaFor`'s own "an image message with no image" rather than a
+ * TypeError from this file.
+ */
+function mediaOf(media) {
+  if (!media || typeof media !== 'object') return undefined
+  const { key, mime } = media
+  if (typeof key !== 'string' || typeof mime !== 'string') return undefined
+  return { key, mime }
+}
+
+/**
  * Say something in a room, and let the kernel answer.
  *
  * `input.rootId` is what makes it a reply: named, the message answers that one and
@@ -415,7 +434,11 @@ function closeHost(host) {
  */
 async function postMessage(host, input) {
   const text = typeof input?.text === 'string' ? input.text : ''
-  if (text.trim() === '') {
+  // A picture is a message whose words may be nothing: the caption is optional, and
+  // `deliver()` accepts an `image` with an empty text as long as `media` names the blob
+  // (`docs/decisions.md` row 17). A text message with no words is still not a message.
+  const isPicture = input?.kind === 'image'
+  if (text.trim() === '' && !isPicture) {
     throw new Error('an empty message is not a message, so nothing was sent')
   }
 
@@ -430,6 +453,19 @@ async function postMessage(host, input) {
     roomId,
     senderId,
     text,
+    // The kind and the picture's reference are the caller's, and neither is invented
+    // here: `mediaFor` in `src/delivery.ts` refuses an `image` with no key, a picture on
+    // a kind that disowns it, and a mime that is not `image/*`. Its sentences are what
+    // the composer shows, so this file adds no refusal of its own about pictures.
+    // **The kind is translated; the picture is passed through even when it looks wrong.**
+    // `mediaOf` copies the caller's two strings and decides nothing, so a caller that sent
+    // `media` on a text message reaches `mediaFor` and gets the kernel's own refusal —
+    // "media on a `text` message: only 'image' carries a picture". Dropping it here instead
+    // would be this file quietly discarding the bytes a caller asked to send, and an app
+    // whose picture vanished with no sentence is the silent failure this whole slice is
+    // about (`docs/decisions.md` row 17).
+    kind: isPicture ? 'image' : 'text',
+    media: mediaOf(input?.media),
     // A reply names the message it answers and the kernel derives the rest of the
     // thread from it: `root_id`, the chain that message belongs to, and one hop more
     // depth (`src/delivery.ts`). Nothing here decides what a thread is. A `rootId`

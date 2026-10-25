@@ -77,15 +77,23 @@ export default function App() {
     if (threadEnd.current) threadEnd.current.scrollIntoView({ block: 'end' })
   }, [thread.length, openThread])
 
-  async function send(text, rootId) {
-    const body = text.trim()
-    if (!body || !active || sending) return
+  async function send(text, rootId, media) {
+    const body = typeof text === 'string' ? text.trim() : ''
+    // A picture may go with no words at all — the caption is optional (`media` names the
+    // bytes, and `deliver()` accepts an image with an empty text); a text message may not.
+    if (!active || sending || (body === '' && !media)) return
     setSending(true)
     setError(null)
     try {
       // A reply is the same call with a parent named; the kernel decides the rest of
-      // the thread from it.
-      const result = await window.seekHost.post({ roomId: active.id, text: body, rootId })
+      // the thread from it. A picture is the same call with `kind` and `media`, and the
+      // kernel's own `mediaFor` is what refuses a picture it will not accept.
+      const result = await window.seekHost.post({
+        roomId: active.id,
+        text: body,
+        rootId,
+        ...(media ? { kind: 'image', media: { key: media.key, mime: media.mime } } : {}),
+      })
       if (result.ok) {
         setSnap(result.snapshot)
         if (rootId) setThreadDraft('')
@@ -94,6 +102,30 @@ export default function App() {
         // Kept in the box, so what was typed is not lost to a refusal.
         setError({ where: rootId ? 'thread' : 'room', message: result.error })
       }
+    } finally {
+      setSending(false)
+    }
+  }
+
+  /**
+   * Choose a picture and send it, with whatever is in the box as its caption.
+   *
+   * The bytes are written before this call returns (`seek:attach` in the main process), and
+   * the message that names them is posted second — the order `deliver()` requires, since an
+   * `image` whose reference points at nothing is refused. A cancelled dialog is not a
+   * failure and draws nothing; a file the app cannot read is a sentence in the composer.
+   */
+  async function attachInto(rootId) {
+    if (!active || sending) return
+    setSending(true)
+    setError(null)
+    try {
+      const picked = await window.seekHost.attach()
+      if (!picked.ok) {
+        if (!picked.cancelled) setError({ where: rootId ? 'thread' : 'room', message: picked.error })
+        return
+      }
+      await send(rootId ? threadDraft : draft, rootId, picked.media)
     } finally {
       setSending(false)
     }
@@ -158,7 +190,9 @@ export default function App() {
                 <span className="conv-body">
                   <span className="conv-name">{room.name}</span>
                   <span className="conv-last">
-                    {room.messages.at(-1)?.text ?? 'no messages yet'}
+                    {room.messages.length === 0
+                      ? 'no messages yet'
+                      : lastLineOf(room.messages.at(-1))}
                   </span>
                 </span>
               </button>
@@ -212,6 +246,18 @@ export default function App() {
                 onChange={(event) => setDraft(event.target.value)}
                 onKeyDown={(event) => keyDown(event, draft)}
               />
+              {/* Beside the box rather than inside it: a picture is a separate choice
+                  from a caption, and the button works with the box empty — which is the
+                  whole point of sending a picture. */}
+              <button
+                className="composer-attach"
+                type="button"
+                title="Attach a picture"
+                onClick={() => attachInto()}
+                disabled={sending}
+              >
+                Picture
+              </button>
               <button className="composer-send" type="submit" disabled={sending || draft.trim() === ''}>
                 Send
               </button>
@@ -262,6 +308,15 @@ export default function App() {
               onChange={(event) => setThreadDraft(event.target.value)}
               onKeyDown={(event) => keyDown(event, threadDraft, openThread)}
             />
+            <button
+              className="thread-attach"
+              type="button"
+              title="Attach a picture"
+              onClick={() => attachInto(openThread)}
+              disabled={sending}
+            >
+              Picture
+            </button>
             <button className="thread-send" type="submit" disabled={sending || threadDraft.trim() === ''}>
               Reply
             </button>
@@ -376,6 +431,10 @@ function StageTwo({ stage2 }) {
  */
 function Line({ message, sender, replies, inThread, onOpen, chip = false }) {
   const name = sender?.name ?? message.sender
+  // A picture is drawn because the kernel's `kind` says so (`docs/decisions.md` row 17),
+  // never because the text looks like one: a message whose kind disowns its bytes is one
+  // every reader drops in silence, and guessing from the text is the same drop, later.
+  const picture = message.kind === 'image' && message.media ? message.media : null
   return (
     <li className={`msg${inThread ? ' on' : ''}`}>
       <span className={`msg-av${sender?.bot ? ' bot' : ''}`}>{name.slice(0, 2)}</span>
@@ -384,7 +443,8 @@ function Line({ message, sender, replies, inThread, onOpen, chip = false }) {
           {name}
           {sender?.bot && <span className="msg-bot">bot</span>}
         </span>
-        <span className="msg-text">{message.text}</span>
+        {picture && <Picture media={picture} />}
+        {message.text !== '' && <span className="msg-text">{message.text}</span>}
         {chip && (
           <button className="msg-thread" data-thread-for={message.id} onClick={() => onOpen(message)}>
             {replies > 0 ? `${replies} ${replies === 1 ? 'reply' : 'replies'}` : 'reply in thread'}
@@ -393,4 +453,69 @@ function Line({ message, sender, replies, inThread, onOpen, chip = false }) {
       </span>
     </li>
   )
+}
+
+/**
+ * What a conversation's second line says about its newest message.
+ *
+ * A picture with a caption says the caption; a picture without one says that it is a
+ * picture. The alternative — drawing `text` — is an empty second line, which reads as a
+ * room somebody spoke in and said nothing, while the thing they sent is one click away.
+ */
+function lastLineOf(message) {
+  if (typeof message?.text === 'string' && message.text !== '') return message.text
+  if (message?.kind === 'image') return 'a picture'
+  return 'no words'
+}
+
+/**
+ * One picture message's bytes, drawn.
+ *
+ * The snapshot carries a *reference* — `{key, mime}`, the kernel's own pair — and never
+ * the bytes, so the window asks for them once per message as it draws. Three readings, and
+ * the third is why this is a component rather than an `<img src>` with a guess in it:
+ *
+ * - **shown** — the bytes are beside the store and are drawn.
+ * - **opening** — the read is in flight. Nothing is claimed yet.
+ * - **missing** — the bytes are not there, and the kernel's sentence says so. A message
+ *   that names a picture it cannot show is still a message; drawing a broken frame would
+ *   make it look like a rendering accident instead of a file that is gone
+ *   (`media.js`, on a store moved without its `media/` directory).
+ */
+function Picture({ media }) {
+  const [src, setSrc] = useState(null)
+  const [missing, setMissing] = useState(null)
+
+  useEffect(() => {
+    let live = true
+    setSrc(null)
+    setMissing(null)
+    window.seekHost.media(media).then((read) => {
+      if (!live) return
+      if (read.ok) setSrc(read.dataUrl)
+      else setMissing(read.error)
+    })
+    // The reference's two strings are the dependency, not the object: a snapshot is a new
+    // object every time the store changes, and re-reading every picture on every message
+    // would be one disk read per picture per keystroke elsewhere in the room.
+    return () => {
+      live = false
+    }
+  }, [media.key, media.mime])
+
+  if (missing) {
+    return (
+      <span className="msg-pic-missing" data-picture="missing">
+        {missing}
+      </span>
+    )
+  }
+  if (!src) {
+    return (
+      <span className="msg-pic-opening" data-picture="opening">
+        opening the picture…
+      </span>
+    )
+  }
+  return <img className="msg-pic" data-picture="shown" src={src} alt={media.key} />
 }

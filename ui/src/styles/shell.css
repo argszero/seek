@@ -233,6 +233,58 @@ body {
 .composer-send:hover:not(:disabled) { background: var(--primary-fill-hover); }
 .composer-send:disabled { opacity: 0.5; cursor: default; }
 
+/* The picture button sits beside the box and is never disabled by an empty box: sending a
+   picture with no words is the case it exists for. Drawn as a quiet outline rather than a
+   filled button, because the filled one in this row is the send and there is one of those. */
+.composer-attach,
+.thread-attach {
+  height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--line-border-component);
+  border-radius: var(--radius-md);
+  background: var(--bg-base);
+  color: var(--N700);
+  font: inherit;
+  cursor: pointer;
+}
+
+.composer-attach:hover:not(:disabled),
+.thread-attach:hover:not(:disabled) { border-color: var(--primary-fill-default); color: var(--B700); }
+.composer-attach:disabled,
+.thread-attach:disabled { opacity: 0.5; cursor: default; }
+
+/* A picture message. Capped rather than drawn at its own size: a screenshot is often
+   taller than the window, and a message that pushes the conversation off the screen is a
+   message nobody can scroll back from. `max-width: 100%` keeps it inside the column the
+   room already decided. */
+.msg-pic {
+  display: block;
+  max-width: 100%;
+  max-height: 320px;
+  margin: 4px 0;
+  border: 1px solid var(--line-divider-default);
+  border-radius: var(--radius-md);
+  object-fit: contain;
+}
+
+/* The two states that are not a picture, said in words. A broken frame would read as a
+   drawing accident; these read as the two facts they are — the read is in flight, or the
+   bytes are gone and the message is still here. */
+.msg-pic-opening {
+  margin: 4px 0;
+  color: var(--N500);
+  font-size: 12px;
+}
+
+.msg-pic-missing {
+  margin: 4px 0;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--R50);
+  color: var(--R600);
+  font-size: 12px;
+}
+
 /* A refusal is shown as itself, above the box, and never as a silent no-op. */
 .composer-err {
   margin: 0 20px;

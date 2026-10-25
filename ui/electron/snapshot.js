@@ -99,6 +99,13 @@ function snapshotOf(store, storeFile, stage1 = null, stage2 = null) {
       id: message.id,
       sender: message.sender_id,
       text: message.text,
+      // `kind` and `media` are the kernel's own two fields for a picture
+      // (`docs/decisions.md` row 17): `kind: 'image'` with one `{key, mime}` reference in
+      // `media`, present exactly when the kind is `image`. The interface draws a picture
+      // when it sees `image` and never infers it from the text, because a message whose
+      // kind says `image` and whose bytes nothing can find is a claim, not a fact.
+      kind: message.kind,
+      media: message.media ? { key: message.media.key, mime: message.media.mime } : null,
       // The kernel's field is `created_at`; `at` is this snapshot's own name for it.
       at: message.created_at,
       // A thread, in the kernel's own three facts (`src/types.ts`): `root_id` is the

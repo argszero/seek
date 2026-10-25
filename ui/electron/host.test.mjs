@@ -113,6 +113,32 @@ test('an empty message is refused rather than delivered', async () => {
 })
 
 /**
+ * A picture is either delivered or refused by the kernel — never dropped on the floor here.
+ * `media` on a text message is the kernel's to judge (`mediaFor`: "only 'image' carries a
+ * picture"), so this file forwards the reference verbatim and lets that sentence reach the
+ * caller. Dropping it instead would answer `ok` to a send whose bytes went nowhere, and a
+ * picture that vanishes with no sentence is the exact failure this slice exists to prevent
+ * (`docs/decisions.md` row 17).
+ */
+test('a picture sent on a text message is refused by the kernel, not dropped in silence', async () => {
+  const w = await world()
+  try {
+    await assert.rejects(
+      () =>
+        postMessage(w.host, {
+          roomId: w.scene.room,
+          text: 'here it is',
+          media: { key: 'media/never-written.png', mime: 'image/png' },
+        }),
+      /only 'image' carries a picture/,
+    )
+    assert.equal(w.host.store.messagesOf(w.scene.room).length, 0, 'the store is untouched')
+  } finally {
+    await w.done()
+  }
+})
+
+/**
  * The thread panel's whole claim: answering a message in it is the same write, with the
  * parent named — and the kernel turns that one fact into the rest of the thread
  * (`root_id`, `chain`, one hop more `depth`). Measured on the file, because a thread that
