@@ -113,6 +113,58 @@ test('an empty message is refused rather than delivered', async () => {
 })
 
 /**
+ * The thread panel's whole claim: answering a message in it is the same write, with the
+ * parent named — and the kernel turns that one fact into the rest of the thread
+ * (`root_id`, `chain`, one hop more `depth`). Measured on the file, because a thread that
+ * exists only in the window is a thread a restart loses.
+ */
+test('a reply posted under a message lands in that message\'s thread, on disk', async () => {
+  const w = await world()
+  try {
+    const first = await postMessage(w.host, { roomId: w.scene.room, text: 'the deploy is red' })
+    const parent = first.rooms.find((one) => one.id === w.scene.room).messages[0]
+
+    const second = await postMessage(w.host, {
+      roomId: w.scene.room,
+      text: 'looking into it',
+      rootId: parent.id,
+    })
+    const reply = second.rooms
+      .find((one) => one.id === w.scene.room)
+      .messages.find((message) => message.text === 'looking into it')
+
+    assert.equal(reply.rootId, parent.id, 'the reply names the message it answers')
+    assert.equal(reply.chain, parent.chain, 'and belongs to the chain that message roots')
+    assert.equal(reply.depth, parent.depth + 1, 'one hop further from that root')
+
+    const reloaded = await SeekStore.load(w.storeFile)
+    const onDisk = reloaded.messagesOf(w.scene.room).find((message) => message.id === reply.id)
+    assert.equal(onDisk.root_id, parent.id, 'reopening the file gives the thread back')
+    assert.equal(onDisk.chain, parent.chain)
+  } finally {
+    await w.done()
+  }
+})
+
+/**
+ * A reply to a message that is not in this room is the kernel's refusal to make, not a
+ * message this file quietly promotes to the top of the room: the thread would be wrong
+ * and nothing would say so.
+ */
+test('a reply naming a message that is not in the room is refused, and nothing is written', async () => {
+  const w = await world()
+  try {
+    await assert.rejects(
+      () => postMessage(w.host, { roomId: w.scene.room, text: 'replying to nothing', rootId: 'om_not_a_message' }),
+      /unknown message/,
+    )
+    assert.equal(w.host.store.messagesOf(w.scene.room).length, 0, 'the store is untouched')
+  } finally {
+    await w.done()
+  }
+})
+
+/**
  * Stage 0 settles some entries for free and opens no turn for the rest; a bot that is
  * not in the room gets no entry at all. Both are the kernel's rules, and the interface
  * must not be able to talk a bot into answering a room it is not in.

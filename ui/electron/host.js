@@ -1,11 +1,16 @@
 'use strict'
 
 /**
- * The interface's host: one store, one kernel, and the one write the composer makes.
+ * The interface's host: one store, one kernel, and the writes the composer makes.
  *
  * It is separate from `main.js` so that the whole of what the interface does to the
  * kernel is ordinary code that `node --test` can run without Electron. `main.js` adds
  * windows and IPC; every rule that touches the store is here.
+ *
+ * **Two writes, one path.** Saying something in a room and answering it in a thread are
+ * the same call: `postMessage` with a `rootId` is a reply, without one it is a message.
+ * The difference between a message and a reply is the kernel's, stated once in
+ * `src/delivery.ts` — this file only carries the caller's choice of parent along.
  *
  * **Nothing in this file invents behaviour.** The pieces are composed exactly as the
  * kernel's own milestone composes them (`src/main.ts`, `runFirstMilestone`): open the
@@ -75,6 +80,10 @@ function closeHost(host) {
 /**
  * Say something in a room, and let the kernel answer.
  *
+ * `input.rootId` is what makes it a reply: named, the message answers that one and
+ * joins its thread; left out, it is a message that answers nothing and roots its own
+ * chain.
+ *
  * The three steps are the kernel's, in the order the kernel states them:
  *
  * 1. **`deliver()`**, which is synchronous by design — the message and one entry per
@@ -86,7 +95,12 @@ function closeHost(host) {
  *    room whose order is wrong after a restart.
  * 3. **One wake per bot that received an entry**, through `Kernel.tick()` — the single
  *    wake path, which consults stage 0 first and opens a turn only for what survives
- *    it. A turn that threw is recorded on `kernel.failures`, never thrown out of here.
+ *    it. A turn that threw comes back out of `tick()` and therefore out of here: the
+ *    kernel hands a wake's failure to the caller that started that wake, and
+ *    `kernel.failures` is where the *comparator's* own background wakes are recorded
+ *    (`src/kernel.ts`). The message the person typed is already on disk by then, which
+ *    is why the interface shows the refusal it gets rather than claiming nothing
+ *    happened.
  *
  * What it returns is the snapshot to draw, taken after `whenIdle()` — so the bot's
  * answer is in it, not in the next one.
@@ -104,7 +118,17 @@ async function postMessage(host, input) {
   }
 
   const mods = await kernelModules()
-  const sent = mods.delivery.deliver(host.store, { roomId, senderId, text })
+  const sent = mods.delivery.deliver(host.store, {
+    roomId,
+    senderId,
+    text,
+    // A reply names the message it answers and the kernel derives the rest of the
+    // thread from it: `root_id`, the chain that message belongs to, and one hop more
+    // depth (`src/delivery.ts`). Nothing here decides what a thread is. A `rootId`
+    // that is not a message in this room is refused by `deliver()` itself, and that
+    // refusal reaches the composer as the sentence the kernel wrote.
+    rootId: typeof input?.rootId === 'string' && input.rootId !== '' ? input.rootId : undefined,
+  })
   await host.store.save()
 
   const recipients = new Set(sent.observations.map((entry) => entry.bot_id))

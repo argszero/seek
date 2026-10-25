@@ -23,13 +23,17 @@ body {
 }
 
 /* Four columns is the shape the prototype settled on: 64px rail, conversation list,
-   the message column, and a side panel that this slice does not have yet. */
+   the message column, and — while a thread is open — the thread panel. The fourth
+   column is only there when there is a thread to show: a closed panel gives its width
+   back to the room instead of standing empty. */
 .app {
   display: grid;
   grid-template-columns: 64px 288px minmax(0, 1fr);
   height: 100%;
   background: var(--N00);
 }
+
+.app.with-thread { grid-template-columns: 64px 288px minmax(0, 1fr) 340px; }
 
 .rail {
   display: flex;
@@ -213,3 +217,107 @@ body {
   color: var(--R600);
   font-size: 12px;
 }
+
+/* The thread's way in. It is a button on every message, because a thread has to be
+   startable from the message it would belong to — not only from a message that already
+   has replies. */
+.msg-thread {
+  align-self: flex-start;
+  margin-top: 2px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--B700);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.msg-thread:hover { background: var(--B50); }
+
+/* The messages of the thread on show, marked where they are in the room — so the panel
+   on the right and the line it was opened from point at each other. */
+.msg.on .msg-text { color: var(--B700); }
+
+/* The panel is the fourth column and mirrors the room's own vertical shape: a header,
+   the messages, the composer. Nothing here is a colour of its own. */
+.thread-col {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--N50);
+  border-left: 1px solid var(--N300);
+}
+
+.thread-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--N200);
+}
+
+.thread-head h3 { margin: 0; font-size: 14px; font-weight: 600; }
+
+.thread-close {
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--N500);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.thread-close:hover { background: var(--N200); color: var(--N900); }
+
+.thread-list { list-style: none; margin: 0; padding: 14px 16px; overflow-y: auto; flex: 1; }
+
+/* The panel is narrower than the room, so its rows tighten rather than its font. */
+.thread-list .msg { padding: 4px 0; }
+.thread-list .msg-av { width: 26px; height: 26px; font-size: 10px; }
+
+.thread-composer {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  padding: 10px 16px 16px;
+  border-top: 1px solid var(--line-divider-default);
+}
+
+.thread-composer-input {
+  flex: 1;
+  min-height: 36px;
+  max-height: 120px;
+  padding: 8px 10px;
+  border: 1px solid var(--line-border-component);
+  border-radius: var(--radius-md);
+  background: var(--bg-base);
+  color: var(--N900);
+  font: inherit;
+  resize: none;
+}
+
+.thread-composer-input:focus { outline: none; border-color: var(--primary-fill-default); }
+.thread-composer-input::placeholder { color: var(--text-placeholder); }
+
+.thread-send {
+  height: 36px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--primary-fill-default);
+  color: var(--primary-on-primary-fill);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.thread-send:hover:not(:disabled) { background: var(--primary-fill-hover); }
+.thread-send:disabled { opacity: 0.5; cursor: default; }
+
+/* A refusal in the panel is the same refusal as in the room, at the panel's margin. */
+.thread-col .composer-err { margin: 0 16px; }
