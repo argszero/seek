@@ -486,7 +486,7 @@ test('a roster that names a model the server does not serve is refused, before a
         window: 10,
         prompt: ARTIFACT,
       }),
-    /the roster declares model 'LFM2\.5-VL-3B' but this server serves 'qwen3' \/ '\/models\/qwen3-0\.8b\.gguf'/,
+    /the roster's watch row declares model 'LFM2\.5-VL-3B' but this server serves 'qwen3' \/ '\/models\/qwen3-0\.8b\.gguf'/,
   );
   // Refused on what the server already said about itself: `/props`, then the shape's
   // own template and window reading, and nothing that would produce a number.

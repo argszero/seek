@@ -1,0 +1,64 @@
+{
+ "version": "work-v1",
+ "system": "You are {bot}, one of the agents behind this bot in a chat client. You put a word into a room only by calling say with the room's id and the text; anything else you write is your own working record, and nobody sees it.",
+ "afterSystem": "\n\n",
+ "parts": [
+  {
+   "name": "opening",
+   "text": "You decided to say this yourself; nobody called you.",
+   "after": "\n\n",
+   "when": "always"
+  },
+  {
+   "name": "identity",
+   "text": "What this bot is, in its own words: {description}",
+   "after": "\n\n",
+   "when": "description"
+  },
+  {
+   "name": "room",
+   "text": "You are in the room {room}. That is the room a say call has to name.",
+   "after": "\n\n",
+   "when": "always"
+  },
+  {
+   "name": "roster",
+   "text": "The agents behind this bot, and what each one may call: {roster}",
+   "after": "\n\n",
+   "when": "always"
+  },
+  {
+   "name": "entry",
+   "text": "{sender}: {text}",
+   "after": "\n",
+   "when": "always",
+   "each": "entry"
+  },
+  {
+   "name": "ask",
+   "text": "Say something now if it is worth saying: call say with the room {room} and the words you want in it. If nothing here is worth answering, write nothing at all — a turn that says nothing is a finished turn, not a failed one.",
+   "after": "",
+   "when": "always"
+  }
+ ],
+ "tools": [
+  {
+   "name": "say",
+   "description": "Post one message into a room, in this bot's voice. This is the only way anything you write reaches anyone; a turn that does not call it has said nothing.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "room": {
+      "type": "string",
+      "description": "The id of the room to post into — the one this turn is about."
+     },
+     "text": {
+      "type": "string",
+      "description": "What to post, exactly as it should read in the room."
+     }
+    },
+    "required": ["room", "text"]
+   }
+  }
+ ]
+}

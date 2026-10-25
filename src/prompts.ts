@@ -294,3 +294,334 @@ function assertArtifact(value: unknown, source: string): PromptArtifact {
   }
   return artifactOut;
 }
+
+/**
+ * The turn's prompt: what the expensive half is asked when it wakes.
+ *
+ * A second artifact kind rather than a second `PromptArtifact`, and the difference
+ * is the whole reason it exists as its own contract. The watch artifact ends where
+ * an answer is **read** — its last part is unconditional because the option ids are
+ * measured at the text's own end, and a room that ended it elsewhere would move the
+ * mask (`assertArtifact`). Nothing is read at the end of a generation: the model
+ * answers by calling a tool, in the middle of whatever it writes. So the rules that
+ * keep the watch assembly's end fixed would be noise here, and what replaces them is
+ * the rule this kind does have — every placeholder a part names must be one the
+ * runtime actually fills, and a per-entry placeholder may only appear on the part
+ * that repeats.
+ *
+ * It is a file for the same reason the watch prompt is: a reader can see what the
+ * bot is told, and a change to it is a change to a versioned thing rather than an
+ * edit inside `work-server.ts` that no reviewer would find. What it does **not**
+ * carry is an operating point — there is no cut to calibrate against here, because
+ * a turn is not a verdict. Saying that plainly is worth more than a field filled
+ * with a number nobody measured.
+ *
+ * What the facts are, and what stays out: the identity arrives as `AgentIdentity`
+ * (default 16 — facts, not a sentence) and the entries arrive already stripped of
+ * the watch side's verdict and reason (`turn.ts`, `handOver`). The one thing this
+ * file adds to the record is the line §4 says opens such a turn — *"you decided to
+ * say this yourself; nobody called you"* — and it belongs in the artifact for the
+ * same reason every other sentence here does.
+ */
+
+/** One part of a turn's prompt. */
+export interface WorkPart {
+  /** The part's own name, for the error messages and for a reader of the file. */
+  name: string;
+  /** Its template, with `{bot}`, `{room}`, `{roster}`, `{sender}` or `{text}`. */
+  text: string;
+  /** What follows the part, verbatim. */
+  after: string;
+  /** `always`, or `description` for a part that is skipped when the bot has none. */
+  when: 'always' | 'description';
+  /**
+   * `entry` repeats the part once per observation the turn was woken for.
+   *
+   * Oldest first, which is the order the store wrote them: a conversation read out
+   * of order is a different conversation, and the entry that woke the turn belongs
+   * nearest the question.
+   */
+  each?: 'entry';
+}
+
+/** One versioned turn prompt, as the file states it. */
+export interface WorkArtifact {
+  /** The identity this file is. `work-v1` is the shipped one. */
+  version: string;
+  /** The head of the text, before the parts. Filled with `{bot}`. */
+  system: string;
+  /** What follows the system block. */
+  afterSystem: string;
+  /** The parts, in the order they are rendered. */
+  parts: WorkPart[];
+  /**
+   * The tools the turn is offered, as the model is shown them.
+   *
+   * Here rather than beside the transport, for the reason the rest of the prompt is
+   * here: a tool's name, its description and its argument schema are text a model
+   * reads, so they are prompt text — and prompt text is a versioned artifact rather
+   * than a string built at a call site (`docs/decisions.md` row 18). Which tools the
+   * runtime can actually *execute* is a different fact, and `work-server.ts` refuses
+   * at bind time when the file offers one it does not know.
+   *
+   * At least one, because a turn offered no tool is a turn with no way to speak at
+   * all — the shipped silence with a model bill attached.
+   */
+  tools: WorkToolDecl[];
+}
+
+/** One tool a turn is offered: the model's own view of what it may call. */
+export interface WorkToolDecl {
+  /** The name the model calls. `say` is the one the runtime executes today. */
+  name: string;
+  /** What the tool does, in the words the model reads. */
+  description: string;
+  /** JSON Schema for the arguments, as `tools[].function.parameters`. */
+  parameters: Record<string, unknown>;
+}
+
+/** What a turn's parts are filled from: the bot, the room, and who said what. */
+export interface WorkValues {
+  /** The bot's display name. */
+  bot: string;
+  /** The bot's own words about itself, or the empty string when it has none. */
+  description: string;
+  /** The room being addressed — the id the turn's `say` call has to name. */
+  room: string;
+  /** The bot's own agents, as facts rather than as prose (`identity.ts`). */
+  roster: string;
+  /** The entries the turn was woken for, **oldest first**. */
+  entries: { sender: string; text: string }[];
+}
+
+/** The shipped turn artifact's location, beside this module. */
+export function shippedWorkPromptPath(): URL {
+  return new URL('./prompts/work-v1.json', import.meta.url);
+}
+
+/**
+ * Read the turn artifact off disk and check it says what the runtime fills.
+ *
+ * Throws rather than falling back, exactly as `loadPromptArtifact` does: a runtime
+ * that substituted a built-in prompt when the file was missing would be asking the
+ * bot something nobody wrote down, under the version number of one that was.
+ */
+export function loadWorkArtifact(
+  source: string | URL = shippedWorkPromptPath(),
+): WorkArtifact {
+  let raw: string;
+  try {
+    raw = readFileSync(source, 'utf8');
+  } catch (error) {
+    throw new Error(
+      `the turn prompt artifact could not be read from ${String(source)}: ` +
+        `${(error as Error).message} — the prompt is a file, and a turn with no ` +
+        'artifact has nothing it is allowed to be asked',
+    );
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    throw new Error(
+      `the turn prompt artifact at ${String(source)} is not JSON: ${(error as Error).message}`,
+    );
+  }
+  return assertWorkArtifact(parsed, String(source));
+}
+
+/**
+ * The turn's two halves, in the file's own order.
+ *
+ * Two strings rather than one, because a chat model takes messages and not a flat
+ * prompt: the system block is what the template puts behind the system role, and
+ * the rest is one user turn. The boundary is `system + afterSystem` — the artifact
+ * says where it is, so no caller has to guess it (`llama.ts`, the watch path's
+ * header, makes the same point about the same measurement).
+ *
+ * One pass over the templates, as in `assemblePrompt`: a room message that happens
+ * to contain `{room}` is not a substitution site, and a participant must not be able
+ * to write the front of the prompt they are quoted in.
+ */
+export function assembleWorkPrompt(
+  artifact: WorkArtifact,
+  values: WorkValues,
+): { version: string; system: string; rest: string } {
+  const facts = {
+    bot: values.bot,
+    description: values.description,
+    room: values.room,
+    roster: values.roster,
+  };
+
+  // `afterSystem` opens the user turn rather than closing the system block: it is
+  // where the file says the split is, and a split taken anywhere else would hand the
+  // model a first message the artifact does not describe — the same boundary `llama.ts`
+  // measures for the watch path.
+  const out: string[] = [artifact.afterSystem];
+  for (const part of artifact.parts) {
+    if (part.when === 'description' && values.description === '') continue;
+    if (part.each === 'entry') {
+      for (const entry of values.entries) {
+        out.push(fill(part.text, { ...facts, sender: entry.sender, text: entry.text }), part.after);
+      }
+      continue;
+    }
+    out.push(fill(part.text, facts), part.after);
+  }
+
+  return {
+    version: artifact.version,
+    system: fill(artifact.system, facts),
+    rest: out.join(''),
+  };
+}
+
+/** The placeholders a turn prompt may name, and what each one may appear on. */
+const WORK_FACTS = ['bot', 'description', 'room', 'roster'] as const;
+
+/**
+ * What the runtime needs a turn artifact to say.
+ *
+ * Every check here answers a way the file could ask something nobody fills: a
+ * `{sender}` on a part that does not repeat has no sender to name, `{text}` outside
+ * a per-entry part has no message to quote, and a placeholder no one here fills is
+ * rendered literally into the prompt, where it reads as part of the instruction.
+ * `{description}` is the conditional case and gets the same treatment the watch
+ * artifact gives `{summary}`: a part that names it must be skipped when there is
+ * none, or the bot is told about a description it does not have.
+ */
+function assertWorkArtifact(value: unknown, source: string): WorkArtifact {
+  const fail = (detail: string): never => {
+    throw new Error(`${source} is not a turn prompt artifact: ${detail}`);
+  };
+  if (typeof value !== 'object' || value === null) return fail('it is not an object');
+  const artifact = value as Partial<WorkArtifact>;
+
+  if (typeof artifact.version !== 'string' || artifact.version.trim().length === 0) {
+    return fail('`version` must be a non-empty string');
+  }
+  if (typeof artifact.system !== 'string' || artifact.system.trim().length === 0) {
+    return fail('`system` must be a non-empty string');
+  }
+  if (typeof artifact.afterSystem !== 'string') {
+    return fail('`afterSystem` must be a string (use "" to join the system block directly)');
+  }
+  if (!Array.isArray(artifact.parts) || artifact.parts.length === 0) {
+    return fail('`parts` must be a non-empty array');
+  }
+
+  // The system block may name the bot and its own description, and nothing that
+  // belongs to a turn: a system line that quoted a message would be the same text
+  // for every room, which is the header `watch-v1` also refuses to let a room write.
+  for (const name of placeholdersIn(artifact.system)) {
+    if (name !== 'bot' && name !== 'description') {
+      return fail(
+        `\`system\` names {{${name}}}, which belongs to a turn rather than to the bot — ` +
+          'the system line is the same text in every room',
+      );
+    }
+  }
+
+  const parts: WorkPart[] = [];
+  for (const [index, part] of artifact.parts.entries()) {
+    const where = `parts[${index}]`;
+    if (typeof part !== 'object' || part === null) return fail(`${where} is not an object`);
+    const row = part as Partial<WorkPart>;
+    if (typeof row.name !== 'string' || row.name.trim().length === 0) {
+      return fail(`${where}.name must be a non-empty string`);
+    }
+    if (typeof row.text !== 'string' || row.text.length === 0) {
+      return fail(`${where}.text must be a non-empty string`);
+    }
+    if (typeof row.after !== 'string') return fail(`${where}.after must be a string`);
+    if (row.when !== 'always' && row.when !== 'description') {
+      return fail(`${where}.when must be "always" or "description", got ${JSON.stringify(row.when)}`);
+    }
+    if (row.each !== undefined && row.each !== 'entry') {
+      return fail(`${where}.each must be "entry" when present`);
+    }
+    if (row.each === 'entry' && row.when === 'description') {
+      return fail(`${where} cannot both repeat per entry and depend on a description`);
+    }
+
+    for (const name of placeholdersIn(row.text)) {
+      if (name === 'description' && row.when !== 'description') {
+        return fail(`${where} fills {description} but is rendered when the bot has none`);
+      }
+      if (name === 'sender' || name === 'text') {
+        if (row.each !== 'entry') {
+          return fail(
+            `${where} fills {${name}} without \`each: "entry"\`, so it has nothing to fill from`,
+          );
+        }
+        continue;
+      }
+      if (!(WORK_FACTS as readonly string[]).includes(name)) {
+        return fail(`${where} names {${name}}, which nothing here fills`);
+      }
+    }
+
+    const normalised: WorkPart = {
+      name: row.name,
+      text: row.text,
+      after: row.after,
+      when: row.when,
+    };
+    if (row.each) normalised.each = row.each;
+    parts.push(normalised);
+  }
+
+  // A per-entry part with nothing after it would glue one message onto the next,
+  // and the last entry onto whatever part follows — the text would still be a
+  // prompt, and the model would still answer, so nothing else here would notice.
+  const last = parts[parts.length - 1];
+  if (last.each === 'entry') {
+    return fail(
+      `the last part (${JSON.stringify(last.name)}) repeats per entry, so the last ` +
+        'message would run into the end of the prompt — end with a part that follows them',
+    );
+  }
+
+  // A tool the file offers and the runtime cannot show is a tool the model will never
+  // call; a tool with no name is one whose call could not be matched to anything.
+  if (!Array.isArray(artifact.tools) || artifact.tools.length === 0) {
+    return fail('`tools` must be a non-empty array: a turn offered no tool has no way to speak');
+  }
+  const tools: WorkToolDecl[] = [];
+  const seen = new Set<string>();
+  for (const [index, tool] of artifact.tools.entries()) {
+    const where = `tools[${index}]`;
+    if (typeof tool !== 'object' || tool === null) return fail(`${where} is not an object`);
+    const row = tool as Partial<WorkToolDecl>;
+    if (typeof row.name !== 'string' || row.name.trim() === '') {
+      return fail(`${where}.name must be a non-empty string`);
+    }
+    if (seen.has(row.name)) return fail(`two tools are named ${JSON.stringify(row.name)}`);
+    seen.add(row.name);
+    if (typeof row.description !== 'string' || row.description.trim() === '') {
+      return fail(`${where}.description must be a non-empty string: it is what the model reads`);
+    }
+    if (
+      typeof row.parameters !== 'object' ||
+      row.parameters === null ||
+      Array.isArray(row.parameters)
+    ) {
+      return fail(`${where}.parameters must be a JSON Schema object`);
+    }
+    tools.push({ name: row.name, description: row.description, parameters: row.parameters });
+  }
+
+  return {
+    version: artifact.version,
+    system: artifact.system,
+    afterSystem: artifact.afterSystem,
+    parts,
+    tools,
+  };
+}
+
+/** Every `{name}` a template names, in order. */
+function placeholdersIn(template: string): string[] {
+  return [...template.matchAll(/\{(\w+)\}/g)].map((match) => match[1]);
+}
