@@ -5,7 +5,7 @@
 ## 检查表
 
 - [x] `docs/decisions.md` 里没有未决项了 —— 最后三条在 2026-10-24 关闭，按「Closed by default」里写明的默认值（session 不存成员快照；watch agent 不可寻址；watch 那一轮只留在自己历史里）。设计里没有任何东西在等答案
-- [x] 落盘形状定死：`bots / agents / principals / rooms / memberships / sessions / messages / observations / turns / memories` —— messages 按房间分片、observations 按机器人分片、sessions 按 agent 分片。**`bots` 和 `agents` 是两个分片**：机器人拥有名字/头像/描述，agent 继承它们，并拥有 session、记忆、Turn 和花费
+- [x] 落盘形状定死：`bots / agents / principals / rooms / memberships / sessions[agentId] / messages[roomId] / observations[botId] / turns / memories[agentId] / schedule` —— 方括号里就是分片键，没有方括号的是整张表：messages 按房间分片、observations 按机器人分片、sessions 与 memories 按 agent 分片，而 `turns` 与 `schedule` 根本不分片。**`bots` 和 `agents` 是两个分片**：机器人拥有名字/头像/描述，agent 继承它们，并拥有 session、记忆、Turn 和花费
 - [x] 机器人级与 agent 级在任何地方都不许混。**机器人级**：身份、成员、@、成员列表、收件箱、tick、状态机。**agent 级**：模型、提示词、工具、session、记忆、Turn、花费。两种失败形态要盯：用 agent 造出来的界面列表（一个机器人显示成两个联系人）、每个 agent 一个收件箱（N 次投递、N 份「已处理」，而不是一份）
 - [x] `mentionsMe` / `repliesToMe` **在投递时对机器人算一次**，存在观察条目上。没有 agent 去房间里扫自己的名字；一旦出现 agent 级扫描，投递成本和「是不是在跟我说话」的答案就同时错了
 - [x] `mentionsMe` 由 `Message.mentions[]`（飞书字段：`{id, name}` 对）**推导**而来，方法是找本机器人自己的 id —— 而且它绝不回写到消息上。要抓的 bug 是：把「每个读者视角的布尔值」存到共享消息上，那会逼出每个机器人一份改写或复制，把一次免费的数组扫描变成一份可能与它所描述的消息不一致的存储状态

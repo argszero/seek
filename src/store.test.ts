@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -178,49 +178,79 @@ test('a key this version does not read survives a round trip', async () => {
 });
 
 /**
- * §7 of `data-model.md` names the eleven shards and the key each map is sharded by; the
- * code refuses a file that does not carry them. Nothing tied the two lists together.
+ * Every document that states the on-disk shape states it the same way, and the code
+ * agrees — because §7 and the checklist both tell a reader what the shards are.
  *
  * The sentence that made this worth a test is the one a person reads at the worst
- * possible moment — the refusal names its authority: *"docs/design/data-model.md §7 fixes
- * the eleven shards"*. A refusal citing a specification that no longer says that sends
- * its reader to a contradiction.
+ * possible moment. The store refuses a file it cannot read, and the refusal names its
+ * authority: *"docs/design/data-model.md §7 fixes the eleven shards"*. A refusal citing
+ * a specification that no longer says that sends its reader to a contradiction.
  *
- * **It had already drifted, in the one place the twin check cannot see.** §7 writes the
- * sharded maps with their key — `sessions[agentId]`, `messages[roomId]`,
- * `observations[botId]` — and wrote `memories` with none, which reads as a plain table
- * beside `turns` and `schedule`. Rule 8 of the same document says the opposite in as many
- * words (*"Memory is per agent, not per bot"*), and so does `SeekData`, whose `memories`
- * is `Record<Id, Memory[]>`. Both twins carried the same omission, so `docs.test.ts` —
- * which compares structure, not claims — saw two halves that agreed with each other and
- * with nothing else. This check is therefore against the code rather than against the
- * twin, and it is the bracket it reads, not only the name.
+ * **It had already drifted twice, in two documents.** §7 wrote `memories` with no shard
+ * key while rule 8 of the same document says *"Memory is per agent, not per bot"* (#54
+ * repaired that). And `src/README.md`'s checklist row still listed the shape it had
+ * before the schedule ruling of 2026-10-24: **ten** names, with `schedule` absent
+ * altogether, and no shard keys on the three maps that carry one. Both twins carried
+ * each omission, so `docs.test.ts` — which compares a document with its twin, structure
+ * against structure — saw two halves that agreed with each other and with nothing else.
+ * This is the check against the code, and it reads the shard key as well as the name.
  *
- * **Neither side's list is written here.** The code side is `SeekData`'s own field
- * declarations, read from source the way `calibration.test.ts` reads `llama.ts` for the
- * estimator it must name; the document side is §7's own sentence. A list kept beside the
- * test would be the second place to forget — the objection `docs.test.ts` already makes
- * to a table of twin pairs.
+ * **Nothing here lists the shards or the documents.** The code side is `SeekData`'s own
+ * field declarations, read from source the way `calibration.test.ts` reads `llama.ts`
+ * for the estimator it must name; the document side is a scan of the tree for the
+ * statement itself. A list of either kept beside this test would be the second place to
+ * forget — the objection `docs.test.ts` already makes to a table of twin pairs.
  */
 
-/** The shard names §7 lists, with the shard key it gives each one. */
-function shardListOf(text: string, name: string): { name: string; key?: string }[] {
-  const start = text.indexOf('## 7');
-  assert.ok(start >= 0, `${name} has no §7`);
-  const after = text.indexOf('\n## ', start + 1);
-  const section = after === -1 ? text.slice(start) : text.slice(start, after);
-  // The list is the one backticked span in §7 that reads as a slash-separated sequence.
-  const span = (section.match(/`[^`]+`/g) ?? []).find((own) => own.includes(' / '));
-  assert.ok(span, `${name} §7 names no slash-separated shard list`);
-  return span
-    .slice(1, -1)
-    .split('/')
-    .map((part) => part.trim())
-    .filter((part) => part.length > 0)
-    .map((part) => {
-      const [, shard, key] = part.match(/^([^[]+)(?:\[(.+)\])?$/) ?? [];
-      return key === undefined ? { name: shard } : { name: shard, key };
+/** A shard list as a document states it: names, and the key each map is sharded by. */
+interface ShardStatement {
+  where: string;
+  shards: { name: string; key?: string }[];
+}
+
+/** Directories that hold no document of this repository. */
+const NOT_DOCUMENTS = new Set(['node_modules', '.git', '.emrg', 'dist', 'prototype']);
+
+/**
+ * Every statement of the shard list in the tree.
+ *
+ * Matched **line by line**, not over the whole file: these documents use backticks in
+ * prose that do not pair up across the file as a whole, and a file-wide scan pairs them
+ * wrongly — it swallowed §7's own list into a span beginning several paragraphs earlier
+ * when this was first written, which is how a scan reports zero problems on a broken
+ * tree. A statement is one backticked span on one line that reads as a slash-separated
+ * sequence starting with a shard the code has.
+ */
+function shardStatements(): ShardStatement[] {
+  const known = new Set(Object.keys(emptyData()));
+  const root = fileURLToPath(new URL('../', import.meta.url));
+  const found: ShardStatement[] = [];
+  for (const entry of readdirSync(root, { recursive: true })) {
+    const name = String(entry);
+    if (!name.endsWith('.md')) continue;
+    if (name.split('/').some((part) => NOT_DOCUMENTS.has(part))) continue;
+    const text = readFileSync(join(root, name), 'utf8');
+    text.split('\n').forEach((line, index) => {
+      for (const match of line.matchAll(/`([^`]+)`/g)) {
+        const span = match[1];
+        if (!span.includes(' / ')) continue;
+        const parts = span
+          .split('/')
+          .map((part) => part.trim())
+          .filter((part) => part.length > 0);
+        const first = (parts[0] ?? '').split('[')[0];
+        if (!known.has(first)) continue;
+        found.push({
+          where: `${name}:${index + 1}`,
+          shards: parts.map((part) => {
+            const [, shard, key] = part.match(/^([^[]+)(?:\[(.+)\])?$/) ?? [];
+            return key === undefined ? { name: shard } : { name: shard, key };
+          }),
+        });
+      }
     });
+  }
+  return found;
 }
 
 /**
@@ -250,47 +280,39 @@ function declaredShards(source: string): {
   return { sharded, keyed, tables };
 }
 
-test('the shards the refusal names are the shards the specification fixes', () => {
-  const english = shardListOf(
-    readFileSync(join(ROOT, 'docs/design/data-model.md'), 'utf8'),
-    'data-model.md',
-  );
-  const chinese = shardListOf(
-    readFileSync(join(ROOT, 'docs/design/data-model.zh-CN.md'), 'utf8'),
-    'data-model.zh-CN.md',
-  );
+test('every document that states the on-disk shape states the one the code has', () => {
+  const statements = shardStatements();
   const code = declaredShards(readFileSync(join(ROOT, 'src/store.ts'), 'utf8'));
 
-  // Anti-vacuity: an extraction that found nothing would agree with every rule below.
-  assert.ok(english.length >= 8, `only ${english.length} shards were read out of §7`);
+  // Anti-vacuity, both halves. A scan that found no statement would agree with every
+  // rule below without reading anything, and a parse that found no field would call
+  // every document correct.
+  assert.ok(statements.length >= 2, `only ${statements.length} statements of the shard list were found`);
+  assert.ok(
+    new Set(statements.map((own) => own.where.split(':')[0])).size >= 2,
+    'every statement of the shard list came from one file — the scan is not reading the tree',
+  );
   assert.ok(code.sharded.length >= 3, `only ${code.sharded.length} sharded maps were read`);
   assert.ok(code.keyed.length >= 3, `only ${code.keyed.length} keyed maps were read`);
   assert.ok(code.tables.length >= 2, `only ${code.tables.length} tables were read`);
 
-  const named = english.map((part) => part.name).sort();
-  assert.deepEqual(
-    named,
-    [...code.sharded, ...code.keyed, ...code.tables].sort(),
-    'docs/design/data-model.md §7 and the `SeekData` interface name different shards — ' +
-      'the store refuses a file for shards it does not find and tells its reader §7 fixes ' +
-      'them, so a shard added on one side alone makes that message point at a contradiction',
-  );
-
-  // The claim the drift was in: a map the code shards by an id is written with that shard
-  // key, and a plain table is not. Comparing names alone is what let this sit unnoticed.
-  const bracketed = english.filter((part) => part.key !== undefined).map((part) => part.name);
-  assert.deepEqual(
-    bracketed.sort(),
-    [...code.sharded].sort(),
-    '§7 and `SeekData` disagree about which shards are sharded — §7 marks a sharded map ' +
-      'with its shard key (`sessions[agentId]`), and a map that carries `Record<Id, X[]>` ' +
-      'is sharded by that id',
-  );
-
-  // And the pair states one list: the twin of a document is the document.
-  assert.deepEqual(
-    chinese.map((part) => `${part.name}${part.key === undefined ? '' : `[${part.key}]`}`),
-    english.map((part) => `${part.name}${part.key === undefined ? '' : `[${part.key}]`}`),
-    'docs/design/data-model.md §7 and its Chinese twin list different shards',
-  );
+  const everyName = [...code.sharded, ...code.keyed, ...code.tables].sort();
+  for (const statement of statements) {
+    assert.deepEqual(
+      statement.shards.map((own) => own.name).sort(),
+      everyName,
+      `${statement.where} states a shard list the code does not have — the store refuses ` +
+        'a file for shards it does not find and tells its reader §7 fixes them, so a ' +
+        'document that disagrees makes that message point at a contradiction',
+    );
+    // The claim the drift was actually in. Comparing names alone let both omissions sit
+    // unnoticed: `schedule` was missing outright, and `memories` was missing its key.
+    assert.deepEqual(
+      statement.shards.filter((own) => own.key !== undefined).map((own) => own.name).sort(),
+      [...code.sharded].sort(),
+      `${statement.where} and \`SeekData\` disagree about which shards are sharded — the ` +
+        'documents mark a sharded map with its key (`sessions[agentId]`), and a field ' +
+        'declared `Record<Id, X[]>` is sharded by that id',
+    );
+  }
 });
