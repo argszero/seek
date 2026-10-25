@@ -331,14 +331,14 @@ test('the arguments are read as a value, before anything is decided about them',
   assert.deepEqual(parseArgv([]), {
     locale: DEFAULT_LOCALE,
     unknown: [],
-    repeatedLocale: false,
+    repeated: [],
     missingValue: [],
     paths: [],
   });
   assert.deepEqual(parseArgv(['--lang', 'zh-CN', 'a.json']), {
     locale: 'zh-CN',
     unknown: [],
-    repeatedLocale: false,
+    repeated: [],
     missingValue: [],
     paths: ['a.json'],
   });
@@ -349,11 +349,11 @@ test('the arguments are read as a value, before anything is decided about them',
   assert.deepEqual(parseArgv(['--lang', '--nope']), {
     locale: DEFAULT_LOCALE,
     unknown: ['--nope'],
-    repeatedLocale: false,
+    repeated: [],
     missingValue: ['--lang'],
     paths: [],
   });
-  assert.equal(parseArgv(['--lang', 'en', '--lang', 'zh-CN']).repeatedLocale, true);
+  assert.deepEqual(parseArgv(['--lang', 'en', '--lang', 'zh-CN']).repeated, ['--lang']);
 });
 
 test('the shipped base catalogue is the one the module loads by default', () => {

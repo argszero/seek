@@ -13,10 +13,14 @@
       "other": "{count} 个回合抛出了异常。"
     },
     "report.stub": "上面没有一句话来自模型：要不要动的判断，以及说出口的那些字，都是\nsrc/main.ts 里的占位实现。这次运行展示的是内核——投递、闸门、回合——\n它展示不了的是这个设计立不立得住。",
+    "report.stage1": "阶段一是模型给的：房间经由 {origin} 上的服务看过，所以要不要动这个判断\n来自实测过的观察模型，不是占位实现。上面说出口的那些字仍然来自\nsrc/main.ts 里的占位实现——这次运行没有生成任何文本。",
     "cli.unknown-locale": "没有 {locale} 的文案表：这棵树里带的是 {languages}",
     "cli.unknown-flag": "这个观察器不认识这个参数：{flag}",
     "cli.repeated-flag": "{flag} 给了两次",
     "cli.flag-needs-value": "{flag} 后面需要一个值",
+    "cli.bad-server": "这个服务地址不会被请求：{origin}——模型服务用它的 origin 来指，\n例如 http://127.0.0.1:8080",
+    "cli.bad-window": "{window} 不是一个窗口：盒子的预算是正整数的观察条数",
+    "cli.server-window-pair": "--server 和 --window 要一起给，而这次只给了 {given}：服务是调用方起的，\n盒子的预算也是调用方给的",
     "cli.two-paths": "给了两个存储路径（{first} 和 {second}），而一次运行只写一个存储"
   }
 }

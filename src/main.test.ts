@@ -6,10 +6,12 @@ import { test } from 'node:test';
 
 import type { Timers } from './comparator.ts';
 import type { Judge } from './inbox.ts';
+import type { Fetcher } from './llama.ts';
 import {
   defaultStorePath,
   format,
   main,
+  parseArgv,
   runFirstMilestone,
   sceneOf,
   seedOneRoom,
@@ -17,6 +19,7 @@ import {
   stubJudge,
   transcriptOf,
 } from './main.ts';
+import { loadPromptArtifact } from './prompts.ts';
 import { applyRoster, readRosterFor } from './roster.ts';
 import { SeekStore } from './store.ts';
 import type { TurnContext } from './turn.ts';
@@ -58,6 +61,74 @@ async function onDisk(): Promise<{ store: SeekStore; path: string; dir: string }
   const path = join(dir, 'seek.json');
   await writeFile(join(dir, 'agents.yml'), ROSTER_YAML);
   return { store: await SeekStore.load(path), path, dir };
+}
+
+/**
+ * A model server that answers by path, and records what it was asked.
+ *
+ * A recorder rather than a socket: what the harness has to prove is that it asked
+ * *this* server and reported the answer, which is visible without a model. The
+ * vocabulary makes one word one token, so an option appended at the prompt's own
+ * end is a single id and can carry a probability (`watch.ts` §4) — the shape the
+ * suite's other fake already pins.
+ *
+ * `act` is the probability this server reports for `act` and nothing else about it
+ * is a model: the fixture says exactly what it is told to say.
+ */
+function fakeModelServer(options: { act?: number } = {}): { fetch: Fetcher; asked: string[] } {
+  const asked: string[] = [];
+  const ids = new Map<string, number>();
+  let next = 100;
+  const idOf = (piece: string): number => {
+    const known = ids.get(piece);
+    if (known !== undefined) return known;
+    ids.set(piece, next);
+    next += 1;
+    return ids.get(piece) as number;
+  };
+  const act = options.act ?? 0.95;
+  const head = '<|im_start|>system\n';
+  const mid = '<|im_end|>\n<|im_start|>user\n';
+  const tail = '<|im_end|>\n<|im_start|>assistant\n';
+
+  const fetcher: Fetcher = async (url, init) => {
+    const pathname = new URL(url).pathname;
+    asked.push(pathname);
+    const body =
+      init.body === undefined ? {} : (JSON.parse(init.body) as Record<string, unknown>);
+
+    let payload: unknown;
+    if (pathname === '/props') {
+      payload = {
+        chat_template: head,
+        build_info: 'test build',
+        default_generation_settings: { n_ctx: 4096 },
+      };
+    } else if (pathname === '/apply-template') {
+      const messages = (body.messages ?? []) as { role: string; content: string }[];
+      const system = messages.find((message) => message.role === 'system')?.content ?? '';
+      const user = messages.find((message) => message.role === 'user')?.content ?? '';
+      payload = { prompt: `${head}${system}${mid}${user}${tail}` };
+    } else if (pathname === '/tokenize') {
+      payload = { tokens: (String(body.content).match(/\s+|[^\s]+/g) ?? []).map(idOf) };
+    } else if (pathname === '/completion') {
+      payload = {
+        completion_probabilities: [
+          {
+            top_logprobs: [
+              { token: ' act', logprob: Math.log(act) },
+              { token: ' ignore', logprob: Math.log(1 - act) },
+            ],
+          },
+        ],
+      };
+    } else {
+      return { ok: false, status: 404, text: async () => 'no such route' };
+    }
+    return { ok: true, status: 200, text: async () => JSON.stringify(payload) };
+  };
+
+  return { fetch: fetcher, asked };
 }
 
 test('the first milestone runs: a person speaks, and the bot answers a message that named nobody', async () => {
@@ -348,6 +419,137 @@ test('the stubs answer without reading, and a reminder’s turn says nothing', a
     // Stage 1's stub acts on everything it is given, and reads none of it.
     const entries = [{ id: 'ob_1' }, { id: 'ob_2' }] as never;
     assert.equal(stubJudge(entries, context).length, 2);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('the server and the box’s budget are read off the command line, and neither is guessed', async () => {
+  const parsed = parseArgv(['--server', 'http://127.0.0.1:8080', '--window', '24', 'a.json']);
+  assert.equal(parsed.server, 'http://127.0.0.1:8080');
+  assert.equal(parsed.window, '24');
+  assert.deepEqual(parsed.paths, ['a.json']);
+  // `=` is the same request, and the value stays out of the paths either way.
+  assert.equal(parseArgv(['--server=http://127.0.0.1:8080', '--window=8']).window, '8');
+  assert.deepEqual(parseArgv(['--server', 'a', '--server', 'b']).repeated, ['--server']);
+
+  const refused: [string[], RegExp][] = [
+    // One without the other asks the harness to guess half of a judgement.
+    [['--server', 'http://127.0.0.1:8080'], /go together/],
+    [['--window', '8'], /go together/],
+    // The spelling a person writes reads as a scheme to a parser, so it is refused
+    // here rather than inside a request that is already on its way.
+    [['--server', '127.0.0.1:8080', '--window', '8'], /not a server origin/],
+    [['--server', 'ftp://127.0.0.1', '--window', '8'], /not a server origin/],
+    [['--server', 'http://127.0.0.1:8080', '--window', '0'], /is not a window/],
+    [['--server', 'http://127.0.0.1:8080', '--window', 'many'], /is not a window/],
+  ];
+  for (const [argv, expected] of refused) {
+    await assert.rejects(
+      async () => main(argv, { timers: makeTimers(), out: () => {} }),
+      expected,
+      argv.join(' '),
+    );
+  }
+});
+
+test('a run pointed at a model server asks that server, and the report says stage one is real', async () => {
+  const { store, dir } = await onDisk();
+  try {
+    const server = fakeModelServer({ act: 0.95 });
+    const run = await runFirstMilestone(store, {
+      now: () => AT,
+      timers: makeTimers(),
+      watchServer: {
+        baseUrl: 'http://127.0.0.1:8080',
+        artifact: loadPromptArtifact(),
+        fetch: server.fetch,
+      },
+      window: 8,
+    });
+
+    // The requests are the proof the wiring happened; the answer's *effect* is the
+    // proof it was the server's and not the stub's — the stub acts on everything it
+    // is handed, so a bot that spoke proves nothing until a server saying `ignore`
+    // silences it. That pair is below.
+    assert.equal(server.asked.includes('/props'), true, 'the server was read before it was asked');
+    assert.equal(server.asked.includes('/tokenize'), true, 'the option ids were measured on it');
+    assert.equal(server.asked.at(-1), '/completion', 'the last thing asked was the question');
+    assert.equal(run.stage1Server, 'http://127.0.0.1:8080');
+    assert.equal(run.spoke, true, 'a server reading 0.95 for act is a bot that acts');
+
+    const printed = format(run, '/tmp/seek.json');
+    assert.match(printed, /stage one came from a model/);
+    assert.match(printed, /http:\/\/127\.0\.0\.1:8080/);
+    assert.doesNotMatch(printed, /nothing above came from a model/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+
+  const quiet = await onDisk();
+  try {
+    const server = fakeModelServer({ act: 0.01 });
+    const run = await runFirstMilestone(quiet.store, {
+      now: () => AT,
+      timers: makeTimers(),
+      watchServer: {
+        baseUrl: 'http://127.0.0.1:8080',
+        artifact: loadPromptArtifact(),
+        fetch: server.fetch,
+      },
+      window: 8,
+    });
+    assert.equal(run.spoke, false, 'the same run against a server reading 0.01 says nothing');
+  } finally {
+    await rm(quiet.dir, { recursive: true, force: true });
+  }
+});
+
+test('a stage one the caller built itself is not overruled by a server it also named', async () => {
+  const { store, dir } = await onDisk();
+  try {
+    const server = fakeModelServer();
+    const run = await runFirstMilestone(store, {
+      now: () => AT,
+      timers: makeTimers(),
+      judge: () => [],
+      watchServer: {
+        baseUrl: 'http://127.0.0.1:8080',
+        artifact: loadPromptArtifact(),
+        fetch: server.fetch,
+      },
+      window: 8,
+    });
+    assert.deepEqual(server.asked, [], 'the caller’s own stage one asked the server nothing');
+    assert.equal(run.stage1Server, undefined, 'and the run does not claim a model answered');
+    assert.equal(run.spoke, false);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('a server named without the box’s budget is refused before anything is delivered', async () => {
+  const { store, dir } = await onDisk();
+  try {
+    const server = fakeModelServer();
+    await assert.rejects(
+      async () =>
+        runFirstMilestone(store, {
+          now: () => AT,
+          timers: makeTimers(),
+          watchServer: {
+            baseUrl: 'http://127.0.0.1:8080',
+            artifact: loadPromptArtifact(),
+            fetch: server.fetch,
+          },
+        }),
+      /is the caller's number/,
+    );
+    assert.deepEqual(server.asked, [], 'nothing was asked of a server the run refused');
+    // The refusal came before delivery, which is the point of settling stage one
+    // first: a message nothing judged is the state this ordering exists to avoid.
+    const room = Object.keys(store.data.rooms)[0];
+    assert.equal(store.messagesOf(room).length, 0);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
