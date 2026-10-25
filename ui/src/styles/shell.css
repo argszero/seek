@@ -398,3 +398,100 @@ body {
 
 /* A refusal in the panel is the same refusal as in the room, at the panel's margin. */
 .thread-col .composer-err { margin: 0 16px; }
+
+/* The room column's tools: the count, and the one button that makes the list stop being
+   a constant. Grouped so the heading and this group are the head's two ends. */
+.list-tools { display: flex; align-items: center; gap: 10px; }
+
+.list-new {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--line-border-component);
+  border-radius: var(--radius-sm);
+  background: var(--bg-base);
+  color: var(--N700);
+  font: inherit;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.list-new:hover { background: var(--N100); }
+
+/* Making a room: a name, who is in it, and the two buttons. It sits above the list rather
+   than in a dialog, so the rooms already there stay visible while it is filled in — the
+   answer to "did I already have this one" is the list under it. */
+.new-room {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 8px 10px;
+  padding: 10px;
+  border: 1px solid var(--line-border-component);
+  border-radius: var(--radius-md);
+  background: var(--bg-base);
+}
+
+.new-room-name {
+  padding: 7px 10px;
+  border: 1px solid var(--line-border-component);
+  border-radius: var(--radius-sm);
+  background: var(--bg-base);
+  color: var(--N900);
+  font: inherit;
+  font-size: 13px;
+}
+
+.new-room-people {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 168px;
+  overflow-y: auto;
+}
+
+.new-room-people li { padding: 3px 0; }
+
+/* The label is the click target, so the whole row is a hit area and the name is not
+   something a person has to aim at beside a small box. */
+.new-room-people label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  color: var(--N900);
+  cursor: pointer;
+}
+
+.new-room-people input { margin: 0; }
+
+.new-room-actions { display: flex; gap: 8px; }
+
+.new-room-actions button {
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--line-border-component);
+  border-radius: var(--radius-sm);
+  background: var(--bg-base);
+  color: var(--N700);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.new-room-actions button[type='submit'] {
+  border-color: transparent;
+  background: var(--primary-fill-default);
+  color: var(--primary-on-primary-fill);
+  font-weight: 500;
+}
+
+.new-room-actions button[type='submit']:hover:not(:disabled) {
+  background: var(--primary-fill-hover);
+}
+
+.new-room-actions button:disabled { opacity: 0.5; cursor: default; }
+
+/* The refusal, beside the form it belongs to rather than at the composer's margin. */
+.list-col .composer-err { margin: 0 8px 10px; }

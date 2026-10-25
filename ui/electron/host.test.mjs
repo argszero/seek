@@ -18,7 +18,7 @@ import { test } from 'node:test'
 import { applyRoster } from '../../src/roster.ts'
 import { seedOneRoom, STUB_REPLY } from '../../src/main.ts'
 import { emptyData, SeekStore } from '../../src/store.ts'
-import { closeHost, openHost, postMessage } from './host.js'
+import { closeHost, createRoom, openHost, postMessage } from './host.js'
 
 /**
  * A store with the kernel's own seeded world beside a roster that gives its bot a work
@@ -203,6 +203,181 @@ test('a stubbed interface still respects who is in the room', async () => {
     const bots = room.members.filter((member) => member.bot).map((member) => member.id)
     assert.deepEqual(bots, [w.scene.bot], 'one bot, and it is the seeded one')
     assert.equal(snapshot.me, w.scene.me, 'and the interface spoke as the person')
+  } finally {
+    await w.done()
+  }
+})
+
+/**
+ * The second write: a person makes a room, and everybody they chose is in it.
+ *
+ * The seeded world is one room, so before this the room list was a constant and the
+ * product's own premise — several conversations, some of them with a bot and some without —
+ * was unreachable from the window. What is measured here is the whole path the renderer
+ * takes: `host.createRoom()` → the kernel's `createRoom()` → `store.save()` → a snapshot
+ * that already contains the room.
+ *
+ * **`roomId` is why the host returns more than a snapshot.** "The room that was just made"
+ * is not derivable from a room list that may already have held one under that name, and the
+ * window has to be able to go into the room it just made rather than stay where it was.
+ */
+test('a room made through the interface is in the snapshot, in the store, and everyone is in it', async () => {
+  const w = await world()
+  try {
+    const made = await createRoom(w.host, {
+      // Padded on purpose: a person who types a trailing space asked for the name, not
+      // for the spaces, and `Room.name` is a display string the window draws verbatim.
+      name: '  the second room  ',
+      members: [w.scene.me, w.scene.other, w.scene.bot],
+    })
+
+    assert.equal(typeof made.roomId, 'string')
+    assert.equal(made.snapshot.rooms.length, 2, 'the seeded room, and this one')
+    const room = made.snapshot.rooms.find((one) => one.id === made.roomId)
+    assert.equal(room.name, 'the second room')
+    assert.deepEqual(
+      room.members.map((member) => member.id),
+      [w.scene.me, w.scene.other, w.scene.bot],
+      'in the order they were chosen, which is the order the kernel wrote them',
+    )
+    assert.deepEqual(room.messages, [], 'and a new room has said nothing yet')
+
+    // On disk before the snapshot was handed back — the same rule a message follows. A room
+    // drawn but not saved would vanish on the next open, after the person believed it was made.
+    const reloaded = await SeekStore.load(w.storeFile)
+    const rows = reloaded.membershipsOf(made.roomId)
+    assert.deepEqual(
+      rows.map((row) => row.principal_id),
+      [w.scene.me, w.scene.other, w.scene.bot],
+    )
+    assert.equal(
+      rows.find((row) => row.principal_id === w.scene.me).role,
+      'owner',
+      'the person the window speaks as is the owner, as in the seeded room',
+    )
+    assert.equal(
+      rows.find((row) => row.principal_id === w.scene.bot).role,
+      'member',
+      'and everybody else, bots included, is a member',
+    )
+  } finally {
+    await w.done()
+  }
+})
+
+/**
+ * A second room is a room, not a row: the bot in it answers, which is the same kernel
+ * path the first room takes. If it did not, "the window made a room" would be true only
+ * of the room list.
+ */
+test('the room the interface made is one the bot answers in, like any other', async () => {
+  const w = await world()
+  try {
+    const made = await createRoom(w.host, {
+      name: 'a room with the bot',
+      members: [w.scene.me, w.scene.bot],
+    })
+    const snapshot = await postMessage(w.host, { roomId: made.roomId, text: 'anyone here' })
+    const room = snapshot.rooms.find((one) => one.id === made.roomId)
+
+    assert.deepEqual(
+      room.messages.map((message) => message.sender),
+      [w.scene.me, w.scene.bot],
+      'what was typed, and the bot in this room answering it',
+    )
+    assert.equal(room.messages[1].text, STUB_REPLY)
+  } finally {
+    await w.done()
+  }
+})
+
+/**
+ * A name of nothing but spaces is no name at all.
+ *
+ * `Room.name` is optional and `snapshotOf` already draws a nameless room by its id, so this
+ * is the host formatting what was typed rather than refusing it — an unnamed room is a state
+ * the data model has.
+ */
+test('a name of only spaces makes a room with no name, not a room called spaces', async () => {
+  const w = await world()
+  try {
+    const made = await createRoom(w.host, { name: '   ', members: [w.scene.me] })
+    const room = made.snapshot.rooms.find((one) => one.id === made.roomId)
+    assert.equal(room.name, made.roomId, 'draws by its id, as any nameless room does')
+
+    const reloaded = await SeekStore.load(w.storeFile)
+    assert.equal(reloaded.data.rooms[made.roomId].name, undefined, 'and no name was written')
+  } finally {
+    await w.done()
+  }
+})
+
+/**
+ * The three refusals, each with the kernel's own sentence and an unchanged store.
+ *
+ * **The interface re-checks none of them**, which is the point of measuring them here: a
+ * second opinion in the window could pass what the kernel then refuses, or refuse in wording
+ * no document carries. So each of these asserts two halves — the sentence came from
+ * `src/rooms.ts`, and a refusal wrote nothing, because a half-made room is the one outcome
+ * that cannot be repaired by trying again.
+ */
+async function refused(w, input, expected) {
+  const before = await SeekStore.load(w.storeFile)
+  const roomsBefore = Object.keys(before.data.rooms).length
+  const membersBefore = Object.keys(before.data.memberships).length
+
+  await assert.rejects(() => createRoom(w.host, input), expected)
+
+  const after = await SeekStore.load(w.storeFile)
+  assert.equal(Object.keys(after.data.rooms).length, roomsBefore, 'no room was written')
+  assert.equal(
+    Object.keys(after.data.memberships).length,
+    membersBefore,
+    'and no membership either',
+  )
+}
+
+test('a room with nobody in it is refused in the kernel\'s words, and nothing is written', async () => {
+  const w = await world()
+  try {
+    await refused(w, { name: 'nobody', members: [] }, /a room with no members/)
+  } finally {
+    await w.done()
+  }
+})
+
+/**
+ * The same refusal, reached the way a renderer can reach it: an input list whose entries are
+ * not strings names no principal at all, so it is an empty room rather than a `TypeError`
+ * raised in the interface. `docs/host-rulings.md` gives a bot's room no approval step, but it
+ * does not make a room nobody can speak in a room.
+ */
+test('members that name nobody are an empty room, not a crash in the window', async () => {
+  const w = await world()
+  try {
+    await refused(w, { members: [null, 42, ''] }, /a room with no members/)
+  } finally {
+    await w.done()
+  }
+})
+
+test('one principal named twice is refused, because the count is what a direct message reads', async () => {
+  const w = await world()
+  try {
+    await refused(
+      w,
+      { members: [w.scene.me, w.scene.me] },
+      /named twice in one room/,
+    )
+  } finally {
+    await w.done()
+  }
+})
+
+test('a member nobody in this store has heard of is refused by name', async () => {
+  const w = await world()
+  try {
+    await refused(w, { members: [w.scene.me, 'ou_nobody'] }, /unknown principal: ou_nobody/)
   } finally {
     await w.done()
   }

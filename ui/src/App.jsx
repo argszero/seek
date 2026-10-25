@@ -42,6 +42,13 @@ export default function App() {
   const [threadDraft, setThreadDraft] = useState('')
   const [error, setError] = useState(null)
   const [sending, setSending] = useState(false)
+  // Making a room: the form's own three facts, and nothing the kernel does not also hold.
+  // `picked` is a plain list of principal ids, so what the person chose is exactly what the
+  // kernel's `createRoom()` is given — its "named twice" and "no members" refusals are about
+  // the choice, not about this state's shape.
+  const [making, setMaking] = useState(false)
+  const [newName, setNewName] = useState('')
+  const [picked, setPicked] = useState([])
   const messagesEnd = useRef(null)
   const threadEnd = useRef(null)
 
@@ -152,6 +159,57 @@ export default function App() {
     setError(null)
   }
 
+  /**
+   * Open the form, with everyone already chosen.
+   *
+   * The default is everyone this store knows, because that is the room a person usually
+   * wants — the people and bots they already have — and because the kernel refuses an empty
+   * room, so a form that opened with nothing ticked would open on a refusal.
+   */
+  function startMaking() {
+    setNewName('')
+    setPicked((snap?.people ?? []).map((person) => person.id))
+    setMaking(true)
+    setError(null)
+  }
+
+  function togglePick(id) {
+    setPicked((current) =>
+      current.includes(id) ? current.filter((one) => one !== id) : [...current, id],
+    )
+  }
+
+  /**
+   * Make the room, and go into it.
+   *
+   * One call to the main process, which hands it to the kernel's own `createRoom()` — the
+   * room and its members are written in one step there, so there is no window in which this
+   * window could see a room nobody is in. **Nothing here refuses anything**: the kernel's own
+   * sentences are what the form shows, which is why `Create` stays clickable with nobody
+   * ticked — a disabled button would say "not allowed" where the kernel says *why*
+   * ("a room with no members: … nothing could ever be said in it").
+   */
+  async function makeRoom() {
+    if (sending) return
+    setSending(true)
+    setError(null)
+    try {
+      const made = await window.seekHost.createRoom({ name: newName, members: picked })
+      if (made.ok) {
+        setSnap(made.snapshot)
+        // The room that was just made is the one to look at: creating a room and staying in
+        // the old one is a click that appears to have done nothing.
+        enterRoom(made.roomId)
+        setMaking(false)
+        setNewName('')
+      } else {
+        setError({ where: 'new-room', message: made.error })
+      }
+    } finally {
+      setSending(false)
+    }
+  }
+
   if (!snap) return <div className="booting">opening the store…</div>
 
   const whoSaid = Object.fromEntries((active?.members ?? []).map((member) => [member.id, member]))
@@ -177,8 +235,82 @@ export default function App() {
       <section className="list-col">
         <header className="list-head">
           <h1>Chats</h1>
-          <span className="count">{snap.rooms.length}</span>
+          {/* `space-between` with three children would centre the count; the tools are one
+              group so the heading and the group are the two ends. */}
+          <span className="list-tools">
+            <span className="count">{snap.rooms.length}</span>
+            {/* A store whose only room the seed made is a store where the room list is a
+                constant. This is the way out of that, and it is one button. */}
+            <button
+              className="list-new"
+              data-new-room="open"
+              title="new room"
+              onClick={startMaking}
+            >
+              +
+            </button>
+          </span>
         </header>
+
+        {/* The refusal goes here, beside the form, in the kernel's own words. */}
+        {error?.where === 'new-room' && (
+          <div className="composer-err" data-new-room="refused">
+            {error.message}
+          </div>
+        )}
+
+        {making && (
+          <form
+            className="new-room"
+            data-new-room="form"
+            onSubmit={(event) => {
+              event.preventDefault()
+              makeRoom()
+            }}
+          >
+            <input
+              className="new-room-name"
+              placeholder="room name (optional)"
+              value={newName}
+              onChange={(event) => setNewName(event.target.value)}
+            />
+            <ul className="new-room-people">
+              {(snap.people ?? []).map((person) => (
+                <li key={person.id}>
+                  <label>
+                    <input
+                      type="checkbox"
+                      data-new-room-member={person.id}
+                      checked={picked.includes(person.id)}
+                      onChange={() => togglePick(person.id)}
+                    />
+                    <span className="new-room-who">{person.name}</span>
+                    {person.bot && <span className="msg-bot">bot</span>}
+                  </label>
+                </li>
+              ))}
+            </ul>
+            <div className="new-room-actions">
+              {/* Not disabled when nobody is ticked: an empty room is a thing the kernel
+                  has a sentence for, and a disabled button would replace that sentence
+                  with a silence. */}
+              <button type="submit" data-new-room="create" disabled={sending}>
+                Create
+              </button>
+              <button
+                type="button"
+                data-new-room="cancel"
+                onClick={() => {
+                  setMaking(false)
+                  setError(null)
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        )}
+
         <ul className="conv-list">
           {snap.rooms.map((room) => (
             <li key={room.id}>
