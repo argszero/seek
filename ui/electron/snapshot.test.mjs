@@ -282,3 +282,47 @@ test('a person with no name is offered under their id', () => {
 test('a store that is not open yet offers nobody', () => {
   assert.deepEqual(snapshotOf(null, null).people, [])
 })
+
+/**
+ * Who a message names, carried to the interface as the kernel's own pairs.
+ *
+ * `docs/design/data-model.md` rule 15 says `mentions[]` is "what the interface draws as blue
+ * @-text", so a snapshot without it is a window that cannot draw a mention at all — and
+ * nothing would fail, because the message keeps carrying one where no reader looks. The other
+ * half of the same field is that `deliver()` derives each bot's `mentionsMe` from exactly this
+ * array, which makes a dropped mention also a message that wakes nobody in a room where a
+ * person named somebody.
+ *
+ * **The pair is the message's, not a lookup.** A mention records who was named when it was
+ * said, so renaming the bot afterwards must not rewrite what was already written — that is
+ * what "an immutable shared fact" means, and it is why this snapshot copies the pair instead
+ * of resolving the id against the roster.
+ */
+test('a message arrives with the people it names, and an old message keeps the name it was said with', () => {
+  const store = seeded()
+  deliver(store, {
+    roomId: 'rm_ops',
+    senderId: 'pr_me',
+    text: 'over to you',
+    mentions: [{ id: 'bo_watch', name: 'watch-bot' }],
+    now: '2026-10-25T01:02:00.000Z',
+  })
+
+  const named = snapshotOf(store, '/tmp/seek.json').rooms[0].messages.at(-1)
+  assert.deepEqual(named.mentions, [{ id: 'bo_watch', name: 'watch-bot' }])
+
+  store.data.bots.bo_watch.name = 'renamed-bot'
+  assert.deepEqual(
+    snapshotOf(store, '/tmp/seek.json').rooms[0].messages.at(-1).mentions,
+    [{ id: 'bo_watch', name: 'watch-bot' }],
+    'the mentioned name is the one the message carries, not the roster read at draw time',
+  )
+})
+
+test('a message that names nobody says so rather than leaving the field off', () => {
+  // `[]` rather than `undefined`, for the reason `media` is `null`: a renderer facing two
+  // kinds of nothing draws whatever `undefined` does, and one of them is a bug.
+  for (const message of snapshotOf(seeded(), '/tmp/seek.json').rooms[0].messages) {
+    assert.deepEqual(message.mentions, [])
+  }
+})

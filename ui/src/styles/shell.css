@@ -193,9 +193,12 @@ body {
 }
 
 /* The composer sits under the messages and is part of the same column, so the room's
-   own width decides it — a fixed width here would drift from the messages above. */
+   own width decides it — a fixed width here would drift from the messages above.
+   It wraps for one reason: the mention chips take a line of their own above the box, which
+   is what stops them needing a second container with a second border. */
 .composer {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: flex-end;
   padding: 10px 20px 16px;
@@ -252,6 +255,109 @@ body {
 .thread-attach:hover:not(:disabled) { border-color: var(--primary-fill-default); color: var(--B700); }
 .composer-attach:disabled,
 .thread-attach:disabled { opacity: 0.5; cursor: default; }
+
+/* The third choice in that row, drawn like the picture button for the same reason: it is not
+   the send, and there is one of those. */
+.composer-mention,
+.thread-mention {
+  height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--line-border-component);
+  border-radius: var(--radius-md);
+  background: var(--bg-base);
+  color: var(--N700);
+  font: inherit;
+  cursor: pointer;
+}
+
+.thread-mention { height: 36px; }
+
+.composer-mention:hover:not(:disabled),
+.thread-mention:hover:not(:disabled) { border-color: var(--primary-fill-default); color: var(--B700); }
+.composer-mention:disabled,
+.thread-mention:disabled { opacity: 0.5; cursor: default; }
+
+/* Who the message addresses, while it is being typed: a label and the chips, on their own
+   line of the wrapped composer. `flex-basis: 100%` is what makes that line exist. */
+.mention-row {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding-bottom: 2px;
+}
+
+.mention-lead { color: var(--N500); font-size: 12px; }
+
+.mention-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 4px 1px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--B50);
+  color: var(--B700);
+  font-size: 12px;
+}
+
+.mention-drop {
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--B700);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.mention-drop:hover { color: var(--R600); }
+
+/* The room's own members, offered as buttons rather than as a menu: there are as many as the
+   room holds, and a list that draws them all says who is here at the same time as it asks
+   who you meant. A name already addressed is marked rather than hidden, so pressing it again
+   is visibly the way to take it back. */
+.mention-pick {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-bottom: 2px;
+}
+
+.mention-who {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border: 1px solid var(--line-border-component);
+  border-radius: var(--radius-md);
+  background: var(--bg-base);
+  color: var(--N700);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.mention-who:hover { border-color: var(--primary-fill-default); color: var(--B700); }
+.mention-who.on { border-color: var(--B100); background: var(--B50); color: var(--B700); }
+
+/* Who a message named, drawn as the @-text the data model says `mentions[]` is: blue, above
+   the words, off the message's own pairs rather than the roster. */
+.msg-mentions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 2px 0;
+}
+
+.msg-mention {
+  padding: 0 5px;
+  border-radius: var(--radius-sm);
+  background: var(--B50);
+  color: var(--B700);
+  font-size: 12px;
+}
 
 /* A picture message. Capped rather than drawn at its own size: a screenshot is often
    taller than the window, and a message that pushes the conversation off the screen is a
@@ -359,6 +465,7 @@ body {
 
 .thread-composer {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: flex-end;
   padding: 10px 16px 16px;
