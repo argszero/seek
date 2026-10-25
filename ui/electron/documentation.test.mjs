@@ -68,12 +68,31 @@
  * one kind of call cannot notice the other kind, so every channel the bridge exposes now
  * has to be *classified* — a capability the READMEs claim, or plumbing this file names —
  * and an eighth call tomorrow fails until it is one of the two.
+ *
+ * **A file written twice is one fact, and a fact is something a test can hold.** The roster
+ * a fresh install gets is written from a constant in `host.js` rather than copied out of
+ * `seek-data/agents.yml`, because the packaged app packs `src/` and a built page and not this
+ * repository's data directory — so the two copies exist on purpose, and `host.js`'s own
+ * comment says they hold the same rows while nothing checked it. A role added to one copy is
+ * an install that differs from the next, and every test stayed green. They are compared here
+ * through the kernel's own `parseRoster`, so what agrees is the shape the kernel accepts and
+ * not this file's idea of one.
+ *
+ * What the roster's *absence* means stays prose, and that was the sentence that was wrong:
+ * the run chapter said one state — "a store with no roster beside it opens over a bot with no
+ * agents and refuses to run" — where the kernel keeps two apart. A missing file says nothing
+ * and a store goes on using the agents it already has; a file that is there and has no rows is
+ * the one that says the bot has no agents; and what refuses is the run, because the bot has no
+ * agent rather than because a file is gone. The half a machine can hold is that each language
+ * says both states, which is what the last test below asserts.
  */
 import assert from 'node:assert/strict'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
+
+import { parseRoster } from '../../src/roster.ts'
 
 const UI = fileURLToPath(new URL('../', import.meta.url))
 const REPO = resolve(UI, '..')
@@ -312,4 +331,59 @@ test('every call the bridge exposes is either a capability the READMEs claim or 
 
   // Anti-vacuity again: two tables compared against a scan that read nothing would agree.
   assert.ok(invoked.length >= 7, `only ${invoked.length} calls were read out of the bridge`)
+})
+
+/**
+ * The roster a first run writes, read out of `host.js` instead of being listed here.
+ *
+ * It is a template literal, and its only escape is the backtick pair around a name in a
+ * comment. A second kind would be read wrong by the unescape below, so the read stops on one
+ * rather than comparing a mangled copy of the file and calling the two copies equal.
+ */
+function firstRunRoster() {
+  const [, body] = read('ui/electron/host.js').match(/const FIRST_RUN_ROSTER = `([\s\S]*?)`\n/) ?? []
+  assert.ok(body, 'host.js still carries the roster a first run writes, as a template literal')
+  const text = body.replaceAll('\\`', '`')
+  assert.doesNotMatch(text, /\\/, 'the literal holds no escape this read did not undo')
+  return text
+}
+
+test('the roster a first run writes is the roster this repository ships', () => {
+  // Both sides through the kernel's own reader, so the comparison is over what the kernel
+  // accepts — bot, role, tools, and the three fields that are absent by design — rather than
+  // over two texts that differ in their comments on purpose.
+  const shipped = parseRoster(read('seek-data/agents.yml'), 'seek-data/agents.yml')
+
+  // Anti-vacuity: two rosters that failed to parse would agree with the comparison below
+  // while holding not one row.
+  assert.ok(shipped.length > 0, 'the shipped roster holds rows')
+
+  assert.deepEqual(
+    parseRoster(firstRunRoster(), 'host.js FIRST_RUN_ROSTER'),
+    shipped,
+    'a first run writes the roster this repository ships — a row added to one copy and not ' +
+      'the other is a bot that exists in one install and not in the next',
+  )
+})
+
+test('both READMEs separate a missing roster from a roster with no rows', () => {
+  // The kernel's half of this is pinned in `src/roster.test.ts`: a missing file reads
+  // `undefined`, a file with no rows reads `[]`, and `Kernel.open` applies only the second —
+  // so the store a person already has keeps its agents when the file goes away. The half a
+  // test can hold here is whether the chapter says so, in both languages, next to the
+  // sentence that sends a reader to the file at all.
+  for (const [document, keeps, noRows] of [
+    ['README.md', /keeps the agents it already has/, /holds no rows/],
+    ['README.zh-CN.md', /保留它已经有的那些 agent/, /一行没有/],
+  ]) {
+    const text = read(document)
+    const at = text.indexOf('agents.yml')
+    assert.notEqual(at, -1, `${document} sends a reader to agents.yml`)
+
+    // Read near the mention rather than anywhere in the file: a chapter that happens to say
+    // "no rows" about something else says nothing about a roster.
+    const nearby = text.slice(Math.max(0, at - 200), at + 900)
+    assert.match(nearby, keeps, `${document} says a store that lost its roster keeps its agents`)
+    assert.match(nearby, noRows, `${document} names the state that leaves a bot with no agents`)
+  }
 })

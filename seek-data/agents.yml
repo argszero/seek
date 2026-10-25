@@ -9,6 +9,11 @@
 # A row's id is derived from its bot and its role, so a row keeps the sessions
 # and memories it had before the rebuild.
 #
+# Editing it is how a bot is given a different set of workers; deleting it is not,
+# because a store with no roster file beside it keeps the agents it already has —
+# a missing file says nothing about the store, while a file that is there and
+# holds no rows says the bot has no agents.
+#
 # Two spaces for `- `, four for a field, whole-line comments only, lists in one
 # line. Anything outside that subset is an error naming the line: this parser
 # would rather stop than quietly drop a field it did not understand.
