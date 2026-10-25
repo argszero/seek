@@ -224,13 +224,50 @@ export class SeekStore {
 
   // ---- persistence ----
 
-  /** Write the shards atomically: a reader never sees half a file. */
+  /**
+   * The saves in flight, in the order they were asked for.
+   *
+   * `save()` writes a temporary file and renames it, which is atomic for a *reader*
+   * and for nothing else: the temporary name carries the pid, so two saves that
+   * overlap in one process share one temporary file, the first rename takes it away,
+   * and the second fails `ENOENT` on a store whose data is perfectly fine. They do
+   * overlap: `kernel.ts` starts compaction without awaiting it (`#compactAfter`), so
+   * `compact.ts`'s save runs alongside the tick's.
+   *
+   * Chaining them is the fix, rather than giving each save a temporary name of its
+   * own. A unique name would turn a failed write into two renames racing, and the
+   * slower one wins: a save holding an older snapshot could land last and undo a row
+   * the other had already made durable. Queued, a write cannot start before the one
+   * ahead has renamed, and because each snapshot is taken when its own write runs,
+   * the later write is the newer one by construction.
+   */
+  #writing: Promise<void> = Promise.resolve();
+
+  /**
+   * Write the shards atomically: a reader never sees half a file.
+   *
+   * Serialized against the saves already in flight in this process (`#writing`), so
+   * callers that overlap all land instead of all but one rejecting.
+   */
   async save(): Promise<void> {
-    if (!this.path) return;
-    await mkdir(dirname(this.path), { recursive: true });
-    const temporary = `${this.path}.${process.pid}.tmp`;
+    const path = this.path;
+    if (!path) return;
+    const written = this.#writing.then(() => this.#write(path));
+
+    // The chain's own link never rejects: a write that failed has already been
+    // reported to its own caller, and the save queued behind it still has to run.
+    this.#writing = written.then(
+      () => undefined,
+      () => undefined,
+    );
+    return written;
+  }
+
+  async #write(path: string): Promise<void> {
+    await mkdir(dirname(path), { recursive: true });
+    const temporary = `${path}.${process.pid}.tmp`;
     await writeFile(temporary, `${JSON.stringify(this.data, null, 2)}\n`, 'utf8');
-    await rename(temporary, this.path);
+    await rename(temporary, path);
   }
 
   /** Read the shards, or start empty when there is no file yet. */

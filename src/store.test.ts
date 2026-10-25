@@ -316,3 +316,76 @@ test('every document that states the on-disk shape states the one the code has',
     );
   }
 });
+
+test('two saves that overlap both land instead of one failing on the shared temp file', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'seek-store-'));
+  const path = join(directory, 'seek.json');
+  try {
+    const world = makeWorld();
+    const store = new SeekStore(world.store.data, path);
+
+    // The temporary file `save()` writes through is named for the pid alone, so two
+    // saves overlapping in one process shared it: whichever renamed first took it
+    // away and the other failed `ENOENT` on a store whose data was perfectly fine.
+    // They do overlap — `kernel.ts` starts compaction without awaiting it — and
+    // `host-rulings.md` gives that overlap the atomicity being checked here.
+    const first = store.save();
+    store.data.memories[world.agentA1] = [
+      {
+        id: 'mem_1',
+        agent_id: world.agentA1,
+        level: 'diary',
+        body: 'the arrival',
+        consumed_to: 'ob_1',
+        updated_at: '2026-10-25T00:00:00.000Z',
+      },
+    ];
+    const second = store.save();
+
+    // Neither may reject. A save that throws is a write the caller cannot retry and
+    // a row it has no way to know is safe.
+    await Promise.all([first, second]);
+
+    const parsed = JSON.parse(await readFile(path, 'utf8'));
+    assert.equal(
+      parsed.memories[world.agentA1]?.[0]?.body,
+      'the arrival',
+      'the later save is the one left on disk',
+    );
+    assert.deepEqual(
+      readdirSync(directory),
+      ['seek.json'],
+      'no temporary file was left behind',
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('a save that failed does not stop the saves queued behind it', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'seek-store-'));
+  const blocker = join(directory, 'not-a-directory');
+  try {
+    // A parent that is a file makes the write fail for real, without a permission
+    // mode that a runner owned by root would quietly ignore.
+    await writeFile(blocker, 'a file where a directory would have to be', 'utf8');
+    const world = makeWorld();
+    const store = new SeekStore(world.store.data, join(blocker, 'seek.json'));
+    await assert.rejects(() => store.save(), /ENOTDIR|EEXIST/, 'the first save fails');
+
+    // The chain's link must not carry that rejection forward: once the obstacle is
+    // gone the store is still writable, and the save behind the failed one lands.
+    await rm(blocker);
+    const path = join(directory, 'seek.json');
+    store.path = path;
+    await store.save();
+    const parsed = JSON.parse(await readFile(path, 'utf8'));
+    assert.deepEqual(
+      Object.keys(parsed).sort(),
+      Object.keys(world.store.data).sort(),
+      'the save behind the failed one wrote the whole file',
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
