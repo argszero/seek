@@ -370,3 +370,95 @@ test('a list of languages is joined the way the language joins lists', () => {
   assert.notEqual(joinList('zh-CN', ['en', 'zh-CN']), joinList('en', ['en', 'zh-CN']));
   assert.ok(joinList('zh-CN', ['en', 'zh-CN']).includes('en'));
 });
+
+test('a plural entry declares exactly the categories its language can reach', () => {
+  // `docs/design/i18n.md` line 39 gives the reason categories exist at all: English
+  // has two, Chinese none, Slavic languages more. The catalogue validator refuses a
+  // category outside ICU's six and refuses an entry with no `other`, but nothing
+  // required the categories this particular language can actually land on — and the
+  // failure is silent, because `pluralTemplate` ends in `?? message.other`. A Russian
+  // catalogue declaring only `other` renders the catch-all sentence for 1, 3 and 5
+  // and reads as correct grammar in the wrong form, which is the same shape as a
+  // missing key rendered as itself: output that survives review.
+  let pluralEntries = 0;
+  for (const tag of locales()) {
+    const catalogue = loadCatalogue(shippedCataloguePath(tag));
+    // The authoritative set for the language: every category its own rules can
+    // select, including the fractional ones an integer sweep would miss.
+    const reachable = new Intl.PluralRules(tag).resolvedOptions().pluralCategories;
+    assert.ok(reachable.includes('other'), `${tag} resolves an \`other\` category`);
+
+    for (const [key, message] of Object.entries(catalogue.messages)) {
+      if (typeof message === 'string') continue;
+      pluralEntries += 1;
+      const declared = Object.keys(message);
+      for (const category of reachable) {
+        assert.ok(
+          declared.includes(category),
+          `${tag} ${JSON.stringify(key)} declares ${JSON.stringify(declared)} and its ` +
+            `language can reach ${JSON.stringify(category)} (${reachable.join(', ')}) — ` +
+            'the count would render the `other` sentence instead, with nothing to show ' +
+            'the sentence changed form',
+        );
+      }
+      for (const category of declared) {
+        assert.ok(
+          reachable.includes(category),
+          `${tag} ${JSON.stringify(key)} declares ${JSON.stringify(category)}, which ` +
+            `${tag} can never select (it reaches ${reachable.join(', ')}) — a category ` +
+            'nothing lands on is dead weight a reader takes for coverage',
+        );
+      }
+    }
+  }
+  assert.ok(pluralEntries > 0, 'no plural entry was compared, so this proves nothing');
+});
+
+test('a translation names exactly the placeholders its base language names', () => {
+  // The twin-document rule, one layer down. Prose has `docs.test.ts`; the interface
+  // had nothing comparing the two catalogues' sentences, and the failure is the one
+  // that test was written for — a reader told less. A translated template that drops
+  // `{text}` is not an error anywhere: `translator` refuses a placeholder it cannot
+  // fill, never one it was given and did not use, so the Chinese line simply loses
+  // the message it was quoting.
+  const placeholders = (text: string): string[] =>
+    [...text.matchAll(/\{(\w+)\}/g)].map((match) => match[1]).sort();
+
+  const base = loadCatalogue();
+  let compared = 0;
+  let withPlaceholders = 0;
+
+  for (const tag of locales()) {
+    const catalogue = loadCatalogue(shippedCataloguePath(tag));
+    for (const [key, message] of Object.entries(base.messages)) {
+      const other = catalogue.messages[key];
+      const pairs: [string, string][] =
+        typeof message === 'string'
+          ? [[message, other as string]]
+          : Object.entries(message).map(([category, template]) => [
+              template,
+              (other as Record<string, string>)[category] ??
+                (other as Record<string, string>).other,
+            ]);
+
+      for (const [original, translated] of pairs) {
+        compared += 1;
+        const want = placeholders(original);
+        const got = placeholders(translated);
+        if (want.length > 0) withPlaceholders += 1;
+        assert.deepEqual(
+          got,
+          want,
+          `${tag} ${JSON.stringify(key)} names ${JSON.stringify(got)} where the base ` +
+            `language names ${JSON.stringify(want)} — a placeholder added on one side ` +
+            'only is a sentence that says less, or a value the reader never sees',
+        );
+      }
+    }
+  }
+  assert.ok(compared > 0, 'no entry was compared, so this proves nothing');
+  assert.ok(
+    withPlaceholders > 0,
+    'no compared template carries a placeholder, so the comparison above is vacuous',
+  );
+});
