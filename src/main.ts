@@ -27,13 +27,18 @@
  *
  * **Three things it deliberately does not do.**
  *
- * - **No model.** The two answers a model would give arrive as the `decide` and
- *   `judge` arguments, exactly as `turn.ts` and `inbox.ts` take them, and the
- *   defaults are stubs. The printed output says so: a bot whose words came from
- *   a placeholder must never read as a bot that thought. A stub that says "act"
- *   without reading demonstrates the plumbing, and is no evidence about the
- *   design question — that needs a model, and the model is the slice after this
- *   one.
+ * - **Stage 2 is still a placeholder — stage 1 need not be.** The words a bot says
+ *   arrive as the `decide` argument, exactly as `turn.ts` takes it, and the
+ *   default says the placeholder line. Stage 1 — "is this worth acting on" — is
+ *   the measured watch model as soon as the caller names a server it started
+ *   (`--server <origin> --window <n>`): the model comes from a server the caller
+ *   supplies, named by its origin, and nothing here starts, supervises or stops
+ *   that process (`docs/decisions.md` row 20). What stays true either way is the
+ *   one thing the printed report must never do: let a placeholder read as a bot
+ *   that thought. So the report says which of the two answered. A stub that says
+ *   "act" without reading demonstrates the plumbing and is evidence about
+ *   nothing; a real stage 1 is evidence about exactly one question — whether the
+ *   room was worth acting on — and about none of the others.
  * - **The agents are the roster's, not this file's.** `seedOneRoom` builds the
  *   people, the bot and the room and stops there; `src/roster.ts` reads
  *   `agents.yml` beside the store and rebuilds the store's agents from it
@@ -60,6 +65,15 @@
  * Run it with `npm start`, `npm start -- --lang zh-CN` to choose the language, or
  * `npm start -- <path>` to choose the store. The store is ordinary: the second
  * run appends to the room the first one made.
+ *
+ * `npm start -- --server http://127.0.0.1:8080 --window 24` asks the measured
+ * watch model instead of the placeholder, and the two flags go together on
+ * purpose: the server is the caller's to start, and how much one judgement may
+ * read is the caller's number rather than one this harness may invent
+ * (`box.ts`). What that does not buy is a picture: a box carrying one is still
+ * refused rather than read from its caption (`docs/decisions.md` row 23), because
+ * the bytes arrive through a loader this harness has no blob scheme for — and a
+ * seed here writes none, so no run of this file exercises that path.
  */
 
 import { join } from 'node:path';
@@ -79,10 +93,13 @@ import {
 } from './i18n.ts';
 import type { Judge } from './inbox.ts';
 import { Kernel, type KernelFailure } from './kernel.ts';
+import type { Fetcher, LlamaServer } from './llama.ts';
+import { loadPromptArtifact } from './prompts.ts';
 import { applyRoster, readRosterFor, rosterPath, type AgentRow } from './roster.ts';
 import { newId, SeekStore } from './store.ts';
 import type { Decide } from './turn.ts';
 import type { Id } from './types.ts';
+import { watchOverServer } from './watch-server.ts';
 
 /** Where the seed writes its `created_at`, so a seeded world is reproducible. */
 const SEED_AT = '2026-10-24T00:00:00.000Z';
@@ -182,6 +199,14 @@ export interface MilestoneRun {
   spoke: boolean;
   /** Turns that threw. Empty is the expected reading, and never the assumption. */
   failures: KernelFailure[];
+  /**
+   * The origin of the server stage 1 read the room through, when it read one.
+   *
+   * Absent means both halves of the run were placeholders, and that difference is
+   * exactly what the report has to be able to state: a reader who cannot tell a
+   * measured verdict from a stub is reading a placeholder as a bot that thought.
+   */
+  stage1Server?: string;
 }
 
 export interface MilestoneOptions {
@@ -191,6 +216,27 @@ export interface MilestoneOptions {
   timers?: Timers;
   decide?: Decide;
   judge?: Judge;
+  /**
+   * A stage-1 model server the caller has already started, named by its origin.
+   *
+   * The kernel starts nothing and supervises nothing (`docs/decisions.md` row 20),
+   * so reaching a real judgement is the caller's act: this is the object
+   * `watch-server.ts` binds stage 1 over, and `window` beside it is the budget its
+   * box is filled against. An explicit `judge` wins over this one, because a
+   * caller that built its own stage 1 has said so more directly than a command
+   * line did.
+   */
+  watchServer?: LlamaServer;
+  /**
+   * How much one judgement may read, in the units `weigh` returns (`box.ts`).
+   *
+   * Required with `watchServer` and refused without it: the number is the
+   * caller's, and a harness that picked one for the caller would be writing down
+   * a budget no measurement stands behind.
+   */
+  window?: number;
+  /** What a server-named run calls instead of `globalThis.fetch`. A test's recorder. */
+  fetch?: Fetcher;
   /**
    * The room summary's writer, and the line that makes one due.
    *
@@ -345,6 +391,43 @@ export function transcriptOf(store: SeekStore, roomId: Id): TranscriptLine[] {
 }
 
 /**
+ * Who answers stage 1 for this run: the placeholder, the caller's own judge, or
+ * the measured watch model over the server the caller named.
+ *
+ * The order gives the caller's own word the last say: an injected `judge` is a
+ * caller that built stage 1 itself, and a command line does not overrule it.
+ *
+ * What is refused here rather than inside `watchOverServer` is the one fact this
+ * file cannot look up — the box's budget. `box.ts` makes `window` the caller's
+ * number, so a server named without one is a request to invent it, and an invented
+ * budget is how a judgement reads part of a room and reports as though it had read
+ * the whole of it. Nothing else about the server is checked here: whether it can
+ * be read this way at all, and where the option ids sit, are `watch-server.ts`'s
+ * four steps and belong there rather than in a second copy.
+ */
+async function stageOne(
+  store: SeekStore,
+  botId: Id,
+  options: MilestoneOptions,
+): Promise<{ judge: Judge; server?: string }> {
+  if (options.judge !== undefined) return { judge: options.judge };
+  if (options.watchServer === undefined) return { judge: stubJudge };
+
+  const window = options.window;
+  if (window === undefined) {
+    throw new Error(
+      'a model server was named with no `window`: how much one judgement may read ' +
+        "is the caller's number (`box.ts`), and this harness will not choose one for it",
+    );
+  }
+
+  return {
+    judge: await watchOverServer(store, botId, options.watchServer, { window }),
+    server: options.watchServer.baseUrl,
+  };
+}
+
+/**
  * Run the milestone once: a person speaks, the kernel wakes the bot, and the
  * room's log is what happened.
  *
@@ -371,6 +454,13 @@ export async function runFirstMilestone(
     );
   }
 
+  // Stage 1 is settled before the message is delivered, because building it is the
+  // one step here that can refuse — the option ids are measured over HTTP, and a
+  // mask taken from the wrong question fails silently rather than loudly
+  // (`watch-server.ts`). A run that refused after delivering would leave a message
+  // in the store that nothing had judged.
+  const stage1 = await stageOne(store, scene.bot, options);
+
   deliver(store, {
     roomId: scene.room,
     senderId: scene.me,
@@ -381,7 +471,7 @@ export async function runFirstMilestone(
 
   const kernel = new Kernel(store, {
     decide: options.decide ?? stubDecide,
-    judge: options.judge ?? stubJudge,
+    judge: stage1.judge,
     summarise: options.summarise,
     compactLines: options.compactLines,
     now: options.now,
@@ -405,14 +495,19 @@ export async function runFirstMilestone(
     transcript,
     spoke: transcript.some((line) => line.byBot),
     failures: kernel.failures,
+    // Left out rather than set to `undefined`, so a placeholder run's shape stays
+    // exactly what it was: a key that is present and empty is a second way to say
+    // "no model", and one of them would drift.
+    ...(stage1.server === undefined ? {} : { stage1Server: stage1.server }),
   };
 }
 
 /**
  * What a person watching the run reads.
  *
- * It names the store, the room, the log, and — in as many words — that the
- * words above came from a stub. A placeholder printed without that sentence
+ * It names the store, the room, the log, and — in as many words — which half
+ * answered: whether the decision to act came from the measured model at a server
+ * the caller named, or from the placeholder. A run printed without that sentence
  * would be this file's only real hazard.
  *
  * **Every word of the chrome comes from a catalogue**, which is what makes the
@@ -444,7 +539,9 @@ export function format(
       : t('report.silent'),
     t('report.turns', { count: run.failures.length }),
     '',
-    t('report.stub'),
+    run.stage1Server === undefined
+      ? t('report.stub')
+      : t('report.stage1', { origin: run.stage1Server }),
   ];
   return `${lines.join('\n')}\n`;
 }
@@ -458,15 +555,22 @@ export function defaultStorePath(): string {
 export interface ParsedArgv {
   /** The language `--lang` named, or the default. Unvalidated: it may not exist. */
   locale: string;
+  /** The origin `--server` named, or nothing. Unvalidated: it may not be a URL. */
+  server?: string;
+  /** The budget `--window` named, as written. Unvalidated: it may not be a number. */
+  window?: string;
   /** Flags this harness does not know, in the order they appeared. */
   unknown: string[];
-  /** Whether `--lang` was given more than once. */
-  repeatedLocale: boolean;
+  /** Flags given more than once, each named once, in the order its second copy came. */
+  repeated: string[];
   /** Flags left without the value they need — `--lang` with nothing usable after it. */
   missingValue: string[];
   /** Positional arguments, which is where a store path goes. */
   paths: string[];
 }
+
+/** The flags this harness reads a value for. A flag outside this list is unknown. */
+const VALUED_FLAGS = ['--lang', '--server', '--window'] as const;
 
 /**
  * Read the command line without deciding anything about it.
@@ -480,58 +584,82 @@ export function parseArgv(argv: string[]): ParsedArgv {
   const parsed: ParsedArgv = {
     locale: DEFAULT_LOCALE,
     unknown: [],
-    repeatedLocale: false,
+    repeated: [],
     missingValue: [],
     paths: [],
   };
-  let sawLocale = false;
+  /** What each flag was given, in the order it was given, so a second copy shows. */
+  const given: Record<string, string[]> = { '--lang': [], '--server': [], '--window': [] };
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
-    let value: string | undefined;
-    let isLocale = false;
+    // `--flag=value` and `--flag value` are one request written two ways; only the
+    // first keeps the value out of the positional list.
+    const equals = arg.startsWith('--') ? arg.indexOf('=') : -1;
+    const name = equals > 0 ? arg.slice(0, equals) : arg;
 
-    if (arg === '--lang') {
+    if (!(VALUED_FLAGS as readonly string[]).includes(name)) {
+      // A flag nobody ships and a store path are different mistakes, and the
+      // leading dash is the only thing that tells them apart.
+      if (name.startsWith('-')) parsed.unknown.push(arg);
+      else parsed.paths.push(arg);
+      continue;
+    }
+
+    let value = equals > 0 ? arg.slice(equals + 1) : undefined;
+    if (value === undefined) {
       const next = argv[index + 1];
       // A following flag is not this flag's value: `--lang --nope` asked for a
       // language and wrote nothing, which is a different mistake from a typo.
       if (next !== undefined && !next.startsWith('-')) {
         index += 1;
         value = next;
-        isLocale = true;
       }
-    } else if (arg.startsWith('--lang=')) {
-      value = arg.slice('--lang='.length);
-      isLocale = true;
-    } else if (arg.startsWith('-')) {
-      parsed.unknown.push(arg);
-      continue;
-    } else {
-      parsed.paths.push(arg);
+    }
+    if (value === undefined || value.length === 0) {
+      parsed.missingValue.push(name);
       continue;
     }
 
-    if (!isLocale) {
-      parsed.missingValue.push('--lang');
-      continue;
-    }
-    if (value === undefined || value.length === 0) {
-      parsed.missingValue.push('--lang');
-      continue;
-    }
-    if (sawLocale) {
-      parsed.repeatedLocale = true;
-      continue;
-    }
-    sawLocale = true;
-    parsed.locale = value;
+    const already = given[name].length;
+    given[name].push(value);
+    // Recorded when the second copy arrives, and once: a flag given three times is
+    // still one repeated flag, and the first copy is the one that was kept.
+    if (already === 1) parsed.repeated.push(name);
   }
+
+  const [lang] = given['--lang'];
+  const [server] = given['--server'];
+  const [window] = given['--window'];
+  if (lang !== undefined) parsed.locale = lang;
+  if (server !== undefined) parsed.server = server;
+  if (window !== undefined) parsed.window = window;
 
   return parsed;
 }
 
 /**
- * The command line: `npm start`, optionally `--lang <tag>` and a store path.
+ * Whether a string is the origin of a model server this harness will call.
+ *
+ * Two facts, and both are wanted: the scheme is one a request can reach, and the
+ * rest parses as a URL at all. `127.0.0.1:8080` looks like an origin to a person
+ * and reads as a scheme to a parser, so it is refused here rather than failing
+ * inside a request that is already on its way.
+ */
+function isOrigin(value: string): boolean {
+  if (!/^https?:\/\//.test(value)) return false;
+  try {
+    new URL(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The command line: `npm start`, optionally `--lang <tag>`, a store path, and the
+ * `--server` / `--window` pair that asks the measured watch model instead of the
+ * placeholder.
  *
  * The exit status is the milestone's answer, so a run that stops speaking fails
  * loudly instead of printing a page of success around one empty line.
@@ -566,14 +694,50 @@ export async function main(
   if (parsed.missingValue.length > 0) {
     throw new Error(t('cli.flag-needs-value', { flag: parsed.missingValue[0] }));
   }
-  if (parsed.repeatedLocale) throw new Error(t('cli.repeated-flag', { flag: '--lang' }));
+  if (parsed.repeated.length > 0) {
+    throw new Error(t('cli.repeated-flag', { flag: parsed.repeated[0] }));
+  }
+  // The server and the box's budget arrive together or not at all. The first is
+  // whose process reads the room — the caller's, per `docs/decisions.md` row 20 —
+  // and the second is the caller's number too (`box.ts`), so either one alone is a
+  // request to guess the missing half of a judgement.
+  if ((parsed.server === undefined) !== (parsed.window === undefined)) {
+    throw new Error(
+      t('cli.server-window-pair', {
+        given: parsed.server === undefined ? '--window' : '--server',
+      }),
+    );
+  }
+  if (parsed.server !== undefined && !isOrigin(parsed.server)) {
+    throw new Error(t('cli.bad-server', { origin: parsed.server }));
+  }
+  if (parsed.window !== undefined && !/^[1-9][0-9]*$/.test(parsed.window)) {
+    throw new Error(t('cli.bad-window', { window: parsed.window }));
+  }
   if (parsed.paths.length > 1) {
     throw new Error(t('cli.two-paths', { first: parsed.paths[0], second: parsed.paths[1] }));
   }
 
   const path = parsed.paths[0] ?? defaultStorePath();
   const store = await SeekStore.load(path);
-  const run = await runFirstMilestone(store, options);
+  // The artifact is loaded here because the transport cannot be built without it:
+  // which of an assembly's parts travels as a system message is the artifact's
+  // statement, and a server object that guessed it would send the text in a shape
+  // nobody measured. `watch-server.ts` then refuses if the two disagree.
+  const watchServer =
+    parsed.server === undefined || parsed.window === undefined
+      ? undefined
+      : {
+          baseUrl: parsed.server,
+          artifact: loadPromptArtifact(),
+          ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
+        };
+  const run = await runFirstMilestone(store, {
+    ...options,
+    ...(watchServer === undefined
+      ? {}
+      : { watchServer, window: Number(parsed.window) }),
+  });
   const out = options.out ?? ((text: string) => process.stdout.write(text));
   out(format(run, path, catalogue));
   return run.spoke && run.failures.length === 0 ? 0 : 1;

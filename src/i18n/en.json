@@ -15,10 +15,14 @@
       "other": "{count} turns threw."
     },
     "report.stub": "nothing above came from a model: the decision to act and the words said are\nstubs in src/main.ts. What this run shows is the kernel — delivery, the gate,\nthe turn — and what it cannot show is whether the design holds up.",
+    "report.stage1": "stage one came from a model: the room was read through the server at {origin},\nso the decision to act is the measured watch model's and not a placeholder.\nThe words said above are still a stub in src/main.ts — this run generated no text.",
     "cli.unknown-locale": "no catalogue for {locale}: this tree ships {languages}",
     "cli.unknown-flag": "not a flag this harness knows: {flag}",
     "cli.repeated-flag": "{flag} was given twice",
     "cli.flag-needs-value": "{flag} needs a value after it",
+    "cli.bad-server": "not a server origin this harness will call: {origin} — a model server is\nnamed by its origin, such as http://127.0.0.1:8080",
+    "cli.bad-window": "{window} is not a window: the box's budget is a positive whole number of\nobservations",
+    "cli.server-window-pair": "--server and --window go together, and only {given} was given: the server is\nthe caller's to start, and the box's budget is the caller's to state",
     "cli.two-paths": "two store paths were given ({first} and {second}), and a run writes to one store"
   }
 }
