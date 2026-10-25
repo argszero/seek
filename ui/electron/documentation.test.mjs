@@ -59,6 +59,15 @@
  * The `@` is the one capability that is not a call: a mention rides inside `post` and shows
  * up in the snapshot's own `mentions`, which is what makes it visible at all. It is pinned
  * from that end instead, against the sentence that says a message names who it addresses.
+ *
+ * **The set is closed, and that is what makes it hold.** The first version of these tests
+ * read only the calls that broadcast — which left the picture pair out, because `attach`
+ * writes bytes beside the store and tells no window about it. So the drift came back a
+ * fourth time in the other shape: `Picture`, `seek:attach` and `seek:media` all shipped,
+ * and the window chapter described a window with no pictures in it. A rule that reads only
+ * one kind of call cannot notice the other kind, so every channel the bridge exposes now
+ * has to be *classified* — a capability the READMEs claim, or plumbing this file names —
+ * and an eighth call tomorrow fails until it is one of the two.
  */
 import assert from 'node:assert/strict'
 import { readdirSync, readFileSync } from 'node:fs'
@@ -215,6 +224,24 @@ const CLAIMS = {
   'seek:post': { en: /takes what you type/, zh: /你输入的消息/ },
   'seek:create-room': { en: /makes a room/, zh: /造一个房间/ },
   'seek:add-member': { en: /one more person/, zh: /把一个人加进去/ },
+  // The picture pair, and neither of them broadcasts: `attach` writes bytes beside the
+  // store and `media` reads them back, so the derivation from `seek:changed` cannot see
+  // either. They are claimed because a person clicks `Picture` and a picture appears, and
+  // that is the half a reader has to be told.
+  'seek:attach': { en: /`?Picture`? button/, zh: /`?Picture`? ?按钮/ },
+  'seek:media': { en: /draws it back from that\s+reference alone/, zh: /只凭那个引用把图画回来/ },
+}
+
+/**
+ * The rest of the bridge, and why a reader is not told about it as an affordance.
+ *
+ * Not a discard list: each entry is a claim about what the call is. A channel added to
+ * either kind has to be named here or in `CLAIMS`, which is the point — the pair of tables
+ * is the whole vocabulary, so nothing can arrive unclassified.
+ */
+const PLUMBING = {
+  'seek:snapshot': 'the read every render starts from — the window draws the room it returns',
+  'seek:data-path': 'where the store lives: the README states it as a fact, not as a button',
 }
 
 test('every call that changes the store is a call the window can reach and main answers', () => {
@@ -236,14 +263,18 @@ test('every call that changes the store is a capability both READMEs claim', () 
   // derivation honest if a broadcast stops being recognisable.
   assert.ok(writes.length >= 3, `only ${writes.length} store-changing calls were found: ${writes.join(', ')}`)
 
+  const missing = writes.filter((channel) => CLAIMS[channel] === undefined)
   assert.deepEqual(
-    Object.keys(CLAIMS).sort(),
-    writes,
+    missing,
+    [],
     'a call that changes the store and a claim in the READMEs are the same fact seen twice — ' +
       'add the row here and the sentence it owes in both READMEs',
   )
 
-  for (const channel of writes) {
+  // Every claimed capability is checked, not only the ones that broadcast: the loop used
+  // to run over `writes`, which left the picture pair in the table and unread — the two
+  // rows could have said anything. A claim nothing asserts is worse than no claim.
+  for (const channel of Object.keys(CLAIMS)) {
     assert.match(read('README.md'), CLAIMS[channel].en, `README.md never claims ${channel}`)
     assert.match(
       read('README.zh-CN.md'),
@@ -260,4 +291,25 @@ test('a message that names who it addresses is a message both READMEs say names 
 
   assert.match(read('README.md'), /names the people it addresses/)
   assert.match(read('README.zh-CN.md'), /点名它说的是谁/)
+})
+
+test('every call the bridge exposes is either a capability the READMEs claim or plumbing', () => {
+  const invoked = invokedChannels()
+
+  // The vocabulary and the two tables are the same set, read three ways. A call that is
+  // neither claimed nor named as plumbing is a capability nobody has decided about — which
+  // is exactly how the picture pair stayed undocumented through four slices — and this
+  // assertion is what refuses to let the next one do the same.
+  const classified = [...Object.keys(CLAIMS), ...Object.keys(PLUMBING)].sort()
+  assert.deepEqual(
+    classified,
+    invoked,
+    'the bridge exposes a call that is neither a claimed capability nor declared plumbing: ' +
+      `claim it in both READMEs and add it to CLAIMS, or say here why a reader is not told: ${invoked
+        .filter((channel) => !classified.includes(channel))
+        .join(', ')}`,
+  )
+
+  // Anti-vacuity again: two tables compared against a scan that read nothing would agree.
+  assert.ok(invoked.length >= 7, `only ${invoked.length} calls were read out of the bridge`)
 })
