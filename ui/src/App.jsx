@@ -12,10 +12,11 @@ import { useEffect, useRef, useState } from 'react'
  * bot that judges the message worth answering says so through `say()`. The message you
  * typed and the answer you get are therefore in the store, in that order, before either
  * is drawn — this window is a view of them, not a second copy. **Whether** the bot answers
- * is stage 1, and that half is a real model when the app was started with a server
- * (`ui/electron/host.js`); the line it answers with is still the kernel's stub
- * (`src/main.ts`, `STUB_REPLY`), because stage 2 has no model yet. `StageOne` below is
- * where the window says which of those two it is looking at.
+ * is stage 1, and **what it says** is stage 2; each half is a real model when the app was
+ * started with the server that carries it (`ui/electron/host.js`), and each is the
+ * kernel's own placeholder when it was not (`stubJudge`, `stubDecide` in `src/main.ts`).
+ * `StageOne` and `StageTwo` below are where the window says which of those two it is
+ * looking at, one strip each because either half can be refused alone.
  *
  * **What the thread panel is.** A thread is not a second conversation this file keeps:
  * the kernel already records it. A message that answers another carries `root_id`, the
@@ -26,9 +27,10 @@ import { useEffect, useRef, useState } from 'react'
  *
  * The panel answers the message the thread belongs to, which is what makes every reply
  * in it one hop from that message, the way Feishu's thread replies sit under the parent.
- * The bot's answer lands in the room rather than in the panel, because the stub agent
- * says its line without naming what it answers (`stubDecide`: no `replyTo`); an agent
- * that answers into the thread is the model-wiring slice, not this one.
+ * The bot's answer lands in the panel when stage 2 is bound, because `workOverServer`
+ * names the entry that woke the turn and the kernel's own chain follows it there; with
+ * no work server the answer lands in the room, because `stubDecide` says its line
+ * without naming what it answers.
  */
 export default function App() {
   const [snap, setSnap] = useState(null)
@@ -167,8 +169,10 @@ export default function App() {
 
       <section className="main-col">
         {/* Which half of the bot is real, above the room because it is a fact about the
-            app rather than about this conversation. */}
+            app rather than about this conversation. Two strips, because the two halves
+            are two servers and either can refuse alone. */}
         <StageOne stage1={snap.stage1} />
+        <StageTwo stage2={snap.stage2} />
         {active ? (
           <>
             <header className="main-head">
@@ -304,7 +308,9 @@ function StageOne({ stage1 }) {
     return (
       <div className="stage1 bound" data-stage1="bound">
         <strong>stage 1 asks {stage1.server}</strong>
-        <span className="stage1-why">the answer itself is still the kernel&apos;s placeholder</span>
+        <span className="stage1-why">
+          whether it answers is the model&apos;s verdict; what it says is stage 2, below
+        </span>
       </div>
     )
   }
@@ -315,6 +321,47 @@ function StageOne({ stage1 }) {
       <span className="stage1-why">
         the bot decides with the kernel&apos;s placeholder — set SEEK_SERVER and SEEK_WINDOW
         to ask a real model
+      </span>
+    </div>
+  )
+}
+
+/**
+ * Stage 2 — what the bot says, which is a different server from stage 1's.
+ *
+ * It keeps its own strip rather than sharing one: a store whose watch row is served and
+ * whose work row claims another model is a real state, and one strip for both would let
+ * the working half hide the refused one. `bound` means a model wrote the words, and
+ * `placeholder` means `STUB_REPLY` did — a difference a reader has to be able to see,
+ * because a stub line looks exactly like a bot that thought (`docs/decisions.md` row 27).
+ */
+function StageTwo({ stage2 }) {
+  if (!stage2) return null
+
+  if (stage2.refusal) {
+    return (
+      <div className="stage2 refused" data-stage2="refused">
+        <strong>the work server was not used</strong>
+        <span className="stage2-why">{stage2.refusal}</span>
+      </div>
+    )
+  }
+
+  if (stage2.server) {
+    return (
+      <div className="stage2 bound" data-stage2="bound">
+        <strong>stage 2 asks {stage2.server}</strong>
+        <span className="stage2-why">the words in the room are the model&apos;s, written through its `say` call</span>
+      </div>
+    )
+  }
+
+  return (
+    <div className="stage2" data-stage2="placeholder">
+      <strong>no work server</strong>
+      <span className="stage2-why">
+        the bot says the kernel&apos;s placeholder line — set SEEK_WORK_SERVER to let a model
+        write the reply
       </span>
     </div>
   )

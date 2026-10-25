@@ -147,6 +147,12 @@ test('a store that is not open yet says so instead of throwing', () => {
   const snapshot = snapshotOf(null, null)
   assert.deepEqual(snapshot.rooms, [])
   assert.match(snapshot.error, /not open yet/)
+  // Both halves are read out of the same absent host, so a window that opened before the
+  // store carries two placeholder readings rather than two missing fields — a strip whose
+  // fact is `undefined` is drawn by whatever the renderer does with `undefined`, which is
+  // how a fallback starts looking like a configuration (`docs/decisions.md` row 27).
+  assert.deepEqual(snapshot.stage1, { server: null, refusal: null })
+  assert.deepEqual(snapshot.stage2, { server: null, refusal: null })
 })
 
 /**
