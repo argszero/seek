@@ -20,3 +20,4 @@ seek-data/*
 *.tmp
 .vscode/
 .idea/
+.probe-data/
