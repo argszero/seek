@@ -42,6 +42,13 @@
  * judgement asks belongs to the prompt artifact, not to a roster row
  * (`agent-lifecycle.md` §"the question set is the prompt artifact's").
  *
+ * **A tool name is checked against a closed list, here.** `KNOWN_TOOLS` is the
+ * host's vocabulary — EMRG's registry plus the two additions he ruled — and a row
+ * that names anything else is refused at its own line. Nothing downstream would
+ * catch it there: `say` and `schedule` check their own presence in the list when
+ * they are called, which is mid-turn, so a typo would surface as an agent that
+ * looks configured and never answers.
+ *
  * Blank lines and whole-line `#` comments are skipped anywhere. Lists are the
  * one-line flow form (`[say, schedule]`) and nothing else. Indentation is two
  * spaces for `- ` and four for a field: tabs are a YAML error and are refused as
@@ -91,6 +98,42 @@ const FIELDS = ['bot', 'role', 'home', 'model', 'prompt', 'tools'] as const;
 
 /** The fields a row must carry. */
 const REQUIRED = ['bot', 'role', 'tools'] as const;
+
+/**
+ * Every name a row's `tools` may hold, and no others.
+ *
+ * **This is not the set of tools the kernel can execute** — that one is
+ * `EXECUTABLE` in `work-server.ts`, and it is deliberately shorter, because the
+ * two answer different questions: `EXECUTABLE` asks which tools an artifact may
+ * hand a model today, while this asks which names a roster row may even say. A
+ * row naming a tool the artifact never offers is legal; a row naming a tool that
+ * does not exist is not.
+ *
+ * What is here is what the host ruled: the kernel's registry — `bash`, `read`,
+ * `write`, `edit`, `glob`, `grep`, `subagent`, `submit_rant`, `boss` — with
+ * exactly two additions, `schedule` and the tool that speaks in a room
+ * (`docs/host-rulings.md`, "the work agent's tools are the kernel's registry";
+ * checklist line 13 in `src/README.md`).
+ *
+ * **Closed on purpose.** The ruling's own words are that two additions is where
+ * the count stops being a coincidence, because a third would mean the registry
+ * was being rebuilt one exception at a time. So a name that is not in this list
+ * is either a typo or an exception nobody has ruled yet, and both are refused
+ * where they were written rather than discovered at the first turn.
+ */
+export const KNOWN_TOOLS = [
+  'bash',
+  'read',
+  'write',
+  'edit',
+  'glob',
+  'grep',
+  'subagent',
+  'submit_rant',
+  'boss',
+  'schedule',
+  'say',
+] as const;
 
 /**
  * Read the roster out of a file, or `undefined` when there is no file.
@@ -259,6 +302,12 @@ function list(value: string, fail: (problem: string) => never): string[] {
   const items = inner.split(',').map((part) => scalar(part.trim(), fail));
   for (const item of items) {
     if (item === '') fail(`'tools' has an empty entry: [${inner}]`);
+    if (!(KNOWN_TOOLS as readonly string[]).includes(item)) {
+      fail(
+        `'tools' names '${item}', which is not a tool — a row may name ${KNOWN_TOOLS.join(', ')}; ` +
+          `another name needs a ruling before it needs a row`,
+      );
+    }
   }
   const repeated = items.find((item, at) => items.indexOf(item) !== at);
   if (repeated !== undefined) fail(`'tools' names '${repeated}' twice`);
