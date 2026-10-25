@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { Buffer } from 'node:buffer';
 import { test } from 'node:test';
 
 import { deliver } from './delivery.ts';
@@ -445,30 +446,239 @@ test('the strip rule is the calibration\'s: letters and digits anywhere, lowerca
   assert.equal(strip('!ignore.'), 'ignore');
 });
 
-test('a box that carries a picture is refused, because this transport cannot show it one', async () => {
-  // `box.ts` hands the judgement its pictures and `read` used not to look: the
-  // entries became text, the picture stayed a field, and the verdict came back as
-  // though the model had seen a screenshot it was never given.
-  const recorder = renderingServer();
+/** A PNG header is enough to prove the bytes survive the trip; no decoder reads them. */
+const PNG_BYTES = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+
+/** One picture as `box.ts` hands it over: a reference, never the bytes. */
+const SHOT = {
+  entryId: 'obs_1',
+  messageId: 'msg_1',
+  key: 'blob/shot.png',
+  mime: 'image/png',
+};
+
+/**
+ * The projector's own answer, which is not `undefined` by accident.
+ *
+ * `/props` reports `modalities` as an object of booleans; passing `null` here is the
+ * server too old to report it, which has to be read the safe way round.
+ */
+const SEES = { vision: true, video: false, audio: false };
+
+/** A server with a projector, answering the one endpoint that takes a picture. */
+function pictureServer(
+  options: { modalities?: unknown; candidates?: unknown[] } = {},
+): { fetch: Fetcher; calls: Call[] } {
+  return fakeServer({
+    '/props': () => ({
+      chat_template: 'a template',
+      build_info: 'test',
+      ...('modalities' in options
+        ? { modalities: options.modalities }
+        : { modalities: SEES }),
+      default_generation_settings: { n_ctx: 4096 },
+    }),
+    '/v1/chat/completions': () => ({
+      choices: [{ logprobs: { content: [{ top_logprobs: options.candidates ?? [] }] } }],
+    }),
+  });
+}
+
+/** The server, plus the loader `box.ts` makes necessary. */
+function seeingServer(recorder: { fetch: Fetcher }, extra: Partial<LlamaServer> = {}): LlamaServer {
+  return {
+    ...serverOf(recorder),
+    loadMedia: async () => PNG_BYTES,
+    ...extra,
+  };
+}
+
+/** A judgement whose box carries `media`, against the ordinary prompt. */
+function askWith(model: ReturnType<typeof llamaWatchModel>, media: unknown[]) {
+  return model.read({
+    prompt: PROMPT,
+    state: { read: 1, total: 1, unread: 0, delta: [], media } as never,
+    options: TOKENS,
+    mask: { act: { token: 'act', id: 1 }, ignore: { token: 'ignore', id: 2 } },
+  });
+}
+
+test('a picture travels between the box text and the question, as a data URL', async () => {
+  // The placement is the measured one: the replay put the message text first, the
+  // image second and the question last, and read all 56 image cases to within 0.0011
+  // of the recorded rig that way (`calibration/vision/server-transport-images.json`).
+  const recorder = pictureServer();
+  const model = llamaWatchModel(seeingServer(recorder));
+
+  await askWith(model, [SHOT]);
+
+  assert.equal(
+    recorder.calls.filter((call) => call.path === '/completion').length,
+    0,
+    'a picture does not go through the endpoint that takes no projector',
+  );
+  const chat = recorder.calls.filter((call) => call.path === '/v1/chat/completions');
+  assert.equal(chat.length, 1);
+
+  const messages = chat[0].body.messages as { role: string; content: unknown }[];
+  assert.deepEqual(messages[0], { role: 'system', content: ARTIFACT.system });
+
+  const parts = messages[1].content as { type: string; text?: string; image_url?: { url: string } }[];
+  assert.deepEqual(
+    parts.map((part) => part.type),
+    ['text', 'image_url', 'text'],
+    'text, picture, question — in that order',
+  );
+  assert.equal(parts[0].text, 'Message: the batch failed\n');
+  assert.equal(parts[2].text, 'Does this room need you to act? Answer act or ignore. ');
+
+  const url = parts[1].image_url?.url ?? '';
+  assert.ok(url.startsWith('data:image/png;base64,'), `expected a data URL, got ${url}`);
+  assert.deepEqual(
+    new Uint8Array(Buffer.from(url.slice('data:image/png;base64,'.length), 'base64')),
+    PNG_BYTES,
+    'the bytes the loader produced are the bytes the model is sent',
+  );
+
+  // Neutral samplers and `logprobs`, for the reason `/completion` gets them: the
+  // estimator sums the raw softmax, so anything that truncates or reshapes it lies.
+  const body = chat[0].body;
+  assert.equal(body.max_tokens, 1);
+  assert.equal(body.logprobs, true);
+  assert.equal(body.top_logprobs, 64);
+  assert.equal(body.cache_prompt, true);
+  assert.equal(body.temperature, 1);
+  assert.equal(body.top_k, 0);
+  assert.equal(body.top_p, 1);
+  assert.equal(body.min_p, 0);
+  assert.equal(body.repeat_penalty, 1);
+});
+
+test('a picture reading is summed over the spellings of the option, as text is', async () => {
+  const recorder = pictureServer({
+    candidates: [
+      { token: 'act', logprob: Math.log(0.6) },
+      { token: ' Act', logprob: Math.log(0.3) },
+      { token: 'ignore', logprob: Math.log(0.05) },
+    ],
+  });
+  const model = llamaWatchModel(seeingServer(recorder));
+
+  const reading = await askWith(model, [SHOT]);
+
+  assert.ok(
+    Math.abs((reading.probabilities[TOKENS.act] ?? 0) - 0.9) < 1e-9,
+    'every candidate that spells the option counts, exactly as on the text path',
+  );
+  assert.ok(Math.abs((reading.probabilities[TOKENS.ignore] ?? 0) - 0.05) < 1e-9);
+});
+
+test('a picture with no way to read its bytes is refused, not judged from its caption', async () => {
+  // `box.ts` keeps `key` opaque, so a transport with no loader cannot resolve one and
+  // must not invent a path. The alternative is the defect row 22 was written for: a
+  // verdict from the caption that looks like one reached with the picture present.
+  const recorder = pictureServer();
   const model = llamaWatchModel(serverOf(recorder));
+
+  await assert.rejects(
+    () => askWith(model, [SHOT]),
+    /carries a picture[\s\S]*image\/png[\s\S]*no way to read its bytes[\s\S]*loadMedia/,
+  );
+  assert.equal(recorder.calls.length, 0, 'nothing is asked about a picture that cannot travel');
+});
+
+test('a server with no projector is refused, and asked once rather than per judgement', async () => {
+  // A server started without `--mmproj` reports `modalities.vision: false` and would
+  // drop the image part on the way in, leaving a reading from the caption alone.
+  const recorder = pictureServer({ modalities: { vision: false, video: false, audio: false } });
+  const model = llamaWatchModel(seeingServer(recorder));
+
+  await assert.rejects(() => askWith(model, [SHOT]), /reports no projector[\s\S]*modalities\.vision/);
+  await assert.rejects(() => askWith(model, [SHOT]), /reports no projector/);
+
+  assert.equal(
+    recorder.calls.filter((call) => call.path === '/props').length,
+    1,
+    'whether a projector is loaded is a fact about the process, not about this tick',
+  );
+  assert.equal(
+    recorder.calls.filter((call) => call.path === '/v1/chat/completions').length,
+    0,
+    'an image part into a server that cannot see is not a request worth making',
+  );
+});
+
+test('a server too old to report its modalities is read as unable to see', async () => {
+  const recorder = pictureServer({ modalities: undefined });
+  const model = llamaWatchModel(seeingServer(recorder));
+
+  await assert.rejects(() => askWith(model, [SHOT]), /reports no projector/);
+});
+
+test('two pictures are refused, because one per box is what was measured', async () => {
+  // Every set in `calibration/vision/` holds one picture per box, so where a second
+  // sits relative to the first was never replayed; dropping it would be the same
+  // defect as dropping the only one.
+  const recorder = pictureServer();
+  const model = llamaWatchModel(seeingServer(recorder));
+
+  await assert.rejects(
+    () => askWith(model, [SHOT, { ...SHOT, key: 'blob/other.png' }]),
+    /carries 2 pictures[\s\S]*measured on one per box/,
+  );
+  assert.equal(recorder.calls.length, 0);
+});
+
+test('a picture is refused when the turn did not come from this artifact', async () => {
+  // The picture's place is the artifact's own last part, so a turn that does not end
+  // with that part has no measured place for it — and guessing one would put the
+  // image somewhere the replay never looked.
+  const recorder = pictureServer();
+  const model = llamaWatchModel(seeingServer(recorder));
 
   await assert.rejects(
     () =>
       model.read({
-        prompt: PROMPT,
-        state: {
-          read: 1,
-          total: 1,
-          unread: 0,
-          delta: [],
-          media: [{ entryId: 'obs_1', messageId: 'msg_1', key: 'blob/shot.png', mime: 'image/png' }],
-        } as never,
+        prompt: {
+          version: 'watch-v1',
+          text: `${ARTIFACT.system}${ARTIFACT.afterSystem}Message: the batch failed\n`,
+        },
+        state: { read: 1, total: 1, unread: 0, delta: [], media: [SHOT] } as never,
         options: TOKENS,
         mask: { act: { token: 'act', id: 1 }, ignore: { token: 'ignore', id: 2 } },
       }),
-    /carries 1 picture\(s\)[\s\S]*image\/png[\s\S]*no measured route/,
+    /different artifact[\s\S]*last part/,
   );
-  assert.equal(recorder.calls.length, 0, 'nothing is asked about a box half of which cannot travel');
+  assert.equal(recorder.calls.filter((call) => call.path === '/v1/chat/completions').length, 0);
+});
+
+test('a projector probe that failed once is asked again, not remembered as a no', async () => {
+  // A server unreachable for one tick is not a server without a projector: caching
+  // the failure would turn a blip into a permanent refusal of every picture.
+  const answered = pictureServer({
+    candidates: [
+      { token: 'act', logprob: Math.log(0.9) },
+      { token: 'ignore', logprob: Math.log(0.05) },
+    ],
+  });
+  let probes = 0;
+  const fetcher: Fetcher = async (url, init) => {
+    if (new URL(url).pathname === '/props') {
+      probes += 1;
+      if (probes === 1) return { ok: false, status: 503, text: async () => 'not up yet' };
+    }
+    return answered.fetch(url, init);
+  };
+  const model = llamaWatchModel({
+    ...serverOf({ fetch: fetcher }),
+    loadMedia: async () => PNG_BYTES,
+  });
+
+  await assert.rejects(() => askWith(model, [SHOT]), /answered 503/);
+
+  const reading = await askWith(model, [SHOT]);
+  assert.ok((reading.probabilities[TOKENS.act] ?? 0) > 0.8, 'the second tick reads normally');
+  assert.equal(probes, 2, 'the failed probe is not what the next judgement is told');
 });
 
 test('a box with no picture in it judges exactly as it did before', async () => {
@@ -487,9 +697,19 @@ test('a box with no picture in it judges exactly as it did before', async () => 
 
   assert.ok(
     (reading.probabilities[TOKENS.act] ?? 0) > 0.8,
-    'the text-only path is untouched by the refusal',
+    'the text-only path is untouched by the picture path',
   );
   assert.equal(recorder.calls.filter((call) => call.path === '/completion').length, 1);
+  assert.equal(
+    recorder.calls.filter((call) => call.path === '/v1/chat/completions').length,
+    0,
+    'a text-only judgement keeps the endpoint the text cut was measured through',
+  );
+  assert.equal(
+    recorder.calls.filter((call) => call.path === '/props').length,
+    0,
+    'and pays for no projector probe it has no use for',
+  );
 });
 
 test('the server shape records whether a projector is loaded', async () => {

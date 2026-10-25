@@ -1,0 +1,719 @@
+{
+ "_what_this_is": "The image calibration re-read through a local llama.cpp HTTP server, case by case against the recorded one-shot CLI rig, to show that the transport the kernel uses reads the same picture the rig did.",
+ "_why_this_file_exists": "The transport reaches the watch model over a server (src/llama.ts), and /completion -- the endpoint the text run was measured through -- takes no projector. So the image figures in this directory had been taken on the one-shot llama-mtmd-cli rig and were never replayed over HTTP, and src/llama.ts refused a box carrying a picture rather than send one over a route nobody had measured (docs/decisions.md row 22). Row 22 named its own release condition: replay the image set through the server and show the reading keeps the cut. This is that replay. Without it, sending a picture would be a probability read over an unmeasured route, which is row 19's failure one layer down -- the number would move while the artifact stood still.",
+ "date": "2026-10-25",
+ "measured_on": "this machine, CPU/Metal, no network",
+ "model": {
+  "file": "LFM2.5-VL-3B-Q4_0.gguf",
+  "sha256": "364224c6bd45b4ff4bf8af71f7be384ea166fa0f573d68bc0b6e10ef9ae7ae58",
+  "projector": {
+   "file": "mmproj-LFM2.5-VL-3B-Q8_0.gguf",
+   "sha256": "ecbbe7097f696dba67172738d79c9f01132cdb6c0b457606315e268df3d67e64"
+  }
+ },
+ "server": "llama.cpp 0.7.0-dev (build 701fd25), llama-server, --jinja --mmproj",
+ "shape": {
+  "route": "POST /v1/chat/completions, the artifact's system line as the chat system message and the user turn as content parts -- the only endpoint that takes a picture",
+  "placement": "three parts, in this order: the box's text, then the picture as a base64 data URL, then the artifact's question. The picture sits between the text and the question because that is where this run put it; the reading below is that ordering's, and src/llama.ts reproduces it from the artifact's own last part rather than from a literal.",
+  "data_url": "image_url as a data: URL (data:image/png;base64,...), which llama.cpp's server accepts for an image part (server-common.cpp), so the picture travels inside the one request rather than through an upload endpoint first",
+  "answer_read": "the next-token distribution at the prompt's own end, read from choices[0].logprobs.content[0].top_logprobs (top_logprobs 64, max_tokens 1) and summed over every candidate whose decoded form strips to the option (lowercase, letters and digits only) -- the same estimator calibration/provenance.md describes for the text run, and the same code path (readingOf in src/llama.ts)",
+  "raw_not_resampled": "llama.cpp reports the raw softmax for logprobs unless post_sampling_probs is asked for, which it is not here, so the samplers cannot reshape the quantity the estimator reads",
+  "samplers": "neutral (temperature 1, top_k 0, top_p 1, min_p 0, repeat_penalty 1)",
+  "cache_prompt": true,
+  "text_is_one_part": "the box's text travels as a single text part. Splitting it into two parts at an arbitrary point joins them with one extra character and shifts the reading -- a defect measured in this run's own first draft, in the harness rather than the transport."
+ },
+ "result": {
+  "n": 56,
+  "auc_server": 0.8903,
+  "at_cut_0_600": {
+   "correct": 41,
+   "act_caught": 13,
+   "act_total": 28,
+   "ignore_kept": 28,
+   "ignore_total": 28
+  },
+  "at_cut_0_4042": {
+   "correct": 48,
+   "act_caught": 20,
+   "act_total": 28,
+   "ignore_kept": 28,
+   "ignore_total": 28
+  },
+  "per_set": {
+   "img-cases": {
+    "n": 16,
+    "auc_server": 0.9375,
+    "at_cut_0_600": 13,
+    "max_abs_delta": 0.0006
+   },
+   "img-heldout": {
+    "n": 16,
+    "auc_server": 0.9219,
+    "at_cut_0_600": 13,
+    "max_abs_delta": 0.0008
+   },
+   "img-boundary": {
+    "n": 24,
+    "auc_server": 0.8472,
+    "at_cut_0_600": 15,
+    "max_abs_delta": 0.0011
+   }
+  },
+  "per_case_delta": {
+   "max_abs": 0.0011,
+   "mean_abs": 0.0003
+  },
+  "latency": {
+   "mean_ms_per_case_server": 583.4,
+   "recorded_mean_ms_per_case_cli": 911.9,
+   "note": "the CLI figure is a fresh process per case; the server figure is a warm one, which is the point of the transport"
+  },
+  "endpoint_equivalence": {
+   "text": "/v1/chat/completions and /apply-template + /completion agree to 0.0000 on the text cases, so the two paths src/llama.ts takes read one quantity and mixing them is safe",
+   "note": "the text figures themselves are server-transport.json's; this file does not restate them"
+  }
+ },
+ "the_picture_is_actually_read": {
+  "why": "Reproducing the rig's numbers is only evidence that this transport agrees with the rig if the picture reached the model. Every case also carries text, so a run that silently dropped the image could still land near the recorded numbers by reading the caption. The ablation separates the two: the same 32 cases (cases.json and heldout.json), the same endpoint, the same samplers, with the image part removed.",
+  "n": 32,
+  "cases_moving_by_more_than_0_05": "26/32",
+  "mean_abs_delta": 0.2845,
+  "max_abs_delta": 0.708,
+  "act_cases": "all 16 read higher with the picture, by +0.0518 to +0.7080",
+  "ignore_cases": "13 of 16 move as well, +0.0037 to +0.2841, and one moves down by 0.2292",
+  "what_this_shows": "A dropped image would make the two runs identical by construction. They are not: the picture changes the reading on 26 of 32 cases. So the figures above are the picture's and not the caption's.",
+  "what_this_does_not_show": "That the picture makes the judgement better. It moves the reading in both label classes, and the direction is not purely discriminative; the accuracy figures above are what they are."
+ },
+ "what_this_settles": [
+  "All 56 image cases reproduce the rig's recorded reading to within 0.0011 per case (mean 0.0003), so sending a picture over HTTP reads the same quantity the shipped cut was taken on.",
+  "The pooled figures are the record's own: 41/56 at the shipped 0.600 (act 13/28, ignore 28/28) and 48/56 at 0.4042 -- exactly what remeasured.json holds, so the gap at 0.600 is the operating point and not the transport, the same conclusion the text replay reached.",
+  "The cut does not move on this account. The text set needs 0.4042 or lower for 24/24 and 0.4042 is also the best the image sets reach (48/56), so one cut near 0.40 still serves both paths; moving 0.600 remains docs/decisions.md row 12's to do.",
+  "The endpoint question is closed for text: /v1/chat/completions and /apply-template + /completion agree to 0.0000, so a transport may keep text on the measured /completion path and take pictures through the chat endpoint without reading two different quantities.",
+  "The picture reaches the model rather than being dropped: removing it changes p_act on 26 of 32 cases (mean |delta| 0.2845), which a dropped image could not do."
+ ],
+ "what_this_does_not_settle": [
+  "Nothing about the multilingual half: the Chinese set is text-only, still act 1/6, and no Chinese image case exists.",
+  "Nothing about the cut itself. 0.600 is what the artifact declares and what governs; this file shows the transport keeps it, not that it is the right number.",
+  "Nothing about more than one picture per box. Every set here holds one, so where a second sits relative to the first is unmeasured, and src/llama.ts refuses a second rather than guessing.",
+  "Nothing about other placements. A picture between the text and the question is the only ordering measured here; a different one is a different prompt with the same question on its end.",
+  "The estimator is summed over the top 64 candidates, not over the whole vocabulary. At this depth the omitted mass is far below any cut in the measured plateaus, but it is not zero."
+ ],
+ "cases": [
+  {
+   "set": "img-cases",
+   "id": "a1",
+   "image": "img/a1.png",
+   "label": "act",
+   "p_act_server": 0.8147,
+   "p_ignore_server": 0.0901,
+   "p_act_recorded": 0.8142,
+   "delta": 0.0005,
+   "eval_ms": 878
+  },
+  {
+   "set": "img-cases",
+   "id": "a2",
+   "image": "img/a2.png",
+   "label": "act",
+   "p_act_server": 0.8562,
+   "p_ignore_server": 0.07,
+   "p_act_recorded": 0.8557,
+   "delta": 0.0005,
+   "eval_ms": 576
+  },
+  {
+   "set": "img-cases",
+   "id": "a3",
+   "image": "img/a3.png",
+   "label": "act",
+   "p_act_server": 0.8415,
+   "p_ignore_server": 0.0743,
+   "p_act_recorded": 0.8411,
+   "delta": 0.0004,
+   "eval_ms": 574
+  },
+  {
+   "set": "img-cases",
+   "id": "a4",
+   "image": "img/a4.png",
+   "label": "act",
+   "p_act_server": 0.5336,
+   "p_ignore_server": 0.3447,
+   "p_act_recorded": 0.5334,
+   "delta": 0.0002,
+   "eval_ms": 577
+  },
+  {
+   "set": "img-cases",
+   "id": "a5",
+   "image": "img/a5.png",
+   "label": "act",
+   "p_act_server": 0.1176,
+   "p_ignore_server": 0.6784,
+   "p_act_recorded": 0.118,
+   "delta": 0.0004,
+   "eval_ms": 576
+  },
+  {
+   "set": "img-cases",
+   "id": "a6",
+   "image": "img/a6.png",
+   "label": "act",
+   "p_act_server": 0.7937,
+   "p_ignore_server": 0.1235,
+   "p_act_recorded": 0.7931,
+   "delta": 0.0006,
+   "eval_ms": 578
+  },
+  {
+   "set": "img-cases",
+   "id": "a7",
+   "image": "img/a7.png",
+   "label": "act",
+   "p_act_server": 0.8687,
+   "p_ignore_server": 0.0513,
+   "p_act_recorded": 0.8684,
+   "delta": 0.0003,
+   "eval_ms": 576
+  },
+  {
+   "set": "img-cases",
+   "id": "a8",
+   "image": "img/a8.png",
+   "label": "act",
+   "p_act_server": 0.494,
+   "p_ignore_server": 0.4007,
+   "p_act_recorded": 0.4935,
+   "delta": 0.0005,
+   "eval_ms": 579
+  },
+  {
+   "set": "img-cases",
+   "id": "i1",
+   "image": "img/i1.png",
+   "label": "ignore",
+   "p_act_server": 0.1052,
+   "p_ignore_server": 0.7857,
+   "p_act_recorded": 0.1048,
+   "delta": 0.0004,
+   "eval_ms": 578
+  },
+  {
+   "set": "img-cases",
+   "id": "i2",
+   "image": "img/i2.png",
+   "label": "ignore",
+   "p_act_server": 0.221,
+   "p_ignore_server": 0.6672,
+   "p_act_recorded": 0.2209,
+   "delta": 0.0001,
+   "eval_ms": 581
+  },
+  {
+   "set": "img-cases",
+   "id": "i3",
+   "image": "img/i3.png",
+   "label": "ignore",
+   "p_act_server": 0.1218,
+   "p_ignore_server": 0.786,
+   "p_act_recorded": 0.1221,
+   "delta": 0.0003,
+   "eval_ms": 580
+  },
+  {
+   "set": "img-cases",
+   "id": "i4",
+   "image": "img/i4.png",
+   "label": "ignore",
+   "p_act_server": 0.3689,
+   "p_ignore_server": 0.5319,
+   "p_act_recorded": 0.3688,
+   "delta": 0.0001,
+   "eval_ms": 578
+  },
+  {
+   "set": "img-cases",
+   "id": "i5",
+   "image": "img/i5.png",
+   "label": "ignore",
+   "p_act_server": 0.0819,
+   "p_ignore_server": 0.8085,
+   "p_act_recorded": 0.0815,
+   "delta": 0.0004,
+   "eval_ms": 577
+  },
+  {
+   "set": "img-cases",
+   "id": "i6",
+   "image": "img/i6.png",
+   "label": "ignore",
+   "p_act_server": 0.0741,
+   "p_ignore_server": 0.6977,
+   "p_act_recorded": 0.0739,
+   "delta": 0.0002,
+   "eval_ms": 579
+  },
+  {
+   "set": "img-cases",
+   "id": "i7",
+   "image": "img/i7.png",
+   "label": "ignore",
+   "p_act_server": 0.3121,
+   "p_ignore_server": 0.5824,
+   "p_act_recorded": 0.3116,
+   "delta": 0.0005,
+   "eval_ms": 593
+  },
+  {
+   "set": "img-cases",
+   "id": "i8",
+   "image": "img/i8.png",
+   "label": "ignore",
+   "p_act_server": 0.0929,
+   "p_ignore_server": 0.757,
+   "p_act_recorded": 0.0925,
+   "delta": 0.0004,
+   "eval_ms": 578
+  },
+  {
+   "set": "img-heldout",
+   "id": "ho-a1",
+   "image": "img/ho-a1.png",
+   "label": "act",
+   "p_act_server": 0.8816,
+   "p_ignore_server": 0.0316,
+   "p_act_recorded": 0.8812,
+   "delta": 0.0004,
+   "eval_ms": 577
+  },
+  {
+   "set": "img-heldout",
+   "id": "ho-a2",
+   "image": "img/ho-a2.png",
+   "label": "act",
+   "p_act_server": 0.915,
+   "p_ignore_server": 0.0384,
+   "p_act_recorded": 0.9149,
+   "delta": 0.0001,
+   "eval_ms": 577
+  },
+  {
+   "set": "img-heldout",
+   "id": "ho-a3",
+   "image": "img/ho-a3.png",
+   "label": "act",
+   "p_act_server": 0.5245,
+   "p_ignore_server": 0.3501,
+   "p_act_recorded": 0.5237,
+   "delta": 0.0008,
+   "eval_ms": 579
+  },
+  {
+   "set": "img-heldout",
+   "id": "ho-a4",
+   "image": "img/ho-a4.png",
+   "label": "act",
+   "p_act_server": 0.7863,
+   "p_ignore_server": 0.1209,
+   "p_act_recorded": 0.7857,
+   "delta": 0.0006,
+   "eval_ms": 577
+  },
+  {
+   "set": "img-heldout",
+   "id": "ho-a5",
+   "image": "img/ho-a5.png",
+   "label": "act",
+   "p_act_server": 0.1156,
+   "p_ignore_server": 0.7337,
+   "p_act_recorded": 0.1159,
+   "delta": 0.0003,
+   "eval_ms": 577
+  },
+  {
+   "set": "img-heldout",
+   "id": "ho-a6",
+   "image": "img/ho-a6.png",
+   "label": "act",
+   "p_act_server": 0.8589,
+   "p_ignore_server": 0.0703,
+   "p_act_recorded": 0.8582,
+   "delta": 0.0007,
+   "eval_ms": 576
+  },
+  {
+   "set": "img-heldout",
+   "id": "ho-a7",
+   "image": "img/ho-a7.png",
+   "label": "act",
+   "p_act_server": 0.5875,
+   "p_ignore_server": 0.3133,
+   "p_act_recorded": 0.5873,
+   "delta": 0.0002,
+   "eval_ms": 577
+  },
+  {
+   "set": "img-heldout",
+   "id": "ho-a8",
+   "image": "img/ho-a8.png",
+   "label": "act",
+   "p_act_server": 0.7121,
+   "p_ignore_server": 0.1758,
+   "p_act_recorded": 0.7117,
+   "delta": 0.0004,
+   "eval_ms": 575
+  },
+  {
+   "set": "img-heldout",
+   "id": "ho-i1",
+   "image": "img/ho-i1.png",
+   "label": "ignore",
+   "p_act_server": 0.0516,
+   "p_ignore_server": 0.868,
+   "p_act_recorded": 0.0516,
+   "delta": 0,
+   "eval_ms": 577
+  },
+  {
+   "set": "img-heldout",
+   "id": "ho-i2",
+   "image": "img/ho-i2.png",
+   "label": "ignore",
+   "p_act_server": 0.1489,
+   "p_ignore_server": 0.7193,
+   "p_act_recorded": 0.1489,
+   "delta": 0,
+   "eval_ms": 576
+  },
+  {
+   "set": "img-heldout",
+   "id": "ho-i3",
+   "image": "img/ho-i3.png",
+   "label": "ignore",
+   "p_act_server": 0.2784,
+   "p_ignore_server": 0.6144,
+   "p_act_recorded": 0.2779,
+   "delta": 0.0005,
+   "eval_ms": 585
+  },
+  {
+   "set": "img-heldout",
+   "id": "ho-i4",
+   "image": "img/ho-i4.png",
+   "label": "ignore",
+   "p_act_server": 0.1774,
+   "p_ignore_server": 0.7126,
+   "p_act_recorded": 0.1772,
+   "delta": 0.0002,
+   "eval_ms": 581
+  },
+  {
+   "set": "img-heldout",
+   "id": "ho-i5",
+   "image": "img/ho-i5.png",
+   "label": "ignore",
+   "p_act_server": 0.1161,
+   "p_ignore_server": 0.7512,
+   "p_act_recorded": 0.116,
+   "delta": 0.0001,
+   "eval_ms": 576
+  },
+  {
+   "set": "img-heldout",
+   "id": "ho-i6",
+   "image": "img/ho-i6.png",
+   "label": "ignore",
+   "p_act_server": 0.1001,
+   "p_ignore_server": 0.6644,
+   "p_act_recorded": 0.1001,
+   "delta": 0,
+   "eval_ms": 577
+  },
+  {
+   "set": "img-heldout",
+   "id": "ho-i7",
+   "image": "img/ho-i7.png",
+   "label": "ignore",
+   "p_act_server": 0.294,
+   "p_ignore_server": 0.6104,
+   "p_act_recorded": 0.2937,
+   "delta": 0.0003,
+   "eval_ms": 576
+  },
+  {
+   "set": "img-heldout",
+   "id": "ho-i8",
+   "image": "img/ho-i8.png",
+   "label": "ignore",
+   "p_act_server": 0.0794,
+   "p_ignore_server": 0.8099,
+   "p_act_recorded": 0.0795,
+   "delta": 0.0001,
+   "eval_ms": 577
+  },
+  {
+   "set": "img-boundary",
+   "id": "b-a1",
+   "image": "img/b-a1.png",
+   "label": "act",
+   "p_act_server": 0.2034,
+   "p_ignore_server": 0.6922,
+   "p_act_recorded": 0.2035,
+   "delta": 0.0001,
+   "eval_ms": 587
+  },
+  {
+   "set": "img-boundary",
+   "id": "b-a2",
+   "image": "img/b-a2.png",
+   "label": "act",
+   "p_act_server": 0.8066,
+   "p_ignore_server": 0.1204,
+   "p_act_recorded": 0.8055,
+   "delta": 0.0011,
+   "eval_ms": 578
+  },
+  {
+   "set": "img-boundary",
+   "id": "b-a3",
+   "image": "img/b-a3.png",
+   "label": "act",
+   "p_act_server": 0.6143,
+   "p_ignore_server": 0.2795,
+   "p_act_recorded": 0.6143,
+   "delta": 0,
+   "eval_ms": 576
+  },
+  {
+   "set": "img-boundary",
+   "id": "b-a4",
+   "image": "img/b-a4.png",
+   "label": "act",
+   "p_act_server": 0.4501,
+   "p_ignore_server": 0.4558,
+   "p_act_recorded": 0.45,
+   "delta": 0.0001,
+   "eval_ms": 578
+  },
+  {
+   "set": "img-boundary",
+   "id": "b-a5",
+   "image": "img/b-a5.png",
+   "label": "act",
+   "p_act_server": 0.1214,
+   "p_ignore_server": 0.687,
+   "p_act_recorded": 0.1209,
+   "delta": 0.0005,
+   "eval_ms": 579
+  },
+  {
+   "set": "img-boundary",
+   "id": "b-a6",
+   "image": "img/b-a6.png",
+   "label": "act",
+   "p_act_server": 0.5671,
+   "p_ignore_server": 0.3201,
+   "p_act_recorded": 0.5664,
+   "delta": 0.0007,
+   "eval_ms": 577
+  },
+  {
+   "set": "img-boundary",
+   "id": "b-a7",
+   "image": "img/b-a7.png",
+   "label": "act",
+   "p_act_server": 0.7131,
+   "p_ignore_server": 0.1907,
+   "p_act_recorded": 0.7125,
+   "delta": 0.0006,
+   "eval_ms": 577
+  },
+  {
+   "set": "img-boundary",
+   "id": "b-a8",
+   "image": "img/b-a8.png",
+   "label": "act",
+   "p_act_server": 0.2033,
+   "p_ignore_server": 0.7188,
+   "p_act_recorded": 0.2029,
+   "delta": 0.0004,
+   "eval_ms": 577
+  },
+  {
+   "set": "img-boundary",
+   "id": "b-a9",
+   "image": "img/b-a9.png",
+   "label": "act",
+   "p_act_server": 0.3211,
+   "p_ignore_server": 0.5604,
+   "p_act_recorded": 0.3206,
+   "delta": 0.0005,
+   "eval_ms": 578
+  },
+  {
+   "set": "img-boundary",
+   "id": "b-a10",
+   "image": "img/b-a10.png",
+   "label": "act",
+   "p_act_server": 0.0836,
+   "p_ignore_server": 0.7307,
+   "p_act_recorded": 0.0833,
+   "delta": 0.0003,
+   "eval_ms": 577
+  },
+  {
+   "set": "img-boundary",
+   "id": "b-a11",
+   "image": "img/b-a11.png",
+   "label": "act",
+   "p_act_server": 0.2518,
+   "p_ignore_server": 0.6622,
+   "p_act_recorded": 0.2521,
+   "delta": 0.0003,
+   "eval_ms": 576
+  },
+  {
+   "set": "img-boundary",
+   "id": "b-a12",
+   "image": "img/b-a12.png",
+   "label": "act",
+   "p_act_server": 0.5373,
+   "p_ignore_server": 0.374,
+   "p_act_recorded": 0.5367,
+   "delta": 0.0006,
+   "eval_ms": 579
+  },
+  {
+   "set": "img-boundary",
+   "id": "b-i1",
+   "image": "img/b-i1.png",
+   "label": "ignore",
+   "p_act_server": 0.1133,
+   "p_ignore_server": 0.7797,
+   "p_act_recorded": 0.1132,
+   "delta": 0.0001,
+   "eval_ms": 579
+  },
+  {
+   "set": "img-boundary",
+   "id": "b-i2",
+   "image": "img/b-i2.png",
+   "label": "ignore",
+   "p_act_server": 0.0875,
+   "p_ignore_server": 0.7734,
+   "p_act_recorded": 0.0877,
+   "delta": 0.0002,
+   "eval_ms": 575
+  },
+  {
+   "set": "img-boundary",
+   "id": "b-i3",
+   "image": "img/b-i3.png",
+   "label": "ignore",
+   "p_act_server": 0.1924,
+   "p_ignore_server": 0.6496,
+   "p_act_recorded": 0.1925,
+   "delta": 0.0001,
+   "eval_ms": 577
+  },
+  {
+   "set": "img-boundary",
+   "id": "b-i4",
+   "image": "img/b-i4.png",
+   "label": "ignore",
+   "p_act_server": 0.2707,
+   "p_ignore_server": 0.6338,
+   "p_act_recorded": 0.2705,
+   "delta": 0.0002,
+   "eval_ms": 579
+  },
+  {
+   "set": "img-boundary",
+   "id": "b-i5",
+   "image": "img/b-i5.png",
+   "label": "ignore",
+   "p_act_server": 0.3371,
+   "p_ignore_server": 0.5214,
+   "p_act_recorded": 0.3372,
+   "delta": 0.0001,
+   "eval_ms": 577
+  },
+  {
+   "set": "img-boundary",
+   "id": "b-i6",
+   "image": "img/b-i6.png",
+   "label": "ignore",
+   "p_act_server": 0.0983,
+   "p_ignore_server": 0.7981,
+   "p_act_recorded": 0.0984,
+   "delta": 0.0001,
+   "eval_ms": 576
+  },
+  {
+   "set": "img-boundary",
+   "id": "b-i7",
+   "image": "img/b-i7.png",
+   "label": "ignore",
+   "p_act_server": 0.0302,
+   "p_ignore_server": 0.7584,
+   "p_act_recorded": 0.0303,
+   "delta": 0.0001,
+   "eval_ms": 574
+  },
+  {
+   "set": "img-boundary",
+   "id": "b-i8",
+   "image": "img/b-i8.png",
+   "label": "ignore",
+   "p_act_server": 0.1209,
+   "p_ignore_server": 0.7366,
+   "p_act_recorded": 0.121,
+   "delta": 0.0001,
+   "eval_ms": 578
+  },
+  {
+   "set": "img-boundary",
+   "id": "b-i9",
+   "image": "img/b-i9.png",
+   "label": "ignore",
+   "p_act_server": 0.147,
+   "p_ignore_server": 0.7422,
+   "p_act_recorded": 0.1473,
+   "delta": 0.0003,
+   "eval_ms": 578
+  },
+  {
+   "set": "img-boundary",
+   "id": "b-i10",
+   "image": "img/b-i10.png",
+   "label": "ignore",
+   "p_act_server": 0.1474,
+   "p_ignore_server": 0.7294,
+   "p_act_recorded": 0.1474,
+   "delta": 0,
+   "eval_ms": 580
+  },
+  {
+   "set": "img-boundary",
+   "id": "b-i11",
+   "image": "img/b-i11.png",
+   "label": "ignore",
+   "p_act_server": 0.0432,
+   "p_ignore_server": 0.802,
+   "p_act_recorded": 0.0432,
+   "delta": 0,
+   "eval_ms": 581
+  },
+  {
+   "set": "img-boundary",
+   "id": "b-i12",
+   "image": "img/b-i12.png",
+   "label": "ignore",
+   "p_act_server": 0.0872,
+   "p_ignore_server": 0.8099,
+   "p_act_recorded": 0.0873,
+   "delta": 0.0001,
+   "eval_ms": 579
+  }
+ ]
+}
