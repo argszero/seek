@@ -41,6 +41,10 @@ async function kernelModules() {
     kernel: await import('../../src/kernel.ts'),
     main: await import('../../src/main.ts'),
     roster: await import('../../src/roster.ts'),
+    // Stage 1 over a server, and the artifact it is bound to. Both are the kernel's,
+    // and `watch-server.ts` is the seam the kernel's own command line goes through.
+    watchServer: await import('../../src/watch-server.ts'),
+    prompts: await import('../../src/prompts.ts'),
   }
   return modules
 }
@@ -148,14 +152,108 @@ async function seedFirstRun(mods, store, rows) {
 }
 
 /**
+ * Who decides whether the bot acts: the kernel's placeholder, or the measured watch model
+ * over a server the person named.
+ *
+ * **This is stage 1, and only stage 1.** The kernel has two halves: the cheap judgement
+ * that says whether a message is worth acting on (`judge`, below) and the turn that then
+ * says something (`decide`, still `stubDecide`). Reading a real model for the first half
+ * makes the bot speak when it judges it should rather than on every message; it does not
+ * change a word of what it says, which is `STUB_REPLY` until a turn has a model. Naming
+ * both in one breath is the confusion this comment exists to prevent.
+ *
+ * **Nothing here is invented.** `watch-server.ts` is the seam the kernel's own command
+ * line goes through, and it is called with the same two facts it is given there: the
+ * server's origin, and the artifact the assembled text belongs to. The artifact is not a
+ * choice this file makes — `loadPromptArtifact()` reads the shipped one, and
+ * `watchOverServer` refuses outright if the server was bound to an artifact that asks a
+ * different question, so a wrong one fails at construction instead of drifting.
+ *
+ * **The two facts arrive together or not at all**, the way `--server`/`--window` pair up in
+ * `src/main.ts`, and for the same reason: `window` is how much one judgement may read, the
+ * number is the caller's (`box.ts`), and an app that chose one for the person would be
+ * writing down a budget no measurement stands behind. The knobs are named in the refusal
+ * because refusing is only useful to whoever turned one.
+ *
+ * Returns the kernel's `Judge` and, when a server was named, its origin — so the window
+ * can say which of the two it is looking at. A reader who cannot tell a measured verdict
+ * from a placeholder is reading a stub as a bot that thought (`src/main.ts`,
+ * `MilestoneRun.stage1Server`).
+ */
+async function stageOneFor(mods, store, options) {
+  const server = typeof options?.server === 'string' && options.server !== '' ? options.server : undefined;
+  const rawWindow = typeof options?.window === 'string' && options.window !== '' ? options.window : undefined;
+
+  if ((server === undefined) !== (rawWindow === undefined)) {
+    throw new Error(
+      server === undefined
+        ? 'SEEK_WINDOW gives a budget with no SEEK_SERVER: which model server to ask is ' +
+            "yours to name (`docs/decisions.md` row 20), so a budget on its own says " +
+            'nothing to ask it of'
+        : 'SEEK_SERVER names a model server with no SEEK_WINDOW: how much one judgement ' +
+            'may read is your number (`box.ts`), and this app will not choose one for you',
+    );
+  }
+
+  if (server === undefined) return { judge: mods.main.stubJudge };
+
+  if (!/^[1-9][0-9]*$/.test(rawWindow)) {
+    throw new Error(
+      `SEEK_WINDOW is '${rawWindow}', which is not a positive whole number: it is how much ` +
+        'one judgement may read, and a budget that is not a number is not the one you meant',
+    );
+  }
+
+  const judge = await mods.watchServer.watchOverServer(
+    store,
+    onlyBotId(store),
+    {
+      baseUrl: server,
+      artifact: mods.prompts.loadPromptArtifact(),
+      ...(options?.fetch === undefined ? {} : { fetch: options.fetch }),
+    },
+    { window: Number(rawWindow) },
+  );
+
+  return { judge, server };
+}
+
+/**
+ * The one bot stage 1 is bound to.
+ *
+ * `watchOverServer` binds **one** bot, because two of the facts it checks are that bot's:
+ * the `model` its watch row declares (`docs/decisions.md` row 24) and the identity its
+ * agents are told. `Kernel` takes a single `judge` for every bot it drains, so this build
+ * can bind exactly one. A store holding more than one is therefore refused rather than
+ * bound to whichever key came first — that would check one bot's claim and then let every
+ * other bot be served by whatever is in front of the port, which is the failure row 24
+ * exists to stop. The store a first run makes holds one bot, which is why this build is
+ * exact there.
+ */
+function onlyBotId(store) {
+  const ids = Object.keys(store.data.bots);
+  if (ids.length === 1) return ids[0];
+  throw new Error(
+    ids.length === 0
+      ? 'this store holds no bot, so there is nothing to bind a model server to'
+      : `this store holds ${ids.length} bots, and stage 1 is bound per bot: this build binds ` +
+          'one, so a server is refused rather than read for one bot and applied to all of them',
+  );
+}
+
+/**
  * Open the kernel the interface runs on.
  *
  * A store that is not there yet is a fresh install, and a fresh install lands in a room
  * rather than on an empty window: see `seedFirstRun`. Everything after that point is the one
  * path — the roster is read, the bot's agents are rebuilt from it, and the kernel is built
  * over the store — so a first run takes no special route through the interface.
+ *
+ * `options.server` and `options.window` are what `SEEK_SERVER` and `SEEK_WINDOW` carried;
+ * left out, both halves of the run are the kernel's placeholders, as the published build
+ * has been until now. `options.fetch` is a test's recorder, handed to the transport.
  */
-async function openHost(storeFile) {
+async function openHost(storeFile, options = {}) {
   const mods = await kernelModules()
 
   const store = await mods.store.SeekStore.load(storeFile)
@@ -169,15 +267,39 @@ async function openHost(storeFile) {
   if (await seedFirstRun(mods, store, rows)) rows = await mods.roster.readRosterFor(store)
   if (rows !== undefined) mods.roster.applyRoster(store, rows)
 
+  // Stage 1 is settled before the kernel exists: binding it over a server measures the
+  // option ids, and a kernel started over a mask taken from another question would run
+  // happily and never act. Everything it can refuse, it refuses here rather than on the
+  // first message.
+  //
+  // **A refusal does not close the window.** The store is local and every message in it is
+  // still there, so an app that would not open because a model server was down or misnamed
+  // would be punishing the person for the server's state. It falls back to the placeholder
+  // and says *which server it did not use, and why* — that sentence is what a silent
+  // fallback would lose, and it is why the reason is a returned fact rather than a caught
+  // error nobody reads. `main.js` logs it too, so a refusal is visible where the app was
+  // started from as well as in the window.
+  let stage1 = { judge: mods.main.stubJudge, server: null, refusal: null }
+  try {
+    const bound = await stageOneFor(mods, store, options)
+    stage1 = { judge: bound.judge, server: bound.server ?? null, refusal: null }
+  } catch (error) {
+    stage1 = {
+      judge: mods.main.stubJudge,
+      server: null,
+      refusal: error instanceof Error ? error.message : String(error),
+    }
+  }
+
   const kernel = new mods.kernel.Kernel(store, {
     decide: mods.main.stubDecide,
-    judge: mods.main.stubJudge,
+    judge: stage1.judge,
   })
   // Nothing is woken by starting: this arms the one comparator for rows that came due
   // (`§12 (c)`), and a delivery is what wakes a bot.
   await kernel.start()
 
-  return { store, kernel, storeFile }
+  return { store, kernel, storeFile, stage1 }
 }
 
 /** Stop the comparator. The table is left as it is, so nothing is lost by quitting. */
@@ -245,7 +367,10 @@ async function postMessage(host, input) {
   // writing" has exactly one answer in the kernel.
   await host.kernel.whenIdle()
 
-  return snapshotOf(host.store, host.storeFile)
+  // The same three facts the window's first snapshot carried: a send replaces the whole
+  // snapshot in the renderer, so leaving `stage1` out here would make the strip disappear
+  // the moment the person said anything.
+  return snapshotOf(host.store, host.storeFile, host.stage1)
 }
 
 module.exports = { closeHost, openHost, postMessage }

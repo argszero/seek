@@ -148,3 +148,25 @@ test('a store that is not open yet says so instead of throwing', () => {
   assert.deepEqual(snapshot.rooms, [])
   assert.match(snapshot.error, /not open yet/)
 })
+
+/**
+ * Which stage 1 the window is looking at — three readings that must not collapse into two.
+ *
+ * "no server" is the state this build ships in; "a server in use" is the measured watch
+ * model; "a server that was named and not used" is a failure. A window that drew the third
+ * like the first would be showing a fallback as a configuration, which is the one thing a
+ * silent switch of mode cannot be allowed to do (`docs/decisions.md` row 20).
+ */
+test('the snapshot says which stage 1 it is, and a refusal is not the same reading as silence', () => {
+  const off = snapshotOf(seeded(), '/tmp/seek.json')
+  assert.deepEqual(off.stage1, { server: null, refusal: null }, 'nothing named, nothing refused')
+
+  const bound = snapshotOf(seeded(), '/tmp/seek.json', { server: 'http://127.0.0.1:8080' })
+  assert.deepEqual(bound.stage1, { server: 'http://127.0.0.1:8080', refusal: null })
+
+  const refused = snapshotOf(seeded(), '/tmp/seek.json', { refusal: 'it serves another model' })
+  assert.deepEqual(refused.stage1, { server: null, refusal: 'it serves another model' })
+
+  const shut = snapshotOf(null, null, { refusal: 'why not' })
+  assert.equal(shut.stage1.refusal, 'why not', 'a store that is not open still says why')
+})

@@ -31,8 +31,36 @@ function meOf(store) {
   return first ?? null
 }
 
-function snapshotOf(store, storeFile) {
-  if (!store) return { rooms: [], me: null, storeFile: null, error: 'the store is not open yet' }
+/**
+ * Which stage 1 the window is looking at, in the two facts the interface may show.
+ *
+ * `server` is the origin the bot's judgement is bound to, or `null` when the run is the
+ * kernel's placeholder; `refusal` is why a server that *was* named is not in use. They are
+ * two different readings and the window must not draw them as one: nothing named is a
+ * state — this build has no model until someone configures one — while a server that was
+ * named and not used is a failure, and a window showing both as "no model" would hide the
+ * second (`docs/decisions.md` row 20).
+ *
+ * Both are strings or `null`, so the renderer holds no error object and no stack: what it
+ * draws is a sentence somebody wrote, passed through unchanged.
+ */
+function stageOneOf(stage1) {
+  return {
+    server: typeof stage1?.server === 'string' && stage1.server !== '' ? stage1.server : null,
+    refusal: typeof stage1?.refusal === 'string' && stage1.refusal !== '' ? stage1.refusal : null,
+  }
+}
+
+function snapshotOf(store, storeFile, stage1 = null) {
+  if (!store) {
+    return {
+      rooms: [],
+      me: null,
+      storeFile: null,
+      stage1: stageOneOf(stage1),
+      error: 'the store is not open yet',
+    }
+  }
 
   const rooms = Object.values(store.data.rooms).map((room) => ({
     id: room.id,
@@ -73,6 +101,7 @@ function snapshotOf(store, storeFile) {
     rooms,
     me: meOf(store),
     storeFile,
+    stage1: stageOneOf(stage1),
   }
 }
 
