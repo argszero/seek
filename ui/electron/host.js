@@ -95,7 +95,9 @@ const FIRST_RUN_ROSTER = `# agents.yml — the roster of agents (\`host-rulings.
 #
 # A first run writes this file because a fresh install has no other way to have an agent at
 # all. Editing it is how a bot is given a different set of workers; deleting it is not, since
-# a store with no roster beside it keeps the agents it already carries.
+# a store with no roster file beside it keeps the agents it already has — a missing file says
+# nothing about the store, while a file that is there and holds no rows says the bot has no
+# agents.
 #
 # Two spaces for \`- \`, four for a field, whole-line comments only, lists in one line.
 # Anything outside that subset is an error naming the line.

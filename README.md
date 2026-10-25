@@ -69,7 +69,7 @@ npm start -- --server http://127.0.0.1:8080 --window 24
 
 `--server` is the origin of a process **seek does not start, supervise or stop** (`docs/decisions.md`, default 20), and `--window` is how much one judgement may read — the caller's number, because the runtime does not know a model's window. The two go together: either one alone is refused rather than half-guessed. **No weights ship with this repository**, so this is the one command here that needs something you provide.
 
-A store outside `seek-data/` needs a roster beside it. `agents.yml` is read from the store's own directory (`docs/decisions.md`, defaults 14 and 15), and a store with no roster beside it opens over a bot with no agents and refuses to run rather than inventing one.
+A store outside `seek-data/` needs a roster beside it. `agents.yml` is read from the store's own directory every time the store is opened, and the store's agents are rebuilt from it (`docs/decisions.md`, defaults 14 and 15). **Two states are not one.** A store with no roster file beside it keeps the agents it already has — a missing file says nothing about the store, so an install whose roster was deleted goes on answering with the workers it had — while a roster that is present and holds no rows is the one that says this bot has no agents. Editing the file is how a bot is given a different set of workers; deleting it is not. What refuses is `npm start`: a run whose bot has no watch agent and no work agent stops and says so, rather than inventing one.
 
 ## Install the app
 
