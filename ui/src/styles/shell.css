@@ -133,6 +133,11 @@ body {
 
 .main-head h2 { margin: 0; font-size: 15px; font-weight: 600; }
 .members { color: var(--N500); font-size: 12px; }
+/* What the room has spent, drawn as a number and never as a bar: the ruling behind it
+   (`docs/host-rulings.md`, "No spending cap") forbids a limit, and a bar would draw
+   one this product does not have. Muted like the member count beside it, because it is
+   a reading about the room rather than a control. */
+.spend { color: var(--N500); font-size: 12px; }
 
 /* What each half of the bot is on, as a standing strip rather than a toast: it is a fact
    about the process, so it stays until the fact changes. `bound` is the measured model and

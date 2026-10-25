@@ -66,7 +66,7 @@ import {
 import { requireServedModel } from './served.ts';
 import type { SeekStore } from './store.ts';
 import type { Decide, HandedEntry, TurnContext } from './turn.ts';
-import type { Id } from './types.ts';
+import type { Id, TokenUsage } from './types.ts';
 
 /**
  * The room a bind-time prompt is measured with: an id of the width the store mints.
@@ -173,7 +173,7 @@ export async function workOverServer(
     parameters: tool.parameters,
   }));
 
-  return async (context: TurnContext): Promise<void> => {
+  return async (context: TurnContext): Promise<TokenUsage | void> => {
     const values = valuesOf(store, context);
     const assembled = assembleWorkPrompt(artifact, values);
 
@@ -199,6 +199,12 @@ export async function workOverServer(
     // `answer.content` is deliberately unread: it is the agent's working record, and
     // there is no path from it to a room (`say.ts`).
     for (const call of answer.toolCalls) run(store, context, call);
+
+    // What the server said this turn read and wrote, handed to `runTurn` to be written
+    // on the ledger row — the one place a real cost enters the store. `undefined` when
+    // the server reported no usage: this seam does not top the figure up, because the
+    // half it would invent is the half nobody measured.
+    return answer.usage ?? undefined;
   };
 }
 
