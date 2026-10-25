@@ -24,12 +24,20 @@
  * Electron strips itself, so nothing at runtime resolves out of `node_modules`), an output
  * directory that would overwrite the renderer's own build, and an icon or a signature claim
  * that does not match what is actually there.
+ *
+ * The last two tests pin the **installer** rather than the archive, because a `.pkg` is a
+ * second way to install the same bundle and two things about it go wrong quietly: it can be
+ * cut from a target that cannot be built in the environment this repository is developed in
+ * (`dmg` ends in `hdiutil create`, which that environment refuses), and it can acquire a
+ * second recipe on the CI runner, at which point the published file stops being the file the
+ * repository makes.
  */
 import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve, sep } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { pkgPlan } from '../../packaging/make-pkg.mjs'
 
 const UI = fileURLToPath(new URL('../', import.meta.url))
 const REPO = resolve(UI, '..')
@@ -135,4 +143,46 @@ test('the build is unsigned and says so, and the version is a release', () => {
   assert.equal(build.mac.notarize, false)
   assert.match(pkg.version, /^\d+\.\d+\.\d+$/)
   assert.notEqual(pkg.version, '0.0.0', 'a download is a release, not an unfilled placeholder')
+})
+
+test('the installer is cut from the app bundle, and claims what the app already declares', () => {
+  const plan = pkgPlan()
+
+  // The bundle it is cut from is the `--dir` output, not the `dmg` target: that target ends
+  // in `hdiutil create`, which the environment this repository is developed in refuses, so a
+  // recipe that needed it would be a recipe nobody here could run.
+  assert.equal(plan.bundle, join(UI, 'release', 'mac-arm64', 'Seek.app'))
+  assert.equal(plan.output, join(UI, 'release', `Seek-${pkg.version}-arm64-mac.pkg`))
+
+  // Where the `.zip`'s own instructions already send a reader — two downloads of one app that
+  // installed to two places would be one answer too many.
+  assert.equal(plan.installLocation, '/Applications')
+
+  // Nothing about the package is typed twice: the identifier and the version are the app's
+  // own, read out of the `package.json` this file already parsed.
+  assert.equal(plan.identifier, build.appId)
+  assert.equal(plan.version, pkg.version)
+
+  assert.deepEqual(plan.argv.slice(0, 2), ['--component', plan.bundle])
+  const flag = (name) => plan.argv[plan.argv.indexOf(name) + 1]
+  assert.equal(flag('--install-location'), '/Applications')
+  assert.equal(flag('--identifier'), build.appId)
+  assert.equal(flag('--version'), pkg.version)
+  assert.equal(plan.argv.at(-1), plan.output, 'and the last argument is the file it writes')
+})
+
+test('one command makes the installer, and the release runs that command', () => {
+  // Two recipes for one artifact is how a published file stops being the file this repository
+  // makes, so the script is named by the npm script and by the workflow, and the packaging
+  // test reads both: change one and this fails before a tag is ever pushed.
+  const script = pkg.scripts['dist:pkg']
+  assert.ok(script, 'ui/package.json declares dist:pkg')
+  assert.match(script, /electron-builder --mac --arm64 --dir/, 'the bundle, and not the dmg target')
+  assert.match(script, /node \.\.\/packaging\/make-pkg\.mjs/, 'and then the installer script')
+
+  const workflow = readFileSync(join(REPO, '.github', 'workflows', 'release.yml'), 'utf8')
+  assert.match(workflow, /npm run dist:pkg/, 'the runner runs the command a person runs')
+  assert.match(workflow, /runs-on: macos-/, 'on macOS, the only system pkgbuild exists on')
+  assert.match(workflow, /refs\/tags\//, 'and it publishes from a tag, not from a branch head')
+  assert.match(workflow, /does not name the app's version/, 'a tag and the app must name one version')
 })

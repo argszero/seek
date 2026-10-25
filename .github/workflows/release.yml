@@ -1,0 +1,99 @@
+name: Release
+
+# A download is built on a runner, not on one person's machine.
+#
+# Why this file exists: the installer step is `pkgbuild`, which the environment this
+# repository is developed in permits, but electron-builder's `dmg` target is not — it ends in
+# `hdiutil create`, which that environment refuses. A release only one machine can build is a
+# release that stops when that machine does, so a `v*` tag runs the same `npm run dist:pkg` a
+# person runs, on a macOS runner, and attaches what it produced to the release.
+#
+# The recipe is the `ui/package.json` script and never a second copy written here: this file
+# says where and when, and `packaging/make-pkg.mjs` says what. The packaging test pins that
+# this file names that script rather than reimplementing it.
+#
+# **This repository has no pull-request workflow yet**, so nothing here runs on a pull
+# request: a green run of this file is only ever seen from a tag, which is why a `v*` push is
+# the first moment any of it is executed at all.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  macos-arm64:
+    # Apple silicon only: it is the one architecture the app declares (`ui/package.json`'s
+    # mac target) and the one the README's download names. A second architecture is a second
+    # decision about what this project ships, not a matrix row to be guessed here.
+    runs-on: macos-15
+    permissions:
+      contents: write # creating the release; every step before it only reads
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          # `engines` says ">=22.18", which is where Node strips TypeScript by itself — the
+          # fact that lets `npm test` run the kernel with no build step and no bundler.
+          node-version: "22.18"
+
+      # The kernel's suite is the regression gate: a release is cut from a green tree, and a
+      # red one stops here rather than publishing an app nobody tested.
+      - name: Kernel tests
+        run: npm test
+
+      - name: Interface tests
+        working-directory: ui
+        run: |
+          npm ci
+          npm test
+
+      # The one command that makes both artifacts: `vite build`, electron-builder's `--dir`
+      # output (the `.app`, and deliberately not the `dmg` target) and
+      # `packaging/make-pkg.mjs` over that bundle.
+      - name: Build the app and its installer
+        working-directory: ui
+        run: npm run dist:pkg
+
+      # A tag and the app it releases have to name one version. `v0.2.0` over a tree whose
+      # `ui/package.json` still says 0.1.0 would publish an installer claiming the older
+      # version, and the release page would be the only place the two disagreed.
+      - name: The tag names the version the app carries
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          set -euo pipefail
+          APP_VERSION="$(node -p "require('./ui/package.json').version")"
+          if [ "$GITHUB_REF_NAME" != "v${APP_VERSION}" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not name the app's version v${APP_VERSION}"
+            exit 1
+          fi
+
+      # The zip beside the pkg: it is the file v0.1.0 published, its instructions are a drag,
+      # and the bytes in it are the same bundle. Kept so a release does not silently stop
+      # offering the shape people already downloaded.
+      - name: Zip the bundle
+        run: |
+          set -euo pipefail
+          VERSION="$(node -p "require('./ui/package.json').version")"
+          ditto -c -k --sequesterRsrc --keepParent \
+            ui/release/mac-arm64/Seek.app \
+            "ui/release/Seek-${VERSION}-arm64-mac.zip"
+          ls -la ui/release/*.pkg ui/release/*.zip
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: seek-macos-arm64
+          path: |
+            ui/release/*.pkg
+            ui/release/*.zip
+          if-no-files-found: error
+
+      - name: Publish the release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ui/release/*.pkg
+            ui/release/*.zip
+          generate_release_notes: true

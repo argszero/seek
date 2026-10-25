@@ -75,6 +75,8 @@ A store outside `seek-data/` needs a roster beside it. `agents.yml` is read from
 
 The first downloadable build is **`v0.1.0`**: macOS on Apple silicon, and **unsigned**. Take `Seek-0.1.0-arm64-mac.zip` from the [releases page](https://github.com/argszero/seek/releases), unzip it, and drag `Seek.app` into `Applications`.
 
+**An installer is built from now on, beside that zip.** `npm run dist:pkg` in `ui/` cuts `ui/release/Seek-<version>-arm64-mac.pkg` out of the same bundle with macOS's own `pkgbuild` (`packaging/make-pkg.mjs`), and installing it puts `Seek.app` in `Applications` without the drag. It is a `.pkg` rather than a `.dmg` because electron-builder's `dmg` target ends in `hdiutil create`, which the environment this repository is developed in refuses outright (`the operation is not permitted`), while `pkgbuild` is not refused — the same reason the neighbouring EMRG project ships its macOS download as a `.pkg`. And a release should not be something one machine has to be able to build: pushing a `v*` tag runs that same `npm run dist:pkg` on a macOS runner (`.github/workflows/release.yml`) and attaches both the `.pkg` and the `.zip` to the release.
+
 **macOS will object the first time, because nothing here is signed.** The bundle carries no signature and no notarisation — there is no signing identity behind this project — so Gatekeeper refuses it. Either right-click `Seek.app` and choose **Open**, or clear the flag the browser set:
 
 ```bash
