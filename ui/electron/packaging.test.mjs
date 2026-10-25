@@ -39,7 +39,15 @@ import { dirname, join, resolve, sep } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { pkgPlan, signingPlan } from '../../packaging/make-pkg.mjs'
-import { failureTextOf, notarizePlan, verdictOf } from '../../packaging/notarize.mjs'
+import {
+  failureTextOf,
+  isNetworkFailure,
+  notarizePlan,
+  staplingOf,
+  validateOutcomeOf,
+  verdictOf,
+  withRetries,
+} from '../../packaging/notarize.mjs'
 
 const UI = fileURLToPath(new URL('../', import.meta.url))
 const REPO = resolve(UI, '..')
@@ -316,6 +324,179 @@ test('notarization refuses to run on a guess, and never reads an Invalid verdict
     failureTextOf({ stderr: 'line\nError: HTTP status 401\n' }, ['xcrun', 'notarytool']),
     'line\nError: HTTP status 401',
   )
+
+  // A silent failure that *did* run is not a failure that could not start, and the words have to
+  // differ: `stapler` exits 66 on a package with no ticket and says nothing on stderr, so "could
+  // not be started" would be a false account of what happened.
+  const quiet = failureTextOf({ status: 66 }, ['xcrun', 'stapler', 'validate', 'Seek-0.0.0.pkg'])
+  assert.match(quiet, /66/, 'the exit status is the only thing there is to report, so it is reported')
+  assert.match(quiet, /ran and failed/, 'the command ran — it did not fail to start')
+  assert.doesNotMatch(quiet, /could not be started/, 'which is the other, different event')
+  assert.match(quiet, /xcrun stapler validate Seek-0\.0\.0\.pkg/, 'and the command line comes with it')
+
+  // The shape that failure really takes, measured: stapler prints `Processing: <path>` on stdout
+  // and exits 66 with an empty stderr. Printing that line alone would say which file, not what
+  // went wrong — so the status travels with the words.
+  const processingOnly = failureTextOf(
+    { status: 66, stdout: 'Processing: /tmp/Seek-0.0.0-arm64-mac.pkg\n', stderr: '' },
+    ['xcrun', 'stapler', 'validate', '/tmp/Seek-0.0.0-arm64-mac.pkg'],
+  )
+  assert.match(processingOnly, /Processing: \/tmp\/Seek-0\.0\.0-arm64-mac\.pkg/, 'what it said is kept')
+  assert.match(processingOnly, /exit status 66/, 'and the status is added, because the line is not a reason')
+})
+
+test('stapling asks Apple again when Apple did not answer, and never when the package has no ticket', () => {
+  // The two failures below are the measured ones. `v0.1.2`'s release run stapled its package
+  // (`The staple and validate action worked!`) and then failed the release at `stapler validate`
+  // with exactly this pair: exit 68 and `Code=-1005` against `api.apple-cloudkit.com`. The
+  // no-ticket failure was measured on this machine: an unnotarized `.pkg` exits 66 and an
+  // unnotarized `.app` exits 65, and the `.pkg` says nothing at all on stderr — which is why the
+  // exit code is read and not only the prose.
+  const unreachable = Object.assign(new Error('Command failed'), {
+    status: 68,
+    stderr: 'The validate action failed! Error 68.',
+    stdout: '/Users/runner/work/_temp/Seek-0.1.2-arm64-mac.pkg\n',
+  })
+  const lostMidway = Object.assign(new Error('Command failed'), {
+    status: 68,
+    stderr: 'error is Error Domain=NSURLErrorDomain Code=-1005 "The network connection was lost."',
+  })
+  const noTicket = Object.assign(new Error('Command failed'), { status: 65, stderr: 'Seek.app does not have a ticket stapled to it.' })
+  const unreadable = Object.assign(new Error('Command failed'), { status: 66, stderr: '' })
+
+  assert.equal(isNetworkFailure(unreachable), true, 'EX_NOHOST is Apple not answering')
+  assert.equal(isNetworkFailure(lostMidway), true, 'and so is the same thing said in words')
+  assert.equal(isNetworkFailure(noTicket), false, 'a file with no ticket is an answer about the file')
+  assert.equal(isNetworkFailure(unreadable), false, 'and so is a file stapler cannot read')
+  assert.equal(isNetworkFailure(undefined), false, 'nothing to judge is not a network failure')
+  // EX_UNAVAILABLE: the far end answered that it could not answer.
+  assert.equal(isNetworkFailure({ status: 69 }), true)
+
+  const waits = []
+  let calls = 0
+  const flaky = withRetries(
+    () => {
+      calls += 1
+      if (calls < 3) throw unreachable
+      return 'The staple and validate action worked!'
+    },
+    { wait: (pause) => waits.push(pause) },
+  )
+  assert.equal(flaky.ok, true, 'the third answer is taken')
+  assert.equal(flaky.attempts, 3)
+  assert.equal(flaky.value, 'The staple and validate action worked!')
+  assert.deepEqual(waits, [5000, 20000], 'the pauses are the declared ones, and only between attempts')
+
+  // A real answer is not asked twice: one call, no pause, and the error comes back as it was.
+  let asked = 0
+  const missing = withRetries(
+    () => {
+      asked += 1
+      throw noTicket
+    },
+    {
+      wait: () => {
+        throw new Error('a package with no ticket must not be waited on')
+      },
+    },
+  )
+  assert.equal(missing.ok, false)
+  assert.equal(asked, 1, 'asked once, because the answer would be the same')
+  assert.equal(missing.error.status, 65)
+
+  // Exhausting the retries still reports what happened, and says how many times it asked.
+  let tries = 0
+  const down = withRetries(
+    () => {
+      tries += 1
+      throw lostMidway
+    },
+    { wait: () => {} },
+  )
+  assert.equal(down.ok, false)
+  assert.equal(tries, 3)
+  assert.equal(down.error, lostMidway, 'the last error is the one reported')
+
+  // The decision the release hangs on: the same three results read as three different things.
+  assert.equal(validateOutcomeOf({ ok: true, value: 'The validate action worked!', attempts: 1, error: null }), 'confirmed')
+  assert.equal(validateOutcomeOf(down), 'unconfirmed', 'an unreachable service does not unsign the package')
+  assert.equal(validateOutcomeOf(missing), 'failed', 'a package with no ticket is not finished')
+})
+
+test('the release staples, then re-reads, and tells the three outcomes apart', () => {
+  // This is the half of the release that cannot run on a laptop — a package built without the
+  // installer identity is not one Apple accepts, so there is no ticket to staple and no way to
+  // reach this code — so it is driven here with the tools replaced. What is asserted is the
+  // decision the release hangs on, in the order it makes it.
+  const plan = notarizePlan({
+    environment: { MACOS_NOTARY_KEY: '/tmp/AuthKey.p8', MACOS_NOTARY_KEY_ID: 'KEYID', MACOS_NOTARY_ISSUER_ID: 'ISSUER' },
+  })
+  const unconfirmedRun = Object.assign(new Error('Command failed'), {
+    status: 68,
+    stdout: `Processing: ${plan.file}\n`,
+    stderr: 'The validate action failed! Error 68.\n',
+  })
+
+  // Both steps answered: stapled, and no warning to explain.
+  const seen = []
+  const happy = staplingOf(plan, {
+    run: (argv) => {
+      seen.push(argv.join(' '))
+      return argv === plan.stapleArgv ? 'The staple and validate action worked!' : 'The validate action worked!'
+    },
+    wait: () => assert.fail('nothing is waited on when both steps answer'),
+  })
+  assert.equal(happy.outcome, 'stapled')
+  assert.equal(happy.error, null)
+  assert.deepEqual(seen, [plan.stapleArgv.join(' '), plan.validateArgv.join(' ')], 'staple first, then the re-read')
+  assert.ok(seen[0].includes('xcrun stapler staple'), 'the real commands, reached the way they are reached')
+  assert.ok(seen[1].includes('xcrun stapler validate'))
+
+  // Apple stops answering only at the re-read — exactly the `v0.1.2` run. Retried, then reported
+  // as unconfirmed rather than failed, because the ticket is already in the file.
+  const waits = []
+  let validations = 0
+  const unreachable = staplingOf(plan, {
+    run: (argv) => {
+      if (argv === plan.validateArgv) {
+        validations += 1
+        throw unconfirmedRun
+      }
+      return 'The staple and validate action worked!'
+    },
+    wait: (pause) => waits.push(pause),
+  })
+  assert.equal(unreachable.outcome, 'unconfirmed')
+  assert.equal(unreachable.step, 'validate')
+  assert.equal(validations, 3, 'asked three times before giving up')
+  assert.deepEqual(waits, [5000, 20000])
+  assert.equal(unreachable.error, unconfirmedRun, 'the last answer is the one reported')
+
+  // A package with no ticket after stapling is a real failure, and the re-read is never reached
+  // when stapling itself gives a real answer.
+  let reached = []
+  const missingTicket = staplingOf(plan, {
+    run: (argv) => {
+      reached.push(argv === plan.stapleArgv ? 'staple' : 'validate')
+      const error = Object.assign(new Error('Command failed'), { status: 65, stderr: 'no ticket' })
+      throw error
+    },
+    wait: () => assert.fail('a package with no ticket is not waited on'),
+  })
+  assert.equal(missingTicket.outcome, 'failed')
+  assert.equal(missingTicket.step, 'staple')
+  assert.deepEqual(reached, ['staple'], 'and the second step is not asked about a file the first one refused')
+
+  // A re-read that runs and answers 65 is the other real failure, and it is not the network.
+  const noTicketAfterStaple = staplingOf(plan, {
+    run: (argv) => {
+      if (argv === plan.stapleArgv) return 'The staple and validate action worked!'
+      throw Object.assign(new Error('Command failed'), { status: 65, stdout: `Processing: ${plan.file}\n` })
+    },
+    wait: () => assert.fail('that answer would not change on a second ask'),
+  })
+  assert.equal(noTicketAfterStaple.outcome, 'failed')
+  assert.equal(noTicketAfterStaple.step, 'validate')
 })
 
 test('the entitlements are well-formed XML, which is a stricter question than plutil asks', () => {
