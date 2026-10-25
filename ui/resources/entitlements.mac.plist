@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  What the app is allowed to do under the hardened runtime.
+
+  Hardened runtime is not optional here: it is one of the three conditions a macOS build has
+  to meet before Apple's notary service will look at it — a Developer ID certificate, a
+  timestamp, and the hardened runtime option (the same three `packaging/make-pkg.mjs` names).
+  It is also restrictive in a way V8 cannot live with.
+
+  **`allow-jit`** is the one that matters: the renderer is V8, V8 compiles JavaScript to
+  machine code while it runs, and under the hardened runtime that memory is not executable
+  unless this key says it is. Without it the window opens and then dies on the first script
+  the page runs, which is a failure that only appears in a *signed* build — every unsigned
+  build this project has ever made ran fine without it.
+
+  **`allow-unsigned-executable-memory`** is V8's other path to the same need (it writes code
+  into a buffer it allocated itself rather than into a mapping it asked to be executable).
+
+  **`disable-library-validation`** lets the app load the frameworks inside its own bundle
+  without each one having been signed by the same team in the same process; the helpers
+  Electron spawns are signed with these same entitlements, which is what
+  `entitlementsInherit` in `ui/package.json` is for.
+
+  Nothing here is broader than what a stock Electron build already declares — this file exists
+  so the answers live in the repository, where the packaging test can read them, rather than
+  inside electron-builder's defaults.
+
+  **One thing must stay out of this file: two hyphens in a row, comments included.** XML
+  forbids that sequence inside a comment, and the parser `codesign` uses refuses the entire
+  file with "AMFIUnserializeXML: syntax error near line N" — while `plutil -lint` still
+  answers OK, so the mistake passes the obvious check and surfaces only on the release
+  runner, at the moment signing starts. It was made once here (a flag was written out in
+  full inside this comment) and measured: `ui/electron/packaging.test.mjs` now pins the rule.
+-->
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+</dict>
+</plist>

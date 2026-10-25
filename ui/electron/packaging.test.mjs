@@ -33,11 +33,13 @@
  * repository makes.
  */
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve, sep } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { pkgPlan } from '../../packaging/make-pkg.mjs'
+import { pkgPlan, signingPlan } from '../../packaging/make-pkg.mjs'
+import { notarizePlan, verdictOf } from '../../packaging/notarize.mjs'
 
 const UI = fileURLToPath(new URL('../', import.meta.url))
 const REPO = resolve(UI, '..')
@@ -136,13 +138,54 @@ test('the icon is the repository mark, at the size an icns is cut from', () => {
   assert.equal(png.readUInt32BE(20), 1024, 'height')
 })
 
-test('the build is unsigned and says so, and the version is a release', () => {
-  // No signing identity is available to this project, so the app is unsigned and not
-  // notarized; the release notes carry the consequence rather than the build hiding it.
-  assert.equal(build.mac.identity, null)
+test('the build signs when it is given a certificate, and is honest when it is not', () => {
+  // `identity: null` used to stand here, and it meant "never sign". It was true while this
+  // project had no certificate; it is false now, and worse, it *forbids* the runner from
+  // signing even when `CSC_LINK` is set. What is asserted instead is the arrangement that
+  // makes both machines work: nothing is pinned, electron-builder signs when a certificate is
+  // supplied and skips (with a warning) when none is, which is what a laptop has.
+  assert.equal(build.mac.identity, undefined, 'no identity is hard-coded, so CSC_LINK decides')
+
+  // Hardened runtime is one of the three conditions notarization requires — the other two are
+  // a Developer ID certificate and a timestamp, and they are `codesign`'s flags rather than
+  // this file's.
+  assert.equal(build.mac.hardenedRuntime, true)
+
+  // The app is notarized as the installer that contains it, so electron-builder's own
+  // notarize step would be a second submission of the same code.
   assert.equal(build.mac.notarize, false)
   assert.match(pkg.version, /^\d+\.\d+\.\d+$/)
   assert.notEqual(pkg.version, '0.0.0', 'a download is a release, not an unfilled placeholder')
+})
+
+test('the entitlements an Electron app needs under hardened runtime are in the repository', () => {
+  // V8 compiles JavaScript while it runs, and the hardened runtime refuses to execute that
+  // memory unless the entitlement says so. A signed build that lacks it opens a window and
+  // then dies on the first script — a failure no unsigned build can show, because unsigned
+  // builds are not hardened.
+  const path = join(UI, build.mac.entitlements)
+  assert.ok(existsSync(path), `${build.mac.entitlements} exists`)
+  assert.equal(build.mac.entitlementsInherit, build.mac.entitlements, 'the helpers get the same answers as the app')
+
+  const plist = readFileSync(path, 'utf8')
+  for (const key of [
+    'com.apple.security.cs.allow-jit',
+    'com.apple.security.cs.allow-unsigned-executable-memory',
+    'com.apple.security.cs.disable-library-validation',
+  ]) {
+    assert.match(plist, new RegExp(`<key>${key.replace(/\./g, '\\.')}</key>\\s*<true/>`), `${key} is granted`)
+  }
+
+  // Apple rejects a notarization submission for an entitlement it did not grant, so an
+  // unknown key is a red release rather than a permissive default.
+  // `-` belongs in this class: every entitlement name here has one (`allow-jit`), and a
+  // pattern without it silently matches nothing — which would make this assertion vacuous.
+  const declared = new Set([...plist.matchAll(/<key>([\w.-]+)<\/key>/g)].map(([, key]) => key))
+  assert.deepEqual([...declared].sort(), [
+    'com.apple.security.cs.allow-jit',
+    'com.apple.security.cs.allow-unsigned-executable-memory',
+    'com.apple.security.cs.disable-library-validation',
+  ])
 })
 
 test('the installer is cut from the app bundle, and claims what the app already declares', () => {
@@ -185,4 +228,100 @@ test('one command makes the installer, and the release runs that command', () =>
   assert.match(workflow, /runs-on: macos-/, 'on macOS, the only system pkgbuild exists on')
   assert.match(workflow, /refs\/tags\//, 'and it publishes from a tag, not from a branch head')
   assert.match(workflow, /does not name the app's version/, 'a tag and the app must name one version')
+})
+
+test('the package is signed by the installer identity, and unsigned builds stay buildable', () => {
+  // Two identities, two jobs, and the wrong one is refused outright: `productsign` will not
+  // take a `Developer ID Application` certificate, because an installer and a bundle are
+  // assessed by different parts of the system. The identity is a machine's, so it comes from
+  // the environment — set on the runner, absent on a laptop.
+  const unsigned = signingPlan({ environment: {} })
+  assert.equal(unsigned.signed, false)
+  assert.equal(unsigned.identity, '')
+  assert.deepEqual(unsigned.argv, [], 'nothing is run when there is no identity')
+  assert.equal(unsigned.output, unsigned.input, 'and no second file appears beside the package')
+
+  const identity = 'Developer ID Installer: anqing shao (Y55RQ6LU24)'
+  const signed = signingPlan({ environment: { MACOS_INSTALLER_IDENTITY: identity } })
+  assert.equal(signed.signed, true)
+  assert.equal(signed.identity, identity)
+  assert.deepEqual(signed.argv, ['--sign', identity, signed.input, signed.output])
+
+  // `productsign` refuses to write over its own input, so the signed copy is a second name
+  // that replaces the first once `pkgutil --check-signature` has read the chain back.
+  assert.notEqual(signed.output, signed.input)
+  assert.match(signed.output, /-signed\.pkg$/)
+  assert.equal(signed.input, pkgPlan().output, 'the input is the file pkgPlan writes')
+})
+
+test('notarization refuses to run on a guess, and never reads an Invalid verdict as done', () => {
+  // Three values and no defaults: a wrong issuer ID and a missing one fail the same quiet way,
+  // so the plan says which are absent rather than submitting something Apple will reject.
+  const bare = notarizePlan({ environment: {} })
+  assert.equal(bare.ready, false)
+  assert.deepEqual(bare.missing, ['MACOS_NOTARY_KEY', 'MACOS_NOTARY_KEY_ID', 'MACOS_NOTARY_ISSUER_ID'])
+
+  const ready = notarizePlan({
+    environment: { MACOS_NOTARY_KEY: '/tmp/AuthKey.p8', MACOS_NOTARY_KEY_ID: 'KEYID', MACOS_NOTARY_ISSUER_ID: 'ISSUER' },
+  })
+  assert.equal(ready.ready, true)
+  assert.deepEqual(ready.missing, [])
+
+  // The file submitted is the file `dist:pkg` published — one name, or "notarize the installer"
+  // could come to mean a different file from "build the installer".
+  assert.equal(ready.file, pkgPlan().output)
+  assert.equal(ready.file, join(UI, 'release', `Seek-${pkg.version}-arm64-mac.pkg`))
+  assert.deepEqual(ready.submitArgv.slice(0, 3), ['notarytool', 'submit', ready.file])
+  assert.ok(ready.submitArgv.includes('--wait'), 'the step waits rather than polling later')
+  assert.deepEqual(ready.submitArgv.slice(-2), ['--output-format', 'json'], 'the verdict is read, not the exit code')
+
+  // The trap this exists for: `notarytool submit --wait` exits **0** on `Invalid`, so the
+  // status is a value and it is asserted as one. Anything that is not `Accepted` — including
+  // output that is not JSON at all — must not read as accepted.
+  assert.equal(verdictOf('{"status":"Accepted","id":"a-1"}').status, 'Accepted')
+  const rejected = verdictOf('{"status":"Invalid","id":"b-2","message":"see log"}')
+  assert.equal(rejected.status, 'Invalid')
+  assert.equal(rejected.id, 'b-2', 'the id is what `notarytool log` needs for the reasons')
+  assert.equal(verdictOf('error: something went wrong').status, 'unreadable')
+  for (const output of ['{"status":"Invalid"}', 'not json', '{}']) {
+    assert.notEqual(verdictOf(output).status, 'Accepted', `${output} is not a pass`)
+  }
+})
+
+test('the entitlements are well-formed XML, which is a stricter question than plutil asks', () => {
+  // This case exists because the file shipped broken once, and every check that was here
+  // passed: the keys were all present, the values were all `<true/>`, and `plutil -lint`
+  // answered OK. What failed was `codesign`, on the release runner, with
+  // "Failed to parse entitlements: AMFIUnserializeXML: syntax error near line 7" — the
+  // explanation at the top of the file had written a flag out in full, and two hyphens in a
+  // row are illegal inside an XML comment. A comment is not a safe place to put prose.
+  const path = join(UI, build.mac.entitlements)
+  const plist = readFileSync(path, 'utf8')
+
+  const comments = [...plist.matchAll(/<!--([\s\S]*?)-->/g)].map(([, body]) => body)
+  assert.ok(comments.length > 0, 'the file explains itself in comments, which is why this matters')
+  for (const body of comments) {
+    assert.ok(
+      !body.includes('--'),
+      'two hyphens in a row are illegal inside an XML comment: codesign refuses the whole file while plutil -lint answers OK',
+    )
+  }
+
+  // The rule above is only one way to be malformed, so a real parser is asked as well.
+  // `plutil` is deliberately not used here — it is the reader that said OK on the file
+  // `codesign` refused, so trusting it would reproduce the defect rather than catch it.
+  let xmllint
+  try {
+    execFileSync('xmllint', ['--nonet', '--noout', path], { stdio: ['ignore', 'pipe', 'pipe'] })
+    xmllint = { ran: true, output: '' }
+  } catch (error) {
+    if (error?.code === 'ENOENT') xmllint = { ran: false, output: '' }
+    else xmllint = { ran: true, output: `${error.stdout ?? ''}${error.stderr ?? ''}` }
+  }
+  if (xmllint.ran) {
+    assert.equal(xmllint.output.trim(), '', `xmllint accepts the entitlements: ${xmllint.output.trim()}`)
+  } else {
+    // Recorded rather than silently passing: the double-hyphen rule above still held.
+    console.log('# xmllint is not installed, so only the double-hyphen rule was checked')
+  }
 })
