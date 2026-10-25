@@ -149,7 +149,7 @@ Bot 和 Agent 全程都按同一条线切：**bot 拥有活着的那些东西**�
 
 ## 7. 落盘形态（简要）
 
-每个账号一个 `seek.json`（和今天一样），分成 `bots / agents / principals / rooms / memberships / sessions[agentId] / messages[roomId] / observations[botId] / turns / memories / schedule`。
+每个账号一个 `seek.json`（和今天一样），分成 `bots / agents / principals / rooms / memberships / sessions[agentId] / messages[roomId] / observations[botId] / turns / memories[agentId] / schedule`。
 
 `schedule` **不**按 bot 分片，与 `observations` 不同：它是一张每个 bot 都读都写的全局表，所以分片会把它存在的唯一那个操作——一个 bot 给另一个 bot 写一行——变成跨分片写。
 
