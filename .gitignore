@@ -3,6 +3,8 @@ node_modules/
 dist/
 out/
 build/
+# What electron-builder writes: the .app, the .dmg and the .zip (`ui/package.json`).
+release/
 
 # Local session state (contains conversation logs — never committed)
 .emrg/

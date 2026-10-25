@@ -1,23 +1,75 @@
 {
   "name": "seek-ui",
   "productName": "Seek",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "description": "The Seek desktop shell: a Feishu-shaped interface on the seek kernel.",
+  "author": "argszero",
+  "license": "MIT",
   "main": "electron/main.js",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "start": "electron .",
-    "test": "node --test \"electron/**/*.test.mjs\""
-  },
-  "dependencies": {
-    "electron": "^45.0.0",
-    "react": "^19.3.1",
-    "react-dom": "^19.3.1"
+    "test": "node --test \"electron/**/*.test.mjs\"",
+    "dist:dir": "vite build && electron-builder --mac --arm64 --dir",
+    "dist:mac": "vite build && electron-builder --mac --arm64"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^6.1.2",
+    "electron": "^45.0.0",
+    "electron-builder": "^26.0.12",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
     "vite": "^8.3.5"
+  },
+  "build": {
+    "appId": "app.seek.desktop",
+    "productName": "Seek",
+    "copyright": "MIT licensed",
+    "directories": {
+      "output": "release"
+    },
+    "asar": true,
+    "files": [
+      "electron/**/*",
+      "!electron/**/*.test.mjs",
+      "dist/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../src",
+        "to": "src",
+        "filter": [
+          "**/*.ts"
+        ]
+      },
+      {
+        "from": "resources/src-package.json",
+        "to": "src/package.json"
+      }
+    ],
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "category": "public.app-category.social-networking",
+      "icon": "../assets/icon.png",
+      "identity": null,
+      "notarize": false,
+      "minimumSystemVersion": "12.0"
+    }
   }
 }
