@@ -24,6 +24,21 @@ const DEV_URL = process.env.SEEK_UI_DEV_URL
 const DATA_DIR = process.env.SEEK_DATA_DIR || join(app.getPath('userData'), 'seek-data')
 const STORE_FILE = join(DATA_DIR, 'seek.json')
 
+/**
+ * The model server, as the person started the app with it.
+ *
+ * Two variables, because stage 1 needs two facts and neither has a default this app may
+ * invent: `SEEK_SERVER` is which `llama-server` to ask, `SEEK_WINDOW` is how much one
+ * judgement may read (`docs/decisions.md` row 20). They are read here rather than in
+ * `host.js` so that the one place the environment is consulted is the process that owns
+ * it — `host.js` takes them as arguments and stays runnable under `node --test`.
+ *
+ * **Left unset, nothing changes**: the bot's judgement is the kernel's placeholder and the
+ * window says so. Half-set is a refusal rather than a guess, and the window shows it.
+ */
+const MODEL_SERVER = process.env.SEEK_SERVER
+const MODEL_WINDOW = process.env.SEEK_WINDOW
+
 /** The kernel, opened once, and the one window that may be told when it changes. */
 let host = null
 let win = null
@@ -51,7 +66,9 @@ function createWindow() {
 }
 
 /** What the interface is allowed to see: a plain, serialisable read of the store. */
-ipcMain.handle('seek:snapshot', () => snapshotOf(host?.store ?? null, STORE_FILE))
+ipcMain.handle('seek:snapshot', () =>
+  snapshotOf(host?.store ?? null, STORE_FILE, host?.stage1 ?? null),
+)
 ipcMain.handle('seek:data-path', () => STORE_FILE)
 
 /**
@@ -74,7 +91,14 @@ ipcMain.handle('seek:post', async (_event, input) => {
 })
 
 app.whenReady().then(async () => {
-  host = await openHost(STORE_FILE)
+  host = await openHost(STORE_FILE, { server: MODEL_SERVER, window: MODEL_WINDOW })
+  // A server the person named and this build did not use is said twice — here, where the
+  // app was started, and in the window, where they are looking. The window is the one that
+  // matters; this line is what makes a refusal visible in a terminal that has no window
+  // attached to it yet.
+  if (host.stage1?.refusal) {
+    console.error(`seek: the model server was not used — ${host.stage1.refusal}`)
+  }
   createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

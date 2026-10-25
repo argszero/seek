@@ -11,8 +11,11 @@ import { useEffect, useRef, useState } from 'react'
  * it to the kernel's own `deliver()`, saves, and wakes the bots the message reached; a
  * bot that judges the message worth answering says so through `say()`. The message you
  * typed and the answer you get are therefore in the store, in that order, before either
- * is drawn — this window is a view of them, not a second copy. The line the bot answers
- * with is the kernel's stub (`src/main.ts`, `STUB_REPLY`); no model is wired yet.
+ * is drawn — this window is a view of them, not a second copy. **Whether** the bot answers
+ * is stage 1, and that half is a real model when the app was started with a server
+ * (`ui/electron/host.js`); the line it answers with is still the kernel's stub
+ * (`src/main.ts`, `STUB_REPLY`), because stage 2 has no model yet. `StageOne` below is
+ * where the window says which of those two it is looking at.
  *
  * **What the thread panel is.** A thread is not a second conversation this file keeps:
  * the kernel already records it. A message that answers another carries `root_id`, the
@@ -163,6 +166,9 @@ export default function App() {
       </section>
 
       <section className="main-col">
+        {/* Which half of the bot is real, above the room because it is a fact about the
+            app rather than about this conversation. */}
+        <StageOne stage1={snap.stage1} />
         {active ? (
           <>
             <header className="main-head">
@@ -258,6 +264,58 @@ export default function App() {
           </form>
         </aside>
       )}
+    </div>
+  )
+}
+
+/**
+ * What the bot's judgement is, in one standing line.
+ *
+ * Three readings, and the difference between them is the whole point of drawing it:
+ *
+ * - **no server** — the state this build ships in. The bot decides with the kernel's
+ *   placeholder, and the line names the two variables that would change that, because a
+ *   mode nobody can switch is a mode nobody knows they are in.
+ * - **bound** — stage 1 is the measured watch model at that origin. The origin is named
+ *   because a verdict without the model that gave it is a number that looks like a
+ *   measurement (`docs/decisions.md` row 24), and the line also says the *answer* is still
+ *   the placeholder: stage 1 is whether to act, stage 2 is what to say
+ *   (`src/main.ts`, `STUB_REPLY`), and one line drawn for both would be a lie about one.
+ * - **refused** — a server was named and this build did not use it. Drawn in the error
+ *   colour with the kernel's own sentence: the app still works, and the one thing it must
+ *   not do is keep working in a different mode than the person asked for, silently.
+ *
+ * A strip rather than a toast: it is a fact about the process, so it stays until the fact
+ * changes, and it is never something the person has to catch before it disappears.
+ */
+function StageOne({ stage1 }) {
+  if (!stage1) return null
+
+  if (stage1.refusal) {
+    return (
+      <div className="stage1 refused" data-stage1="refused">
+        <strong>the model server was not used</strong>
+        <span className="stage1-why">{stage1.refusal}</span>
+      </div>
+    )
+  }
+
+  if (stage1.server) {
+    return (
+      <div className="stage1 bound" data-stage1="bound">
+        <strong>stage 1 asks {stage1.server}</strong>
+        <span className="stage1-why">the answer itself is still the kernel&apos;s placeholder</span>
+      </div>
+    )
+  }
+
+  return (
+    <div className="stage1" data-stage1="placeholder">
+      <strong>no model server</strong>
+      <span className="stage1-why">
+        the bot decides with the kernel&apos;s placeholder — set SEEK_SERVER and SEEK_WINDOW
+        to ask a real model
+      </span>
     </div>
   )
 }
