@@ -76,7 +76,10 @@ function makeVocab(): (content: string) => number[] {
  * about itself is what the preflight exists to refuse (`docs/decisions.md` row 21):
  * an empty `chatTemplate` is a server that will read a flat prompt, `nCtx: null` is
  * one that will not say how large its window is, and a small number is one that would
- * truncate the question.
+ * truncate the question. The same holds for the model it serves (`row 24`): by
+ * default this fake stands for the model `makeWorld` gives the watch row — `'gate'` —
+ * and `modelAlias: null` / `modelPath: null` is a server that names itself not at
+ * all, which is a different reading from one that names another model.
  */
 function fakeServer(
   options: {
@@ -84,6 +87,8 @@ function fakeServer(
     failTemplate?: boolean;
     chatTemplate?: string;
     nCtx?: number | null;
+    modelAlias?: string | null;
+    modelPath?: string | null;
   } = {},
 ): { fetch: Fetcher; calls: Call[] } {
   const tokenise = makeVocab();
@@ -96,9 +101,13 @@ function fakeServer(
     let payload: unknown;
     if (path === '/props') {
       const nCtx = options.nCtx === undefined ? 4096 : options.nCtx;
+      const alias = options.modelAlias === undefined ? 'gate' : options.modelAlias;
+      const modelPath = options.modelPath === undefined ? '/models/gate.gguf' : options.modelPath;
       payload = {
         chat_template: options.chatTemplate ?? TEMPLATE_HEAD,
         build_info: 'test build',
+        ...(alias === null ? {} : { model_alias: alias }),
+        ...(modelPath === null ? {} : { model_path: modelPath }),
         ...(nCtx === null ? {} : { default_generation_settings: { n_ctx: nCtx } }),
       };
     } else if (path === '/apply-template') {
@@ -439,4 +448,88 @@ test('a window that is zero or fractional is refused rather than read as a numbe
       `n_ctx ${nCtx} is not a window`,
     );
   }
+});
+
+test('a roster that names the model the server serves is accepted, by either of its names', async () => {
+  // The server reports two strings for the same model — what it answers to and the
+  // weights it loaded — and both are the model itself (`ServerShape`, measured on the
+  // real binary). So a roster may name either, and a check that read only one would
+  // refuse a correct roster half the time.
+  for (const declared of ['gate', '/models/gate.gguf']) {
+    const world = makeWorld();
+    world.store.data.agents[world.agentA1].model = declared;
+    const recorder = fakeServer({ candidates: ACTS });
+
+    const judge = await watchOverServer(world.store, world.botA, serverOf(recorder), {
+      window: 10,
+      prompt: ARTIFACT,
+    });
+    assert.equal(typeof judge, 'function', `'${declared}' is this server's own name for itself`);
+  }
+});
+
+test('a roster that names a model the server does not serve is refused, before anything is measured', async () => {
+  // The claim the roster makes and the fact the server states, side by side. The cut
+  // is calibrated against one model, so a judgement from another is not the same
+  // measurement — and it would arrive looking exactly like one.
+  const world = makeWorld();
+  world.store.data.agents[world.agentA1].model = 'LFM2.5-VL-3B';
+  const recorder = fakeServer({
+    candidates: ACTS,
+    modelAlias: 'qwen3',
+    modelPath: '/models/qwen3-0.8b.gguf',
+  });
+
+  await assert.rejects(
+    () =>
+      watchOverServer(world.store, world.botA, serverOf(recorder), {
+        window: 10,
+        prompt: ARTIFACT,
+      }),
+    /the roster declares model 'LFM2\.5-VL-3B' but this server serves 'qwen3' \/ '\/models\/qwen3-0\.8b\.gguf'/,
+  );
+  // Refused on what the server already said about itself: `/props`, then the shape's
+  // own template and window reading, and nothing that would produce a number.
+  assert.deepEqual(
+    recorder.calls.map((call) => call.path),
+    ['/props', '/apply-template', '/tokenize'],
+    'no answer is asked of a server serving another model',
+  );
+});
+
+test('a roster row that names no model is not a claim, so nothing is compared', async () => {
+  // `unset` is the roster's default and the shipped row's state: the file has no
+  // standing to pick a model (checklist line 26), so it must not be read as one that
+  // disagrees with whatever is in front of the port.
+  const world = makeWorld();
+  world.store.data.agents[world.agentA1].model = 'unset';
+  const recorder = fakeServer({
+    candidates: ACTS,
+    modelAlias: 'qwen3',
+    modelPath: '/models/qwen3-0.8b.gguf',
+  });
+
+  const judge = await watchOverServer(world.store, world.botA, serverOf(recorder), {
+    window: 10,
+    prompt: ARTIFACT,
+  });
+  assert.equal(typeof judge, 'function', 'no claim, nothing to confirm, nothing to refuse');
+});
+
+test('a server that names itself not at all cannot confirm a claim, so it is refused', async () => {
+  // Silence is not agreement — the direction `visionOf` reads `modalities` in. A
+  // server that cannot say which model it serves cannot confirm that it is the one
+  // the roster named, and treating that as a pass is the silent lie this check exists
+  // to stop.
+  const world = makeWorld();
+  const recorder = fakeServer({ candidates: ACTS, modelAlias: null, modelPath: null });
+
+  await assert.rejects(
+    () =>
+      watchOverServer(world.store, world.botA, serverOf(recorder), {
+        window: 10,
+        prompt: ARTIFACT,
+      }),
+    /declares model 'gate' and this server names no model at all/,
+  );
 });
