@@ -14,10 +14,12 @@
  * handle: it asks, and the kernel answers.
  */
 
-const { app, BrowserWindow, ipcMain, nativeTheme } = require('electron')
-const { join } = require('node:path')
+const { app, BrowserWindow, dialog, ipcMain, nativeTheme } = require('electron')
+const { readFile } = require('node:fs/promises')
+const { basename, join } = require('node:path')
 
 const { closeHost, openHost, postMessage } = require('./host.js')
+const { BY_MIME, mimeForPath, readMedia, saveMedia } = require('./media.js')
 const { snapshotOf } = require('./snapshot.js')
 
 const DEV_URL = process.env.SEEK_UI_DEV_URL
@@ -94,6 +96,70 @@ ipcMain.handle('seek:post', async (_event, input) => {
     const snapshot = await postMessage(host, input ?? {})
     if (win && !win.isDestroyed()) win.webContents.send('seek:changed', snapshot)
     return { ok: true, snapshot }
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+  }
+})
+
+/**
+ * Choose a picture, and put its bytes where this machine keeps them.
+ *
+ * The dialog is here rather than in the renderer because a renderer with
+ * `contextIsolation` has no filesystem — and because the bytes must be written *before*
+ * the message that names them is posted: `deliver()` refuses an `image` whose reference
+ * points at nothing (`src/delivery.ts`), so the order is the kernel's requirement, not a
+ * preference of this file.
+ *
+ * Three answers, and the interface draws all three apart:
+ *
+ * - `{ ok: true, media }` — a picture is on disk and the composer may post it.
+ * - `{ ok: false, cancelled: true }` — the person closed the dialog. Not a failure, and
+ *   nothing to draw.
+ * - `{ ok: false, error }` — the file is there and unusable, named in a sentence. The one
+ *   refusal this file adds is the extension: `@electron/get`-style guessing is not
+ *   available, the dialog hands back a path and no mime, and writing bytes under a type
+ *   `mediaFor` will refuse leaves a file in `media/` that no message ever points at.
+ */
+ipcMain.handle('seek:attach', async () => {
+  try {
+    if (!win || win.isDestroyed()) throw new Error('there is no window to ask in')
+    const picked = await dialog.showOpenDialog(win, {
+      title: 'Attach a picture',
+      properties: ['openFile'],
+      filters: [{ name: 'Pictures', extensions: [...new Set([...BY_MIME.values()])] }],
+    })
+    if (picked.canceled || picked.filePaths.length === 0) return { ok: false, cancelled: true }
+
+    const filePath = picked.filePaths[0]
+    const mime = mimeForPath(filePath)
+    if (!mime) {
+      return {
+        ok: false,
+        error:
+          `this app sends ${[...BY_MIME.keys()].join(', ')} and cannot tell what ` +
+          `${basename(filePath)} is: the file dialog hands back a name with no type on it, ` +
+          'so the extension is the only thing there is to read',
+      }
+    }
+    const bytes = await readFile(filePath)
+    const media = saveMedia(STORE_FILE, { bytes, mime, name: basename(filePath) })
+    return { ok: true, media }
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+  }
+})
+
+/**
+ * One picture's bytes, as a string the renderer can draw.
+ *
+ * The snapshot carries the reference and never the bytes: the store is rewritten whole on
+ * every save and a snapshot is taken after every delivery, so inlining a picture there
+ * would re-serialise it on every unrelated message. A `data:` URL per picture, asked for
+ * once per message as it is drawn, keeps the snapshot a description of the store.
+ */
+ipcMain.handle('seek:media', (_event, reference) => {
+  try {
+    return { ok: true, ...readMedia(STORE_FILE, reference ?? {}) }
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) }
   }
