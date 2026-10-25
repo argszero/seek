@@ -96,6 +96,7 @@ import { Kernel, type KernelFailure } from './kernel.ts';
 import type { Fetcher, LlamaServer } from './llama.ts';
 import { loadPromptArtifact } from './prompts.ts';
 import { applyRoster, readRosterFor, rosterPath, type AgentRow } from './roster.ts';
+import { createRoom } from './rooms.ts';
 import { newId, SeekStore } from './store.ts';
 import type { Decide } from './turn.ts';
 import type { Id } from './types.ts';
@@ -285,29 +286,21 @@ export function seedOneRoom(store: SeekStore): SeedWorld {
     description: 'the bot this milestone is about',
   };
 
-  const room = newId('oc');
-  store.data.rooms[room] = {
-    id: room,
+  // The room and its members in one write, through the kernel's own
+  // `createRoom()`: the seed is a caller like any other, so there is one place
+  // that knows how a membership is shaped rather than a fourth one.
+  const { room } = createRoom(store, {
     name: 'the first room',
-    chat_mode: 'group',
-    created_at: SEED_AT,
-  };
-  for (const [principal, role] of [
-    [me, 'owner'],
-    [other, 'member'],
-    [bot, 'member'],
-  ] as const) {
-    const membership = newId('mb');
-    store.data.memberships[membership] = {
-      id: membership,
-      room_id: room,
-      principal_id: principal,
-      joined_at: SEED_AT,
-      role,
-    };
-  }
+    chatMode: 'group',
+    members: [
+      { principalId: me, role: 'owner' },
+      { principalId: other },
+      { principalId: bot },
+    ],
+    now: SEED_AT,
+  });
 
-  return { me, other, bot, room };
+  return { me, other, bot, room: room.id };
 }
 
 /**
