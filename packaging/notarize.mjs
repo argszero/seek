@@ -14,6 +14,16 @@
  * a package Apple had rejected. So this reads the JSON it prints, and on anything but
  * `Accepted` it fetches Apple's own reasons with `notarytool log` and fails.
  *
+ * **Why `xcrun` and not the tools by name.** `notarytool` is not in `/usr/bin`: it lives inside
+ * Xcode, at `Xcode.app/Contents/Developer/usr/bin/notarytool`, so a bare `notarytool` is a name
+ * the machine has never heard of wherever Xcode is installed but its binary directory is not on
+ * `PATH` — which is what the macOS release runner is. The first tag this step ran on proved what
+ * that costs: `execFileSync` threw `ENOENT`, an `ENOENT` carries neither `stdout` nor `stderr`,
+ * and the release log read `notarytool could not complete the submission:` followed by nothing
+ * at all. `/usr/bin/xcrun` is there on every macOS and resolves both tools wherever they are
+ * installed, so `stapler` is reached the same way: a machine with the Command Line Tools and no
+ * Xcode then notarizes exactly as one with both.
+ *
  * **Why an API key and not an Apple ID.** `notarytool` accepts either an Apple ID with an
  * app-specific password or an App Store Connect API key (`.p8`, plus the key's ID and the
  * team's issuer ID). The key is what this uses: an app-specific password has to be generated
@@ -71,10 +81,10 @@ export function notarizePlan(options = {}) {
     file: plan.output,
     product: plan.product,
     version: plan.version,
-    submitArgv: ['notarytool', 'submit', plan.output, ...credentials, '--wait', '--output-format', 'json'],
-    logArgvFor: (id) => ['notarytool', 'log', id, ...credentials],
-    stapleArgv: ['stapler', 'staple', plan.output],
-    validateArgv: ['stapler', 'validate', plan.output],
+    submitArgv: ['xcrun', 'notarytool', 'submit', plan.output, ...credentials, '--wait', '--output-format', 'json'],
+    logArgvFor: (id) => ['xcrun', 'notarytool', 'log', id, ...credentials],
+    stapleArgv: ['xcrun', 'stapler', 'staple', plan.output],
+    validateArgv: ['xcrun', 'stapler', 'validate', plan.output],
   };
 }
 
@@ -94,6 +104,23 @@ export function verdictOf(output) {
     return { status: 'unreadable', id: '', message: output.trim().split('\n').slice(-3).join(' ') };
   }
   return { status: parsed.status ?? 'unknown', id: parsed.id ?? '', message: parsed.message ?? '' };
+}
+
+/**
+ * What to print when `notarytool` could not be run at all.
+ *
+ * The output of a failed call is the interesting part, so the output is what gets printed — but
+ * a call that never started has no output, and the version of this that printed the output and
+ * nothing else produced a red release whose whole message was a colon. `ENOENT` is that case: the
+ * binary is not there, `stdout` and `stderr` are both `undefined`, and the reason is the error's
+ * own code. So the empty case names the code and the command line, which is the one line that
+ * *would* have said "notarytool: not found".
+ */
+export function failureTextOf(error, argv) {
+  const output = `${error.stdout ?? ''}${error.stderr ?? ''}`.trim();
+  if (output !== '') return output.split('\n').slice(-10).join('\n');
+  const reason = error.code ?? error.message ?? 'no output';
+  return `${argv[0]} could not be started (${reason}): ${argv.join(' ')}`;
 }
 
 function main() {
@@ -117,14 +144,14 @@ function main() {
 
   // `execFileSync` throws on a non-zero exit, and a network failure is exactly that, so the
   // output is captured even when the call fails: the JSON is the verdict and its absence is
-  // the other kind of answer.
+  // the other kind of answer — and a call that never started at all is reported by
+  // `failureTextOf`, rather than as the empty line it used to be.
   let output = '';
   try {
     output = execFileSync(plan.submitArgv[0], plan.submitArgv.slice(1), { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   } catch (error) {
-    output = `${error.stdout ?? ''}${error.stderr ?? ''}`;
     console.error('notarytool could not complete the submission:');
-    console.error(output.trim().split('\n').slice(-10).join('\n'));
+    console.error(failureTextOf(error, plan.submitArgv));
     process.exitCode = 1;
     return;
   }
