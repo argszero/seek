@@ -39,7 +39,7 @@ The design is settled and the kernel is being written. **`src/README.md` is the 
 ## Code stage
 
 - **Node + Electron, local-only, no server.** Data stays on the machine. No part of the interface is written yet: the kernel runs on plain Node, and its tests do not need Electron.
-- **No dependencies at all** — no runtime dependency and no dev dependency, so a clone runs without an install step. The code is TypeScript, which Node strips itself, so there is no build step and no bundler. A pull request that wants to add a dependency should say what the runtime already cannot do.
+- **No dependencies at all** — no runtime dependency and no dev dependency, so a clone runs without an install step. The code is TypeScript, which Node strips itself, so there is no build step and no bundler. A pull request that wants to add a dependency should say what the runtime already cannot do. **The rule is checked, not trusted**: `src/dependencies.test.ts` fails on a dependency field of any kind and on any module specifier that is neither a `node:` builtin nor a relative path that stays inside `src/`.
 - **Tests run through Node's own runner**: `npm test`, which is `node --test "src/**/*.test.ts"`. Behaviour that matters gets a test, and a test is worth having only if it fails when the behaviour is wrong.
 - **Commit messages in English**: what changed and why, in one line if possible.
 - **One pull request does one thing.**
