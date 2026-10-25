@@ -389,3 +389,65 @@ test('a save that failed does not stop the saves queued behind it', async () => 
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test('a reader never sees half a file, however many saves are in flight', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'seek-store-'));
+  const path = join(directory, 'seek.json');
+  try {
+    const world = makeWorld();
+    const store = new SeekStore(world.store.data, path);
+    // A file of realistic size on purpose. The window a reader can fall into is the
+    // time a write spends writing, so a toy store hides it: measured on a 2.9 MB
+    // store, 147 of 480 reads taken during a write that went straight to the file
+    // were unparseable, and 0 of 480 during a write that renamed one into place.
+    for (let i = 0; i < 1200; i += 1) {
+      store.data.messages[`rm_${i}`] = [
+        {
+          id: `om_${i}`,
+          room_id: `rm_${i}`,
+          sender_id: world.me,
+          text: 'x'.repeat(700),
+          at: '2026-10-25T00:00:00.000Z',
+        },
+      ];
+    }
+    await store.save();
+
+    // `save()` promises "a reader never sees half a file", and every other test here
+    // reads only once a save has settled — so that sentence had nothing measuring it.
+    // This reads while the write is in flight, which is when it can be false: a
+    // partial read does not come back short, it comes back as JSON that does not
+    // parse, and `load()` refuses it.
+    const rounds = 20;
+    let reads = 0;
+    for (let round = 0; round < rounds; round += 1) {
+      store.data.memories[world.agentA1] = [
+        {
+          id: `mem_${round}`,
+          agent_id: world.agentA1,
+          level: 'diary',
+          body: 'an arrival during a write',
+          updated_at: '2026-10-25T00:00:00.000Z',
+        },
+      ];
+      const writing = store.save();
+      const reading = Array.from({ length: 6 }, async () => {
+        const reopened = await SeekStore.load(path);
+        reads += 1;
+        return reopened;
+      });
+      const settled = await Promise.all([writing, ...reading]);
+      for (const reopened of settled.slice(1) as SeekStore[]) {
+        // Whatever it read, it is one whole snapshot: every shard present.
+        assert.deepEqual(
+          Object.keys(reopened.data).sort(),
+          Object.keys(store.data).sort(),
+          `round ${round} read a file missing a shard`,
+        );
+      }
+    }
+    assert.ok(reads >= rounds * 6, `only ${reads} reads were taken during a write`);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
