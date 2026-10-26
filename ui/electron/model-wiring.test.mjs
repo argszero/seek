@@ -554,21 +554,24 @@ test('the app hands the named model to the words half, read where the environmen
   // set the variable would have no way to tell that from an endpoint that was never used.
   const source = await readFile(new URL('./main.js', import.meta.url), 'utf8')
   assert.match(source, /const MODEL_WORK_MODEL = process\.env\.SEEK_WORK_MODEL/)
-  assert.match(source, /const wordsHalf = wordsHalfFrom\(\{/, 'the words half is decided by that rule')
+  assert.match(source, /const words = await wordsFacts\(\)/, 'the words half is decided by that rule')
   assert.match(source, /^\s+workModel,$/m, 'and the model it chose is handed down')
   assert.match(source, /^\s+workApiKey,$/m, 'along with the key that belongs to that origin')
+  // The middle source is this app's own file, and it is read in the one function all three
+  // callers share — a launch, the window that draws it, and the save that changes it.
+  assert.match(source, /settings: ownSettings\.llm,/, 'the app\'s own settings are the middle source')
 
   // **The configured endpoint outranks the server the app starts**, which is the whole point:
   // a launch with a config and no environment must not have its words half pulled back to the
   // model the package carries. Asserted on the two lines that would do the pulling.
   assert.match(
     source,
-    /if \(!wordsFromConfig\) workServer = started\.origin/,
+    /if \(!wordsFromFiles\) workServer = started\.origin/,
     'a running bundled server does not take the words half back',
   )
   assert.match(
     source,
-    /if \(!wordsFromConfig\) workServer = undefined/,
+    /if \(!wordsFromFiles\) workServer = undefined/,
     'and a weights failure does not refuse a half that needs no weights',
   )
 })

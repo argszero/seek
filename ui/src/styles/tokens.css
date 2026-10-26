@@ -1,6 +1,6 @@
 /* ---------------------------------------------------------------------------
    Seek — design tokens
-   Values taken verbatim from the Feishu desktop client
+   Values measured from a desktop messenger at 100% scale
    (messenger.asar, `[data-theme=light]` / `.dark-container` blocks).
    Palette families: N(neutral) B(blue) G(green) R(red) Y(yellow) O(orange)
    T(turquoise) V(violet) P(purple) I(indigo) C(carmine) L(lime) W(wathet) S(sunflower)
@@ -214,7 +214,7 @@
 /* type scale observed in the client: 14px body (1069 uses), 12px caption (1052),
    16px title (447); line-height 22px for 14px text, 20px for 12px. */
 :root {
-  --font-family: LarkEmojiFont, LarkChineseQuote, -apple-system, BlinkMacSystemFont,
+  --font-family: -apple-system, BlinkMacSystemFont,
     'Helvetica Neue', Tahoma, 'PingFang SC', 'Microsoft Yahei', Arial, 'Hiragino Sans GB',
     sans-serif;
   --font-mono: 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace;

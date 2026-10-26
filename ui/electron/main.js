@@ -14,12 +14,14 @@
  * handle: it asks, and the kernel answers.
  */
 
-const { app, BrowserWindow, dialog, ipcMain, nativeTheme } = require('electron')
+const { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell } = require('electron')
 const { readFile } = require('node:fs/promises')
 const { basename, join } = require('node:path')
+const { randomUUID } = require('node:crypto')
 
 const {
   WORK_MODEL_WITHOUT_SERVER,
+  addBot,
   addMember,
   closeHost,
   createRoom,
@@ -28,6 +30,17 @@ const {
 } = require('./host.js')
 const { BY_MIME, mimeForPath, readMedia, saveMedia } = require('./media.js')
 const { defaultConfigPath, readConfiguredEndpoint, wordsHalfFrom } = require('./llm-config.js')
+const { defaultSettingsPath, llmOf, readSettings, writeSettings } = require('./settings.js')
+const {
+  createOrganization,
+  directoryOf,
+  layoutOf,
+  openOrganizations,
+  removeOrganization,
+  renameOrganization,
+  switchOrganization,
+  writeIndex,
+} = require('./organizations.js')
 const { ensureWeights, progressSentence } = require('./weights-fetch.js')
 const {
   WATCH_WINDOW,
@@ -40,7 +53,33 @@ const { snapshotOf } = require('./snapshot.js')
 
 const DEV_URL = process.env.SEEK_UI_DEV_URL
 const DATA_DIR = process.env.SEEK_DATA_DIR || join(app.getPath('userData'), 'seek-data')
-const STORE_FILE = join(DATA_DIR, 'seek.json')
+
+/**
+ * The organizations on this machine, and which one is open.
+ *
+ * `ORGANIZATIONS` is filled at start-up by `openOrganizations()`; `STORE_FILE` is then that
+ * organization's own `seek.json`, inside its own directory. **A store path is no longer a
+ * constant**: it is derived from the organization that is open, so switching is one assignment
+ * rather than a second code path through the app. Everything else that builds a path from the
+ * store — the `media/` directory, the roster beside it — follows for free, which is why an
+ * organization is a directory and not a prefix on one filename.
+ */
+let ORGANIZATIONS = null
+let STORE_FILE = null
+
+/** The organization that is open, or `null` before the index has been read. */
+function currentOrganization() {
+  return ORGANIZATIONS?.organizations.find((one) => one.id === ORGANIZATIONS.current) ?? null
+}
+
+/** Point the app at an organization's directory. One assignment, and the whole app follows. */
+function useOrganizationDirectory(id) {
+  STORE_FILE = layoutOf(DATA_DIR).storePath(id)
+}
+// This machine's own preferences, ours to write — unlike `~/.emrg/config.toml` next door, which
+// belongs to the host's agent runtime and is only ever read. `SEEK_SETTINGS_FILE` exists for the
+// same reason `SEEK_DATA_DIR` does: a test names a directory it made rather than a person's.
+const SETTINGS_FILE = process.env.SEEK_SETTINGS_FILE || defaultSettingsPath(app.getPath('userData'))
 
 /**
  * The model servers, as the person started the app with them.
@@ -148,6 +187,17 @@ let win = null
  */
 let storeRefusal = null
 
+/**
+ * The two facts the kernel's halves were opened with, held at module scope.
+ *
+ * They live here rather than inside `start()` because a settings save re-opens the host: the
+ * judgement half is a server this app started and must not be restarted just because someone
+ * re-pointed the words half, so the reopen reads these back rather than deciding them again.
+ */
+let server = MODEL_SERVER
+let serverWindow = MODEL_WINDOW
+let startRefusal = null
+
 function createWindow() {
   win = new BrowserWindow({
     width: 1180,
@@ -182,13 +232,24 @@ function snapshotNow() {
     if (modelServerRefusal !== null) return { ...stage, pending: null, refusal: modelServerRefusal }
     return stage
   }
-  return snapshotOf(
+  const snapshot = snapshotOf(
     host?.store ?? null,
     STORE_FILE,
     half(host?.stage1 ?? null),
     half(host?.stage2 ?? null),
     storeRefusal,
   )
+  // The organizations, as the window may see them: an id to name, a name to draw, and which one
+  // is open. The directory is not here — it is a path on this machine, and the window has no
+  // business with one.
+  return {
+    ...snapshot,
+    organizations: (ORGANIZATIONS?.organizations ?? []).map((one) => ({
+      id: one.id,
+      name: one.name,
+    })),
+    currentOrganizationId: ORGANIZATIONS?.current ?? null,
+  }
 }
 
 /** Tell the window the facts changed, if there is a window listening. */
@@ -198,6 +259,198 @@ function pushChanged() {
 
 ipcMain.handle('seek:snapshot', () => snapshotNow())
 ipcMain.handle('seek:data-path', () => STORE_FILE)
+ipcMain.handle('seek:settings-path', () => SETTINGS_FILE)
+
+/**
+ * Re-open the host over a different organization's store.
+ *
+ * **Switching moves nothing.** Each organization is a directory that already exists; this
+ * closes the kernel over one store and opens it over another. No file is copied, renamed or
+ * deleted, which is the entire reason the host asked for isolation rather than for profiles.
+ *
+ * The judgement half is *not* re-decided: the model server is a fact about the machine and it
+ * is already running, so it is passed through unchanged — a switch that spent a minute loading
+ * a 2.2 GB model to show a different set of rooms would be a switch nobody makes twice.
+ */
+async function openOrganization(id) {
+  const next = switchOrganization(ORGANIZATIONS, id)
+  if (next.refusal) return { ok: false, error: next.refusal }
+  ORGANIZATIONS = await writeIndex(layoutOf(DATA_DIR).indexPath, next.index)
+  useOrganizationDirectory(ORGANIZATIONS.current)
+  if (host !== null) {
+    closeHost(host)
+    host = null
+  }
+  // A store that has never been opened gets seeded here, by `openHost`'s own first-run path —
+  // one seeded room, Echo and the roster beside it, exactly as a first launch does. That is why
+  // creating an organization needs no seeding of its own.
+  const words = await wordsFacts()
+  const opened = await openHostOrRefuse(STORE_FILE, {
+    server,
+    window: serverWindow,
+    workServer: words.filesNamed ? words.workServer : server,
+    workModel: words.workModel,
+    workApiKey: words.workApiKey,
+    apiKey: MODEL_API_KEY,
+    serverRefusal: startRefusal ?? undefined,
+    workServerRefusal:
+      words.refusal ??
+      words.workModelRefusal ??
+      (words.filesNamed ? undefined : startRefusal) ??
+      undefined,
+  })
+  host = opened.host
+  storeRefusal = opened.refusal
+  if (storeRefusal) console.error(`seek: the store was not opened for ${id} — ${storeRefusal}`)
+  pushChanged()
+  return { ok: true, snapshot: snapshotNow() }
+}
+
+/**
+ * Make an organization: a name, and a directory of its own.
+ *
+ * The host settled what this asks for (2026-10-26T20:03): the name and nothing else. It is a
+ * label — shown in the list and nowhere else — so nothing here asks it to be unique, and nothing
+ * writes it into a store. The directory is not filled here either: an organization's world is
+ * seeded the first time it is opened, by the same path a first launch takes. Creating one does
+ * not switch to it, so a person can name three in a row.
+ */
+ipcMain.handle('seek:org-create', async (_event, name) => {
+  const made = createOrganization(ORGANIZATIONS, name, { id: `org-${randomUUID()}` })
+  if (made.refusal) return { ok: false, error: made.refusal }
+  ORGANIZATIONS = await writeIndex(layoutOf(DATA_DIR).indexPath, made.index)
+  pushChanged()
+  return { ok: true, organization: made.organization, snapshot: snapshotNow() }
+})
+
+/**
+ * Rename an organization. **Only the label moves**: the store is not opened, not read and not
+ * written, because the name appears in no part of a world — least of all in the name of the
+ * person inside it (host, 2026-10-26T20:03).
+ */
+ipcMain.handle('seek:org-rename', async (_event, input) => {
+  const renamed = renameOrganization(ORGANIZATIONS, input?.id, input?.name)
+  if (renamed.refusal) return { ok: false, error: renamed.refusal }
+  ORGANIZATIONS = await writeIndex(layoutOf(DATA_DIR).indexPath, renamed.index)
+  pushChanged()
+  return { ok: true, snapshot: snapshotNow() }
+})
+
+ipcMain.handle('seek:org-switch', (_event, id) => openOrganization(id))
+
+/**
+ * Take an organization out of the list, and move its directory to the trash.
+ *
+ * **The order matters.** The list is written first and the directory is trashed afterwards: a
+ * failure in the move leaves a directory that came out of the list but is still on disk — which
+ * a person can find — rather than a directory nobody can reach. `shell.trashItem` is the same
+ * call the Finder makes, so an organization worth recovering can be recovered.
+ *
+ * The organization that is open cannot be removed while it is open: removing it would mean the
+ * app is looking at a world whose directory is in the trash. The window closes it first, by
+ * switching to another, and the kernel over it is closed here.
+ */
+ipcMain.handle('seek:org-remove', async (_event, id) => {
+  if (id === ORGANIZATIONS?.current) {
+    return { ok: false, error: 'open another organization first: the one being shown cannot be removed' }
+  }
+  const removed = removeOrganization(ORGANIZATIONS, id)
+  if (removed.refusal) return { ok: false, error: removed.refusal }
+  const directory = directoryOf(DATA_DIR, id)
+  ORGANIZATIONS = await writeIndex(layoutOf(DATA_DIR).indexPath, removed.index)
+  let trashed = true
+  try {
+    await shell.trashItem(directory)
+  } catch (error) {
+    trashed = false
+    console.error(`seek: ${directory} was not moved to the trash — ${error.message}`)
+  }
+  pushChanged()
+  return { ok: true, trashed, snapshot: snapshotNow() }
+})
+
+/** What the settings page draws: the endpoint in use, the one saved, and why neither is one. */
+ipcMain.handle('seek:llm', () => llmForWindow())
+
+/**
+ * Save the words half, then make it the one in use.
+ *
+ * The two are one call because they are one thing a person did. A save that only wrote a file
+ * would leave the window showing an endpoint that turns do not use, which is the state this
+ * page exists to make impossible.
+ *
+ * **A key is only written when one was typed.** The field arrives empty on every draw (the
+ * renderer never holds the key), so treating empty as "remove it" would erase the key every
+ * time someone changed the address. Removing a key is not part of this page yet, and a button
+ * that did it silently would be worse than not having it.
+ */
+ipcMain.handle('seek:llm-save', async (_event, input) => {
+  const baseUrl = typeof input?.baseUrl === 'string' ? input.baseUrl.trim() : ''
+  const model = typeof input?.model === 'string' ? input.model.trim() : ''
+  const apiKey = typeof input?.apiKey === 'string' ? input.apiKey.trim() : ''
+  if (!/^https?:\/\/./.test(baseUrl)) {
+    return { ok: false, error: 'the address has to start with http:// or https://' }
+  }
+  if (model === '') return { ok: false, error: 'the model name is empty' }
+  const llm = { baseUrl: baseUrl.replace(/\/+$/, ''), model }
+  if (apiKey !== '') llm.apiKey = apiKey
+  try {
+    await writeSettings(SETTINGS_FILE, { llm })
+  } catch (error) {
+    return { ok: false, error: `the settings file could not be written (${error.message})` }
+  }
+  await reopenHost()
+  return { ok: true, llm: await llmForWindow() }
+})
+
+/**
+ * Ask an endpoint which models it serves. **This runs here, in the main process, and that is
+ * the point**: a renderer's `fetch` is subject to the page's origin, and the same call made
+ * from the window to an arbitrary endpoint comes back as `Failed to fetch` with no status and
+ * no body — measured, not assumed. From here it is a plain request, and an endpoint that
+ * refuses can be quoted in its own words instead of hidden behind a CORS sentence.
+ *
+ * The address and key may come from the form (a person trying before saving) or from the saved
+ * settings. A failure is a value in three parts rather than a thrown error, because each part
+ * is drawn differently: the status, the body's first line, and the browser-free reason.
+ */
+ipcMain.handle('seek:llm-models', async (_event, input) => {
+  const words = await wordsFacts()
+  const raw = typeof input?.baseUrl === 'string' && input.baseUrl.trim() !== ''
+    ? input.baseUrl.trim()
+    : words.workServer ?? ''
+  const baseUrl = raw.replace(/\/+$/, '')
+  if (!/^https?:\/\/./.test(baseUrl)) {
+    return { ok: false, error: 'the address has to start with http:// or https://' }
+  }
+  const typed = typeof input?.apiKey === 'string' ? input.apiKey.trim() : ''
+  const apiKey = typed !== '' ? typed : words.workApiKey
+  const headers = typeof apiKey === 'string' && apiKey.trim() !== ''
+    ? { Authorization: `Bearer ${apiKey.trim()}` }
+    : {}
+  try {
+    const response = await fetch(`${baseUrl}/models`, {
+      headers,
+      signal: AbortSignal.timeout(15000),
+    })
+    const body = await response.text()
+    if (!response.ok) {
+      return { ok: false, status: response.status, body: body.slice(0, 400), error: `HTTP ${response.status}` }
+    }
+    let parsed
+    try {
+      parsed = JSON.parse(body)
+    } catch {
+      return { ok: false, status: response.status, body: body.slice(0, 400), error: 'the answer was not JSON' }
+    }
+    const models = Array.isArray(parsed?.data)
+      ? parsed.data.map((one) => one?.id).filter((id) => typeof id === 'string')
+      : []
+    return { ok: true, status: response.status, models }
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+  }
+})
 
 /**
  * The composer's one call.
@@ -250,6 +503,29 @@ ipcMain.handle('seek:add-member', async (_event, input) => {
     const snapshot = await addMember(host, input ?? {})
     if (win && !win.isDestroyed()) win.webContents.send('seek:changed', snapshot)
     return { ok: true, snapshot }
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+  }
+})
+
+/**
+ * Make a bot, and tell every window the new snapshot.
+ *
+ * The same envelope as `seek:create-room`, for the same reason `roomId` is there: `botId` is
+ * what the window needs and a snapshot cannot say — "the bot that was just made" is not
+ * derivable from a list that may already hold one with that name, and two bots called 周敏 is
+ * a state this app allows on purpose.
+ *
+ * `roster` rides back because it is the difference between a bot that answers and one that
+ * cannot: `'appended'` means the two rows are in `agents.yml`, `'none'` means the store has no
+ * roster file and the bot is therefore mute until one is written. The window draws that rather
+ * than leaving a person with a bot that is silently deaf.
+ */
+ipcMain.handle('seek:add-bot', async (_event, input) => {
+  try {
+    const made = await addBot(host, input ?? {})
+    if (win && !win.isDestroyed()) win.webContents.send('seek:changed', made.snapshot)
+    return { ok: true, snapshot: made.snapshot, botId: made.botId, roster: made.roster }
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) }
   }
@@ -338,6 +614,143 @@ ipcMain.handle('seek:media', (_event, reference) => {
  * same shape stage 1 and stage 2 refuse in. A store that opened leaves it `null` and nothing
  * changes.
  */
+/**
+ * This app's own settings, as the one fact `wordsHalfFrom` takes from a file we can write.
+ *
+ * A broken file is answered as a *refusal from this source* rather than as silence: silence
+ * would fall through to the config of another program and quietly use an endpoint nobody
+ * chose, while the person's own file sits there being ignored. Either way the window can say
+ * which of the two happened.
+ */
+async function readOwnSettings() {
+  const read = await readSettings(SETTINGS_FILE)
+  if (read.refusal) return { llm: { refusal: read.refusal } }
+  return { llm: llmOf(read.settings) }
+}
+
+/**
+ * Which endpoint the words half is, and why it is not one.
+ *
+ * One function and not three blocks, because three callers need the same answer: the launch,
+ * the window that draws it, and the save that changes it. Each sentence here is a fact the
+ * window shows rather than a rule invented at a call site.
+ */
+async function wordsFacts() {
+  const llmConfigPath = defaultConfigPath(app.getPath('home'))
+  const ownSettings = await readOwnSettings()
+  const wordsHalf = wordsHalfFrom({
+    env: {
+      SEEK_WORK_SERVER: MODEL_WORK_SERVER,
+      SEEK_WORK_MODEL: MODEL_WORK_MODEL,
+      SEEK_API_KEY: MODEL_API_KEY,
+    },
+    settings: ownSettings.llm,
+    config: readConfiguredEndpoint(llmConfigPath),
+  })
+  const from = wordsHalf?.from ?? null
+  const workServer = wordsHalf?.workServer
+  // True when the words half is a file's endpoint rather than the server this app starts,
+  // which is what decides whether a weights failure takes that half down with it. Either
+  // file-based source counts: both name an endpoint this machine already reaches.
+  const filesNamed = (from === 'config' || from === 'settings') && workServer !== undefined
+  // **A model named with no server of your own is refused before the download, not after
+  // it.** The server this app starts serves the model it carries, so a name given with no
+  // origin is not a fact about it — and waiting until `stageTwoFor` ran would spend the
+  // 2.2 GB first. The sentence is that layer's, read from it rather than written again.
+  const workModelRefusal =
+    from === 'environment' && wordsHalf.workModel !== undefined && workServer === undefined
+      ? WORK_MODEL_WITHOUT_SERVER
+      : null
+  return {
+    llmConfigPath,
+    from,
+    workServer,
+    workModel: wordsHalf?.workModel,
+    workApiKey: wordsHalf?.workApiKey,
+    refusal: wordsHalf?.refusal ?? null,
+    filesNamed,
+    workModelRefusal,
+  }
+}
+
+/**
+ * What the window may know about the words half.
+ *
+ * **The key never crosses this line.** The window is told whether there is one and its last
+ * four characters — enough to recognise which key is in use and not enough to use it, which is
+ * the same rule `llm-config.js` states about logs and refusals.
+ *
+ * `live` is what a turn would use right now; `saved` is what is in our file. They differ when
+ * the environment overrides the file, and the window says so rather than showing one number
+ * that is only sometimes true.
+ */
+async function llmForWindow() {
+  const words = await wordsFacts()
+  const read = await readSettings(SETTINGS_FILE)
+  const table = read.settings?.llm && typeof read.settings.llm === 'object' ? read.settings.llm : {}
+  const key = typeof words.workApiKey === 'string' ? words.workApiKey.trim() : ''
+  const savedKey = typeof table.apiKey === 'string' ? table.apiKey.trim() : ''
+  return {
+    live: {
+      baseUrl: words.workServer ?? null,
+      model: words.workModel ?? null,
+      from: words.from,
+      hasKey: key !== '',
+      keyTail: key === '' ? '' : key.slice(-4),
+      keyLen: key.length,
+    },
+    saved: {
+      baseUrl: typeof table.baseUrl === 'string' ? table.baseUrl : null,
+      model: typeof table.model === 'string' ? table.model : null,
+      hasKey: savedKey !== '',
+      keyTail: savedKey === '' ? '' : savedKey.slice(-4),
+      keyLen: savedKey.length,
+    },
+    refusal: words.refusal,
+    settingsPath: SETTINGS_FILE,
+    configPath: words.llmConfigPath,
+  }
+}
+
+/**
+ * Re-open the host so a saved endpoint is the one turns actually use.
+ *
+ * **Why a re-open and not a restart of the app.** The words half is bound when the host opens
+ * — `stageTwoFor` builds the call once — so a saved file alone would not be read until the
+ * next launch, and a person who just typed an address would have no way to tell whether it
+ * worked. Closing the kernel first is not optional: two kernels over one store are two
+ * writers, and the kernel has one.
+ *
+ * The judgement half is untouched. It is the server this app started, it is held at module
+ * scope, and it is passed back unchanged — re-pointing the words half must not spend 2.2 GB
+ * of download or a minute of model loading.
+ */
+async function reopenHost() {
+  if (host === null) return
+  const words = await wordsFacts()
+  const serverForHost = words.filesNamed ? words.workServer : server
+  closeHost(host)
+  const opened = await openHostOrRefuse(STORE_FILE, {
+    server,
+    window: serverWindow,
+    workServer: serverForHost,
+    workModel: words.workModel,
+    workApiKey: words.workApiKey,
+    apiKey: MODEL_API_KEY,
+    serverRefusal: startRefusal ?? undefined,
+    workServerRefusal:
+      words.refusal ??
+      words.workModelRefusal ??
+      (words.filesNamed ? undefined : startRefusal) ??
+      undefined,
+  })
+  host = opened.host
+  storeRefusal = opened.refusal
+  if (storeRefusal) console.error(`seek: the store was not opened after a settings change — ${storeRefusal}`)
+  if (host?.stage2?.refusal) console.error(`seek: the work server was not used — ${host.stage2.refusal}`)
+  pushChanged()
+}
+
 async function start() {
   // **The window is made first, before anything that can take minutes.** A first run fetches
   // 2.1 GB before a model exists, and a launch that opened the window afterwards would spend
@@ -348,13 +761,29 @@ async function start() {
   createWindow()
   registerActivate()
 
+  // **The organization list is read before a store is opened.** `STORE_FILE` is derived from it, so
+  // a launch that opened a store first would open the one at the root — the pre-organizations path —
+  // and every organization made afterwards would sit beside a store nothing reads.
+  const listed = await openOrganizations({ root: DATA_DIR })
+  if (listed.refusal) {
+    // A damaged index is not replaced with a fresh organization: that would look exactly like a
+    // person's rooms disappearing. The window opens on the sentence instead.
+    storeRefusal = listed.refusal
+    console.error(`seek: the organization list was not read — ${listed.refusal}`)
+    ORGANIZATIONS = null
+    STORE_FILE = join(DATA_DIR, 'seek.json')
+  } else {
+    ORGANIZATIONS = listed.index
+    useOrganizationDirectory(ORGANIZATIONS.current)
+  }
+
   // **Nobody named a server, so the app starts the one it carries.**
   // `serverChoiceFrom` reads the environment and nothing else, and it answers `named` for a
   // person who did — a terminal run is not overruled by a package that holds a binary.
   const choice = serverChoiceFrom(process.env)
-  let server = MODEL_SERVER
-  let serverWindow = MODEL_WINDOW
-  let startRefusal = null
+  server = MODEL_SERVER
+  serverWindow = MODEL_WINDOW
+  startRefusal = null
 
   // **Which server writes the words: the environment, or the endpoint already configured on
   // this machine.** `llm-config.js` holds the rule and the reason; two consequences matter
@@ -365,35 +794,16 @@ async function start() {
   // words go to that endpoint. That is the shape the two halves have had since they were
   // split — one origin each — and this is the first time a downloaded app can reach the
   // second one without a terminal.
-  const llmConfigPath = defaultConfigPath(app.getPath('home'))
-  const wordsHalf = wordsHalfFrom({
-    env: {
-      SEEK_WORK_SERVER: MODEL_WORK_SERVER,
-      SEEK_WORK_MODEL: MODEL_WORK_MODEL,
-      SEEK_API_KEY: MODEL_API_KEY,
-    },
-    config: readConfiguredEndpoint(llmConfigPath),
-  })
-  let workServer = wordsHalf?.workServer
-  const workModel = wordsHalf?.workModel
-  const workApiKey = wordsHalf?.workApiKey
-  let workServerRefusal = wordsHalf?.refusal ?? null
-  // True when the words half is the configured endpoint rather than the server this app
-  // starts, which is what decides whether a weights failure takes that half down with it.
-  const wordsFromConfig = wordsHalf?.from === 'config' && workServer !== undefined
+  const words = await wordsFacts()
+  const llmConfigPath = words.llmConfigPath
+  let workServer = words.workServer
+  const workModel = words.workModel
+  const workApiKey = words.workApiKey
+  let workServerRefusal = words.refusal
+  const wordsFromFiles = words.filesNamed
+  const workModelRefusal = words.workModelRefusal
 
-  // **A model named with no server of your own is refused before the download, not after
-  // it.** The server this app starts serves the model it carries, so a name given with no
-  // origin is not a fact about it — and waiting until `stageTwoFor` ran would spend the
-  // 2.2 GB first. The sentence is that layer's, read from it rather than written again.
-  const workModelRefusal =
-    wordsHalf?.from === 'environment' &&
-    wordsHalf.workModel !== undefined &&
-    wordsHalf.workServer === undefined
-      ? WORK_MODEL_WITHOUT_SERVER
-      : null
-
-  if (wordsFromConfig) {
+  if (wordsFromFiles) {
     // Said out loud and without the key, for the reason the weight host is said out loud: a
     // launch that quietly reached a remote model would be indistinguishable in a terminal
     // from one that never left this machine.
@@ -430,7 +840,7 @@ async function start() {
       // Only the judgement is starved by missing weights. A words half that is the configured
       // endpoint reads no file from this machine, so refusing it here would take down a half
       // that is ready — and the window would say two things are broken where one is.
-      if (!wordsFromConfig) workServer = undefined
+      if (!wordsFromFiles) workServer = undefined
       console.error(`seek: the weights did not arrive — ${weightsRefusal}`)
       pushChanged()
     } else {
@@ -458,7 +868,7 @@ async function start() {
         // own (`FIRST_RUN_ROSTER`), so there is one origin and not two.
         startRefusal = started.refusal
         server = undefined
-        if (!wordsFromConfig) workServer = undefined
+        if (!wordsFromFiles) workServer = undefined
       } else {
         modelServer = started
         server = started.origin
@@ -469,7 +879,7 @@ async function start() {
         // The server this app started answers for the judgement. It answers for the words too
         // only when nobody else does — a configured endpoint outranks it, or the half would be
         // pulled back to the model that cannot call the tool a turn speaks through.
-        if (!wordsFromConfig) workServer = started.origin
+        if (!wordsFromFiles) workServer = started.origin
         console.error(`seek: the model server is ${started.origin}`)
       }
     }
@@ -486,7 +896,7 @@ async function start() {
     // A refusal already known about this half wins, and the state of the server this app
     // starts only reaches it when that server is the one it was going to use.
     workServerRefusal:
-      workServerRefusal ?? workModelRefusal ?? (wordsFromConfig ? undefined : startRefusal) ?? undefined,
+      workServerRefusal ?? workModelRefusal ?? (wordsFromFiles ? undefined : startRefusal) ?? undefined,
   })
   host = opened.host
   storeRefusal = opened.refusal

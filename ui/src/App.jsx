@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
+import Settings from './Settings.jsx'
+
 /**
  * Tokens are counts, so they are drawn by `Intl.NumberFormat` rather than by string
  * arithmetic: `1204` and `1,204` are the same figure and only one of them reads as one.
@@ -8,7 +10,7 @@ import { useEffect, useRef, useState } from 'react'
 const TOKENS = new Intl.NumberFormat()
 
 /**
- * The shell: a Feishu-shaped window over the kernel's own store.
+ * The shell: a messenger window over the kernel's own store.
  *
  * The room list, the members, the messages and the threads all come from `snapshot()`
  * in the main process, which is the kernel. Nothing here decides anything about the
@@ -33,13 +35,13 @@ const TOKENS = new Intl.NumberFormat()
  * here invents a grouping rule, and no thread exists that the store does not have.
  *
  * The panel answers the message the thread belongs to, which is what makes every reply
- * in it one hop from that message, the way Feishu's thread replies sit under the parent.
+ * in it one hop from that message, the way thread replies sit under the parent.
  * The bot's answer lands in the panel when stage 2 is bound, because `workOverServer`
  * names the entry that woke the turn and the kernel's own chain follows it there; with
  * no work server the answer lands in the room, because `stubDecide` says its line
  * without naming what it answers.
  *
- * **Who a message addresses.** A message may carry `mentions[]` — Feishu's own field, each
+ * **Who a message addresses.** A message may carry `mentions[]` — the open-platform field, each
  * entry a `{id, name}` pair (`src/types.ts`) — and rule 15 of `docs/design/data-model.md`
  * says that field is *"what the interface draws as blue @-text"*. So this file does both
  * halves: the composer names who it addresses, and a line draws the pairs its message
@@ -54,6 +56,9 @@ const TOKENS = new Intl.NumberFormat()
 export default function App() {
   const [snap, setSnap] = useState(null)
   const [activeId, setActiveId] = useState(null)
+  // Which column this window is showing. Two, because the settings page is not a room: it is
+  // where the endpoint is chosen, and a room list beside it would suggest it belongs to one.
+  const [view, setView] = useState('chat')
   const [draft, setDraft] = useState('')
   // The chain root of the thread on show, or null. A chain's root is the message the
   // whole run belongs to, which is exactly what the panel replies to.
@@ -72,6 +77,19 @@ export default function App() {
   // `adding` is only ever the one call in flight, so a second press cannot race the first.
   const [peopleOpen, setPeopleOpen] = useState(false)
   const [adding, setAdding] = useState(false)
+  // Making a bot, and looking at one. The four fields are the four things a bot is —
+  // 姓名／性别／职位／性格 — and they are the form's own state until `Add` hands them over; the
+  // kernel decides what a card may hold (`src/bots.ts`), and this window keeps no copy of a
+  // bot after the snapshot that carries it.
+  const [makingBot, setMakingBot] = useState(false)
+  const [botName, setBotName] = useState('')
+  const [botGender, setBotGender] = useState('')
+  const [botPosition, setBotPosition] = useState('')
+  const [botPersonality, setBotPersonality] = useState('')
+  // The bot whose card is on show, and what the last add came to — `'none'` is the store
+  // that has no roster file beside it, which is a bot that cannot answer yet and says so.
+  const [openBotId, setOpenBotId] = useState(null)
+  const [botNote, setBotNote] = useState(null)
   // Who each composer's next message addresses. Two instances rather than one list, because
   // the room's composer and the thread's are on screen at the same time when a thread is
   // open: a chip picked in one box must not silently name somebody in a message sent from
@@ -176,8 +194,12 @@ export default function App() {
   }
 
   function keyDown(event, text, rootId, mention) {
-    // Enter sends; Shift+Enter is a newline, which is the rule every chat window has.
-    if (event.key === 'Enter' && !event.shiftKey) {
+    // Enter sends; Shift+Enter is a newline. Fixed, not a setting.
+    //
+    // `isComposing` is the part that is easy to leave out and painful to live with: while an
+    // input method is composing, Enter commits the candidate, and without this guard the Enter
+    // that picks a Chinese word would send a half-typed line instead.
+    if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && event.keyCode !== 229) {
       event.preventDefault()
       send(text, rootId, undefined, mention)
     }
@@ -279,12 +301,68 @@ export default function App() {
     }
   }
 
+  /**
+   * Make a bot, with the four things the form asked for.
+   *
+   * **One call, and the kernel decides everything else.** `createBot()` writes the bot and
+   * refuses the one thing that cannot be stored — a name of nothing — in its own sentence,
+   * which lands beside the form. The main process also writes the two roster rows the bot
+   * needs into `agents.yml`, because a bot with no `work` row cannot answer at all; it says
+   * back whether it could, and `roster: 'none'` is a store with no roster file beside it —
+   * a bot that is created and mute, which the window says rather than hides.
+   *
+   * The new bot's card opens on success: a person who just filled in four fields wants to see
+   * what they came to, and the bot list is otherwise a row that looks like the others.
+   */
+  async function makeBot() {
+    if (sending || botName.trim() === '') {
+      // The one refusal the form can make without asking anybody: an empty name is refused by
+      // the kernel too, but a round trip to be told what this knows already is a delay.
+      if (botName.trim() === '') setError({ where: 'new-bot', message: '请输入姓名' })
+      return
+    }
+    setSending(true)
+    setError(null)
+    setBotNote(null)
+    try {
+      const made = await window.seekHost.addBot({
+        name: botName,
+        gender: botGender,
+        position: botPosition,
+        personality: botPersonality,
+      })
+      if (!made.ok) {
+        setError({ where: 'new-bot', message: made.error })
+        return
+      }
+      setSnap(made.snapshot)
+      setMakingBot(false)
+      setBotName('')
+      setBotGender('')
+      setBotPosition('')
+      setBotPersonality('')
+      setOpenBotId(made.botId)
+      setView('bots')
+      if (made.roster === 'none') {
+        setBotNote(
+          'added, but this store has no agents.yml beside it, so the bot has no agents yet and cannot answer',
+        )
+      }
+    } finally {
+      setSending(false)
+    }
+  }
+
   if (!snap) return <div className="booting">opening the store…</div>
 
   const whoSaid = Object.fromEntries((active?.members ?? []).map((member) => [member.id, member]))
 
   return (
-    <div className={`app${openThread ? ' with-thread' : ''}`}>
+    <div
+      className={`app${openThread && view === 'chat' ? ' with-thread' : ''}${
+        view === 'settings' ? ' with-settings' : ''
+      }`}
+    >
       <nav className="rail">
         <div className="rail-avatar" title={snap.me ?? 'me'}>
           {(snap.me ?? 'me').slice(0, 1).toUpperCase()}
@@ -292,15 +370,60 @@ export default function App() {
         {snap.rooms.map((room) => (
           <button
             key={room.id}
-            className={`rail-item${room.id === activeId ? ' on' : ''}`}
+            className={`rail-item${view === 'chat' && room.id === activeId ? ' on' : ''}`}
             title={room.name}
             onClick={() => enterRoom(room.id)}
           >
             {room.name.slice(0, 1).toUpperCase()}
           </button>
         ))}
+        {/* Who works in this organization, one rail above the way to its endpoint: a bot is
+            not a conversation, and the list that holds them is where one is added. */}
+        <button
+          className={`rail-item${view === 'bots' ? ' on' : ''}`}
+          title="bots"
+          onClick={() => setView((now) => (now === 'bots' ? 'chat' : 'bots'))}
+          data-view="bots"
+        >
+          🤖
+        </button>
+        {/* The way to the endpoint, at the end of the column and away from the rooms: what is
+            on the other side of it is not a conversation. */}
+        <button
+          className={`rail-item rail-tail${view === 'settings' ? ' on' : ''}`}
+          title="settings"
+          onClick={() => setView((now) => (now === 'settings' ? 'chat' : 'settings'))}
+          data-view="settings"
+        >
+          ⚙
+        </button>
       </nav>
 
+      {view === 'settings' ? (
+        <Settings snapshot={snap} />
+      ) : view === 'bots' ? (
+        <BotsView
+          people={snap.people ?? []}
+          firstLaw={snap.firstLaw}
+          openBotId={openBotId}
+          setOpenBotId={setOpenBotId}
+          making={makingBot}
+          setMaking={setMakingBot}
+          name={botName}
+          setName={setBotName}
+          gender={botGender}
+          setGender={setBotGender}
+          position={botPosition}
+          setPosition={setBotPosition}
+          personality={botPersonality}
+          setPersonality={setBotPersonality}
+          onAdd={makeBot}
+          sending={sending}
+          refusal={error?.where === 'new-bot' ? error.message : null}
+          note={botNote}
+        />
+      ) : (
+        <>
       <section className="list-col">
         <header className="list-head">
           <h1>Chats</h1>
@@ -407,8 +530,20 @@ export default function App() {
             app rather than about this conversation. Two strips, because the two halves
             are two servers and either can refuse alone. */}
         <StoreRefused refusal={snap.storeRefusal} />
-        <StageOne stage1={snap.stage1} />
-        <StageTwo stage2={snap.stage2} />
+        {/* A first run fetching its weights is one fact about the process, not one per
+            server: `half()` in `ui/electron/main.js` hands both halves the same `pending`
+            while the download runs, so drawing each half's strip printed the same sentence
+            twice, one line under the other. It is drawn once here, and the two strips come
+            back when the download ends. They stay two because a *refusal* is per half —
+            only the download is shared. */}
+        {snap.stage1?.pending ? (
+          <WeightsArriving text={snap.stage1.pending} />
+        ) : (
+          <>
+            <StageOne stage1={snap.stage1} />
+            <StageTwo stage2={snap.stage2} />
+          </>
+        )}
         {active ? (
           <>
             <header className="main-head">
@@ -605,6 +740,8 @@ export default function App() {
           </form>
         </aside>
       )}
+        </>
+      )}
     </div>
   )
 }
@@ -730,14 +867,33 @@ function StoreRefused({ refusal }) {
 }
 
 /**
+ * The weights, while they arrive — one line, because there is one download.
+ *
+ * Both halves are served by the server those weights feed, and `half()` in
+ * `ui/electron/main.js` hands them the same `pending` for exactly that reason. So this is
+ * not a per-half strip: a strip each printed the same sentence twice, and two identical
+ * lines read as two problems rather than as one download. `waiting` takes the base colours
+ * on purpose — a first run fetching its weights is the app working, and painting it with
+ * `refused` would report it as broken.
+ */
+function WeightsArriving({ text }) {
+  if (!text) return null
+
+  return (
+    <div className="weights waiting" data-weights="waiting">
+      <strong>the weights are arriving</strong>
+      <span className="weights-why">{text}</span>
+    </div>
+  )
+}
+
+/**
  * What the bot's judgement is, in one standing line.
  *
- * Four readings, and the difference between them is the whole point of drawing it:
+ * Three readings, and the difference between them is the whole point of drawing it. A
+ * fourth — the weights arriving — is not here: the download is one fact for both halves,
+ * so it is one line (`WeightsArriving`), drawn above these two.
  *
- * - **waiting** — a first run is fetching the weights, and this is how far it has got. Not a
- *   failure and not the neutral "no server" state either: the model server exists and is
- *   unusable for a reason that is being fixed while the line is read, so it is drawn in the
- *   ordinary colour with a number in it rather than in the error colour.
  * - **no server** — the state a build with no model server ships in. The bot decides with the kernel's
  *   placeholder, and the line names the two variables that would change that, because a
  *   mode nobody can switch is a mode nobody knows they are in.
@@ -755,18 +911,6 @@ function StoreRefused({ refusal }) {
  */
 function StageOne({ stage1 }) {
   if (!stage1) return null
-
-  // Before `refusal`, because a download under way is the newer fact: while the weights are
-  // arriving nothing has been refused yet, and a half that showed its older refusal over an
-  // active download would report a failure that is being repaired as it is read.
-  if (stage1.pending) {
-    return (
-      <div className="stage1 waiting" data-stage1="waiting">
-        <strong>the weights are arriving</strong>
-        <span className="stage1-why">{stage1.pending}</span>
-      </div>
-    )
-  }
 
   if (stage1.refusal) {
     return (
@@ -810,15 +954,6 @@ function StageOne({ stage1 }) {
  */
 function StageTwo({ stage2 }) {
   if (!stage2) return null
-
-  if (stage2.pending) {
-    return (
-      <div className="stage2 waiting" data-stage2="waiting">
-        <strong>the weights are arriving</strong>
-        <span className="stage2-why">{stage2.pending}</span>
-      </div>
-    )
-  }
 
   if (stage2.refusal) {
     return (
@@ -997,4 +1132,201 @@ function Picture({ media }) {
     )
   }
   return <img className="msg-pic" data-picture="shown" src={src} alt={media.key} />
+}
+
+/**
+ * Who works in this organization: the bots, and the form that adds one.
+ *
+ * **The prototype's flow, kept whole** (`prototype/src/js/app.js`, `modalAddFriend`): the view
+ * that lists bots carries the `+`, and the form asks for the four things a bot is — 姓名 required,
+ * 性别 from a short list, 职位 one line, 性格 several — beside the first law, because adding a
+ * bot is the moment a person is told what a bot may not do. The prototype put all of that in a
+ * modal; this window draws it above the list instead, so the refusal the kernel writes lands
+ * next to the fields that produced it rather than over the screen.
+ *
+ * **A bot is a member of this organization and of nothing else** — the sentence the prototype
+ * put under the fields, and the reason there is no organization picker here: this window is
+ * looking at one organization's store, and another organization's bots are not in it.
+ *
+ * What a card holds is drawn as the store has it. A field nobody filled in reads `not said`
+ * rather than blank, because "not said" is a fact and an empty row is a rendering fault — and
+ * every bot made before these fields existed has three of them.
+ */
+function BotsView({
+  people,
+  firstLaw,
+  openBotId,
+  setOpenBotId,
+  making,
+  setMaking,
+  name,
+  setName,
+  gender,
+  setGender,
+  position,
+  setPosition,
+  personality,
+  setPersonality,
+  onAdd,
+  sending,
+  refusal,
+  note,
+}) {
+  const bots = people.filter((person) => person.bot)
+  const open = bots.find((bot) => bot.id === openBotId) ?? null
+
+  return (
+    <>
+      <section className="list-col">
+        <header className="list-head">
+          <h1>Bots</h1>
+          <span className="list-tools">
+            <span className="count">{bots.length}</span>
+            <button
+              className="list-new"
+              data-new-bot="open"
+              title="add bot"
+              onClick={() => setMaking(!making)}
+            >
+              +
+            </button>
+          </span>
+        </header>
+
+        {refusal && (
+          <div className="composer-err" data-new-bot="refused">
+            {refusal}
+          </div>
+        )}
+        {note && (
+          <div className="composer-err" data-new-bot="note">
+            {note}
+          </div>
+        )}
+
+        {making && (
+          <form
+            className="new-room"
+            data-new-bot="form"
+            onSubmit={(event) => {
+              event.preventDefault()
+              onAdd()
+            }}
+          >
+            <label className="field-label" htmlFor="bot-name">
+              Name
+            </label>
+            <input
+              id="bot-name"
+              className="new-room-name"
+              data-new-bot="name"
+              autoFocus
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+            />
+
+            <label className="field-label" htmlFor="bot-gender">
+              Gender
+            </label>
+            <select
+              id="bot-gender"
+              className="new-room-name"
+              data-new-bot="gender"
+              value={gender}
+              onChange={(event) => setGender(event.target.value)}
+            >
+              <option value="">not said</option>
+              <option value="女">女</option>
+              <option value="男">男</option>
+              <option value="其他">其他</option>
+            </select>
+
+            <label className="field-label" htmlFor="bot-position">
+              Position
+            </label>
+            <input
+              id="bot-position"
+              className="new-room-name"
+              data-new-bot="position"
+              placeholder="what it does here, such as 接口与联调"
+              value={position}
+              onChange={(event) => setPosition(event.target.value)}
+            />
+
+            <label className="field-label" htmlFor="bot-personality">
+              Personality
+            </label>
+            <textarea
+              id="bot-personality"
+              className="new-room-name"
+              data-new-bot="personality"
+              rows={4}
+              placeholder="how it talks and works — several lines allowed"
+              value={personality}
+              onChange={(event) => setPersonality(event.target.value)}
+            />
+
+            {/* The rule, quoted where the bot is made. `firstLaw` comes from the snapshot,
+                which reads it from `ui/electron/law.js` — one copy for the three screens. */}
+            <p className="pane-desc" data-new-bot="law">
+              It belongs to this organization; no other organization can see it. Its kind is
+              bot, and the first law is {firstLaw}
+            </p>
+
+            <div className="new-room-actions">
+              <button type="submit" data-new-bot="create" disabled={sending}>
+                Add
+              </button>
+              <button type="button" data-new-bot="cancel" onClick={() => setMaking(false)}>
+                Cancel
+              </button>
+            </div>
+          </form>
+        )}
+
+        <ul className="conv-list">
+          {bots.map((bot) => (
+            <li key={bot.id}>
+              <button
+                className={`conv${bot.id === openBotId ? ' on' : ''}`}
+                data-bot-row={bot.id}
+                onClick={() => setOpenBotId(bot.id)}
+              >
+                <span className="conv-av">{bot.name.slice(0, 1).toUpperCase()}</span>
+                <span className="conv-body">
+                  <span className="conv-name">{bot.name}</span>
+                  {/* The prototype's own line for a bot under its name: what it does, and
+                      its description only where nobody said. */}
+                  <span className="conv-last">{bot.position ?? bot.description ?? 'bot'}</span>
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section className="main-col">
+        {open ? <BotCard bot={open} firstLaw={firstLaw} /> : <div className="empty">pick a bot</div>}
+      </section>
+    </>
+  )
+}
+
+/** One bot's card: the four fields, and the law under them. */
+function BotCard({ bot, firstLaw }) {
+  const said = (value) => (value === null || value === undefined || value === '' ? 'not said' : value)
+  return (
+    <div className="pane" data-bot-card={bot.id}>
+      <h2 className="pane-title">{bot.name}</h2>
+      <p className="pane-desc">
+        Gender {said(bot.gender)} · Position {said(bot.position)}
+      </p>
+      <p className="card-sub" data-bot-card="personality">
+        {said(bot.personality)}
+      </p>
+      <p className="pane-desc" data-bot-card="law">
+        {firstLaw}
+      </p>
+    </div>
+  )
 }

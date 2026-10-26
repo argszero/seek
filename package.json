@@ -3,7 +3,7 @@
   "version": "0.1.4",
   "private": true,
   "type": "module",
-  "description": "A local-only, Feishu-shaped multi-agent IM client. The kernel is under construction.",
+  "description": "A local-only multi-agent IM client. The kernel is under construction.",
   "license": "MIT",
   "engines": {
     "node": ">=22.18"

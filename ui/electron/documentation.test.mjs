@@ -312,12 +312,36 @@ const CLAIMS = {
   'seek:post': { en: /takes what you type/, zh: /你输入的消息/ },
   'seek:create-room': { en: /makes a room/, zh: /造一个房间/ },
   'seek:add-member': { en: /one more person/, zh: /把一个人加进去/ },
+  // A bot is a member too, and the claim is about what a person fills in rather than about the
+  // call: the four fields, the one refusal, and the roster rows it writes beside the store.
+  'seek:add-bot': { en: /`Add bot` beside the bots list/, zh: /`Add bot` ?收下一个机器人的四样东西/ },
   // The picture pair, and neither of them broadcasts: `attach` writes bytes beside the
   // store and `media` reads them back, so the derivation from `seek:changed` cannot see
   // either. They are claimed because a person clicks `Picture` and a picture appears, and
   // that is the half a reader has to be told.
   'seek:attach': { en: /`?Picture`? button/, zh: /`?Picture`? ?按钮/ },
   'seek:media': { en: /draws it back from that\s+reference alone/, zh: /只凭那个引用把图画回来/ },
+  // The endpoint pair, and neither broadcasts: `saveLlm` writes `settings.json` and re-opens
+  // the host rather than writing the store, so the derivation from `seek:changed` cannot see
+  // it. Claimed because a person changes the model in the window and expects turns to follow.
+  'seek:llm-save': { en: /the settings page writes/, zh: /设置页把说话那半写进/ },
+  'seek:llm-models': { en: /asks the endpoint which models/, zh: /向那个端点问它有哪些模型/ },
+  // The four calls behind an organization's row. A reader is told about them because a person
+  // clicking them changes which world they are looking at, and one of them destroys a world:
+  // `Delete` is the only step in the app that removes a directory, and saying so is the point.
+  'seek:org-create': { en: /`Create` adds one from a name alone/, zh: /`Create` ?只凭一个名字就加一个/ },
+  'seek:org-rename': {
+    en: /`Rename` changes that name and nothing inside it/,
+    zh: /`Rename` ?只改那个名字/,
+  },
+  'seek:org-switch': {
+    en: /`Switch` opens that organization's own store/,
+    zh: /`Switch` ?打开那个组织自己的库/,
+  },
+  'seek:org-remove': {
+    en: /`Delete` removes the row and moves its directory to the trash/,
+    zh: /`Delete` ?把那一行和它的目录一起移进废纸篓/,
+  },
 }
 
 /**
@@ -330,6 +354,8 @@ const CLAIMS = {
 const PLUMBING = {
   'seek:snapshot': 'the read every render starts from — the window draws the room it returns',
   'seek:data-path': 'where the store lives: the README states it as a fact, not as a button',
+  'seek:llm': 'the read the settings page draws: what is in use, what is saved, and which of the three it is',
+  'seek:settings-path': 'where settings.json lives: the page prints it as a fact under the key field',
 }
 
 test('every call that changes the store is a call the window can reach and main answers', () => {

@@ -1,6 +1,6 @@
 /* ---------------------------------------------------------------------------
    Seek — icon set
-   Line icons in the visual language of the Feishu desktop client:
+   Line icons in the visual language of a modern desktop messenger:
    24x24 box, 1.6px stroke, round caps, currentColor.
    --------------------------------------------------------------------------- */
 
@@ -79,20 +79,52 @@
     logout:
       '<path d="M14.6 8.4V6a1.6 1.6 0 0 0-1.6-1.6H5.6A1.6 1.6 0 0 0 4 6v12a1.6 1.6 0 0 0 1.6 1.6H13a1.6 1.6 0 0 0 1.6-1.6v-2.4"/><path d="M19.8 12H9.4"/><path d="m16.6 8.8 3.2 3.2-3.2 3.2"/>',
     plusCircle:
-      '<circle cx="12" cy="12" r="8.4"/><path d="M12 8v8M8 12h8"/>'
+      '<circle cx="12" cy="12" r="8.4"/><path d="M12 8v8M8 12h8"/>',
+    /* 消息悬停条那四个（宿主 2026-10-26T20:55 指明含义：回复／转发／话题／更多）。
+       形状照飞书那篇帮助文章的界面截图逐像素读出来的，一律实心，不用描边：
+       回复＝圆角气泡＋底部居中尾巴＋三个白点；转发＝指向右上的实心箭头、尾巴向左下；
+       话题＝圆角方块＋左中一个小尖角、里面两条白线；更多＝三个点。 */
+    actReply:
+      // 圆角气泡，底部中间那块往下多出一截当尾巴（飞书那里这块很宽、只稍微收一点），
+      // 里面三个点按掩膜量出来的位置摆：u 9.75 / 13.5 / 17.25，都在 v 11.4 这条线上。
+      '<path fill-rule="evenodd" d="M6.4 5H17.6A1.9 1.9 0 0 1 19.5 6.9V16.1A1.9 1.9 0 0 1 17.6 18H15.6L15.3 19.35H10.9L10.6 18H6.4A1.9 1.9 0 0 1 4.5 16.1V6.9A1.9 1.9 0 0 1 6.4 5Z' +
+      'M9.75 10.3a1.15 1.15 0 1 0 0 2.3 1.15 1.15 0 0 0 0-2.3Z' +
+      'M13.5 10.3a1.15 1.15 0 1 0 0 2.3 1.15 1.15 0 0 0 0-2.3Z' +
+      'M17.25 10.3a1.15 1.15 0 1 0 0 2.3 1.15 1.15 0 0 0 0-2.3Z"/>',
+    // 这条不是手画的：把飞书截图里这个图标的像素掩膜逐行取边界折成路径。
+    // 头是朝右的实心三角（尖端在右边 19.5），尾巴从头顶左角扫到左下、收成一个小尖，
+    // 头底和尾巴之间那道横槽是空的——这三样是飞书「转发」的样子。
+    actForward:
+      '<path d="M12.75 5L14.25 5.75L15 6.5L15.75 7.25L16.5 8L17.25 8.75L18 9.5L18.75 10.25L19.5 11L19.5 11.75L19.5 12.5L18.75 13.25L18.75 14L18 14.75L17.25 15.5L16.5 16.25L15.75 17L15 17.75L14.25 18.5L12.75 18.5L12.75 15.6L7.5 15.6L7.5 16.25L6 17L4.5 17.75L4.5 15.5L4.5 14.75L5.25 14L5.25 13.25L6 12.5L6 11.75L6.75 11L8.25 10.25L9 9.5L12 8.75L12.75 8Z"/>',
+    actTopic:
+      // 圆角方块，左边正中间探出一个小尖（掩膜里它只比左边多出两格），
+      // 里面两条白横线就是话题的正文行。
+      '<path fill-rule="evenodd" d="M7.7 5H17.9A1.7 1.7 0 0 1 19.6 6.7V17.3A1.7 1.7 0 0 1 17.9 19H7.7A1.7 1.7 0 0 1 6 17.3V13.5L4.5 12.6A.6.6 0 0 1 4.5 11.4L6 10.5V6.7A1.7 1.7 0 0 1 7.7 5Z' +
+      'M9.95 9.4h5.9a1.15 1.15 0 0 1 0 2.3h-5.9a1.15 1.15 0 0 1 0-2.3Z' +
+      'M9.95 13.2h5.9a1.15 1.15 0 0 1 0 2.3h-5.9a1.15 1.15 0 0 1 0-2.3Z"/>',
+    actMore:
+      '<circle cx="4.7" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19.3" cy="12" r="1.8"/>'
   }
+
+  // 实心填充的一组（目前只有消息悬停条那四个）。描边那套的 svg 根上写着
+  // fill="none"，实心图形必须在根上换掉，否则画出来还是线框。
+  const FILLED = { actReply: 1, actForward: 1, actTopic: 1, actMore: 1 }
 
   function icon(name, size) {
     const d = PATHS[name]
     if (!d) return ''
     const s = size || 20
+    const paint = FILLED[name]
+      ? 'fill="currentColor" stroke="none"'
+      : 'fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"'
     return (
       '<svg width="' +
       s +
       '" height="' +
       s +
-      '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" ' +
-      'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+      '" viewBox="0 0 24 24" ' +
+      paint +
+      ' aria-hidden="true">' +
       d +
       '</svg>'
     )

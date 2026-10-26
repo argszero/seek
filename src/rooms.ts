@@ -26,7 +26,7 @@
  * - **`chat_mode` is stored and never branched on** (`src/README.md`, last
  *   checklist row; `docs/design/data-model.md`: a direct message is a headcount,
  *   not a type). There is nothing here that treats `p2p` as a different kind of
- *   room, and nothing that infers it from the member count either: Feishu has
+ *   room, and nothing that infers it from the member count either: the open platform has
  *   the field, the caller sets it, and the domain sees one kind of Room. A bot
  *   creating a room of its own needs no approval step (ruled 2026-10-23), so
  *   nothing here asks one for permission or looks for an owner: a room whose

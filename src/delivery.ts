@@ -8,7 +8,7 @@
  *   handled" are the bot's, so a room of two bots gets two entries however many
  *   agents work behind them.
  * - **`mentionsMe` is derived, never stored on the message.** The message keeps
- *   Feishu's `mentions[]` — who was named — and each bot finds its own id in it
+ *   the `mentions[]` field — who was named — and each bot finds its own id in it
  *   once, at delivery. A per-reader boolean on a shared immutable fact would
  *   force a rewrite or a copy of the message per bot in the room.
  * - **The hints and the kind are computed once, here.** Nothing downstream scans
@@ -39,7 +39,7 @@ export interface PostMessageInput {
    * other kind — see `mediaFor` for why the pair is an invariant.
    */
   media?: MessageMedia;
-  /** The principals this message @-mentions, Feishu's `{id, name}` pairs. */
+  /** The principals this message @-mentions, the open platform's `{id, name}` pairs. */
   mentions?: Mention[];
   /** The message this one answers, when it answers one. */
   rootId?: Id;

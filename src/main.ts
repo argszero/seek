@@ -284,6 +284,15 @@ export function seedOneRoom(store: SeekStore): SeedWorld {
     id: bot,
     name: 'Echo',
     description: 'the bot this milestone is about',
+    // The card a bot carries (`src/types.ts`, `Bot`), filled for the seeded one so the window
+    // has something to draw before anybody has added a bot of their own. The host stated these
+    // three on 2026-10-26T21:22 — 男 / 研发 / 实事求是、老实听话 — and they are stored as
+    // written: this is content, not chrome, so no catalogue translates it (`docs/design/i18n.md`
+    // §2 keeps what a participant produced out of the catalogue, and a seeded bot is written by
+    // the world rather than by the app's interface).
+    gender: '男',
+    position: '研发',
+    personality: '实事求是、老实听话',
   };
 
   // The room and its members in one write, through the kernel's own

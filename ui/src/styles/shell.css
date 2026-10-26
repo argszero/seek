@@ -1,5 +1,5 @@
 /* The shell's own layout. Colours come from `tokens.css` and nothing here invents one:
-   the palette file states that its values are taken verbatim from the Feishu desktop
+   the palette file states that its values are measured from a desktop messenger
    client, so a hard-coded hex here would be the first drift away from that. */
 
 * { box-sizing: border-box; }
@@ -35,12 +35,22 @@ body {
 
 .app.with-thread { grid-template-columns: 64px 288px minmax(0, 1fr) 340px; }
 
+/* The settings page is not a room, so it takes the whole width beside the rail: the list
+   column is gone, and a grid still laid out as three columns would push the page into the
+   288px slot the list used to occupy. */
+.app.with-settings { grid-template-columns: 64px minmax(0, 1fr); }
+
 .rail {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 8px;
-  padding: 12px 0;
+  /* The window's own buttons sit *over* this column: `titleBarStyle: 'hiddenInset'`
+     (`ui/electron/main.js`) draws the close/minimise/zoom trio at the top-left of the
+     window, which is this rail's corner — and at 12px they were on top of the first
+     avatar. The top padding is the height they occupy, and it lands the avatar level with
+     the first row of the room list, whose header is 44px tall (`.list-head`). */
+  padding: 44px 0 12px;
   background: var(--N100);
   border-right: 1px solid var(--N300);
 }
@@ -143,14 +153,15 @@ body {
    about the process, so it stays until the fact changes. `bound` is the measured model and
    `refused` is a server that was named and not used — the second must not read like the
    first, or a fallback looks like a configuration. Two strips (`stage1`, `stage2`) because
-   the two halves are two servers and either can refuse without the other. `waiting` is the
-   fourth reading and takes the base colours on purpose: a first run fetching its weights is
-   the app working, and painting it with `refused` would report it as broken.
+   the two halves are two servers and either can refuse without the other. `weights` is the
+   fourth reading and is a single line rather than a strip per half: the download is one
+   fact about the process, and it takes the base colours on purpose — a first run fetching
+   its weights is the app working, and painting it with `refused` would report it broken.
 
    `store` is the third, and it sits above them because it is the reason for them: a store
    the kernel would not open means no room, no message and no model to ask about any of it.
    It shares this rule so the three read as one family rather than two kinds of notice. */
-.store, .stage1, .stage2 {
+.store, .stage1, .stage2, .weights {
   display: flex;
   align-items: baseline;
   gap: 8px;
@@ -160,14 +171,14 @@ body {
   font-size: 12px;
   color: var(--N700);
 }
-.store strong, .stage1 strong, .stage2 strong { font-weight: 600; white-space: nowrap; }
+.store strong, .stage1 strong, .stage2 strong, .weights strong { font-weight: 600; white-space: nowrap; }
 /* The store's sentence is long and instructs the person, so it wraps instead of being cut
    off with an ellipsis: the two model strips name a server, this one says what to do. */
 .store-why {
   color: var(--text-caption);
   overflow-wrap: anywhere;
 }
-.stage1-why, .stage2-why {
+.stage1-why, .stage2-why, .weights-why {
   color: var(--text-caption);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -682,3 +693,181 @@ button.members:hover { border-color: var(--line-border-component); color: var(--
 .people-add:disabled { opacity: 0.5; cursor: default; }
 
 .people-panel .composer-err { margin: 0 0 4px; }
+
+/* --- settings ------------------------------------------------------------- */
+
+/* The rail grows one button at the far end: settings is not a room, so it sits away from the
+   rooms rather than among them. */
+.rail-tail {
+  margin-top: auto;
+  font-size: 17px;
+  font-weight: 400;
+}
+
+.settings-col .main-head h2 { margin: 0; }
+
+.pane {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 24px 40px;
+  max-width: 760px;
+}
+
+.pane-title {
+  margin: 0 0 4px;
+  font-size: var(--fs-title);
+  font-weight: 600;
+  color: var(--N900);
+}
+
+.pane-desc {
+  margin: 0 0 16px;
+  font-size: var(--fs-caption);
+  line-height: 20px;
+  color: var(--text-caption);
+}
+
+.card {
+  margin-bottom: 12px;
+  border: 1px solid var(--line-border-card);
+  border-radius: var(--radius-lg);
+  background: var(--bg-base);
+}
+
+.card-body { padding: 14px 16px; }
+
+.card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--fs-body);
+  font-weight: 600;
+  color: var(--N900);
+}
+
+.card-sub {
+  display: block;
+  margin: 4px 0 0;
+  font-size: var(--fs-caption);
+  line-height: 18px;
+  color: var(--text-caption);
+}
+
+.card-sub.source { color: var(--N700); }
+
+.card-rows {
+  margin: 10px 0 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.card-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: var(--fs-caption);
+}
+
+.card-row .k { color: var(--text-caption); }
+.card-row .v { color: var(--N900); }
+.mono { font-family: var(--font-mono); }
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 10px;
+  background: var(--N100);
+  color: var(--text-caption);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.chip.blue { background: var(--B100); color: var(--B700); }
+.chip.bad { background: var(--R100); color: var(--R500); }
+
+.bad-text { color: var(--R500); }
+
+.field {
+  display: block;
+  margin-top: 12px;
+}
+
+.field-label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: var(--fs-caption);
+  color: var(--N700);
+}
+
+.field-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.field-input {
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--line-border-component);
+  border-radius: var(--radius-md);
+  background: var(--bg-base);
+  color: var(--N900);
+  font-size: var(--fs-body);
+}
+
+.field-input:focus { outline: none; border-color: var(--primary-fill-default); }
+.field-input::placeholder { color: var(--text-placeholder); }
+
+.field-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.btn {
+  height: 32px;
+  padding: 0 14px;
+  border: 1px solid var(--line-border-component);
+  border-radius: var(--radius-md);
+  background: var(--bg-base);
+  color: var(--N900);
+  font-size: var(--fs-body);
+  cursor: pointer;
+}
+
+.btn:hover { background: var(--fill-hover); }
+.btn:disabled { opacity: 0.55; cursor: default; }
+
+.btn.primary {
+  border-color: transparent;
+  background: var(--primary-fill-default);
+  color: var(--primary-on-primary-fill);
+}
+
+/* The endpoint's own words, in the error colour and their own block: a person reading
+   "Failed to fetch" alone cannot tell a wrong address from a wrong key. */
+.llm-error {
+  margin-top: 12px;
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  background: var(--R100);
+  color: var(--R500);
+  font-size: var(--fs-caption);
+  line-height: 18px;
+  word-break: break-word;
+}
+
+.llm-error-title { font-weight: 600; }
+
+.llm-error-raw {
+  margin-top: 2px;
+  font-family: var(--font-mono);
+  white-space: pre-wrap;
+  opacity: 0.85;
+}

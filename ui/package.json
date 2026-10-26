@@ -3,7 +3,7 @@
   "productName": "Seek",
   "version": "0.1.4",
   "private": true,
-  "description": "The Seek desktop shell: a Feishu-shaped interface on the seek kernel.",
+  "description": "The Seek desktop shell: a desktop messenger interface on the seek kernel.",
   "author": "argszero",
   "license": "MIT",
   "main": "electron/main.js",

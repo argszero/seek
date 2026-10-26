@@ -36,7 +36,7 @@
  * reads the cut, and that is the host's.
  */
 
-const { writeFile } = require('node:fs/promises')
+const { readFile, writeFile } = require('node:fs/promises')
 
 const { meOf, snapshotOf } = require('./snapshot.js')
 
@@ -53,6 +53,10 @@ async function kernelModules() {
     // slice — the interface may make a room, and it may not make one any other way.
     rooms: await import('../../src/rooms.ts'),
     kernel: await import('../../src/kernel.ts'),
+    // The fourth write the interface makes: a bot. `src/bots.ts` writes the bot and
+    // nothing else — the agents a bot works through are the roster's, and this file
+    // adds those rows to the file rather than to the store.
+    bots: await import('../../src/bots.ts'),
     main: await import('../../src/main.ts'),
     roster: await import('../../src/roster.ts'),
     // Stage 1 over a server, and the artifact it is bound to. Both are the kernel's,
@@ -529,7 +533,7 @@ function mediaOf(media) {
  * Who a message addresses, in the kernel's own pair.
  *
  * A copy of the `{id, name}` pairs the caller passed, and nothing else — `deliver()` stores
- * this array on the message exactly as given (`src/delivery.ts`), and the pair is Feishu's
+ * this array on the message exactly as given (`src/delivery.ts`), and the pair is the
  * own field for "who was named". **Which ids are people in this room is not a question this
  * file answers**: `deriveHints()` finds a bot's own id in the array to decide `mentionsMe`,
  * and a mention naming somebody the room does not hold wakes nobody — which is a fact about
@@ -729,8 +733,100 @@ async function addMember(host, input) {
   return snapshotOf(host.store, host.storeFile, host.stage1, host.stage2)
 }
 
+/**
+ * The two rows a new bot needs, written so that a later read finds the bot they name.
+ *
+ * **Named by id, never by name.** A roster row may say a bot's name, but only "when that is
+ * unambiguous" (`src/roster.ts`) — and two bots called 周敏 is a state this app allows on
+ * purpose, so a row that said the name would make the whole roster refuse on the next open.
+ * The id is the one thing about a bot that is unique.
+ *
+ * **The two rows are the shipped ones**, `watch` and `work`, in the same order and with the
+ * same tools a first run writes (`FIRST_RUN_ROSTER`): the half that decides cannot write and
+ * calls nothing, and the half that answers has `say`, which is the only way into a room. A bot
+ * with one row is a bot that either never decides or can never speak.
+ */
+function rowsForNewBot(botId) {
+  return (
+    `  - bot: ${botId}\n` +
+    '    role: watch\n' +
+    '    tools: []\n' +
+    `  - bot: ${botId}\n` +
+    '    role: work\n' +
+    '    tools: [say]\n'
+  )
+}
+
+/**
+ * Make a bot: its card, and the two agents that let it speak.
+ *
+ * **The bot is the kernel's write, not a second one.** `createBot()` in `src/bots.ts` writes
+ * the bot and refuses the one thing that cannot be stored — a bot with no name — in a
+ * sentence. Nothing here re-checks the name, for the reason `createRoom` gives: a second
+ * opinion could pass what the kernel then refuses, or refuse in wording no document carries.
+ *
+ * **The agents are a file.** The design says the roster *is* `agents.yml`, read on every open,
+ * so a bot created at runtime has to be given rows there or it is a bot that can never be
+ * woken: the store's `agents` shard is rebuilt from that file, and a row nobody wrote is a
+ * worker nobody has. Three details, each one a decision this file makes:
+ *
+ * - **Appended, never rewritten.** The file may hold rows a person wrote by hand, with their
+ *   comments; replacing it whole would be this function editing somebody's work.
+ * - **Re-read and re-applied rather than spliced into memory**, so the file's own parse is
+ *   what validates the text we just added — a mistake in the lines above fails here, where it
+ *   can be reported, instead of on the next launch.
+ * - **No file, no rows.** A store with no roster beside it keeps the agents it already has
+ *   (a missing file says nothing about the store), so writing a fresh file here would rebuild
+ *   the shard from nothing and take every existing agent's job away. The bot is created and is
+ *   simply mute, and `roster: 'none'` is how the window can say so instead of pretending.
+ *
+ * Returns the snapshot, the new bot's id, and whether it was given agents.
+ */
+async function addBot(host, input) {
+  const mods = await kernelModules()
+  const { bot } = mods.bots.createBot(host.store, {
+    name: input?.name,
+    gender: input?.gender,
+    position: input?.position,
+    personality: input?.personality,
+  })
+
+  const rosterPath = mods.roster.rosterPath(host.store.path)
+  let roster = 'none'
+  let text = null
+  try {
+    text = await readFile(rosterPath, 'utf8')
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error
+  }
+  if (typeof text === 'string') {
+    // The newline guard: a file that does not end with one would otherwise glue the first
+    // appended row onto its last line — a roster that parses wrong is worse than one that
+    // refuses.
+    const grown = `${text}${text.endsWith('\n') ? '' : '\n'}${rowsForNewBot(bot.id)}`
+    // Parsed before it is written: the text is ours, but what a row means is the kernel's
+    // (`parseRoster`), and a name this file got wrong should not wait for the next launch to
+    // be discovered.
+    const rows = mods.roster.parseRoster(grown, rosterPath)
+    await writeFile(rosterPath, grown, 'utf8')
+    mods.roster.applyRoster(host.store, rows)
+    roster = 'appended'
+  }
+
+  // Once, and before the snapshot: the bot and its agents are on disk before the window draws
+  // them, the same rule a room and a message follow.
+  await host.store.save()
+
+  return {
+    botId: bot.id,
+    roster,
+    snapshot: snapshotOf(host.store, host.storeFile, host.stage1, host.stage2),
+  }
+}
+
 module.exports = {
   WORK_MODEL_WITHOUT_SERVER,
+  addBot,
   addMember,
   closeHost,
   createRoom,

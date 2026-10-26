@@ -228,3 +228,72 @@ test('the table reader keeps the last value of a repeated key, as a TOML file me
   const table = tableOf('[llm]\nmodel = "first"\nmodel = "second"\n', 'llm')
   assert.equal(table.get('model'), 'second')
 })
+
+// ---- the middle source: this app's own settings -----------------------------------------
+
+/**
+ * Seek's own `settings.json` sits between the environment and the config of another program.
+ *
+ * The order is the one a person would expect and the one the settings page promises: what they
+ * started the app with, then what they chose inside it, then what was already configured on the
+ * machine before Seek existed. Each source is used whole — the no-merge rule holds for three
+ * sources as it did for two — so a settings file that names an address and stops is a refusal
+ * rather than a config endpoint pulled in to fill the gap.
+ */
+test('a settings endpoint is used when the environment says nothing', () => {
+  const half = wordsHalfFrom({
+    settings: { baseUrl: 'https://own.test/v1', model: 'own-model', apiKey: 'sk-own' },
+  })
+  assert.equal(half.from, 'settings')
+  assert.equal(half.workServer, 'https://own.test/v1')
+  assert.equal(half.workModel, 'own-model')
+  assert.equal(half.workApiKey, 'sk-own')
+  assert.equal(half.refusal, null)
+})
+
+test('the environment still wins over settings, whole', () => {
+  const half = wordsHalfFrom({
+    env: { SEEK_WORK_SERVER: 'https://env.test/v1', SEEK_WORK_MODEL: 'env-model' },
+    settings: { baseUrl: 'https://own.test/v1', model: 'own-model' },
+  })
+  assert.equal(half.from, 'environment')
+  assert.equal(half.workServer, 'https://env.test/v1')
+  assert.equal(half.workModel, 'env-model')
+})
+
+test('settings win over the config of another program', () => {
+  const half = wordsHalfFrom({
+    settings: { baseUrl: 'https://own.test/v1', model: 'own-model' },
+    config: { baseUrl: 'https://other.test/v1', model: 'other-model', apiKey: 'sk-other' },
+  })
+  assert.equal(half.from, 'settings')
+  assert.equal(half.workServer, 'https://own.test/v1')
+  // and the two never merge: the key is the settings file's, which has none.
+  assert.equal(half.workApiKey, undefined)
+})
+
+test('an endpoint with no key is used as it stands', () => {
+  const half = wordsHalfFrom({ settings: { baseUrl: 'http://127.0.0.1:8080', model: 'local' } })
+  assert.equal(half.from, 'settings')
+  assert.equal(half.workApiKey, undefined)
+  assert.equal(half.refusal, null)
+})
+
+test('a half-written settings file is refused rather than filled in from the config', () => {
+  const half = wordsHalfFrom({
+    settings: { refusal: 'settings.json names a model and no address' },
+    config: { baseUrl: 'https://other.test/v1', model: 'other-model', apiKey: 'sk-other' },
+  })
+  assert.equal(half.from, 'settings')
+  assert.equal(half.workServer, undefined)
+  assert.match(half.refusal, /a model and no address/)
+})
+
+test('a machine that never opened the settings page still reads the config', () => {
+  const half = wordsHalfFrom({
+    settings: undefined,
+    config: { baseUrl: 'https://other.test/v1', model: 'other-model', apiKey: 'sk-other' },
+  })
+  assert.equal(half.from, 'config')
+  assert.equal(half.workServer, 'https://other.test/v1')
+})
