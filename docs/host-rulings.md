@@ -234,6 +234,12 @@ A reminder reaches the bot's inbox and stops there — no `room` field on the ro
 
 ---
 
+## Distribution
+
+**The weights come from the mirror first, and the canonical host after it.**
+*"A"* [asked: *"The default fetches `LFM2.5-VL-3B` from the canonical `huggingface.co`, and that host is unreachable from this machine — measurable: 40 s timeout, where `hf-mirror.com` answers `206` with the right `content-length` for both files. Which default? A: ask the mirror first and the canonical host after it — costs a person nothing and the alternative is a first run that waits out a timeout to learn nothing. B: keep the canonical host as the default and let whoever cannot reach it set a variable."* — the implementer's wording.]
+`hf-mirror.com` is asked first and `https://huggingface.co` after it. The fallback is not a second download: a `.part` file holds bytes rather than a host's promise, so a file that stopped on one host is continued on the next. An explicit `SEEK_WEIGHTS_BASE` names one host and only that one.
+
 ## How to work
 
 **One question at a time.**
