@@ -5,6 +5,7 @@ import Groups from './Groups.jsx'
 import Settings from './Settings.jsx'
 import Topics from './Topics.jsx'
 import { bindCatalogue, t } from './catalogue.mjs'
+import { roomToOpen } from './room-to-open.mjs'
 
 /**
  * Tokens are counts, so they are drawn by `Intl.NumberFormat` rather than by string
@@ -185,13 +186,22 @@ export default function App() {
   const threadEnd = useRef(null)
 
   useEffect(() => {
-    window.seekHost.snapshot().then((next) => {
+    // **One rule for every snapshot, because the first one may have nothing in it.** The
+    // window is made before the store is opened (`ui/electron/main.js`), so this snapshot
+    // can arrive while there is no store and answer `rooms: []`; the one sent when the store
+    // opens is then the first that has a room to offer. A handler that picked the room only
+    // out of the first answer would open nothing for the rest of the session — the rooms
+    // listed, none of them open, no composer (issue #120). `roomToOpen` is that one rule,
+    // and it fills only a `null`, so a room somebody is already reading is never taken from
+    // them by a later snapshot.
+    const adopt = (next) => {
       setSnap(next)
-      setActiveId((current) => current ?? next.rooms[0]?.id ?? null)
-    })
+      setActiveId((current) => roomToOpen(current, next.rooms))
+    }
+    window.seekHost.snapshot().then(adopt)
     // The kernel changes the store by itself when a bot answers. Without this the
     // window would only be right immediately after *you* typed.
-    return window.seekHost.onChanged((next) => setSnap(next))
+    return window.seekHost.onChanged(adopt)
   }, [])
 
   useEffect(() => {
