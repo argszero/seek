@@ -71,6 +71,14 @@ contextBridge.exposeInMainWorld('seekHost', {
   saveLlm: (input) => ipcRenderer.invoke('seek:llm-save', input),
   models: (input) => ipcRenderer.invoke('seek:llm-models', input),
   settingsPath: () => ipcRenderer.invoke('seek:settings-path'),
+  /**
+   * The words the window puts around what was typed, read once from the catalogue the
+   * kernel's own report is printed from. A read rather than an affordance — nothing a person
+   * clicks changes because of it, except that a count is spelled the way the language spells
+   * it — which is why the documentation guard files it as plumbing rather than as one of
+   * the capabilities both READMEs have to claim.
+   */
+  catalogue: () => ipcRenderer.invoke('seek:catalogue'),
   attach: () => ipcRenderer.invoke('seek:attach'),
   media: (reference) => ipcRenderer.invoke('seek:media', reference),
   /**

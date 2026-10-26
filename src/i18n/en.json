@@ -23,6 +23,19 @@
     "cli.bad-server": "not a server origin this harness will call: {origin} — a model server is\nnamed by its origin, such as http://127.0.0.1:8080",
     "cli.bad-window": "{window} is not a window: the box's budget is a positive whole number of\nobservations",
     "cli.server-window-pair": "--server and --window go together, and only {given} was given: the server is\nthe caller's to start, and the box's budget is the caller's to state",
-    "cli.two-paths": "two store paths were given ({first} and {second}), and a run writes to one store"
+    "cli.two-paths": "two store paths were given ({first} and {second}), and a run writes to one store",
+    "ui.members": {
+      "one": "{count} member",
+      "other": "{count} members"
+    },
+    "ui.replies": {
+      "one": "{count} reply",
+      "other": "{count} replies"
+    },
+    "ui.reply-in-thread": "reply in thread",
+    "ui.reactions": {
+      "one": "{count} reaction",
+      "other": "{count} reactions"
+    }
   }
 }

@@ -370,6 +370,11 @@ const PLUMBING = {
   'seek:data-path': 'where the store lives: the README states it as a fact, not as a button',
   'seek:llm': 'the read the settings page draws: what is in use, what is saved, and which of the three it is',
   'seek:settings-path': 'where settings.json lives: the page prints it as a fact under the key field',
+  // Not an affordance: the window asks once at start-up for the words it draws around what
+  // was typed, and the answer is the catalogue the kernel's own report is printed from. What
+  // a reader would be told is not a button but a rule — `docs/design/i18n.md` §1 — so the
+  // claim lives in that document and the call is plumbing here.
+  'seek:catalogue': 'the words every count and label is drawn from: read once, from the same catalogue the kernel prints its report from',
 }
 
 test('every call that changes the store is a call the window can reach and main answers', () => {

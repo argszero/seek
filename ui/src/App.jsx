@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
 import Settings from './Settings.jsx'
+import { bindCatalogue, t } from './catalogue.mjs'
 
 /**
  * Tokens are counts, so they are drawn by `Intl.NumberFormat` rather than by string
@@ -123,6 +124,11 @@ function ActionGlyph({ name }) {
  */
 export default function App() {
   const [snap, setSnap] = useState(null)
+  // The language the catalogue that arrived is in, or null before one has. Every count this
+  // window draws is looked up by key (`docs/design/i18n.md` §1), so drawing a room before the
+  // words are here would mean either an English literal or a thrown error — the window says
+  // it is opening instead.
+  const [words, setWords] = useState(null)
   const [activeId, setActiveId] = useState(null)
   // Which column this window is showing. Two, because the settings page is not a room: it is
   // where the endpoint is chosen, and a room list beside it would suggest it belongs to one.
@@ -192,6 +198,18 @@ export default function App() {
     // The kernel changes the store by itself when a bot answers. Without this the
     // window would only be right immediately after *you* typed.
     return window.seekHost.onChanged((next) => setSnap(next))
+  }, [])
+
+  useEffect(() => {
+    let live = true
+    window.seekHost.catalogue().then((catalogue) => {
+      if (!live) return
+      bindCatalogue(catalogue)
+      setWords(catalogue.locale)
+    })
+    return () => {
+      live = false
+    }
   }, [])
 
   const active = snap?.rooms.find((room) => room.id === activeId) ?? null
@@ -552,7 +570,7 @@ export default function App() {
     }
   }
 
-  if (!snap) return <div className="booting">opening the store…</div>
+  if (!snap || words === null) return <div className="booting">opening the store…</div>
 
   const whoSaid = Object.fromEntries((active?.members ?? []).map((member) => [member.id, member]))
 
@@ -790,7 +808,7 @@ export default function App() {
                 title="who is in this room"
                 onClick={() => setPeopleOpen((open) => !open)}
               >
-                {active.members.length} members
+                {t('ui.members', { count: active.members.length })}
               </button>
               {/* What this room has cost, next to who is in it. A number and nothing
                   around it, because the ruling forbids the frame a budget would need. */}
@@ -1359,7 +1377,7 @@ function Line({ message, sender, replies, inThread, onOpen, chip = false, me = n
                   key={reaction.emojiType}
                   className={`reaction${mine ? ' mine' : ''}`}
                   data-react={reaction.emojiType}
-                  title={`${count} ${count === 1 ? 'reaction' : 'reactions'}`}
+                  title={t('ui.reactions', { count })}
                   onClick={() => actions?.react(message, reaction.emojiType)}
                 >
                   <span className="reaction-glyph">{emojiGlyph(reaction.emojiType)}</span>
@@ -1371,7 +1389,7 @@ function Line({ message, sender, replies, inThread, onOpen, chip = false, me = n
         )}
         {chip && (
           <button className="msg-thread" data-thread-for={message.id} onClick={() => onOpen(message)}>
-            {replies > 0 ? `${replies} ${replies === 1 ? 'reply' : 'replies'}` : 'reply in thread'}
+            {replies > 0 ? t('ui.replies', { count: replies }) : t('ui.reply-in-thread')}
           </button>
         )}
         {/* The hover toolbar: one white square for the emoji, then one white pill holding four
