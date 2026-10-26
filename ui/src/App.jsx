@@ -406,6 +406,7 @@ export default function App() {
         {/* Which half of the bot is real, above the room because it is a fact about the
             app rather than about this conversation. Two strips, because the two halves
             are two servers and either can refuse alone. */}
+        <StoreRefused refusal={snap.storeRefusal} />
         <StageOne stage1={snap.stage1} />
         <StageTwo stage2={snap.stage2} />
         {active ? (
@@ -700,6 +701,31 @@ function Mentions({ members, mention }) {
         </span>
       )}
     </>
+  )
+}
+
+/**
+ * Why the window holds no rooms, when the kernel would not open the store.
+ *
+ * **Drawn first, because it is the reason for everything under it.** A store this version
+ * refuses is not a slow start: nothing will arrive, the room list will stay empty, and no
+ * amount of waiting or typing changes it. The kernel wrote a paragraph saying what to do
+ * about it — restore a backup, move the file aside — and this strip is the only place a
+ * person can read it, because an app started from Finder writes its stderr to `/dev/null`.
+ *
+ * It reads `storeRefusal` and never `error` on purpose: `error` says "the store is not open
+ * yet", which is true for a moment on every single start and is not a failure. Drawing the
+ * two as one line would show a broken install as a slow one (`docs/decisions.md` row 20,
+ * one layer down from the two model strips).
+ */
+function StoreRefused({ refusal }) {
+  if (!refusal) return null
+
+  return (
+    <div className="store refused" data-store="refused">
+      <strong>the store was not opened</strong>
+      <span className="store-why">{refusal}</span>
+    </div>
   )
 }
 

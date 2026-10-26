@@ -160,7 +160,18 @@ function spendByRoom(store) {
 /** A room nothing has been spent in: no turns, and therefore no tokens. */
 const NOTHING_SPENT = { turns: 0, input_tokens: 0, output_tokens: 0, bots: [] }
 
-function snapshotOf(store, storeFile, stage1 = null, stage2 = null) {
+/**
+ * What the interface is allowed to see, in one plain object.
+ *
+ * `storeRefusal` is why the kernel would not open the store, as the kernel said it, or
+ * `null` when nothing was refused. **It is not `error`.** `error` says "not open yet" — a
+ * reading that is true for a moment on every start and means nothing is wrong — while a
+ * refusal means the app will not work until somebody acts on that sentence. A window that
+ * drew the second as the first would show a broken install as a slow one, and the person
+ * would wait for a store that is never coming (`docs/decisions.md` row 20's reasoning, one
+ * layer down). Both are strings or `null`, so the renderer still holds no error object.
+ */
+function snapshotOf(store, storeFile, stage1 = null, stage2 = null, storeRefusal = null) {
   if (!store) {
     return {
       rooms: [],
@@ -169,6 +180,7 @@ function snapshotOf(store, storeFile, stage1 = null, stage2 = null) {
       storeFile: null,
       stage1: stageOneOf(stage1),
       stage2: stageTwoOf(stage2),
+      storeRefusal,
       error: 'the store is not open yet',
     }
   }
@@ -236,6 +248,9 @@ function snapshotOf(store, storeFile, stage1 = null, stage2 = null) {
     storeFile,
     stage1: stageOneOf(stage1),
     stage2: stageTwoOf(stage2),
+    // A store that opened has nothing to refuse; the field is present so a window reading
+    // it never has to ask whether its absence means "fine" or "not asked".
+    storeRefusal: null,
   }
 }
 
