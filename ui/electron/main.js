@@ -18,7 +18,14 @@ const { app, BrowserWindow, dialog, ipcMain, nativeTheme } = require('electron')
 const { readFile } = require('node:fs/promises')
 const { basename, join } = require('node:path')
 
-const { addMember, closeHost, createRoom, openHostOrRefuse, postMessage } = require('./host.js')
+const {
+  WORK_MODEL_WITHOUT_SERVER,
+  addMember,
+  closeHost,
+  createRoom,
+  openHostOrRefuse,
+  postMessage,
+} = require('./host.js')
 const { BY_MIME, mimeForPath, readMedia, saveMedia } = require('./media.js')
 const { ensureWeights, progressSentence } = require('./weights-fetch.js')
 const {
@@ -37,14 +44,27 @@ const STORE_FILE = join(DATA_DIR, 'seek.json')
 /**
  * The model servers, as the person started the app with them.
  *
- * **Three variables, and each half of the bot takes its own.** Stage 1 needs two facts and
+ * **Four variables, and each half of the bot takes its own.** Stage 1 needs two facts and
  * neither has a default this app may invent: `SEEK_SERVER` is which `llama-server` decides
  * *whether* the bot acts, and `SEEK_WINDOW` is how much one judgement may read.
- * Stage 2 needs one: `SEEK_WORK_SERVER` is which server
- * writes the *words*, and it is a separate origin because a server serves one model while
+ * Stage 2 needs two: `SEEK_WORK_SERVER` is which server
+ * writes the *words*, and `SEEK_WORK_MODEL` is which model on that server does the
+ * writing. It is a separate origin because a server serves one model while
  * the roster's watch and work rows may name two — the work
  * row's model "belongs to the other server". A turn's prompt is checked against that
  * server's own window per turn, so this half takes no budget.
+ *
+ * **`SEEK_WORK_MODEL` is what lets the words half be a hosted endpoint.** A `llama-server`
+ * is asked for `/props`: its template, its window, the model it serves. An
+ * OpenAI-compatible endpoint — the one a person's own `base_url` and API key already point
+ * at — answers none of those three and cannot be asked for them; what it does answer is
+ * `GET /v1/models`, one entry per model, so naming the model is how this half learns which
+ * one is writing. Left unset, nothing changes: the server is a `llama-server` and is asked
+ * `/props` exactly as before. Set with no `SEEK_WORK_SERVER`, the app refuses rather than
+ * guesses, because a model name is a fact about a server and on its own says nothing to
+ * ask. Set it and the words half's prompt is posted to a server that may not be this
+ * machine: the store and the judgement stay local, and what a turn says is assembled here
+ * and sent to the endpoint you named.
  *
  * They are read here rather than in `host.js` so that the one place the environment is
  * consulted is the process that owns it — `host.js` takes them as arguments and stays
@@ -57,6 +77,7 @@ const STORE_FILE = join(DATA_DIR, 'seek.json')
 const MODEL_SERVER = process.env.SEEK_SERVER
 const MODEL_WINDOW = process.env.SEEK_WINDOW
 const MODEL_WORK_SERVER = process.env.SEEK_WORK_SERVER
+const MODEL_WORK_MODEL = process.env.SEEK_WORK_MODEL
 
 /**
  * The credential the named servers ask for, if any.
@@ -75,7 +96,7 @@ const MODEL_API_KEY = process.env.SEEK_API_KEY
 /**
  * The server the app starts for itself, when nobody named one.
  *
- * A person who double-clicks the app cannot set an environment variable, so the three above
+ * A person who double-clicks the app cannot set an environment variable, so the four above
  * could only ever be supplied from a terminal — which left every downloaded app on the
  * kernel's placeholder. The package now carries `llama-server` (`extraResources`), and this
  * is where it is started, fed to both halves and stopped. The decision lives in `server.js`,
@@ -327,6 +348,15 @@ async function start() {
   let workServer = MODEL_WORK_SERVER
   let startRefusal = null
 
+  // **A model named with no server of your own is refused before the download, not after
+  // it.** The server this app starts serves the model it carries, so a name given with no
+  // origin is not a fact about it — and waiting until `stageTwoFor` ran would spend the
+  // 2.2 GB first. The sentence is that layer's, read from it rather than written again.
+  const workModelRefusal =
+    MODEL_WORK_MODEL !== undefined && (MODEL_WORK_SERVER === undefined || MODEL_WORK_SERVER === '')
+      ? WORK_MODEL_WITHOUT_SERVER
+      : null
+
   if (choice.mode === 'start') {
     // `process.resourcesPath` is a packaged app's `Contents/Resources`, which is where
     // `extraResources` puts `server/`. An unpackaged run points at Electron's own resources
@@ -398,9 +428,10 @@ async function start() {
     server,
     window: serverWindow,
     workServer,
+    workModel: MODEL_WORK_MODEL,
     apiKey: MODEL_API_KEY,
     serverRefusal: startRefusal ?? undefined,
-    workServerRefusal: startRefusal ?? undefined,
+    workServerRefusal: startRefusal ?? workModelRefusal ?? undefined,
   })
   host = opened.host
   storeRefusal = opened.refusal

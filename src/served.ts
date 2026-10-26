@@ -35,7 +35,21 @@
  * in: silence is not agreement.
  */
 
-import type { ServerShape } from './llama.ts';
+/**
+ * The two names a server can be recognised by, and all this file reads.
+ *
+ * Narrower than `ServerShape` on purpose: a hosted endpoint reports a model name without
+ * ever answering `/props`, so it can satisfy this and could not honestly produce a whole
+ * `ServerShape` (a template it never renders through, a window nobody enforces). Taking
+ * only the fields that are compared keeps the check usable by both kinds of server and
+ * keeps either one from inventing the rest.
+ */
+export interface ServedNames {
+  /** The name the server answers to. Empty means it named itself not at all. */
+  modelAlias: string;
+  /** Its weights path, as a `llama-server` reports it. Empty when there is none to report. */
+  modelPath: string;
+}
 import type { SeekStore } from './store.ts';
 import type { Id } from './types.ts';
 
@@ -51,7 +65,7 @@ export function requireServedModel(
   store: SeekStore,
   botId: Id,
   role: string,
-  shape: ServerShape,
+  shape: ServedNames,
 ): void {
   const declared = store.agentsOf(botId).find((agent) => agent.role === role)?.model;
   if (declared === undefined || declared === 'unset') return;
