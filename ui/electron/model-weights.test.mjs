@@ -17,10 +17,17 @@
  *
  * Nothing here decides where the bytes come from. `urlFor` is the caller's, so these tests
  * pass their own origin — which is also what keeps them offline.
+ *
+ * **How many bytes a dying body delivered is not something a test may assume.** When the host
+ * destroys the connection, the bytes that reached the client are whatever the socket managed:
+ * on a loopback that is usually all of them and occasionally none, and a real 2.1 GB download
+ * behind a tunnel is the same coin landing the other way. So both cases are fixed by
+ * construction rather than hit by luck — a `.part` this file writes itself pins the count a
+ * resume starts from, and a host that stops before the first byte pins the other end.
  */
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
-import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -61,7 +68,12 @@ async function weightHost(options = {}) {
       response.writeHead(200, headers)
     }
     if (options.cutAfter !== undefined) {
-      response.write(piece.subarray(0, options.cutAfter))
+      // The headers go out on their own first: what is being simulated is a body that stops
+      // part-way, and a client that never saw a response at all is a different failure — the
+      // one `fetch` itself throws, before `fetchOne` has written anything to disk. Flushed
+      // here, the client is guaranteed to read a declared length and then a dead connection.
+      response.flushHeaders()
+      if (options.cutAfter > 0) response.write(piece.subarray(0, options.cutAfter))
       setTimeout(() => response.destroy(), 20)
       return
     }
@@ -94,6 +106,16 @@ function pair(bigBytes = 4096, smallBytes = 1024) {
       'big.gguf': Buffer.alloc(bigBytes, 7),
       'small.gguf': Buffer.alloc(smallBytes, 3),
     },
+  }
+}
+
+/** What a path holds on disk, or `0` when nothing is there — a `.part` never written at all. */
+async function sizeOnDisk(path) {
+  try {
+    return (await stat(path)).size
+  } catch (error) {
+    if (error && error.code === 'ENOENT') return 0
+    throw error
   }
 }
 
@@ -145,36 +167,95 @@ test('a first run writes both files, and each one is whole', async () => {
   }
 })
 
-test('a download that stopped is resumed from the bytes it kept, not fetched again', async () => {
+// A connection that dies part-way leaves a `.part` holding however many bytes got through, and
+// on a real 2.1 GB download that number is whatever the socket managed — not something the
+// caller chooses. Both ends of the range are therefore exercised by construction: at
+// `cutAfter: 0` the client reads the headers and not one byte of the body, at `cutAfter: 1000`
+// it reads a thousand. What is asserted holds at both, because it is the module's contract
+// rather than the timing: the bytes that arrived are kept, the real name stays empty, and the
+// next attempt asks for exactly what the `.part` holds — an empty one not being a resume.
+for (const { cutAfter, seeded } of [
+  { cutAfter: 0, seeded: 0 },
+  { cutAfter: 1000, seeded: 0 },
+  { cutAfter: 1000, seeded: 700 },
+]) {
+  const scenario = seeded > 0
+    ? `a body that dies after ${cutAfter} more bytes keeps them beside the ${seeded} already on disk`
+    : `a body that dies after ${cutAfter} bytes is kept, and the file is not called whole`
+  test(scenario, async () => {
+    const { files, bodies } = pair()
+    const dir = await downloadDirectory()
+    const cut = await weightHost({ files: bodies, cutAfter })
+    let keptSize
+    try {
+      // Bytes from an earlier attempt are put there by the test, so the floor asserted below
+      // does not depend on how much of a dying body this run's socket managed to deliver.
+      if (seeded > 0) {
+        await writeFile(join(dir.dir, `big.gguf${PART_SUFFIX}`), bodies['big.gguf'].subarray(0, seeded))
+      }
+      const first = await fetchWeights({ dir: dir.dir, files, urlFor: cut.urlFor })
+
+      assert.equal(first.ok, false, 'a body that dies mid-file is not a completed download')
+      assert.match(first.refusal, /big\.gguf/, 'the refusal names the file that did not arrive')
+      await assert.rejects(readFile(join(dir.dir, 'big.gguf')), 'and nothing pretends it is whole')
+      keptSize = await sizeOnDisk(join(dir.dir, `big.gguf${PART_SUFFIX}`))
+      assert.ok(keptSize >= seeded, `the ${seeded} bytes already on disk were not thrown away`)
+      assert.ok(keptSize <= seeded + cutAfter, `and never more than those plus the ${cutAfter} sent`)
+    } finally {
+      await cut.close()
+    }
+
+    const whole = await weightHost({ files: bodies })
+    try {
+      const second = await fetchWeights({ dir: dir.dir, files, urlFor: whole.urlFor })
+
+      assert.equal(second.ok, true)
+      const bigRequest = whole.requests.find((one) => one.name === 'big.gguf')
+      assert.equal(
+        bigRequest.range,
+        keptSize > 0 ? `bytes=${keptSize}-` : null,
+        'the next attempt asks from exactly what was kept — an empty .part is a start, not a resume',
+      )
+      assert.deepEqual(
+        await readFile(join(dir.dir, 'big.gguf')),
+        bodies['big.gguf'],
+        'and the file ends up the bytes the host served, once',
+      )
+    } finally {
+      await whole.close()
+      await dir.done()
+    }
+  })
+}
+
+test('a .part with bytes in it is resumed from exactly those bytes', async () => {
+  // The resume arithmetic as a fact rather than as an outcome: the `.part` is written here, so
+  // how many bytes to continue from is known before the request goes out. A killed connection
+  // cannot fix that number — it lands anywhere from zero up — which is why the test above
+  // asserts what is true at both ends of that range and this one asserts the exact count.
   const { files, bodies } = pair()
+  const host = await weightHost({ files: bodies })
   const dir = await downloadDirectory()
-  const cut = await weightHost({ files: bodies, cutAfter: 1000 })
   try {
-    const first = await fetchWeights({ dir: dir.dir, files, urlFor: cut.urlFor })
+    await writeFile(join(dir.dir, `big.gguf${PART_SUFFIX}`), bodies['big.gguf'].subarray(0, 700))
+    const result = await fetchWeights({ dir: dir.dir, files, urlFor: host.urlFor })
 
-    assert.equal(first.ok, false, 'a body that dies mid-file is not a completed download')
-    assert.match(first.refusal, /big\.gguf/, 'the refusal names the file that did not arrive')
-    const kept = await readFile(join(dir.dir, `big.gguf${PART_SUFFIX}`))
-    assert.ok(kept.length > 0, 'what did arrive is kept rather than thrown away')
-    await assert.rejects(readFile(join(dir.dir, 'big.gguf')), 'and nothing pretends it is whole')
-  } finally {
-    await cut.close()
-  }
-
-  const whole = await weightHost({ files: bodies })
-  try {
-    const second = await fetchWeights({ dir: dir.dir, files, urlFor: whole.urlFor })
-
-    assert.equal(second.ok, true)
-    const bigRequest = whole.requests.find((one) => one.name === 'big.gguf')
-    assert.match(bigRequest.range ?? '', /^bytes=\d+-$/, 'the second attempt asked for a range')
-    assert.ok(
-      Number(/\d+/.exec(bigRequest.range)[0]) > 0,
-      'and it asked from where the first attempt stopped, not from zero',
+    assert.equal(result.ok, true)
+    assert.equal(
+      host.requests.find((one) => one.name === 'big.gguf').range,
+      'bytes=700-',
+      'it asks for the bytes it does not have, starting at the first one it does',
     )
-    assert.equal((await readFile(join(dir.dir, 'big.gguf'))).length, 4096, 'the file ends up whole')
+    const onDisk = await readFile(join(dir.dir, 'big.gguf'))
+    assert.equal(onDisk.length, 4096, 'appended to what was on disk rather than written over it')
+    assert.deepEqual(onDisk, bodies['big.gguf'], 'and the file is the bytes the host served')
+    assert.deepEqual(
+      (await readdir(dir.dir)).sort(),
+      ['big.gguf', 'small.gguf'],
+      'the .part name is gone once the count is right',
+    )
   } finally {
-    await whole.close()
+    await host.close()
     await dir.done()
   }
 })
@@ -185,18 +266,15 @@ test('a host that ignores the range is not believed, and the file does not grow 
   // — but a download that trusted the stream's own end could call it right.
   const { files, bodies } = pair()
   const dir = await downloadDirectory()
-  const cut = await weightHost({ files: bodies, cutAfter: 1000 })
-  try {
-    await fetchWeights({ dir: dir.dir, files, urlFor: cut.urlFor })
-  } finally {
-    await cut.close()
-  }
-
   const deaf = await weightHost({ files: bodies, ignoresRange: true })
   try {
+    // The `.part` is written here rather than left behind by a killed connection: what this
+    // test needs is a known number of bytes already on disk, and a race would sometimes hand
+    // it zero — the one case where no range goes out at all, so the rule under test never runs.
+    await writeFile(join(dir.dir, `big.gguf${PART_SUFFIX}`), bodies['big.gguf'].subarray(0, 1000))
     const result = await fetchWeights({ dir: dir.dir, files, urlFor: deaf.urlFor })
     assert.equal(result.ok, true)
-    assert.match(deaf.requests.find((one) => one.name === 'big.gguf').range ?? '', /^bytes=\d+-$/, 'a range was asked for')
+    assert.equal(deaf.requests.find((one) => one.name === 'big.gguf').range, 'bytes=1000-', 'a range was asked for')
     const onDisk = await readFile(join(dir.dir, 'big.gguf'))
     assert.equal(onDisk.length, 4096, 'the file is the declared size, not the sum of two attempts')
     assert.deepEqual(onDisk, bodies['big.gguf'], 'and it is the served bytes, once')
