@@ -14,6 +14,19 @@
  * as one "model settings" screen is the confusion this page exists to prevent, so the second
  * card states the halves it cannot be given and shows only what is true of it.
  *
+ * **Every word on this page comes from the catalogue.** `docs/design/i18n.md` §1 counts a
+ * literal in a component as a bug, and §2 makes the interface's language a setting; this page
+ * held sixty of them, which made it the largest single block of that bug in the window. They
+ * are `ui.settings.*` keys now, read through `t()` — including the sentences this page makes up
+ * in an event handler, such as what it says after a save. The one thing left as words is the
+ * endpoint's own answer when a request fails: that is data quoted back, not chrome
+ * (`ui.settings.models.error-own-words` is the frame around it).
+ *
+ * **Nothing is drawn before a catalogue is bound.** `App` returns early until
+ * `seek:catalogue` has answered, so every `t()` below runs with words in hand — and a key
+ * nobody shipped throws instead of drawing itself, which is the failure the lookup's docstring
+ * argues for.
+ *
  * **The key is never in this component.** `window.seekHost.llm()` answers whether there is one,
  * its last four characters and its length — enough to recognise which key is in place, not
  * enough to use it. The field starts empty on every draw, and an empty field means "leave the
@@ -29,6 +42,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
+import { t } from './catalogue.mjs'
+
 const EMPTY = {
   live: { baseUrl: null, model: null, from: null, hasKey: false, keyTail: '', keyLen: 0 },
   saved: { baseUrl: null, model: null, hasKey: false, keyTail: '', keyLen: 0 },
@@ -40,14 +55,12 @@ const EMPTY = {
 /** Which of the three sources the words half is reading, said in a person's words. */
 function sourceLine(reading) {
   if (reading.refusal) return null
-  if (reading.live.from === 'environment') {
-    return 'Right now this half is the endpoint you started Seek with, from the environment. What you save here will not be used until you start it without those variables.'
-  }
+  if (reading.live.from === 'environment') return t('ui.settings.source.environment')
   if (reading.live.from === 'config') {
-    return `Right now this half is the endpoint already configured on this machine (${reading.configPath}). Save below and this half becomes yours instead.`
+    return t('ui.settings.source.config', { path: reading.configPath })
   }
-  if (reading.live.from === 'settings') return 'This half is the endpoint saved below.'
-  return 'No endpoint is configured: this half is the model the app carries, which cannot write a turn that calls a tool.'
+  if (reading.live.from === 'settings') return t('ui.settings.source.settings')
+  return t('ui.settings.source.none')
 }
 
 export default function Settings({ snapshot }) {
@@ -86,8 +99,11 @@ export default function Settings({ snapshot }) {
 
   const hasSavedKey = reading.saved.hasKey
   const keyHint = hasSavedKey
-    ? `saved · ends ${reading.saved.keyTail} · ${reading.saved.keyLen} characters · type a new one to replace it`
-    : 'no key saved'
+    ? t('ui.settings.models.key-hint-saved', {
+        tail: reading.saved.keyTail,
+        length: reading.saved.keyLen,
+      })
+    : t('ui.settings.models.key-hint-none')
 
   /** The endpoint this page would ask, and the key it would ask with. */
   const candidate = useMemo(
@@ -104,11 +120,18 @@ export default function Settings({ snapshot }) {
         setTested({ ok: false, kind: 'http', words: answer.error, body: answer.body })
         return []
       }
-      setNote(`${answer.models.length} models`)
+      setNote(t('ui.settings.models.none-listed', { count: answer.models.length }))
       if (answer.models.length > 0 && model.trim() !== '' && !answer.models.includes(model.trim())) {
-        setTested({ ok: false, kind: 'name', words: `the list has no “${model.trim()}”` })
+        setTested({
+          ok: false,
+          kind: 'name',
+          words: t('ui.settings.models.not-listed', { model: model.trim() }),
+        })
       } else if (answer.models.length > 0) {
-        setTested({ ok: true, words: `${answer.models.length} models, and this one is there` })
+        setTested({
+          ok: true,
+          words: t('ui.settings.models.listed-and-there', { count: answer.models.length }),
+        })
       }
       return answer.models
     } catch (error) {
@@ -124,7 +147,7 @@ export default function Settings({ snapshot }) {
     if (!answer.ok) return setOrganizationNote(answer.error)
     setMakingOrganization(false)
     setNewOrganizationName('')
-    setOrganizationNote('made — open it when you want to work in it')
+    setOrganizationNote(t('ui.settings.organizations.made'))
   }
 
   async function saveRename(id) {
@@ -135,7 +158,7 @@ export default function Settings({ snapshot }) {
   }
 
   async function switchTo(id) {
-    setOrganizationNote('opening…')
+    setOrganizationNote(t('ui.settings.organizations.opening'))
     const answer = await window.seekHost.switchOrganization(id)
     setOrganizationNote(answer.ok ? null : answer.error)
   }
@@ -150,17 +173,17 @@ export default function Settings({ snapshot }) {
    */
   async function removeOrganization(organization) {
     const yes = window.confirm(
-      `Delete “${organization.name}” and its directory? Rooms, messages, pictures and its roster go with it.`,
+      t('ui.settings.organizations.delete-question', { name: organization.name }),
     )
     if (!yes) return
-    setOrganizationNote('deleting…')
+    setOrganizationNote(t('ui.settings.organizations.deleting'))
     const answer = await window.seekHost.removeOrganization(organization.id)
-    setOrganizationNote(answer.ok ? 'moved to the trash' : answer.error)
+    setOrganizationNote(answer.ok ? t('ui.settings.organizations.deleted') : answer.error)
   }
 
   async function save() {
-    if (baseUrl.trim() === '') return setNote('the address is empty')
-    if (model.trim() === '') return setNote('the model name is empty')
+    if (baseUrl.trim() === '') return setNote(t('ui.settings.models.address-empty'))
+    if (model.trim() === '') return setNote(t('ui.settings.models.model-empty'))
     setBusy('save')
     setNote(null)
     try {
@@ -171,7 +194,7 @@ export default function Settings({ snapshot }) {
       }
       setReading(answer.llm)
       setApiKey('')
-      setNote('saved — this half uses it from the next turn')
+      setNote(t('ui.settings.models.saved'))
     } finally {
       setBusy(null)
     }
@@ -180,17 +203,12 @@ export default function Settings({ snapshot }) {
   return (
     <section className="main-col settings-col">
       <header className="main-head">
-        <h2>Settings</h2>
+        <h2>{t('ui.settings.title')}</h2>
       </header>
 
       <div className="pane">
-        <h3 className="pane-title">Organizations</h3>
-        <p className="pane-desc">
-          Each organization is its own world on this machine: its own person, its own bots, its
-          own rooms, messages, pictures and roster, all in its own directory. Switching reads the
-          other one; it moves and deletes nothing. A name here is a label for the list — it never
-          becomes the name of the person inside.
-        </p>
+        <h3 className="pane-title">{t('ui.settings.organizations.title')}</h3>
+        <p className="pane-desc">{t('ui.settings.organizations.description')}</p>
 
         <div className="card">
           <div className="card-body">
@@ -211,10 +229,10 @@ export default function Settings({ snapshot }) {
                         data-organization-rename-input={organization.id}
                       />
                       <button className="btn primary" onClick={() => saveRename(organization.id)}>
-                        Save
+                        {t('ui.settings.save')}
                       </button>
                       <button className="btn" onClick={() => setRenamingId(null)}>
-                        Cancel
+                        {t('ui.settings.cancel')}
                       </button>
                     </>
                   ) : (
@@ -222,10 +240,10 @@ export default function Settings({ snapshot }) {
                       <span className="organization-av">{organization.name.slice(0, 1).toUpperCase()}</span>
                       <span className="organization-name">{organization.name}</span>
                       {organization.id === currentId ? (
-                        <span className="chip blue">open</span>
+                        <span className="chip blue">{t('ui.settings.organizations.open')}</span>
                       ) : (
                         <button className="btn" onClick={() => switchTo(organization.id)} data-organization-switch={organization.id}>
-                          Switch
+                          {t('ui.settings.organizations.switch')}
                         </button>
                       )}
                       <button
@@ -236,7 +254,7 @@ export default function Settings({ snapshot }) {
                         }}
                         data-organization-rename={organization.id}
                       >
-                        Rename
+                        {t('ui.settings.organizations.rename')}
                       </button>
                       {organization.id === currentId ? null : (
                         <button
@@ -244,7 +262,7 @@ export default function Settings({ snapshot }) {
                           onClick={() => removeOrganization(organization)}
                           data-organization-remove={organization.id}
                         >
-                          Delete
+                          {t('ui.settings.organizations.delete')}
                         </button>
                       )}
                     </>
@@ -259,7 +277,7 @@ export default function Settings({ snapshot }) {
                   className="field-input"
                   value={newOrganizationName}
                   autoFocus
-                  placeholder="a name — shown in this list and nowhere else"
+                  placeholder={t('ui.settings.organizations.name-hint')}
                   onChange={(event) => setNewOrganizationName(event.target.value)}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter') makeOrganization()
@@ -268,10 +286,10 @@ export default function Settings({ snapshot }) {
                   data-organization-new-input
                 />
                 <button className="btn primary" onClick={makeOrganization} data-organization-new-save>
-                  Create
+                  {t('ui.settings.create')}
                 </button>
                 <button className="btn" onClick={() => setMakingOrganization(false)}>
-                  Cancel
+                  {t('ui.settings.cancel')}
                 </button>
               </div>
             ) : (
@@ -284,7 +302,7 @@ export default function Settings({ snapshot }) {
                   }}
                   data-organization-new
                 >
-                  New organization
+                  {t('ui.settings.organizations.new')}
                 </button>
                 {organizationNote && <span className="card-sub" data-organization-note>{organizationNote}</span>}
               </div>
@@ -292,50 +310,47 @@ export default function Settings({ snapshot }) {
           </div>
         </div>
 
-        <h3 className="pane-title">Models</h3>
-        <p className="pane-desc">
-          Seek asks two models two different questions. One decides whether a message is worth
-          answering, the other writes the answer. The first is the app's own and is not
-          configurable; the second is yours.
-        </p>
+        <h3 className="pane-title">{t('ui.settings.models.title')}</h3>
+        <p className="pane-desc">{t('ui.settings.models.description')}</p>
 
         {/* ---- the half that writes ------------------------------------------------ */}
         <div className="card">
           <div className="card-body">
             <div className="card-title">
-              Writes the words
+              {t('ui.settings.models.writes')}
               <span className={`chip${tested === null ? '' : tested.ok ? ' blue' : ' bad'}`}>
-                {tested === null ? 'untested' : tested.ok ? 'reached' : 'not reached'}
+                {tested === null
+                  ? t('ui.settings.test.untested')
+                  : tested.ok
+                    ? t('ui.settings.test.reached')
+                    : t('ui.settings.test.not-reached')}
               </span>
             </div>
-            <p className="pane-desc card-sub">
-              Remote · an OpenAI-compatible endpoint. Save below and this half uses it from the
-              next turn.
-            </p>
+            <p className="pane-desc card-sub">{t('ui.settings.models.writes-description')}</p>
             {sourceLine(reading) && <p className="card-sub source">{sourceLine(reading)}</p>}
             {reading.refusal && (
               <p className="card-sub bad-text">{reading.refusal}</p>
             )}
 
             <label className="field">
-              <span className="field-label">Address</span>
+              <span className="field-label">{t('ui.settings.models.address')}</span>
               <input
                 className="field-input"
                 value={baseUrl}
                 onChange={(event) => setBaseUrl(event.target.value)}
-                placeholder="https://…/v1"
+                placeholder={t('ui.settings.models.address-hint')}
                 data-llm="base-url"
               />
             </label>
 
             <label className="field">
-              <span className="field-label">Model</span>
+              <span className="field-label">{t('ui.settings.models.model')}</span>
               <span className="field-row">
                 <input
                   className="field-input"
                   value={model}
                   onChange={(event) => setModel(event.target.value)}
-                  placeholder="the name the endpoint serves"
+                  placeholder={t('ui.settings.models.model-hint')}
                   data-llm="model"
                 />
                 <button
@@ -344,13 +359,13 @@ export default function Settings({ snapshot }) {
                   disabled={busy !== null}
                   data-llm="models"
                 >
-                  {busy === 'models' ? 'asking…' : 'List models'}
+                  {busy === 'models' ? t('ui.settings.models.listing') : t('ui.settings.models.list')}
                 </button>
               </span>
             </label>
 
             <label className="field">
-              <span className="field-label">API key</span>
+              <span className="field-label">{t('ui.settings.models.api-key')}</span>
               <input
                 className="field-input"
                 type="password"
@@ -360,15 +375,13 @@ export default function Settings({ snapshot }) {
                 data-llm="key"
               />
               <span className="card-sub">
-                Kept in {reading.settingsPath ?? 'settings.json'} on this machine, readable only
-                by you. It reaches this endpoint's requests and nothing else — the store stays
-                local, and the judgement never leaves this machine at all.
+                {t('ui.settings.models.key-note', { path: reading.settingsPath ?? 'settings.json' })}
               </span>
             </label>
 
             <div className="field-actions">
               <button className="btn primary" onClick={save} disabled={busy !== null} data-llm="save">
-                {busy === 'save' ? 'saving…' : 'Save'}
+                {busy === 'save' ? t('ui.settings.saving') : t('ui.settings.save')}
               </button>
               {note && <span className="card-sub" data-llm="note">{note}</span>}
             </div>
@@ -377,12 +390,14 @@ export default function Settings({ snapshot }) {
               <div className="llm-error" data-llm="error">
                 <div className="llm-error-title">
                   {tested.kind === 'name'
-                    ? 'That model is not on this endpoint'
+                    ? t('ui.settings.models.error-name')
                     : tested.kind === 'save'
-                      ? 'Not saved'
-                      : 'The request did not get through'}
+                      ? t('ui.settings.models.error-save')
+                      : t('ui.settings.models.error-http')}
                 </div>
-                <div className="llm-error-raw">in its own words: {tested.words}</div>
+                <div className="llm-error-raw">
+                  {t('ui.settings.models.error-own-words', { words: tested.words })}
+                </div>
                 {tested.body && <div className="llm-error-raw">{tested.body}</div>}
               </div>
             )}
@@ -394,35 +409,35 @@ export default function Settings({ snapshot }) {
         <div className="card">
           <div className="card-body">
             <div className="card-title">
-              Decides whether to answer
+              {t('ui.settings.decides.title')}
               <span className={`chip${snapshot?.stage1?.server ? ' blue' : ''}`}>
-                {snapshot?.stage1?.server ? 'ready' : snapshot?.stage1?.refusal ? 'not in use' : 'not started'}
+                {snapshot?.stage1?.server
+                  ? t('ui.settings.decides.ready')
+                  : snapshot?.stage1?.refusal
+                    ? t('ui.settings.decides.not-in-use')
+                    : t('ui.settings.decides.not-started')}
               </span>
             </div>
-            <p className="pane-desc card-sub">
-              Local · the model the app carries. It reads token probabilities to answer one
-              question — answer or stay quiet — and never writes a word into a room.
-            </p>
+            <p className="pane-desc card-sub">{t('ui.settings.decides.description')}</p>
             <div className="card-rows">
               <div className="card-row">
-                <span className="k">running at</span>
+                <span className="k">{t('ui.settings.decides.running-at')}</span>
                 <span className="v mono">{snapshot?.stage1?.server ?? '—'}</span>
               </div>
               <div className="card-row">
-                <span className="k">weights</span>
-                <span className="v mono">{snapshot?.stage1?.pending ?? 'downloaded'}</span>
+                <span className="k">{t('ui.settings.decides.weights')}</span>
+                <span className="v mono">
+                  {snapshot?.stage1?.pending ?? t('ui.settings.decides.downloaded')}
+                </span>
               </div>
               {snapshot?.stage1?.refusal && (
                 <div className="card-row">
-                  <span className="k">refused</span>
+                  <span className="k">{t('ui.settings.decides.refused')}</span>
                   <span className="v bad-text">{snapshot.stage1.refusal}</span>
                 </div>
               )}
             </div>
-            <p className="card-sub">
-              There is nothing to configure here: a hosted endpoint reports text, and this
-              question is answered by probabilities. That is why the two halves are two cards.
-            </p>
+            <p className="card-sub">{t('ui.settings.decides.nothing-to-configure')}</p>
           </div>
         </div>
       </div>
