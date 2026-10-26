@@ -324,6 +324,22 @@ function assertArtifact(value: unknown, source: string): PromptArtifact {
  * same reason every other sentence here does.
  */
 
+/**
+ * The facts about a bot that nobody had to fill in.
+ *
+ * `position` is what the bot does in this organization and `personality` is how it
+ * talks and works (`types.ts`, `Bot`); `gender` is on the same card, and `description`
+ * is the free text a bot was written with before the card existed. Every one of them
+ * is optional on the store, so a part quoting one is skipped when the bot has none —
+ * telling a model about a position nobody wrote down is a blank the model fills in
+ * itself.
+ *
+ * `gender` is here and unused by the shipped artifact: a fact the store holds should
+ * not be unreachable from a prompt, and which of them a sentence quotes is the
+ * artifact's decision rather than this module's.
+ */
+export type OptionalFact = 'description' | 'gender' | 'position' | 'personality';
+
 /** One part of a turn's prompt. */
 export interface WorkPart {
   /** The part's own name, for the error messages and for a reader of the file. */
@@ -332,8 +348,14 @@ export interface WorkPart {
   text: string;
   /** What follows the part, verbatim. */
   after: string;
-  /** `always`, or `description` for a part that is skipped when the bot has none. */
-  when: 'always' | 'description';
+  /**
+   * `always`, or the one optional fact this part is skipped without.
+   *
+   * A bot may have nothing on its card but its name, so a part that quotes a field
+   * a person may have left empty has to name that field: the part then leaves the
+   * prompt with the fact instead of asking a model about a blank.
+   */
+  when: 'always' | OptionalFact;
   /**
    * `entry` repeats the part once per observation the turn was woken for.
    *
@@ -386,6 +408,12 @@ export interface WorkValues {
   bot: string;
   /** The bot's own words about itself, or the empty string when it has none. */
   description: string;
+  /** What it does in this organization, or the empty string when nobody said. */
+  position: string;
+  /** How it talks and works, or the empty string. Free text, newlines included. */
+  personality: string;
+  /** What its card says it is, or the empty string — `''` is a stored answer. */
+  gender: string;
   /** The room being addressed — the id the turn's `say` call has to name. */
   room: string;
   /** The bot's own agents, as facts rather than as prose (`identity.ts`). */
@@ -394,9 +422,18 @@ export interface WorkValues {
   entries: { sender: string; text: string }[];
 }
 
-/** The shipped turn artifact's location, beside this module. */
+/**
+ * The shipped turn artifact's location, beside this module.
+ *
+ * `work-v2.json` ships and `work-v1.json` stays beside it. A prompt is versioned
+ * rather than edited in place, because `calibration/work/` measured v1 and a record
+ * that quotes a prompt the tree has changed describes a run nobody can re-read —
+ * `work-calibration.test.ts` holds that pair together. What v2 adds is the two parts
+ * that quote a bot's card, and both are conditional: a bot whose card says nothing is
+ * asked the v1 text byte for byte, which `prompts.test.ts` checks against v1 itself.
+ */
 export function shippedWorkPromptPath(): URL {
-  return new URL('./prompts/work-v1.json', import.meta.url);
+  return new URL('./prompts/work-v2.json', import.meta.url);
 }
 
 /**
@@ -447,9 +484,18 @@ export function assembleWorkPrompt(
   artifact: WorkArtifact,
   values: WorkValues,
 ): { version: string; system: string; rest: string } {
+  // Every fact the artifact's vocabulary permits, so a part and its substitution site
+  // cannot disagree: a `when` the validator accepts and a `{name}` the assembly does
+  // not fill would render the placeholder to the model whole, which is a sentence
+  // naming a field rather than a sentence about the bot. Which of them a prompt
+  // actually quotes is the artifact's decision — v2 quotes three of the card's four
+  // fields and never the gender.
   const facts = {
     bot: values.bot,
     description: values.description,
+    position: values.position,
+    personality: values.personality,
+    gender: values.gender,
     room: values.room,
     roster: values.roster,
   };
@@ -460,7 +506,12 @@ export function assembleWorkPrompt(
   // measures for the watch path.
   const out: string[] = [artifact.afterSystem];
   for (const part of artifact.parts) {
-    if (part.when === 'description' && values.description === '') continue;
+    // `!values[part.when]` rather than a comparison with the empty string: the
+    // calibration driver is plain `.mjs` and hands over only the facts its rows have,
+    // so a missing fact must read as absent. `fill` leaves an unknown placeholder
+    // whole, and a part rendered with `{position}` in it tells the model about a
+    // field by name.
+    if (part.when !== 'always' && !values[part.when]) continue;
     if (part.each === 'entry') {
       for (const entry of values.entries) {
         out.push(fill(part.text, { ...facts, sender: entry.sender, text: entry.text }), part.after);
@@ -478,7 +529,28 @@ export function assembleWorkPrompt(
 }
 
 /** The placeholders a turn prompt may name, and what each one may appear on. */
-const WORK_FACTS = ['bot', 'description', 'room', 'roster'] as const;
+const WORK_FACTS = [
+  'bot',
+  'description',
+  'gender',
+  'personality',
+  'position',
+  'room',
+  'roster',
+] as const;
+
+/** The four a bot may simply not have, in the order an error message lists them. */
+const OPTIONAL_FACTS: readonly OptionalFact[] = [
+  'description',
+  'gender',
+  'personality',
+  'position',
+];
+
+/** True for a placeholder name that is one of the card's optional facts. */
+function isOptionalFact(name: unknown): name is OptionalFact {
+  return (OPTIONAL_FACTS as readonly unknown[]).includes(name);
+}
 
 /**
  * What the runtime needs a turn artifact to say.
@@ -535,20 +607,39 @@ function assertWorkArtifact(value: unknown, source: string): WorkArtifact {
       return fail(`${where}.text must be a non-empty string`);
     }
     if (typeof row.after !== 'string') return fail(`${where}.after must be a string`);
-    if (row.when !== 'always' && row.when !== 'description') {
-      return fail(`${where}.when must be "always" or "description", got ${JSON.stringify(row.when)}`);
+    if (row.when !== 'always' && !isOptionalFact(row.when)) {
+      return fail(
+        `${where}.when must be "always" or one of ${OPTIONAL_FACTS.join(', ')}, ` +
+          `got ${JSON.stringify(row.when)}`,
+      );
     }
     if (row.each !== undefined && row.each !== 'entry') {
       return fail(`${where}.each must be "entry" when present`);
     }
-    if (row.each === 'entry' && row.when === 'description') {
-      return fail(`${where} cannot both repeat per entry and depend on a description`);
+    if (row.each === 'entry' && row.when !== 'always') {
+      return fail(
+        `${where} cannot both repeat per entry and depend on a fact the bot may not have`,
+      );
+    }
+
+    // Both halves of one rule. A part that quotes a fact the bot may not have and is
+    // rendered anyway leaves a blank in the middle of a sentence; a part that says it
+    // depends on a fact and never quotes it leaves the prompt for a reason nothing in
+    // its own text explains.
+    const dependsOn = placeholdersIn(row.text).filter(isOptionalFact);
+    for (const name of dependsOn) {
+      if (row.when !== name) {
+        return fail(`${where} fills {${name}} but is rendered when the bot has none`);
+      }
+    }
+    if (isOptionalFact(row.when) && !dependsOn.includes(row.when)) {
+      return fail(
+        `${where} is skipped without a ${row.when} and does not quote one, so nothing ` +
+          'it says depends on it',
+      );
     }
 
     for (const name of placeholdersIn(row.text)) {
-      if (name === 'description' && row.when !== 'description') {
-        return fail(`${where} fills {description} but is rendered when the bot has none`);
-      }
       if (name === 'sender' || name === 'text') {
         if (row.each !== 'entry') {
           return fail(

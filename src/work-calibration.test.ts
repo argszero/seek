@@ -35,15 +35,16 @@
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+
+import { shippedWorkPromptPath } from './prompts.ts';
 
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
 
 const CASES = 'calibration/work/cases.json';
 const RECORD = 'calibration/work/measured.json';
-const ARTIFACT = 'src/prompts/work-v1.json';
 
 /** The record's own two restatements of the table, English and Chinese. */
 const PROSE = ['calibration/work/provenance.md', 'calibration/work/provenance.zh-CN.md'];
@@ -96,6 +97,18 @@ function read<T>(relative: string): T {
 
 const cases = read<{ labels: Record<string, string>; cases: Case[] }>(CASES);
 const record = read<Record>(RECORD);
+
+/**
+ * The artifact the record measured — read off the record, not spelled again here.
+ *
+ * A second copy of the path would be the second place to forget: the check below is
+ * that the record's quote matches the file the record names, and a constant in this
+ * file turns that into "the record matches a path this test likes".
+ */
+const MEASURED = record.prompt.artifact;
+
+/** The artifact this tree ships now, in the record's own spelling of a path. */
+const SHIPPED = `src/prompts/${basename(fileURLToPath(shippedWorkPromptPath()))}`;
 
 /** The counts the table claims, re-derived from the rows it summarises. */
 function derive(rows: Row[]): Record<string, number> {
@@ -181,8 +194,7 @@ test('every row was measured on exactly the labelled cases, labels included', ()
   }
 });
 
-test('the record describes the prompt this tree ships, not one it used to ship', () => {
-  assert.equal(record.prompt.artifact, ARTIFACT, `${RECORD} points at another artifact`);
+test('the record measures the artifact it names, and names the one that ships', () => {
   assert.equal(
     record.prompt.modified,
     false,
@@ -191,22 +203,38 @@ test('the record describes the prompt this tree ships, not one it used to ship',
   );
 
   const artifact = read<{ parts: { name: string; text: string }[]; tools: { name: string }[] }>(
-    ARTIFACT,
+    MEASURED,
   );
   assert.deepEqual(
     record.prompt.parts,
     artifact.parts.map((part) => part.name),
-    `${ARTIFACT}'s parts have moved since it was measured, so the rows describe a prompt ` +
-      'that is no longer the one that ships — re-measure, do not re-word the record',
+    `${MEASURED}'s parts have moved since it was measured, so the rows describe a prompt ` +
+      'that is no longer the one they were taken on — re-measure, do not re-word the record',
   );
   const ask = artifact.parts.find((part) => part.name === 'ask');
-  assert.ok(ask, `${ARTIFACT} has no ask part, so the record's quoted ask cannot be checked`);
+  assert.ok(ask, `${MEASURED} has no ask part, so the record's quoted ask cannot be checked`);
   assert.equal(
     record.prompt.ask,
     ask.text,
-    `${ARTIFACT}'s ask is not the one ${RECORD} quotes. The record is a measurement of a ` +
+    `${MEASURED}'s ask is not the one ${RECORD} quotes. The record is a measurement of a ` +
       'specific prompt; editing the prompt retires the measurement',
   );
+
+  // A prompt is versioned, so the tree may ship one the record does not cover — v2
+  // adds the parts that quote a bot's card, and v1 is what the table was measured on.
+  // What is not allowed is shipping it quietly: both prose halves have to say which
+  // artifact the table belongs to, or a reader takes it as a measurement of what they
+  // are running.
+  if (MEASURED !== SHIPPED) {
+    for (const relativePath of PROSE) {
+      const text = readFileSync(join(ROOT, relativePath), 'utf8');
+      assert.ok(
+        text.includes(basename(SHIPPED)),
+        `${relativePath} never names ${SHIPPED}, which is what this tree ships, so its table ` +
+          `reads as a measurement of that prompt rather than of ${MEASURED}`,
+      );
+    }
+  }
 });
 
 test('every measured file is identified by its bytes', () => {

@@ -151,12 +151,15 @@ test('an unknown bot or an unknown agent is an error, not an empty answer', () =
 
 test('the answer is a copy: rewriting what it was told cannot rewrite the store', () => {
   const world = makeWorld();
+  world.store.data.bots[world.botA].personality = 'the words as written';
   const identity = identityFor(world.store, world.botA, world.agentA2);
 
   identity.bot.name = 'rewritten';
+  identity.bot.personality = 'rewritten';
   identity.roster.find((row) => row.role === 'work')?.tools.push('schedule');
 
   assert.equal(world.store.data.bots[world.botA].name, 'A');
+  assert.equal(world.store.data.bots[world.botA].personality, 'the words as written');
   assert.deepEqual(world.store.data.agents[world.agentA2].tools, ['say']);
 
   // A second read is unaffected by what a caller did to the first.
@@ -174,4 +177,33 @@ test('the roster it is told is this bot’s own: two bots in one store never mix
   assert.deepEqual(Object.keys(byRole(b)).sort(), ['work']);
   assert.equal(b.bot.id, world.botB);
   assert.equal(b.bot.description, undefined);
+});
+
+test('the card a person fills in reaches the agent: gender, position and personality', () => {
+  const world = makeWorld();
+  const bot = world.store.data.bots[world.botA];
+  bot.gender = '女';
+  bot.position = '接口与联调';
+  bot.personality = '先给结论再给理由；\n改接口前列出谁会被影响。';
+
+  const identity = identityFor(world.store, world.botA, world.agentA2);
+
+  assert.equal(identity.bot.gender, '女');
+  assert.equal(identity.bot.position, '接口与联调');
+  // Verbatim, newlines included: a personality is what the person typed, not a
+  // label this module recognised and rewrote.
+  assert.equal(identity.bot.personality, '先给结论再给理由；\n改接口前列出谁会被影响。');
+});
+
+test('a card field nobody filled in reads as absent rather than as an empty answer', () => {
+  const world = makeWorld();
+  const identity = identityFor(world.store, world.botA, world.agentA2);
+
+  // The store leaves the key out (`bots.ts`, `createBot`), and the identity hands on
+  // that absence instead of inventing a blank: what a turn says about a bot whose
+  // card nobody filled in is the prompt artifact's decision, and it needs to be able
+  // to tell "not said" from "said nothing".
+  assert.equal(identity.bot.position, undefined);
+  assert.equal(identity.bot.personality, undefined);
+  assert.equal(identity.bot.gender, undefined);
 });

@@ -130,6 +130,9 @@ export async function workOverServer(
   const smallest = assembleWorkPrompt(artifact, {
     bot: bot.name,
     description: '',
+    position: '',
+    personality: '',
+    gender: '',
     room: ROOM_SAMPLE,
     roster: '',
     entries: [],
@@ -327,6 +330,9 @@ function valuesOf(store: SeekStore, context: TurnContext): WorkValues {
   return {
     bot: bot.name,
     description: bot.description ?? '',
+    position: bot.position ?? '',
+    personality: bot.personality ?? '',
+    gender: bot.gender ?? '',
     room: context.roomId ?? '',
     roster: rosterOf(context.identity),
     entries: context.entries.map((entry) => entryOf(store, bot.name, entry)),

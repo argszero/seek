@@ -59,6 +59,14 @@ measures the prompt the reader has; `LLAMA=<path>` names another `llama-server` 
 `src/prompts/work-v1.json` changed, which is what makes the rows comparable: the only
 variable left is the model.
 
+**The tree now ships `work-v2.json`, and every row below was measured on `work-v1.json`.** A
+prompt is versioned rather than edited in place, so v1 stays in the tree exactly as it was
+measured. v2 adds two parts — what the bot does in its organization, and how it talks and
+works — and both are skipped when a bot's card says nothing, so a bot with an empty card is
+asked the v1 text byte for byte (`src/prompts.test.ts` compares the two assemblies). Nothing
+below was measured on v2: the driver hands over a description and no card, so it still
+assembles the v1 text, and a run that filled a card in would be a new row set.
+
 **Tools reached the model in every row.** This build enables the Jinja engine by default
 (`--help` reports `--jinja, --no-jinja … (default: enabled)`), so each GGUF's own chat
 template renders the tool list; the shipped model's template appends

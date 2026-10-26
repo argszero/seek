@@ -3,14 +3,15 @@
  * calls.
  *
  * `docs/design/agent-lifecycle.md` §2, "An agent is told whose it is": every
- * agent's system prompt carries the bot it belongs to — name, avatar,
- * description — and the roster of that bot, each row including itself, with its
+ * agent's system prompt carries the bot it belongs to — its name, its avatar and
+ * the card a person fills in when adding it (what it is, what it does here, how it
+ * talks) — and the roster of that bot, each row including itself, with its
  * `role`, what it does and its home directory. The next sentence is the whole
  * reason this module has the shape it has: **"It is pushed, not stored: the
  * agent holds no copy of the bot's identity or of its siblings, so a rename or a
  * new row reaches every agent of that bot at once."** The design states
- * the same rule from the other side — one copy of the name, avatar and
- * description lives on the bot.
+ * the same rule from the other side — one copy of the name, avatar and card lives
+ * on the bot.
  *
  * So nothing here is cached and nothing here is written. `identityFor` reads the
  * store and returns fresh fields, and `turn.ts` calls it once per turn rather
@@ -37,12 +38,28 @@
 import type { SeekStore } from './store.ts';
 import type { Id } from './types.ts';
 
-/** The bot, as its agents are told about it. One copy of this lives on the bot. */
+/**
+ * The bot, as its agents are told about it. One copy of this lives on the bot.
+ *
+ * Under `name` are the fields a person fills in when adding a bot (`types.ts`,
+ * `Bot`): `gender`, `position` — what it does in this organization — and
+ * `personality`, how it talks and works. `description` is the free text a bot was
+ * written with before there was a card, and it is still carried: a bot made that way
+ * has one.
+ *
+ * Each is absent rather than blank when nobody filled it in, and that is the same
+ * fact either way to the window (`snapshot.js` reads both as `null`). What a turn is
+ * told is the prompt artifact's decision, not this module's: the identity hands over
+ * facts and `prompts.ts` decides which of them a sentence quotes.
+ */
 export interface BotIdentity {
   id: Id;
   name: string;
   avatar?: string;
   description?: string;
+  gender?: string;
+  position?: string;
+  personality?: string;
 }
 
 /** One row of that bot's roster, as any of its agents sees it — itself included. */
@@ -101,6 +118,9 @@ export function identityFor(
       name: bot.name,
       avatar: bot.avatar,
       description: bot.description,
+      gender: bot.gender,
+      position: bot.position,
+      personality: bot.personality,
     },
     // Copies, not the store's own objects: an agent is told whose it is, and a
     // caller that rewrote what it was told must not be rewriting the bot or a
