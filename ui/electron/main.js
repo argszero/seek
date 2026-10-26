@@ -336,8 +336,9 @@ async function start() {
     const weightsDir = weightsDirectory(app.getPath('userData'))
 
     // The weights come first, because a server started over files that are not there refuses
-    // by design and the reason would be the wrong one. `SEEK_WEIGHTS_BASE` is how a run is
-    // pointed at a mirror; unset means the canonical host (`weights-fetch.js`).
+    // by design and the reason would be the wrong one. `SEEK_WEIGHTS_BASE` names one host and
+    // only that one; unset means the ruled order, mirror first and the canonical host after it
+    // (`weights-fetch.js`).
     const arrived = await ensureWeights({
       dir: weightsDir,
       base: process.env.SEEK_WEIGHTS_BASE,
@@ -355,7 +356,12 @@ async function start() {
       console.error(`seek: the weights did not arrive — ${weightsRefusal}`)
       pushChanged()
     } else {
-      if (arrived.fetched) console.error(`seek: the weights arrived (${arrived.bytes} bytes)`)
+      // Which host served them is said out loud, because a run that quietly fell back would
+      // otherwise be indistinguishable in the log from one the first host served — and the
+      // difference is the whole reason the order is a ruling.
+      if (arrived.fetched) {
+        console.error(`seek: the weights arrived from ${arrived.host} (${arrived.bytes} bytes)`)
+      }
       const started = await startBundledServer({
         binaryPath: bundledServerPath(resources),
         weightsDir,
