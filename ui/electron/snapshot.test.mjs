@@ -16,7 +16,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { deliver } from '../../src/delivery.ts'
+import { deliver, toggleReaction } from '../../src/delivery.ts'
 import { emptyData, SeekStore } from '../../src/store.ts'
 import { runTurn } from '../../src/turn.ts'
 import { snapshotOf } from './snapshot.js'
@@ -449,4 +449,104 @@ test('the first law is carried by every snapshot, in the words the app keeps', (
   const empty = snapshotOf(null, null)
   assert.equal(empty.firstLaw, FIRST_LAW)
   assert.equal(empty.error, 'the store is not open yet', 'the empty shape is still the empty shape')
+})
+
+/**
+ * What a message carries besides its own words, as the window receives it.
+ *
+ * The kernel stores a reaction as `operators[]` and nothing else (`src/types.ts`), so the
+ * snapshot must not invent the two things Feishu's shape has beside it: a `count`, which
+ * is that array's length, and a per-reader `mine`. A window that received a stored count
+ * could draw four where two people reacted, and one that received `mine` would have the
+ * reader's own viewpoint on the shared log — the mistake rule 15 already refuses for
+ * `mentionsMe`.
+ *
+ * The quotation and the forward are snapshots the kernel took at send time, so the window
+ * only has to carry them; a rename afterwards must not change what a reply says it
+ * answered.
+ */
+test('a message arrives with its reactions as operators, and no stored count or mine', () => {
+  const store = seeded()
+  const sent = deliver(store, {
+    roomId: 'rm_ops',
+    senderId: 'pr_me',
+    text: 'who is in?',
+    now: '2026-10-25T01:02:00.000Z',
+  })
+  toggleReaction(store, {
+    roomId: 'rm_ops',
+    messageId: sent.message.id,
+    principalId: 'pr_me',
+    emojiType: 'OK',
+  })
+  toggleReaction(store, {
+    roomId: 'rm_ops',
+    messageId: sent.message.id,
+    principalId: 'bo_watch',
+    emojiType: 'OK',
+  })
+
+  const drawn = snapshotOf(store, '/tmp/seek.json').rooms[0].messages.at(-1)
+  assert.deepEqual(drawn.reactions, [{ emojiType: 'OK', operators: ['pr_me', 'bo_watch'] }])
+  assert.equal('count' in drawn.reactions[0], false, 'the count is operators.length')
+  assert.equal('mine' in drawn.reactions[0], false, "and 'mine' is the reader's, not the log's")
+})
+
+/**
+ * A message nobody reacted to arrives with `[]`, and one that quotes or forwards nothing
+ * arrives with `null` — for the reason `media` is `null`: two kinds of nothing make a
+ * renderer draw whatever `undefined` does.
+ */
+test('a plain message arrives with empty reactions and neither a quotation nor a forward', () => {
+  for (const message of snapshotOf(seeded(), '/tmp/seek.json').rooms[0].messages) {
+    assert.deepEqual(message.reactions, [])
+    assert.equal(message.quoted, null)
+    assert.equal(message.forwardedFrom, null)
+  }
+})
+
+test('a reply and a forward arrive carrying the snapshots the kernel took', () => {
+  const store = seeded()
+  const first = deliver(store, {
+    roomId: 'rm_ops',
+    senderId: 'pr_me',
+    text: 'the gate stays local',
+    now: '2026-10-25T01:02:00.000Z',
+  })
+  deliver(store, {
+    roomId: 'rm_ops',
+    senderId: 'bo_watch',
+    text: 'agreed',
+    quoteOf: first.message.id,
+    now: '2026-10-25T01:03:00.000Z',
+  })
+  deliver(store, {
+    roomId: 'rm_ops',
+    senderId: 'bo_watch',
+    forwardOf: first.message.id,
+    now: '2026-10-25T01:04:00.000Z',
+  })
+
+  const messages = snapshotOf(store, '/tmp/seek.json').rooms[0].messages
+  const reply = messages.find((message) => message.text === 'agreed')
+  const forward = messages.find((message) => message.text === 'the gate stays local' && message.id !== first.message.id)
+
+  assert.deepEqual(reply.quoted, {
+    messageId: first.message.id,
+    name: 'argszero',
+    text: 'the gate stays local',
+  })
+  assert.deepEqual(forward.forwardedFrom, {
+    messageId: first.message.id,
+    name: 'argszero',
+  })
+
+  // A snapshot, not a read of the roster at draw time.
+  store.data.principals.pr_me.name = 'renamed-person'
+  const again = snapshotOf(store, '/tmp/seek.json').rooms[0].messages
+  assert.equal(
+    again.find((message) => message.text === 'agreed').quoted.name,
+    'argszero',
+    'the quoted name is the one the reply carries',
+  )
 })

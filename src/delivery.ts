@@ -19,6 +19,7 @@ import { chainBlock, resetAgentTurns } from './chain.ts';
 import { newId, SeekStore } from './store.ts';
 import type {
   Bot,
+  ForwardedFrom,
   Id,
   Mention,
   Message,
@@ -27,6 +28,7 @@ import type {
   Observation,
   ObservationHints,
   ObservationKind,
+  QuotedMessage,
 } from './types.ts';
 
 export interface PostMessageInput {
@@ -41,6 +43,18 @@ export interface PostMessageInput {
   media?: MessageMedia;
   /** The principals this message @-mentions, the open platform's `{id, name}` pairs. */
   mentions?: Mention[];
+  /**
+   * The message this one quotes. `deliver()` reads it out of the store and keeps
+   * the snapshot, because a caller's copy of somebody's words is a claim about
+   * what they said — see `QuotedMessage` in `types.ts`.
+   */
+  quoteOf?: Id;
+  /**
+   * The message this one forwards. Its words, kind and picture are copied off
+   * the stored message here, not passed in, so a forward cannot say something
+   * the original did not.
+   */
+  forwardOf?: Id;
   /** The message this one answers, when it answers one. */
   rootId?: Id;
   /** Which agent of the sending bot wrote it. */
@@ -81,15 +95,45 @@ export function deliver(store: SeekStore, input: PostMessageInput): Delivery {
     throw new Error(`unknown message in ${input.roomId}: ${input.rootId}`);
   }
 
+  // The two snapshots are read out of the store before anything is written: what
+  // a reply quotes and where a forward came from are facts of the moment it is
+  // sent, and neither is taken from the caller.
+  if (input.quoteOf && input.forwardOf) {
+    throw new Error(
+      'a message both quotes and forwards: a forward carries another message\'s own ' +
+        'content, so it has no words of its own to put a quotation beside',
+    );
+  }
+  const quoting = input.quoteOf
+    ? messageIn(store, input.roomId, input.quoteOf)
+    : undefined;
+  const forwarding = input.forwardOf
+    ? messageIn(store, input.roomId, input.forwardOf)
+    : undefined;
+  if (
+    forwarding &&
+    (input.kind !== undefined ||
+      input.media !== undefined ||
+      (input.text ?? '').trim() !== '')
+  ) {
+    throw new Error(
+      'a forwarded message carrying content of its own: `forwardOf` names the message ' +
+        'whose words, kind and picture are carried, and anything passed beside it is a ' +
+        'second copy of a fact the store already holds',
+    );
+  }
+
   const now = input.now ?? new Date().toISOString();
-  const kind = input.kind ?? 'text';
-  const media = mediaFor(kind, input.media);
+  const kind = forwarding ? forwarding.kind : (input.kind ?? 'text');
+  const media = forwarding
+    ? copyOf(forwarding.media)
+    : mediaFor(kind, input.media);
   const message: Message = {
     id: newId('om'),
     room_id: input.roomId,
     sender_id: input.senderId,
     kind,
-    text: input.text,
+    text: forwarding ? forwarding.text : input.text,
     mentions: (input.mentions ?? []).map((mention) => ({
       id: mention.id,
       name: mention.name,
@@ -102,6 +146,8 @@ export function deliver(store: SeekStore, input: PostMessageInput): Delivery {
   // and stays clean, and a caller still holding the reference could otherwise
   // rename a picture under a message already delivered.
   if (media) message.media = media;
+  if (quoting) message.quoted = quotedFrom(store, quoting);
+  if (forwarding) message.forwarded_from = forwardedFrom(store, forwarding);
   if (parent) {
     message.root_id = parent.id;
     message.caused_by = parent.id;
@@ -152,6 +198,130 @@ export function deliver(store: SeekStore, input: PostMessageInput): Delivery {
   }
 
   return { message, observations };
+}
+
+/**
+ * Where a quotation is cut.
+ *
+ * The block draws one line of the quoted message, and a reply to a manifesto is
+ * not made better by carrying the manifesto. The cut is taken here rather than
+ * by whoever draws it, so two readers cannot disagree about what a quotation is.
+ */
+const QUOTE_CHARS = 160;
+
+/** One message of one room, or a refusal naming both. */
+function messageIn(store: SeekStore, roomId: Id, messageId: Id): Message {
+  const found = store
+    .messagesOf(roomId)
+    .find((message) => message.id === messageId);
+  if (!found) throw new Error(`unknown message in ${roomId}: ${messageId}`);
+  return found;
+}
+
+/** A principal's name as it reads now, for the snapshots below. */
+function senderName(store: SeekStore, senderId: Id): string {
+  const sender = store.principal(senderId);
+  return sender && typeof sender.name === 'string' ? sender.name : senderId;
+}
+
+/**
+ * The quotation a reply keeps: the quoted message's sender and its words.
+ *
+ * Taken now and stored, so the reply goes on meaning what it answered even if the
+ * message it answered is dropped later. `system` is not a principal and so has no
+ * name to look up; the snapshot then says `system`, which is what the message's
+ * own `sender_id` says.
+ */
+function quotedFrom(store: SeekStore, message: Message): QuotedMessage {
+  return {
+    message_id: message.id,
+    name: senderName(store, message.sender_id),
+    text: message.text.slice(0, QUOTE_CHARS),
+  };
+}
+
+function forwardedFrom(store: SeekStore, message: Message): ForwardedFrom {
+  return {
+    message_id: message.id,
+    name: senderName(store, message.sender_id),
+  };
+}
+
+/** A copy of a stored picture reference, for the reason `mediaFor` returns one. */
+function copyOf(media: MessageMedia | undefined): MessageMedia | undefined {
+  return media ? { key: media.key, mime: media.mime } : undefined;
+}
+
+export interface ReactionInput {
+  roomId: Id;
+  messageId: Id;
+  /** The principal reacting: a person or a bot, either way one id. */
+  principalId: Id;
+  /** Feishu's `emoji_type` — the name the picker sends (`OK`, `SMILE`). */
+  emojiType: string;
+}
+
+/**
+ * Add one principal's reaction to a message, or take it back.
+ *
+ * **A toggle, because the button is one button.** In the interface the same emoji
+ * in the same place adds and removes, and two entry points for one state are two
+ * things that can disagree.
+ *
+ * **The count is not stored.** `operators` is the fact and its length is the count,
+ * so a file repaired by hand cannot say four people and name two.
+ *
+ * **An entry whose last operator leaves is dropped**, so a message whose reactions
+ * were all taken back is the same message as one nobody ever reacted to: there is
+ * no zero row to draw and nothing to prune later.
+ *
+ * **The reactor has to be someone in the room.** A reaction is a principal's answer
+ * to a message they were there for; the alternative is a stranger's mark with no
+ * membership behind it, and nothing to check it against later.
+ */
+export function toggleReaction(
+  store: SeekStore,
+  input: ReactionInput,
+): Message {
+  const message = messageIn(store, input.roomId, input.messageId);
+  const emojiType = input.emojiType.trim();
+  if (emojiType === '') {
+    throw new Error(
+      'a reaction with no emoji_type: the emoji is the whole of what a reaction says',
+    );
+  }
+  if (!store.principal(input.principalId)) {
+    throw new Error(`unknown principal: ${input.principalId}`);
+  }
+  if (!store.isMember(input.roomId, input.principalId)) {
+    throw new Error(
+      `${input.principalId} is not a member of ${input.roomId}, so it has nothing to ` +
+        'react to here',
+    );
+  }
+
+  const reactions = message.reactions ?? [];
+  const existing = reactions.find(
+    (reaction) => reaction.emoji_type === emojiType,
+  );
+  if (!existing) {
+    reactions.push({
+      emoji_type: emojiType,
+      operators: [input.principalId],
+    });
+  } else {
+    const at = existing.operators.indexOf(input.principalId);
+    if (at >= 0) existing.operators.splice(at, 1);
+    else existing.operators.push(input.principalId);
+    if (existing.operators.length === 0) {
+      reactions.splice(reactions.indexOf(existing), 1);
+    }
+  }
+  // Absent, not empty: `[]` would be a field that says "nothing here" on every
+  // message ever written, and the shape a reader checks for is the same either way.
+  if (reactions.length === 0) delete message.reactions;
+  else message.reactions = reactions;
+  return message;
 }
 
 /**

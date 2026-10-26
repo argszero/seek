@@ -259,6 +259,30 @@ function snapshotOf(store, storeFile, stage1 = null, stage2 = null, storeRefusal
       // fact" means. `[]` and never `undefined`, for the reason `media` is `null`: a
       // renderer facing two kinds of nothing draws whatever `undefined` does.
       mentions: message.mentions.map((mention) => ({ id: mention.id, name: mention.name })),
+      // The three things a message carries besides its own words, in the kernel's own
+      // shape (`src/types.ts`): `reactions` is one emoji and `operators[]`, `quoted` is
+      // the snapshot a reply kept and `forwarded_from` the one a forward kept. No `count`
+      // and no "mine" travel: the count is `operators.length` and "mine" is one reader's
+      // viewpoint of a shared log — the same two reasons `mentions` carries no
+      // `mentionsMe`. `[]` and `null` rather than absent, so a renderer never has two
+      // kinds of nothing to tell apart.
+      reactions: (message.reactions ?? []).map((reaction) => ({
+        emojiType: reaction.emoji_type,
+        operators: reaction.operators.slice(),
+      })),
+      quoted: message.quoted
+        ? {
+            messageId: message.quoted.message_id,
+            name: message.quoted.name,
+            text: message.quoted.text,
+          }
+        : null,
+      forwardedFrom: message.forwarded_from
+        ? {
+            messageId: message.forwarded_from.message_id,
+            name: message.forwarded_from.name,
+          }
+        : null,
       // A thread, in the kernel's own three facts (`src/types.ts`): `root_id` is the
       // message this one answers and is absent on a message that answers nothing;
       // `chain` is the root of the run this message belongs to — a message that caused
