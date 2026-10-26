@@ -121,6 +121,23 @@ export interface LlamaServer {
    */
   artifact: PromptArtifact;
   /**
+   * The model this endpoint serves, named by the caller — and the one field that says which
+   * kind of endpoint this is.
+   *
+   * `llama-server` answers `/props`, so its identity and its window are facts it reports.
+   * A hosted OpenAI-compatible endpoint answers no `/props` at all: the chat call works and
+   * the three endpoints the cut was measured through are simply not there. Its window and
+   * its name live in `GET /v1/models` instead, per model, so the caller says which model it
+   * wants and this file reads the rest from the server's own list —
+   * `requireDeclaredModel` is that read.
+   *
+   * **Absent means a `llama-server`**, and every check that asks `/props` stays exactly as
+   * it was. Present means none of them run, because none of them can: there is no template
+   * to read, no `/apply-template` to render through and no `/tokenize` to count with. What
+   * replaces them is stated where each one is skipped, and nothing is faked to fill a gap.
+   */
+  model?: string;
+  /**
    * How many candidates of the next-token distribution to ask for.
    *
    * 64 by default, and the number matters only for the tail: the estimator sums
@@ -528,6 +545,81 @@ export async function requireChatShape(
   return shape;
 }
 
+/** What a hosted endpoint says about the model it was asked for. */
+export interface DeclaredEndpoint {
+  /** The name the caller asked for, echoed so a refusal can quote what was wanted. */
+  model: string;
+  /** Every name the endpoint says it serves, for a refusal a person can act on. */
+  served: string[];
+  /**
+   * The window the endpoint declares for this model, or `null` when it declares none.
+   *
+   * Reported rather than enforced. What the window is *for* in this file is the refusal
+   * below `requireChatShape`: llama-server answers an over-long prompt by shifting its
+   * context and keeping 0 leading tokens, which silently drops the system line, so the
+   * prompt has to be counted before it is sent. A hosted endpoint answers an over-long
+   * prompt with an error of its own, and it is the only one that can count its own
+   * tokens — so the number is kept for whoever wants to say what it is, and nothing here
+   * pretends to hold a budget with it.
+   */
+  window: number | null;
+}
+
+/**
+ * Read what a hosted endpoint says about one model, and refuse an endpoint that does not
+ * serve it.
+ *
+ * **This is the whole of what replaces `/props` for a generating turn**, and it is
+ * deliberately smaller than what it replaces. `/props` was asked for three things: that a
+ * template is in effect, how large the window is, and whether a projector is loaded. A
+ * hosted endpoint is asked one thing here — is this name in your list — because the other
+ * two are not facts a caller can act on: it renders with its own template (the caller's
+ * `messages` are the whole input), and it refuses an over-long prompt in its own words
+ * rather than truncating silently.
+ *
+ * **Why the name is checked at bind rather than discovered.** `GET /v1/models` answers a
+ * list, and any entry would be a guess at which one the person meant. The failure a typo
+ * produces is not a slow one — measured on the endpoint this was written against, a
+ * request naming a model it does not serve comes back `503 "no usable key for that model"`,
+ * which reads as a billing problem rather than as a wrong name (`/v1/models` lists far more
+ * names than the config mentions, so the typo is easy). Refusing here turns that into one
+ * sentence at start-up listing the names that do exist.
+ */
+export async function requireDeclaredModel(
+  server: LlamaServer & { model: string },
+): Promise<DeclaredEndpoint> {
+  const answer = (await request(server, '/v1/models', 'GET')) as { data?: unknown } | null;
+  const list = answer?.data;
+  if (!Array.isArray(list)) {
+    throw new Error(
+      'this endpoint answered no model list at /v1/models, so whether it serves ' +
+        `'${server.model}' cannot be told: which model writes the words is not something ` +
+        'this app may assume, and a name it cannot confirm is not a name it may use',
+    );
+  }
+  const served: string[] = [];
+  for (const entry of list) {
+    const id = (entry as { id?: unknown } | null)?.id;
+    if (typeof id === 'string' && id !== '') served.push(id);
+  }
+  if (!served.includes(server.model)) {
+    throw new Error(
+      `this endpoint serves ${served.map((name) => `'${name}'`).join(', ') || 'no model'} ` +
+        `and not '${server.model}': the name that writes the words is the one the endpoint ` +
+        'lists, and asking for another comes back as that endpoint\'s own error rather than ' +
+        'as a wrong name',
+    );
+  }
+
+  const entry = list.find(
+    (one) => (one as { id?: unknown } | null)?.id === server.model,
+  ) as { context_window?: unknown } | null;
+  const declared = entry?.context_window;
+  const window =
+    typeof declared === 'number' && Number.isInteger(declared) && declared > 0 ? declared : null;
+  return { model: server.model, served, window };
+}
+
 /** One option, measured where the server will read it. */
 async function bindOne(
   server: LlamaServer,
@@ -788,6 +880,12 @@ export async function chatTurn(
   tools: ChatTool[] = [],
 ): Promise<ChatTurn> {
   const body: Record<string, unknown> = { messages, temperature: 0 };
+  // **Which model, when the caller named one.** A `llama-server` serves a single model and
+  // is told nothing; a hosted endpoint serves many and answers a request that carries no
+  // name with its own error rather than with a guess. The name sent is the one
+  // `requireDeclaredModel` read off that endpoint's own `/v1/models`, so what is asked for
+  // here is what was confirmed there — no second spelling, no default.
+  if (server.model !== undefined) body.model = server.model;
   if (tools.length > 0) {
     body.tools = tools.map((tool) => ({
       type: 'function',
@@ -862,6 +960,25 @@ function readUsage(answer: unknown): TokenUsage | null {
   const output = reported.completion_tokens;
   if (typeof input !== 'number' || typeof output !== 'number') return null;
   return { input_tokens: input, output_tokens: output };
+}
+
+/**
+ * The origin this transport's own paths hang off.
+ *
+ * Two forms arrive as `baseUrl` and both are legitimate. `llama-server` is named by its
+ * origin — `SEEK_SERVER=http://127.0.0.1:8080` — and every path below carries its own
+ * `/v1`. An OpenAI-compatible endpoint is named by its `base_url`, which the vendor's own
+ * documentation writes with `/v1` on the end and which the host's own config carries
+ * (`https://atp-dev.shenbiai.net/v1`). Appending a path to the second form doubles the
+ * segment: measured against that endpoint, `GET /v1/v1/models` is a **404** while
+ * `GET /v1/models` is a `200`.
+ *
+ * So one trailing `/v1` is trimmed here, and a trailing slash with it (`//v1/chat` is a
+ * different path, and some hosts answer it with a redirect to a login page). Both forms
+ * then address the same origin, which is what makes one setting usable by either.
+ */
+function originOf(server: LlamaServer): string {
+  return server.baseUrl.replace(/\/+$/, '').replace(/\/v1$/, '');
 }
 
 /**
@@ -955,9 +1072,8 @@ async function request(
   method: string,
   body?: string,
 ): Promise<unknown> {
-  const base = server.baseUrl.replace(/\/+$/, '');
   const fetcher = server.fetch ?? (globalThis.fetch as unknown as Fetcher);
-  const response = await fetcher(`${base}${path}`, {
+  const response = await fetcher(`${originOf(server)}${path}`, {
     method,
     headers: headersOf(server),
     body,

@@ -53,7 +53,9 @@ import type { AgentIdentity } from './identity.ts';
 import {
   chatTurn,
   requireChatShape,
+  requireDeclaredModel,
   type ChatTool,
+  type DeclaredEndpoint,
   type LlamaServer,
   type ToolCall,
 } from './llama.ts';
@@ -132,12 +134,31 @@ export async function workOverServer(
     roster: '',
     entries: [],
   });
-  const shape = await requireChatShape(
-    server,
-    { system: smallest.system, user: smallest.rest },
-    'the smallest turn prompt',
-  );
-  requireServedModel(store, botId, 'work', shape);
+  // Which of the two kinds of endpoint this is decides what can be asked of it, and the
+  // difference is stated rather than smoothed over. A `llama-server` reports its template and
+  // its window through `/props`, and the smallest possible turn is measured against that
+  // window before anything is bound. A hosted endpoint reports neither: it renders its own
+  // template and owns its own window, so the only question it can answer is which model it
+  // serves — and that is the one asked, once, so a typo in a model name is a sentence at
+  // start-up rather than a turn that fails all afternoon.
+  let declared: DeclaredEndpoint | null = null;
+  if (typeof server.model === 'string' && server.model !== '') {
+    declared = await requireDeclaredModel({ ...server, model: server.model });
+    requireServedModel(store, botId, 'work', {
+      // A hosted endpoint has no weights path to report, so the name it was asked for is
+      // the whole of what it says about itself — and it is the endpoint's own list that said
+      // it serves that name.
+      modelAlias: declared.model,
+      modelPath: '',
+    });
+  } else {
+    const shape = await requireChatShape(
+      server,
+      { system: smallest.system, user: smallest.rest },
+      'the smallest turn prompt',
+    );
+    requireServedModel(store, botId, 'work', shape);
+  }
 
   // What the model is offered and what this bot's agent may call are two lines in two
   // files: the artifact names the tools, `agents.yml`'s work row allows them. Nothing
@@ -181,11 +202,21 @@ export async function workOverServer(
     // at bind time — it carries this turn's entries — and a prompt that overflows is
     // not shortened by llama-server: it shifts the context, keeps 0 leading tokens, and
     // drops the front, which is the system line saying how this agent may speak.
-    await requireChatShape(
-      server,
-      { system: assembled.system, user: assembled.rest },
-      "this turn's prompt",
-    );
+    //
+    // **A hosted endpoint is asked nothing here, and the silence is the honest answer.**
+    // The check is a token count, and the only tokeniser that counts this prompt correctly
+    // is the endpoint's own — which it does not offer. A character estimate would be this
+    // file making up a number and refusing a turn over it. What protects the turn instead
+    // is that an endpoint answers an over-long prompt with an error rather than by
+    // discarding the front of it, so the failure arrives as the endpoint's own words on the
+    // turn that caused it instead of as a bot that quietly stopped making sense.
+    if (declared === null) {
+      await requireChatShape(
+        server,
+        { system: assembled.system, user: assembled.rest },
+        "this turn's prompt",
+      );
+    }
 
     const answer = await chatTurn(
       server,

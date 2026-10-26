@@ -20,7 +20,7 @@
  * that still works.
  */
 import assert from 'node:assert/strict'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -434,4 +434,125 @@ test('a work server is not asked for anything when the watch half kept the bot q
     closeHost(host)
     await rm(w.dir, { recursive: true, force: true })
   }
+})
+
+/**
+ * A hosted endpoint: the chat route and a model list, and nothing a `llama-server` answers.
+ *
+ * `/props`, `/apply-template` and `/tokenize` are 404 here on purpose. They are the three
+ * routes the cut was measured through and the three a hosted endpoint does not have, so a
+ * change that quietly asked one of them again fails on the recorded calls rather than on a
+ * number — which is the only way "this half reached a model without them" can be seen.
+ */
+function fakeHosted(options = {}) {
+  const calls = []
+  const fetch = async (url, init) => {
+    const path = new URL(url).pathname
+    const body = init.body === undefined ? {} : JSON.parse(init.body)
+    calls.push({ path, method: init.method, body })
+    if (path === '/v1/models') {
+      const data = options.served ?? [{ id: 'big', context_window: 1048576 }]
+      return { ok: true, status: 200, text: async () => JSON.stringify({ data }) }
+    }
+    if (path === '/v1/chat/completions') {
+      return {
+        ok: true,
+        status: 200,
+        text: async () =>
+          JSON.stringify({
+            choices: [{ message: { content: '', tool_calls: options.toolCalls ?? [] } }],
+          }),
+      }
+    }
+    return { ok: false, status: 404, text: async () => 'no such route' }
+  }
+  return { fetch, calls }
+}
+
+test('the words half writes through a hosted endpoint once its model is named', async () => {
+  // The half that writes the words is the one that may be a server you pay for, and naming
+  // its model is what says so: a `llama-server` is asked `/props`, a hosted endpoint is
+  // asked which names it serves. What the cut needs from that half — that what a turn says
+  // reaches a room only through `say` — is unchanged, which is what the text below is.
+  const w = await oneBotWorld()
+  const watch = fakeServer({ candidates: ACTS })
+  const work = fakeHosted({ toolCalls: sayCall(w.world.room, 'shard 3 is retrying now') })
+  const host = await openHost(w.storeFile, {
+    server: 'http://127.0.0.1:8080',
+    window: '24',
+    fetch: watch.fetch,
+    // The form a provider hands out: `base_url` already ends in `/v1`, which is exactly the
+    // form that would double the segment if the transport appended its own.
+    workServer: 'http://127.0.0.1:8081/v1',
+    workModel: 'big',
+    workFetch: work.fetch,
+  })
+  try {
+    assert.equal(host.stage2.refusal, null, 'a name its own list carries is not a refusal')
+    assert.equal(host.stage2.server, 'http://127.0.0.1:8081/v1', 'the strip names it as it was given')
+
+    const snapshot = await postMessage(host, { roomId: w.world.room, text: 'the batch failed' })
+
+    assert.equal(
+      messagesIn(snapshot, w.world.room)[1].text,
+      'shard 3 is retrying now',
+      'the hosted model wrote the words, through the one route into a room',
+    )
+    assert.deepEqual(
+      work.calls.map((call) => `${call.method} ${call.path}`),
+      ['GET /v1/models', 'POST /v1/chat/completions'],
+      'one name check before the first turn, then the chat call — no /props, no template, ' +
+        'no tokeniser, and no doubled /v1',
+    )
+    assert.equal(
+      work.calls[1].body.model,
+      'big',
+      'the chat call names the model the endpoint itself confirmed',
+    )
+  } finally {
+    closeHost(host)
+    await rm(w.dir, { recursive: true, force: true })
+  }
+})
+
+test('a model named with no server beside it is refused, and only that half is', async () => {
+  // The pairing `SEEK_SERVER`/`SEEK_WINDOW` has, one half over: a model name is a fact
+  // about a server, so a name with no origin names nothing to ask. The watch half is
+  // served throughout — one refusal must not take the other half with it.
+  const w = await oneBotWorld()
+  const watch = fakeServer({ candidates: ACTS })
+  const host = await openHost(w.storeFile, {
+    server: 'http://127.0.0.1:8080',
+    window: '24',
+    fetch: watch.fetch,
+    workModel: 'big',
+  })
+  try {
+    assert.equal(host.stage1.refusal, null, 'the half that was named properly is served')
+    assert.equal(host.stage2.server, null, 'the half that was not is not')
+    assert.match(host.stage2.refusal, /SEEK_WORK_MODEL/, 'the reason names the variable that said it')
+    assert.match(host.stage2.refusal, /SEEK_WORK_SERVER/, 'and the one that was missing')
+
+    const snapshot = await postMessage(host, { roomId: w.world.room, text: 'the batch failed' })
+
+    assert.equal(
+      messagesIn(snapshot, w.world.room)[1].text,
+      STUB_REPLY,
+      'the window still answers, and visibly with the kernel’s line',
+    )
+  } finally {
+    closeHost(host)
+    await rm(w.dir, { recursive: true, force: true })
+  }
+})
+
+test('the app hands the named model to the words half, read where the environment is', async () => {
+  // `main.js` requires Electron and cannot be imported here, so what is checked is the
+  // line that carries it, in the same text-level way `store-refusal.test.mjs` checks the
+  // refusal it reports. A variable read and then not passed is the failure this catches:
+  // the half would keep asking `/props` of an endpoint that has none, and the person who
+  // set the variable would have no way to tell that from an endpoint that was never used.
+  const source = await readFile(new URL('./main.js', import.meta.url), 'utf8')
+  assert.match(source, /const MODEL_WORK_MODEL = process\.env\.SEEK_WORK_MODEL/)
+  assert.match(source, /\bworkModel: MODEL_WORK_MODEL,/)
 })

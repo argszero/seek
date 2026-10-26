@@ -119,6 +119,61 @@ function serverOf(recorder: { fetch: Fetcher }): LlamaServer {
   };
 }
 
+/**
+ * An endpoint of the other kind: no `/props`, no `/apply-template`, no `/tokenize`, and a
+ * `GET /v1/models` that says which models it serves.
+ *
+ * Every route it does not have answers `404`, and the calls are recorded — so "this file
+ * never asked for a template" is a reading rather than a promise. That is the whole point
+ * of the helper: what a hosted endpoint cannot answer is as much of the contract as what it
+ * can.
+ */
+function hostedServer(
+  options: {
+    serves?: { id: string; context_window?: unknown }[];
+    content?: string;
+    toolCalls?: unknown[];
+    usage?: unknown;
+  } = {},
+): { fetch: Fetcher; calls: Call[] } {
+  const calls: Call[] = [];
+  // `big` by default because that is the model `makeWorld` puts on the work row: a default
+  // that failed the roster check would make every test here measure the refusal instead of
+  // the thing it names.
+  const serves = options.serves ?? [{ id: 'big', context_window: 131072 }];
+  const fetcher: Fetcher = async (url, init) => {
+    const path = new URL(url).pathname;
+    const body =
+      init.body === undefined ? {} : (JSON.parse(init.body) as Record<string, unknown>);
+    calls.push({ path, method: init.method, body });
+    let payload: unknown;
+    if (path === '/v1/models') {
+      payload = { object: 'list', data: serves.map((one) => ({ object: 'model', ...one })) };
+    } else if (path === '/v1/chat/completions') {
+      payload = {
+        choices: [
+          {
+            message: {
+              content: options.content ?? '',
+              ...(options.toolCalls === undefined ? {} : { tool_calls: options.toolCalls }),
+            },
+          },
+        ],
+        ...(options.usage === undefined ? {} : { usage: options.usage }),
+      };
+    } else {
+      return { ok: false, status: 404, text: async () => 'no such route' };
+    }
+    return { ok: true, status: 200, text: async () => JSON.stringify(payload) };
+  };
+  return { fetch: fetcher, calls };
+}
+
+/** The same seam, addressed by an endpoint instead of a `llama-server`. */
+function hostedOf(recorder: { fetch: Fetcher }, model = 'big', baseUrl = 'https://models.test'): LlamaServer {
+  return { ...serverOf(recorder), baseUrl, model };
+}
+
 /** A say call as a model writes one. */
 function sayCall(room: Id, text: string): unknown {
   return { function: { name: 'say', arguments: JSON.stringify({ room, text }) } };
@@ -226,6 +281,90 @@ test('the prompt carries the entry and not the watch side’s verdict', async ()
     'system',
     'the artifact says where the system line ends, and it travels as one',
   );
+});
+
+test('a hosted endpoint is asked only what it can answer, and the words still arrive through say', async () => {
+  const world = makeWorld();
+  const recorder = hostedServer({
+    toolCalls: [sayCall(world.room, 'the retry queue is what failed')],
+    usage: { prompt_tokens: 640, completion_tokens: 22 },
+  });
+
+  const decide = await workOverServer(world.store, world.botA, hostedOf(recorder), { prompt: ARTIFACT });
+  const record = await turnWith(world, decide, await entriesOf(world));
+
+  // The three endpoints the cut was measured through are not there, and this is the reading
+  // that says so: the bind would have thrown on any of them, so their absence is the point.
+  const paths = recorder.calls.map((call) => call.path);
+  assert.deepEqual(
+    [...new Set(paths)],
+    ['/v1/models', '/v1/chat/completions'],
+    'the model list, then the chat call — and nothing else',
+  );
+  assert.equal(paths.filter((one) => one === '/v1/models').length, 1, 'the list is read once, at bind');
+
+  assert.deepEqual(
+    record.produced.map((message) => message.text),
+    ['the retry queue is what failed'],
+    'the model called say, so the message is posted with its own words',
+  );
+  // The spend the endpoint reported is what the turn records, and it is the endpoint's
+  // figure rather than one this file counted.
+  assert.equal(record.turn.input_tokens, 640, 'the spend the endpoint reported, not one counted here');
+  assert.equal(record.turn.output_tokens, 22);
+});
+
+test('a hosted endpoint that does not serve the named model is refused at bind, with the names it does serve', async () => {
+  const world = makeWorld();
+  const recorder = hostedServer({
+    serves: [{ id: 'hosted-large' }, { id: 'hosted-small' }],
+  });
+
+  await assert.rejects(
+    () => workOverServer(world.store, world.botA, hostedOf(recorder, 'hosted-larg'), { prompt: ARTIFACT }),
+    (error: Error) => {
+      assert.match(error.message, /'hosted-larg'/i, 'the name that was asked for');
+      assert.match(error.message, /'hosted-large', 'hosted-small'/, 'and the names that exist');
+      return true;
+    },
+  );
+});
+
+test('a roster row claiming another model is refused by a hosted endpoint too', async () => {
+  const world = makeWorld();
+  const recorder = hostedServer({ serves: [{ id: 'hosted-large' }] });
+
+  // `makeWorld` puts 'big' on the work row; the endpoint serves 'hosted-large'.
+  await assert.rejects(
+    () => workOverServer(world.store, world.botA, hostedOf(recorder), { prompt: ARTIFACT }),
+    /serves 'hosted-large'|declares model 'big'/i,
+  );
+});
+
+test('a base_url written the way OpenAI writes it addresses the same origin', async () => {
+  const world = makeWorld();
+  const recorder = hostedServer({ serves: [{ id: 'big' }] });
+
+  // `.../v1` on the end must not become `/v1/v1/models`: measured against the real endpoint,
+  // that path is a 404 while `/v1/models` is a 200. The recorder answers by pathname, so a
+  // doubled segment would simply not match and the bind would throw.
+  await workOverServer(world.store, world.botA, hostedOf(recorder, 'big', 'https://models.test/v1'), {
+    prompt: ARTIFACT,
+  });
+
+  assert.deepEqual(recorder.calls.map((call) => call.path), ['/v1/models'], 'no doubled /v1');
+});
+
+test('a hosted endpoint that declares no window is still bound, and nothing pretends to enforce one', async () => {
+  const world = makeWorld();
+  const recorder = hostedServer({ serves: [{ id: 'big' }] });
+
+  // No `context_window` at all. The bind must not turn that into a refusal, because there is
+  // no budget it could hold the turn to: the endpoint counts its own tokens and refuses its
+  // own over-long prompts. What it must also not do is pretend — nothing is written into a
+  // window field, and the turn proceeds.
+  const decide = await workOverServer(world.store, world.botA, hostedOf(recorder), { prompt: ARTIFACT });
+  assert.equal(typeof decide, 'function');
 });
 
 test('a server serving another model is refused before the first turn', async () => {

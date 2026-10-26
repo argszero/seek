@@ -249,6 +249,19 @@ async function stageOneFor(mods, store, options) {
 }
 
 /**
+ * Why a model name with no server beside it is refused.
+ *
+ * One sentence in one place, because it is one rule: a model name is a fact about the
+ * server that serves it. It is thrown here, where the half is bound, and read from here by
+ * `main.js`, which has to decide whether to start the app's own server before this layer
+ * runs at all — the server that app starts serves the model it carries, so a name given
+ * with no origin of your own is refused there too, and in these words.
+ */
+const WORK_MODEL_WITHOUT_SERVER =
+  'SEEK_WORK_MODEL names a model with no SEEK_WORK_SERVER: which model writes the words ' +
+  'is a fact about the server that serves it, and a name on its own says nothing to ask it of';
+
+/**
  * Who writes what the bot says: the kernel's placeholder, or the work model over the
  * server `SEEK_WORK_SERVER` names.
  *
@@ -264,12 +277,25 @@ async function stageOneFor(mods, store, options) {
  * what stage 1 asks for (`box.ts`). A turn's prompt is assembled from the artifact and
  * the store, and `work-server.ts` re-checks it against the server's own `n_ctx` per
  * turn — it never asks the caller for a budget, so inventing a second one here would be
- * a number no measurement stands behind and nothing reads.
+ * a number no measurement stands behind and nothing reads. A hosted endpoint is asked
+ * nothing there at all, and that is stated where the check is skipped: the only tokeniser
+ * that counts that prompt is the endpoint's own, which it does not offer, so an estimate
+ * would be this app refusing a turn over a number it made up.
+ *
+ * **Two kinds of endpoint, and `options.workModel` is what tells them apart.** Without it
+ * this half is a `llama-server` and every sentence above holds unchanged. With it, the
+ * server is an OpenAI-compatible endpoint: `/props`, `/apply-template` and `/tokenize` do
+ * not exist there, so what replaces them is the endpoint's own `GET /v1/models` — asked
+ * once, before any turn, so a name it does not serve is one sentence at start-up rather
+ * than a turn that fails all afternoon. That list is also why the name cannot be
+ * discovered: it holds far more names than a person's config mentions, and picking one
+ * would be a guess at which they meant.
  *
  * What it costs to be wrong is one refusal at start-up, the same shape stage 1 has: an
  * artifact offering a tool this runtime cannot execute, a server that cannot hold the
- * smallest turn, or a work row claiming another model. All three fail here rather than
- * mid-turn, and `openHost` turns each into a fact the window shows.
+ * smallest turn, a work row claiming another model, or a model named with no server to
+ * serve it. All four fail here rather than mid-turn, and `openHost` turns each into a
+ * fact the window shows.
  */
 async function stageTwoFor(mods, store, options) {
   // The same fact as stage 1's, on the half that writes the words. Each half is refused on its
@@ -280,6 +306,15 @@ async function stageTwoFor(mods, store, options) {
 
   const server =
     typeof options?.workServer === 'string' && options.workServer !== '' ? options.workServer : undefined;
+  const model =
+    typeof options?.workModel === 'string' && options.workModel !== '' ? options.workModel : undefined;
+
+  // Paired, the way `SEEK_SERVER` and `SEEK_WINDOW` are, and refused for the same reason: a
+  // model name is a fact about a server that serves it. On its own it names nothing to ask,
+  // and the app's own server already knows which model it carries.
+  if (server === undefined && model !== undefined) {
+    throw new Error(WORK_MODEL_WITHOUT_SERVER);
+  }
 
   if (server === undefined) return { decide: mods.main.stubDecide };
 
@@ -288,11 +323,13 @@ async function stageTwoFor(mods, store, options) {
     onlyBotId(store),
     {
       baseUrl: server,
+      ...(model === undefined ? {} : { model }),
       ...(apiKeyOf(options) === undefined ? {} : { apiKey: apiKeyOf(options) }),
       // Stage 2 reads this for nothing — `work-server.ts` takes the words from its own
-      // artifact (`src/prompts/work-v1.json`) and uses the server only for `/props`,
-      // rendering and the chat call. It is here because `LlamaServer` requires it, and
-      // passing a made-up one would be a second artifact nobody measured.
+      // artifact (`src/prompts/work-v1.json`) and uses the server for what it reports
+      // (`/props`, or `/v1/models` on a hosted one — never both) and the chat call. It is
+      // here because `LlamaServer` requires it, and passing a made-up one would be a second
+      // artifact nobody measured.
       artifact: mods.prompts.loadPromptArtifact(),
       ...(options?.workFetch === undefined ? {} : { fetch: options.workFetch }),
     },
@@ -334,7 +371,10 @@ function onlyBotId(store) {
  * over the store — so a first run takes no special route through the interface.
  *
  * `options.server` and `options.window` are what `SEEK_SERVER` and `SEEK_WINDOW` carried,
- * and `options.workServer` is what `SEEK_WORK_SERVER` carried. Left out, the half each
+ * and `options.workServer` is what `SEEK_WORK_SERVER` carried, `options.workModel` what
+ * `SEEK_WORK_MODEL` carried — the model the words half is talking to, which is absent for a
+ * `llama-server` (it reports its own) and required to reach a hosted endpoint that only
+ * answers which names it serves. Left out, the half each
  * one belongs to is the kernel's placeholder, as the published build has been until now.
  * `options.fetch` and `options.workFetch` are a test's recorders, handed to the two
  * transports. `options.apiKey` is what `SEEK_API_KEY` carried: the credential the named
@@ -670,4 +710,12 @@ async function addMember(host, input) {
   return snapshotOf(host.store, host.storeFile, host.stage1, host.stage2)
 }
 
-module.exports = { addMember, closeHost, createRoom, openHost, openHostOrRefuse, postMessage }
+module.exports = {
+  WORK_MODEL_WITHOUT_SERVER,
+  addMember,
+  closeHost,
+  createRoom,
+  openHost,
+  openHostOrRefuse,
+  postMessage,
+}
