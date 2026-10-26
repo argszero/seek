@@ -4,7 +4,7 @@ import Contacts from './Contacts.jsx'
 import Groups from './Groups.jsx'
 import Settings from './Settings.jsx'
 import Topics from './Topics.jsx'
-import { t } from './catalogue.mjs'
+import { size, t } from './catalogue.mjs'
 import { roomToOpen } from './room-to-open.mjs'
 
 /**
@@ -828,7 +828,7 @@ export default function App() {
             back when the download ends. They stay two because a *refusal* is per half —
             only the download is shared. */}
         {snap.stage1?.pending ? (
-          <WeightsArriving text={snap.stage1.pending} />
+          <WeightsArriving facts={snap.stage1.pending} />
         ) : (
           <>
             <StageOne stage1={snap.stage1} />
@@ -1199,14 +1199,27 @@ function StoreRefused({ refusal }) {
  * lines read as two problems rather than as one download. `waiting` takes the base colours
  * on purpose — a first run fetching its weights is the app working, and painting it with
  * `refused` would report it as broken.
+ *
+ * **The sentence is written here, from three facts.** It used to be composed in
+ * `ui/electron/weights-fetch.js` and handed over finished, which fixed its language before the
+ * window had one: a first run drew `0.2 GB of 2.2 GB — LFM2.5-VL-3B-Q4_0.gguf` underneath a
+ * heading the catalogue had already translated (`docs/design/i18n.md` §1). The numbers go
+ * through `size()` because §4 puts a file size in the formatting layer, and the file's own name
+ * is left alone — §7 keeps a file key as an identifier in every language.
  */
-function WeightsArriving({ text }) {
-  if (!text) return null
+function WeightsArriving({ facts }) {
+  if (!facts) return null
+  const got = size(facts.received)
+  const all = size(facts.total)
 
   return (
     <div className="weights waiting" data-weights="waiting">
       <strong>{t('ui.chat.weights-arriving')}</strong>
-      <span className="weights-why">{text}</span>
+      <span className="weights-why">
+        {facts.file === null
+          ? t('ui.weights.arriving-amount-no-file', { got, all })
+          : t('ui.weights.arriving-amount', { got, all, file: facts.file })}
+      </span>
     </div>
   )
 }

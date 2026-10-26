@@ -239,6 +239,8 @@
     "ui.topics.card.id": "Identifier",
     "ui.topics.open": "Open the conversation",
     "ui.topics.said.picture": "a picture",
+    "ui.weights.arriving-amount": "{got} of {all} — {file}",
+    "ui.weights.arriving-amount-no-file": "{got} of {all}",
     "ui.topics.said.nothing": "no words"
   }
 }

@@ -22,7 +22,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
-import { ensureWeights, progressSentence, urlForAt, WEIGHTS_BASE, WEIGHTS_BASES, WEIGHTS_REPO } from './weights-fetch.js'
+import { ensureWeights, urlForAt, WEIGHTS_BASE, WEIGHTS_BASES, WEIGHTS_REPO } from './weights-fetch.js'
 
 /** Two files with the shape the real pair has, in kilobytes. */
 const FILES = [
@@ -290,10 +290,13 @@ test('offline is a sentence, not an exception, and it names the file', async () 
   }
 })
 
-test('the progress sentence reads as a person waiting, in gigabytes', () => {
-  assert.equal(
-    progressSentence({ name: 'a.gguf', received: 1_200_000_000, total: 2_177_004_928 }),
-    '1.2 GB of 2.2 GB — a.gguf',
-  )
-  assert.equal(progressSentence({ received: 0, total: 0 }), '0.0 GB of 0.0 GB')
+test('a progress reading is facts, and no sentence is composed from them here', async () => {
+  // The line a window drew on a first run — `0.2 GB of 2.2 GB — LFM2.5-VL-3B-Q4_0.gguf` — was
+  // built in this module, which fixed its language and its decimal separator before any
+  // catalogue was consulted (`docs/design/i18n.md` §1, §4). The three facts travel (`onProgress`,
+  // asserted above) and the window writes the words, so a composer reappearing here is the
+  // defect coming back rather than a refactor.
+  const mod = await import('./weights-fetch.js')
+  assert.equal(mod.progressSentence, undefined, 'this module composes no sentence')
+  assert.equal(mod.gigabytes, undefined, 'and formats no size of its own')
 })

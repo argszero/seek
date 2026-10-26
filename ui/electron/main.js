@@ -42,7 +42,7 @@ const {
   switchOrganization,
   writeIndex,
 } = require('./organizations.js')
-const { ensureWeights, progressSentence } = require('./weights-fetch.js')
+const { ensureWeights } = require('./weights-fetch.js')
 const {
   WATCH_WINDOW,
   bundledServerPath,
@@ -171,6 +171,13 @@ let modelServerRefusal = null
  * "stopped, and why" — because they are drawn in different colours and only the second is a
  * failure. `null` in both means nothing is being fetched and nothing went wrong, which is
  * every launch after the first.
+ *
+ * **`weightsPending` is facts and `weightsRefusal` is a sentence**, and the asymmetry is the
+ * language rule rather than an oversight: how far the download has got is three numbers and a
+ * file name, so every language can put it into its own words — it travels as those facts (named
+ * in `ui/electron/snapshot.js`, drawn in `ui/src/App.jsx`). A refusal is prose from the layer
+ * that failed, and translating somebody else's sentence is what `docs/design/i18n.md` §2
+ * forbids.
  */
 let weightsPending = null
 let weightsRefusal = null
@@ -1023,19 +1030,19 @@ function serverStopped({ reason, code, signal, tail }) {
 }
 
 /**
- * The download's reading, drawn on the strips.
+ * The download's reading, kept and then pushed to the window.
  *
- * Two things are decided here rather than in `weights-fetch.js`. The sentence is formatted for a
- * strip that truncates with an ellipsis, so it leads with the numbers. And the pushes are
- * throttled: a 2.1 GB body arrives in thousands of chunks, and re-rendering the window once
- * per chunk would spend the download's own bandwidth on IPC. Half a second is finer than a
- * person reads and coarse enough that the message never grows to a queue.
+ * The reading is stored exactly as it arrives — facts, not a sentence, for the reason
+ * `weights-fetch.js` states — and the pushes are throttled: a 2.1 GB body arrives in thousands
+ * of chunks, and re-rendering the window once per chunk would spend the download's own bandwidth
+ * on IPC. Half a second is finer than a person reads and coarse enough that the message never
+ * grows to a queue.
  */
 const PROGRESS_INTERVAL_MS = 500
 let lastPushed = 0
 
 function weightProgress(reading) {
-  weightsPending = progressSentence(reading)
+  weightsPending = reading
   const now = Date.now()
   if (now - lastPushed < PROGRESS_INTERVAL_MS) return
   lastPushed = now

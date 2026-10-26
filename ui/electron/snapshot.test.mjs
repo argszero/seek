@@ -179,6 +179,42 @@ test('the snapshot says which stage 1 it is, and a refusal is not the same readi
 })
 
 /**
+ * How far the download has got, in the shape the window draws it from.
+ *
+ * Three facts, and never a sentence. A sentence written where the download is measured has
+ * chosen a language and a decimal separator before the catalogue is consulted
+ * (`docs/design/i18n.md` §1, §4) — which is what a first run drew: `0.2 GB of 2.2 GB —
+ * LFM2.5-VL-3B-Q4_0.gguf` under a heading the catalogue had already translated.
+ */
+test('how far the download has got travels as facts, and a sentence is refused', () => {
+  // The reading `weights-fetch.js` produces, in its own field names.
+  const reading = { received: 200_000_000, total: 2_177_004_928, name: 'LFM2.5-VL-3B-Q4_0.gguf' }
+  // `half()` in `ui/electron/main.js` hands both halves the same reading, so both are read by
+  // the same function here rather than by two that could drift apart.
+  const carried = snapshotOf(seeded(), '/tmp/seek.json', { pending: reading }, { pending: reading })
+  assert.deepEqual(
+    carried.stage1.pending,
+    { received: 200_000_000, total: 2_177_004_928, file: 'LFM2.5-VL-3B-Q4_0.gguf' },
+    'the three facts arrive as they were measured, the file under this snapshot own name',
+  )
+  assert.deepEqual(carried.stage2.pending, carried.stage1.pending, 'and stage 2 reads them the same way')
+
+  // The file is what the strip names beside the numbers, not what makes them a reading: a
+  // reading with no name is still how far the download has got.
+  const bare = snapshotOf(seeded(), '/tmp/seek.json', { pending: { received: 1, total: 2 } })
+  assert.deepEqual(bare.stage1.pending, { received: 1, total: 2, file: null })
+
+  // The old shape, refused: this is what the main process handed over before the line became
+  // the window's to write, and passing it on would put English back on the strip.
+  const sentence = snapshotOf(seeded(), '/tmp/seek.json', { pending: '0.2 GB of 2.2 GB — a.gguf' })
+  assert.equal(sentence.stage1.pending, null, 'a finished sentence is not a reading')
+
+  // And numbers that are not numbers, refused here rather than reaching `Intl` as a NaN.
+  const broken = snapshotOf(seeded(), '/tmp/seek.json', { pending: { received: 'x', total: 2 } })
+  assert.equal(broken.stage1.pending, null, 'a reading without two numbers is no reading')
+})
+
+/**
  * A picture reaches the interface as the kernel's own reference, never as bytes.
  *
  * The design gives the kernel `media` on a message — one `{key, mime}` —

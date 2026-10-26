@@ -34,6 +34,28 @@ function meOf(store) {
 }
 
 /**
+ * How far the download has got, as three facts.
+ *
+ * `{received, total, file}`, and never a finished sentence. A sentence built where the download
+ * is measured has picked a language and a decimal separator before any catalogue is consulted
+ * (`docs/design/i18n.md` §1, §4) — which is exactly what a window drew on a first run:
+ * `0.2 GB of 2.2 GB — LFM2.5-VL-3B-Q4_0.gguf` under a heading the catalogue had already put
+ * into the language it was running in. So the numbers travel and the window writes the words.
+ *
+ * `file` is this snapshot's own name for the reading's `name`, the way `at` is its name for
+ * `created_at`: in here `name` already means a person's, and one field cannot mean both. A
+ * string is refused rather than passed on — that is the old shape, and drawing it would put
+ * English back on a strip that can ask.
+ */
+function pendingOf(value) {
+  if (value === null || typeof value !== 'object') return null
+  const received = Number(value.received)
+  const total = Number(value.total)
+  if (!Number.isFinite(received) || !Number.isFinite(total)) return null
+  return { received, total, file: textOrNull(value.name) }
+}
+
+/**
  * Which stage 1 the window is looking at, in the two facts the interface may show.
  *
  * `server` is the origin the bot's judgement is bound to, or `null` when the run is the
@@ -43,8 +65,9 @@ function meOf(store) {
  * named and not used is a failure, and a window showing both as "no model" would hide the
  * second.
  *
- * Both are strings or `null`, so the renderer holds no error object and no stack: what it
- * draws is a sentence somebody wrote, passed through unchanged.
+ * `server` and `refusal` are strings or `null`, so the renderer holds no error object and no
+ * stack: what it draws is a sentence somebody wrote, passed through unchanged. `pending` is the
+ * third reading and the one that is not prose — see `pendingOf`.
  */
 function stageOneOf(stage1) {
   return {
@@ -53,8 +76,9 @@ function stageOneOf(stage1) {
     // A third reading, and it is not a failure: the weights are still arriving, and this is how
     // far. It is a field of its own rather than a soft refusal because the window draws the two
     // in different colours, and a download in progress painted in the error colour would report
-    // the app as broken for the first ten minutes of its life.
-    pending: typeof stage1?.pending === 'string' && stage1.pending !== '' ? stage1.pending : null,
+    // the app as broken for the first ten minutes of its life. Facts rather than a sentence —
+    // `pendingOf` says why.
+    pending: pendingOf(stage1?.pending),
   }
 }
 
@@ -70,7 +94,7 @@ function stageTwoOf(stage2) {
   return {
     server: typeof stage2?.server === 'string' && stage2.server !== '' ? stage2.server : null,
     refusal: typeof stage2?.refusal === 'string' && stage2.refusal !== '' ? stage2.refusal : null,
-    pending: typeof stage2?.pending === 'string' && stage2.pending !== '' ? stage2.pending : null,
+    pending: pendingOf(stage2?.pending),
   }
 }
 
