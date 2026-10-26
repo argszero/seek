@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import Contacts from './Contacts.jsx'
 import Groups from './Groups.jsx'
 import Settings from './Settings.jsx'
+import Topics from './Topics.jsx'
 import { bindCatalogue, t } from './catalogue.mjs'
 
 /**
@@ -574,6 +575,20 @@ export default function App() {
     enterRoom(roomId)
   }
 
+  /**
+   * Go into the thread another view chose.
+   *
+   * Two moves, in this order, and the order is the whole of it: `enterRoom()` clears the
+   * thread, because a thread belongs to a room and leaving one leaves its thread behind. So
+   * entering first and opening second is what makes the pair land — the reverse would clear
+   * the thread that was just opened and leave the room's own list on screen.
+   */
+  function openTopic(roomId, rootId) {
+    setView('chat')
+    enterRoom(roomId)
+    setOpenThread(rootId)
+  }
+
   if (!snap || words === null) return <div className="booting">opening the store…</div>
 
   const whoSaid = Object.fromEntries((active?.members ?? []).map((member) => [member.id, member]))
@@ -654,6 +669,16 @@ export default function App() {
         >
           👥
         </button>
+        {/* Every thread in this store, whichever room it started in — the prototype's rail
+            order after 群组. */}
+        <button
+          className={`rail-item${view === 'topics' ? ' on' : ''}`}
+          title={t('ui.topics.title')}
+          onClick={() => setView((now) => (now === 'topics' ? 'chat' : 'topics'))}
+          data-view="topics"
+        >
+          💬
+        </button>
         {/* The way to the endpoint, at the end of the column and away from the rooms: what is
             on the other side of it is not a conversation. */}
         <button
@@ -688,6 +713,12 @@ export default function App() {
           // The snapshot a group answers with is the same one every other write arrives as,
           // and it is what makes the new row appear before the screen changes.
           onSnapshot={setSnap}
+        />
+      ) : view === 'topics' ? (
+        <Topics
+          rooms={snap.rooms}
+          // The way in: into the room the thread is in, with that thread open.
+          onOpen={openTopic}
         />
       ) : (
         <>

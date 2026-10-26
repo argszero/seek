@@ -153,6 +153,25 @@
     "ui.settings.decides.weights": "权重",
     "ui.settings.decides.refused": "被拒绝",
     "ui.settings.decides.downloaded": "已下载",
-    "ui.settings.decides.nothing-to-configure": "这里没有可配置的：托管端点回的是文字，而这个问题靠概率回答。两个半边画成两张卡，原因就在这里。"
+    "ui.settings.decides.nothing-to-configure": "这里没有可配置的：托管端点回的是文字，而这个问题靠概率回答。两个半边画成两张卡，原因就在这里。",
+    "ui.topics.title": "话题",
+    "ui.topics.section": "全部话题",
+    "ui.topics.none": "还没有话题",
+    "ui.topics.none-hint": "在消息上点「回复」，就能开一个话题",
+    "ui.topics.pick": "从左边挑一个，看它说了什么",
+    "ui.topics.row": {
+      "other": "{room} · {count} 条回复"
+    },
+    "ui.topics.reply-count": {
+      "other": "{count} 条回复"
+    },
+    "ui.topics.started-by": "{name} 在{room}里起的头",
+    "ui.topics.card.room": "会话",
+    "ui.topics.card.replies": "回复",
+    "ui.topics.card.last": "最后回复",
+    "ui.topics.card.id": "标识",
+    "ui.topics.open": "进入会话",
+    "ui.topics.said.picture": "一张图片",
+    "ui.topics.said.nothing": "没有文字"
   }
 }
