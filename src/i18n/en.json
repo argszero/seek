@@ -160,6 +160,27 @@
     "ui.settings.decides.weights": "weights",
     "ui.settings.decides.refused": "refused",
     "ui.settings.decides.downloaded": "downloaded",
-    "ui.settings.decides.nothing-to-configure": "There is nothing to configure here: a hosted endpoint reports text, and this question is answered by probabilities. That is why the two halves are two cards."
+    "ui.settings.decides.nothing-to-configure": "There is nothing to configure here: a hosted endpoint reports text, and this question is answered by probabilities. That is why the two halves are two cards.",
+    "ui.topics.title": "Topics",
+    "ui.topics.section": "All topics",
+    "ui.topics.none": "No topics yet",
+    "ui.topics.none-hint": "Open a message with Reply and a topic starts",
+    "ui.topics.pick": "Pick one to see what was said in it",
+    "ui.topics.row": {
+      "one": "{room} · {count} reply",
+      "other": "{room} · {count} replies"
+    },
+    "ui.topics.reply-count": {
+      "one": "{count} reply",
+      "other": "{count} replies"
+    },
+    "ui.topics.started-by": "{name} started this in {room}",
+    "ui.topics.card.room": "Room",
+    "ui.topics.card.replies": "Replies",
+    "ui.topics.card.last": "Last reply",
+    "ui.topics.card.id": "Identifier",
+    "ui.topics.open": "Open the conversation",
+    "ui.topics.said.picture": "a picture",
+    "ui.topics.said.nothing": "no words"
   }
 }

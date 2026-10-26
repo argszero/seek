@@ -42,6 +42,8 @@ const SAMPLES = {
   // The search box's own two: what was typed into it, and the rule a bot is shown under.
   query: 'Design',
   law: 'a bot belongs to its organization',
+  // The topic list's: the room a thread started in.
+  room: 'Design',
 }
 
 function paramsFor(template) {
@@ -315,6 +317,65 @@ test('the groups view says nothing a catalogue did not say', () => {
   const app = readFileSync(join(RENDERER, 'App.jsx'), 'utf8')
   assert.match(app, /view === 'groups'/, 'the main screen routes to the groups view')
   assert.match(app, /data-view="groups"/, 'the rail offers the way in')
+})
+
+test('the topics view says nothing a catalogue did not say', () => {
+  const source = readFileSync(join(RENDERER, 'Topics.jsx'), 'utf8')
+
+  // The same two scans the other views are held to: a text node and a readable attribute are
+  // both chrome, so a word in either is a word no other language can change.
+  const prose = [...source.matchAll(/>([^<>{}]*)</g)]
+    .map((match) => match[1].trim())
+    .filter((text) => /[A-Za-z]{2}/.test(text))
+  assert.deepEqual(prose, [], 'a text node carries words of its own instead of a key')
+
+  const attributes = [...source.matchAll(/\b(?:placeholder|title|aria-label)="([^"]*)"/g)]
+    .map((match) => match[1])
+    .filter((text) => /[A-Za-z]{2}/.test(text))
+  assert.deepEqual(attributes, [], 'an attribute carries words of its own instead of a key')
+
+  // Anti-vacuity: two empty lists above are exactly what a broken scan produces.
+  const keys = [...source.matchAll(/\bt\(\s*'(ui\.topics\.[a-zA-Z.-]+)'/g)].map(
+    (match) => match[1],
+  )
+  assert.ok(keys.length >= 14, `the scan found ${keys.length} lookups — the pattern is broken`)
+  assert.ok(new Set(keys).size >= 14, 'the view looks its words up rather than repeating a few')
+
+  // And every key it names is one of those lookups. A key written inside an expression —
+  // `t(one ? 'ui.x.a' : 'ui.x.b')` — is a key the scan above cannot see, and therefore one
+  // the two language-wide tests never check; the equality is what closes that hole.
+  const named = [...source.matchAll(/'(ui\.topics\.[a-zA-Z.-]+)'/g)].map((match) => match[1])
+  assert.deepEqual(
+    [...new Set(named)].sort(),
+    [...new Set(keys)].sort(),
+    'a key is written where the scan cannot read it, so nothing checks that it is shipped',
+  )
+
+  // What makes a message a topic is the kernel's own three facts. `chain` is the root of the
+  // run and a message that caused nothing roots its own chain (`src/delivery.ts`), so the
+  // view groups by `chain` — the same field the thread panel groups by — and never by a
+  // counter, a `root_id` chain of one hop, or a room's `chat_mode`.
+  assert.match(source, /\.chain !== m?\w*\.id|chain !== message\.id/, 'a root is its own chain')
+  assert.doesNotMatch(
+    source,
+    /chat_mode\s*[=!]==/,
+    'a room\'s mode is not what makes a topic: chat_mode is stored and never branched on',
+  )
+
+  for (const [shape, what] of [
+    [/<h1>Topics<\/h1>/, 'the list heading written into the markup'],
+    [/placeholder="search/i, 'a search box the prototype does not have'],
+    [/'还没有话题'/, 'the empty list written into the code'],
+    [/pick one/i, 'the empty pane written into the markup'],
+  ]) {
+    assert.doesNotMatch(source, shape, `${what}: it is the catalogue's to say`)
+  }
+
+  // And the way in: the rail offers it, and the main screen draws it.
+  const app = readFileSync(join(RENDERER, 'App.jsx'), 'utf8')
+  assert.match(app, /view === 'topics'/, 'the main screen routes to the topics view')
+  assert.match(app, /data-view="topics"/, 'the rail offers the way in')
+  assert.match(app, /function openTopic/, 'the way into a thread is the chat screen\'s')
 })
 
 test('every word the window draws is translated, not copied', () => {

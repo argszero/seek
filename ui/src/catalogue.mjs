@@ -23,6 +23,9 @@
 /** The lookup, bound once by `bindCatalogue()`. */
 let translate = null
 
+/** The instant formatter, bound once by the same call. `null` until a catalogue arrives. */
+let stamps = null
+
 /**
  * Bind this window to one catalogue.
  *
@@ -35,6 +38,16 @@ let translate = null
 export function bindCatalogue(catalogue) {
   const plural = new Intl.PluralRules(catalogue.locale)
   const numbers = new Intl.NumberFormat(catalogue.locale)
+  // A date is the same kind of fact as a count: the shape of it is the locale's, not this
+  // file's. Asking for a month, a day and a time is all this window has to say so far — a
+  // relative "3 minutes ago" would need plural forms and translated words
+  // (`docs/design/i18n.md` §4), and no catalogue entry for them exists yet.
+  stamps = new Intl.DateTimeFormat(catalogue.locale, {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 
   translate = (key, params = {}) => {
     const message = catalogue.messages[key]
@@ -99,4 +112,28 @@ export function t(key, params) {
     )
   }
   return translate(key, params)
+}
+
+/**
+ * One instant, in the form the catalogue's language writes it.
+ *
+ * `docs/design/i18n.md` §4: an absolute date is formatted per locale, and a relative word
+ * ("yesterday", "3 minutes ago") is a translated word with plural forms behind it. Only the
+ * first exists here, because only the first has no words of its own — `Intl.DateTimeFormat`
+ * writes the month and the clock, so a language added by writing a file needs nothing from
+ * this file. A stamp that is not a date draws nothing rather than the string `Invalid Date`:
+ * the store writes ISO, and a message whose `created_at` cannot be read is a message with no
+ * time to show, not a time to invent.
+ */
+export function when(iso) {
+  if (stamps === null) {
+    throw new Error(
+      'no catalogue is bound yet, so an instant has no form — the window draws nothing ' +
+        'until seek:catalogue has answered',
+    )
+  }
+  if (typeof iso !== 'string' || iso === '') return ''
+  const at = new Date(iso)
+  if (Number.isNaN(at.getTime())) return ''
+  return stamps.format(at)
 }
