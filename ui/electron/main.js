@@ -59,6 +59,20 @@ const MODEL_WINDOW = process.env.SEEK_WINDOW
 const MODEL_WORK_SERVER = process.env.SEEK_WORK_SERVER
 
 /**
+ * The credential the named servers ask for, if any.
+ *
+ * `llama-server` takes one with `--api-key`, and a hosted endpoint that speaks the same
+ * chat API refuses every request without one. It belongs to the servers rather than to a
+ * half: one origin is one key, and both halves may point at the same origin or at two
+ * that want the same one.
+ *
+ * Empty or whitespace-only is not a credential — `llama.ts`'s `headersOf` sends no header
+ * for it — so a variable set to nothing is the same as the variable being absent, rather
+ * than a request that comes back a 401 reading like a wrong key.
+ */
+const MODEL_API_KEY = process.env.SEEK_API_KEY
+
+/**
  * The server the app starts for itself, when nobody named one.
  *
  * A person who double-clicks the app cannot set an environment variable, so the three above
@@ -378,6 +392,7 @@ async function start() {
     server,
     window: serverWindow,
     workServer,
+    apiKey: MODEL_API_KEY,
     serverRefusal: startRefusal ?? undefined,
     workServerRefusal: startRefusal ?? undefined,
   })

@@ -41,6 +41,7 @@ const TOKENS: OptionTokens = { act: 'act', ignore: 'ignore' };
 interface Call {
   path: string;
   body: Record<string, unknown>;
+  headers: Record<string, string>;
 }
 
 /**
@@ -62,7 +63,7 @@ function fakeServer(
     // a request without one rather than parse `undefined`.
     const body =
       init.body === undefined ? {} : (JSON.parse(init.body) as Record<string, unknown>);
-    calls.push({ path, body });
+    calls.push({ path, body, headers: init.headers });
     const handler = routes[path];
     const payload = handler ? handler(body) : { error: 'no such route' };
     return {
@@ -748,4 +749,58 @@ test('the server shape records whether a projector is loaded', async () => {
     false,
     'no modalities reported is read as no projector',
   );
+});
+
+test('a credential reaches every request, and a blank one is no credential at all', async () => {
+  // Measured against the real binary rather than assumed: `llama-server --help` names
+  // `--api-key KEY`, and a server started with it refuses a request that carries no
+  // `Authorization` header. What this case pins is the other half — that the header goes
+  // out on every call this file makes, `/props` included, and that a variable set to
+  // nothing is absent rather than an empty `Bearer`. A blank credential is worse than
+  // none: the 401 it earns reads like a wrong key rather than a missing one.
+  const shapeOf = () =>
+    fakeServer({
+      '/props': () => ({
+        chat_template: 'a template',
+        build_info: 'test',
+        default_generation_settings: { n_ctx: 4096 },
+      }),
+      '/apply-template': () => ({ prompt: `${TEMPLATE_HEAD}a question${TEMPLATE_TAIL}` }),
+      '/tokenize': (body) => ({ tokens: makeVocab()(String(body.content)) }),
+    });
+
+  const cases: ReadonlyArray<{ said: string; key: string | undefined; sent: boolean }> = [
+    { said: 'a key', key: 'sk-test-1234', sent: true },
+    { said: 'an empty variable', key: '', sent: false },
+    { said: 'a blank variable', key: '   ', sent: false },
+    { said: 'no variable', key: undefined, sent: false },
+  ];
+
+  for (const { said, key, sent } of cases) {
+    const recorder = shapeOf();
+    const server: LlamaServer = {
+      ...serverOf(recorder),
+      ...(key === undefined ? {} : { apiKey: key }),
+    };
+    await requireServerShape(server, SKELETON);
+
+    // Anti-vacuity: a preflight that made no call would satisfy every assertion below.
+    assert.ok(recorder.calls.length > 0, `${said}: the preflight made a request`);
+    for (const call of recorder.calls) {
+      if (sent) {
+        assert.equal(
+          call.headers.Authorization,
+          `Bearer ${key ?? ''}`,
+          `${said}: ${call.path} carries the credential`,
+        );
+      } else {
+        assert.equal(
+          'Authorization' in call.headers,
+          false,
+          `${said}: ${call.path} carries no Authorization header at all`,
+        );
+      }
+      assert.equal(call.headers['Content-Type'], 'application/json', `${said}: ${call.path} is JSON`);
+    }
+  }
 });
