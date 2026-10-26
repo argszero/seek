@@ -18,7 +18,7 @@ const { app, BrowserWindow, dialog, ipcMain, nativeTheme } = require('electron')
 const { readFile } = require('node:fs/promises')
 const { basename, join } = require('node:path')
 
-const { addMember, closeHost, createRoom, openHost, postMessage } = require('./host.js')
+const { addMember, closeHost, createRoom, openHostOrRefuse, postMessage } = require('./host.js')
 const { BY_MIME, mimeForPath, readMedia, saveMedia } = require('./media.js')
 const { snapshotOf } = require('./snapshot.js')
 
@@ -54,6 +54,15 @@ const MODEL_WORK_SERVER = process.env.SEEK_WORK_SERVER
 let host = null
 let win = null
 
+/**
+ * Why the kernel would not open the store, or `null` when it did.
+ *
+ * Held beside `host` rather than thrown, because a store this version refuses is exactly the
+ * state the window must be able to describe. See the ready handler below for what went wrong
+ * when it was an exception instead.
+ */
+let storeRefusal = null
+
 function createWindow() {
   win = new BrowserWindow({
     width: 1180,
@@ -78,7 +87,13 @@ function createWindow() {
 
 /** What the interface is allowed to see: a plain, serialisable read of the store. */
 ipcMain.handle('seek:snapshot', () =>
-  snapshotOf(host?.store ?? null, STORE_FILE, host?.stage1 ?? null, host?.stage2 ?? null),
+  snapshotOf(
+    host?.store ?? null,
+    STORE_FILE,
+    host?.stage1 ?? null,
+    host?.stage2 ?? null,
+    storeRefusal,
+  ),
 )
 ipcMain.handle('seek:data-path', () => STORE_FILE)
 
@@ -202,27 +217,53 @@ ipcMain.handle('seek:media', (_event, reference) => {
   }
 })
 
-app.whenReady().then(async () => {
-  host = await openHost(STORE_FILE, {
+/**
+ * Start the app: open the kernel, then make the window — in that order, and the window is
+ * made **whatever the kernel answered**.
+ *
+ * **A refusal must not be able to stop the window from being made.** This used to be
+ * `app.whenReady().then(async () => { host = await openHost(...); createWindow() })`, and a
+ * store this version would not read made `openHost` throw: `createWindow()` never ran, the
+ * `activate` handler below was never registered, and the failure surfaced as an
+ * `UnhandledPromiseRejectionWarning` on a stderr the Finder-launched app writes to
+ * `/dev/null`. The person saw an app that did nothing at all — no window, no dialog, no
+ * sentence — while the kernel had written a paragraph explaining exactly what to do. Found
+ * on a real install, where a store from an older build sat in `~/Library/Application
+ * Support/Seek`; no driver in this repository had ever started the app over one, because
+ * every driver passed `SEEK_DATA_DIR` pointing at an empty directory.
+ *
+ * So the store's answer is a fact held in `storeRefusal` and drawn by the window, in the
+ * same shape stage 1 and stage 2 refuse in. A store that opened leaves it `null` and nothing
+ * changes.
+ */
+async function start() {
+  const opened = await openHostOrRefuse(STORE_FILE, {
     server: MODEL_SERVER,
     window: MODEL_WINDOW,
     workServer: MODEL_WORK_SERVER,
   })
+  host = opened.host
+  storeRefusal = opened.refusal
+  // Said here, where the app was started, as well as in the window where the person is
+  // looking — the same two places a refused model server is said, and for the same reason.
+  if (storeRefusal) console.error(`seek: the store was not opened — ${storeRefusal}`)
   // A server the person named and this build did not use is said twice — here, where the
   // app was started, and in the window, where they are looking. The window is the one that
   // matters; this line is what makes a refusal visible in a terminal that has no window
   // attached to it yet. Each half is said on its own, because either can refuse alone.
-  if (host.stage1?.refusal) {
+  if (host?.stage1?.refusal) {
     console.error(`seek: the watch server was not used — ${host.stage1.refusal}`)
   }
-  if (host.stage2?.refusal) {
+  if (host?.stage2?.refusal) {
     console.error(`seek: the work server was not used — ${host.stage2.refusal}`)
   }
   createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
-})
+}
+
+app.whenReady().then(start)
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {

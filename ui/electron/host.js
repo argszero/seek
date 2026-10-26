@@ -386,6 +386,29 @@ async function openHost(storeFile, options = {}) {
   return { store, kernel, storeFile, stage1, stage2 }
 }
 
+/**
+ * Open the kernel, or answer with the kernel's own sentence about why it would not.
+ *
+ * **A store this version refuses must not leave the person with no window.** `openHost`
+ * throws for a store it cannot read — an older build's file, a hand-edited one — and that
+ * sentence is the only thing that says what to do next. A caller that awaited `openHost`
+ * *before* creating a window therefore turned the sentence into an app that looks dead: no
+ * window, no dialog, and, started from Finder, no terminal to print to. This function is
+ * where that answer stops being an exception, so the window can draw it in the same shape
+ * stage 1 and stage 2 already refuse in.
+ *
+ * It decides nothing itself: what a store must hold is `SeekStore.load`'s question, and the
+ * refusal is passed through word for word. Every other caller keeps `openHost`, which still
+ * throws — the refusal is a fact this one caller needs as a value, not a rule about opening.
+ */
+async function openHostOrRefuse(storeFile, options = {}) {
+  try {
+    return { host: await openHost(storeFile, options), refusal: null }
+  } catch (error) {
+    return { host: null, refusal: error instanceof Error ? error.message : String(error) }
+  }
+}
+
 /** Stop the comparator. The table is left as it is, so nothing is lost by quitting. */
 function closeHost(host) {
   host.kernel.stop()
@@ -614,4 +637,4 @@ async function addMember(host, input) {
   return snapshotOf(host.store, host.storeFile, host.stage1, host.stage2)
 }
 
-module.exports = { addMember, closeHost, createRoom, openHost, postMessage }
+module.exports = { addMember, closeHost, createRoom, openHost, openHostOrRefuse, postMessage }
