@@ -841,6 +841,15 @@ async function start() {
   let workServerRefusal = words.refusal
   const wordsFromFiles = words.filesNamed
   const workModelRefusal = words.workModelRefusal
+  // **Whether somebody named this half an origin — in a file or in the environment.** The two
+  // sources rank differently (`llm-config.js` says in which order), but they answer one
+  // question the same way: this half has a server of its own. `filesNamed` answers only the
+  // narrower question, so a guard built on it pulls back a half named in the environment —
+  // which is the half the README says to point at another `llama-server` with
+  // `SEEK_WORK_SERVER`, and the failure is silent: the words come from the model the package
+  // carries, which writes prose instead of the `say` call a turn speaks through. What the
+  // bundled server may serve is a half nobody named at all.
+  const wordsNamed = workServer !== undefined
 
   if (wordsFromFiles) {
     // Said out loud and without the key, for the reason the weight host is said out loud: a
@@ -876,10 +885,11 @@ async function start() {
       weightsRefusal = `${arrived.refusal}; launching Seek again continues where it stopped`
       startRefusal = weightsRefusal
       server = undefined
-      // Only the judgement is starved by missing weights. A words half that is the configured
-      // endpoint reads no file from this machine, so refusing it here would take down a half
-      // that is ready — and the window would say two things are broken where one is.
-      if (!wordsFromFiles) workServer = undefined
+      // Only the judgement is starved by missing weights. A words half somebody named — in a
+      // file or in the environment — reads no file from this machine, so refusing it here
+      // would take down a half that is ready, and the window would say two things are broken
+      // where one is.
+      if (!wordsNamed) workServer = undefined
       console.error(`seek: the weights did not arrive — ${weightsRefusal}`)
       pushChanged()
     } else {
@@ -907,7 +917,7 @@ async function start() {
         // own (`FIRST_RUN_ROSTER`), so there is one origin and not two.
         startRefusal = started.refusal
         server = undefined
-        if (!wordsFromFiles) workServer = undefined
+        if (!wordsNamed) workServer = undefined
       } else {
         modelServer = started
         server = started.origin
@@ -916,9 +926,10 @@ async function start() {
         // because the runtime cannot know one. This file *is* the caller, so it lives here.
         serverWindow = WATCH_WINDOW
         // The server this app started answers for the judgement. It answers for the words too
-        // only when nobody else does — a configured endpoint outranks it, or the half would be
-        // pulled back to the model that cannot call the tool a turn speaks through.
-        if (!wordsFromFiles) workServer = started.origin
+        // only when nobody named one for that half — an endpoint given in a file *or in the
+        // environment* outranks it, or the half would be pulled back to the model that cannot
+        // call the tool a turn speaks through.
+        if (!wordsNamed) workServer = started.origin
         console.error(`seek: the model server is ${started.origin}`)
       }
     }
@@ -935,7 +946,7 @@ async function start() {
     // A refusal already known about this half wins, and the state of the server this app
     // starts only reaches it when that server is the one it was going to use.
     workServerRefusal:
-      workServerRefusal ?? workModelRefusal ?? (wordsFromFiles ? undefined : startRefusal) ?? undefined,
+      workServerRefusal ?? workModelRefusal ?? (wordsNamed ? undefined : startRefusal) ?? undefined,
   })
   host = opened.host
   storeRefusal = opened.refusal

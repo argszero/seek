@@ -561,18 +561,38 @@ test('the app hands the named model to the words half, read where the environmen
   // callers share — a launch, the window that draws it, and the save that changes it.
   assert.match(source, /settings: ownSettings\.llm,/, 'the app\'s own settings are the middle source')
 
-  // **The configured endpoint outranks the server the app starts**, which is the whole point:
-  // a launch with a config and no environment must not have its words half pulled back to the
-  // model the package carries. Asserted on the two lines that would do the pulling.
+  // **An endpoint named for this half outranks the server the app starts**, which is the whole
+  // point: a launch must not have its words half pulled back to the model the package carries.
+  // *Named* is the word that matters, and it covers both sources — a file and the environment,
+  // which is how the README says to point this half at another `llama-server`. A guard built on
+  // "a file named it" leaves an endpoint given in the environment silently replaced by the
+  // bundled one, so what these assert is the guard itself.
   assert.match(
     source,
-    /if \(!wordsFromFiles\) workServer = started\.origin/,
+    /const wordsNamed = workServer !== undefined/,
+    'the guard asks whether anybody named this half, not whether a file did',
+  )
+  assert.match(
+    source,
+    /if \(!wordsNamed\) workServer = started\.origin/,
     'a running bundled server does not take the words half back',
   )
   assert.match(
     source,
-    /if \(!wordsFromFiles\) workServer = undefined/,
+    /if \(!wordsNamed\) workServer = undefined/,
     'and a weights failure does not refuse a half that needs no weights',
+  )
+  assert.doesNotMatch(
+    source,
+    /if \(!wordsFromFiles\)/,
+    'no guard falls back to "a file named it", which would drop an endpoint named in the environment',
+  )
+  // The same question, asked a fourth time: a refusal about the server this app starts belongs
+  // to a half that was going to use it, and to no other.
+  assert.match(
+    source,
+    /workModelRefusal \?\? \(wordsNamed \? undefined : startRefusal\)/,
+    'the state of the bundled server reaches only a half that was going to use it',
   )
 })
 
