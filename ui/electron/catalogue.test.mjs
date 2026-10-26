@@ -39,6 +39,9 @@ const SAMPLES = {
   tail: '0f3c',
   length: 33,
   words: 'the endpoint said no',
+  // The search box's own two: what was typed into it, and the rule a bot is shown under.
+  query: 'Design',
+  law: 'a bot belongs to its organization',
 }
 
 function paramsFor(template) {
@@ -220,6 +223,50 @@ test('the settings page says nothing a catalogue did not say', () => {
     t('ui.settings.models.none-listed', { count: 2 }),
     'English changes form at two, and that change is the catalogue saying so',
   )
+})
+
+test('the contacts view says nothing a catalogue did not say', () => {
+  const source = readFileSync(join(RENDERER, 'Contacts.jsx'), 'utf8')
+
+  // The same scan the settings page is held to, for the same reason: a text node between `>`
+  // and `<` is drawn as it stands, so a word in one is a word no language but English can
+  // change (`docs/design/i18n.md` §1).
+  const prose = [...source.matchAll(/>([^<>{}]*)</g)]
+    .map((match) => match[1].trim())
+    .filter((text) => /[A-Za-z]{2}/.test(text))
+  assert.deepEqual(prose, [], 'a text node carries words of its own instead of a key')
+
+  // And the attributes a person reads: a list row's title and a field's hint are chrome too.
+  const attributes = [...source.matchAll(/\b(?:placeholder|title|aria-label)="([^"]*)"/g)]
+    .map((match) => match[1])
+    .filter((text) => /[A-Za-z]{2}/.test(text))
+  assert.deepEqual(attributes, [], 'an attribute carries words of its own instead of a key')
+
+  // Anti-vacuity: two empty lists above are exactly what a broken scan produces.
+  const keys = [...source.matchAll(/\bt\(\s*'(ui\.contacts\.[a-zA-Z.-]+)'/g)].map(
+    (match) => match[1],
+  )
+  assert.ok(keys.length >= 25, `the scan found ${keys.length} lookups — the pattern is broken`)
+  assert.ok(new Set(keys).size >= 20, 'the view looks its words up rather than repeating a few')
+
+  // And the shapes that were here. The gender values are the one thing that stays a literal,
+  // because they are what the store writes (`Bot.gender`), not what the window says.
+  for (const [shape, what] of [
+    [/<h1>Bots<\/h1>/, 'the list heading written into the markup'],
+    [/placeholder="search/i, 'the search hint written into the markup'],
+    [/>\s*not said\s*</, 'the empty field word written into the markup'],
+    [/'请输入姓名'/, 'the empty name refusal written into the code'],
+    [/pick a bot/, 'the empty pane written into the markup'],
+  ]) {
+    assert.doesNotMatch(source, shape, `${what}: it is the catalogue's to say`)
+  }
+
+  // The view the components route to is the prototype's `contacts`, and the rail no longer
+  // offers a `bots` view beside it — one list of people, not two.
+  const app = readFileSync(join(RENDERER, 'App.jsx'), 'utf8')
+  assert.match(app, /view === 'contacts'/, 'the main screen routes to the contacts view')
+  assert.doesNotMatch(app, /data-view="bots"/, 'the bots view is gone, not renamed in place')
+  assert.doesNotMatch(app, /<BotsView/, 'no component draws the deleted view')
 })
 
 test('every word the window draws is translated, not copied', () => {

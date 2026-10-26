@@ -131,6 +131,12 @@ body {
   text-overflow: ellipsis;
 }
 
+/* The contacts list's own two pieces: a search box under the heading, and the kind chip that
+   sits beside a name. Both reuse what is already here — `.field-input` is the window's one
+   text input — so this is spacing, not a second look. */
+.list-search { padding: 0 16px 10px; }
+.conv-name .chip { margin-left: 6px; }
+
 .main-col { display: flex; flex-direction: column; min-width: 0; background: var(--N00); }
 
 .main-head {
