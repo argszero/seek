@@ -324,7 +324,7 @@ async function stageTwoFor(mods, store, options) {
     {
       baseUrl: server,
       ...(model === undefined ? {} : { model }),
-      ...(apiKeyOf(options) === undefined ? {} : { apiKey: apiKeyOf(options) }),
+      ...(workApiKeyOf(options) === undefined ? {} : { apiKey: workApiKeyOf(options) }),
       // Stage 2 reads this for nothing — `work-server.ts` takes the words from its own
       // artifact (`src/prompts/work-v1.json`) and uses the server for what it reports
       // (`/props`, or `/v1/models` on a hosted one — never both) and the chat call. It is
@@ -380,6 +380,13 @@ function onlyBotId(store) {
  * transports. `options.apiKey` is what `SEEK_API_KEY` carried: the credential the named
  * servers ask for. It belongs to an origin rather than to a half, so both transports are
  * given the same one — and blank means no header at all rather than an empty `Bearer`.
+ *
+ * `options.workApiKey` overrides it for the words half alone, and it exists because the two
+ * origins can now want two different keys. A credential in the environment is one the person
+ * gave these servers, so it keeps reaching both; a key read out of another program's config
+ * names *that* endpoint, and sending it to a server the app started on this machine — where it
+ * is a secret addressed to nobody — would be a credential leaving the one origin it belongs to.
+ * Absent, this half falls back to `options.apiKey`, which is the behaviour it had before.
  */
 
 /**
@@ -392,6 +399,18 @@ function onlyBotId(store) {
 function apiKeyOf(options) {
   const key = options?.apiKey
   return typeof key === 'string' && key.trim() !== '' ? key : undefined
+}
+
+/**
+ * The credential the words half sends: its own when it was given one, the shared one otherwise.
+ *
+ * One rule, stated once — blank and whitespace-only mean "not given" exactly as they do above,
+ * so a caller that passes an empty string gets the shared key rather than a request with an
+ * empty `Bearer`.
+ */
+function workApiKeyOf(options) {
+  const own = options?.workApiKey
+  return typeof own === 'string' && own.trim() !== '' ? own : apiKeyOf(options)
 }
 
 async function openHost(storeFile, options = {}) {

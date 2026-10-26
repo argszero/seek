@@ -27,6 +27,7 @@ const {
   postMessage,
 } = require('./host.js')
 const { BY_MIME, mimeForPath, readMedia, saveMedia } = require('./media.js')
+const { defaultConfigPath, readConfiguredEndpoint, wordsHalfFrom } = require('./llm-config.js')
 const { ensureWeights, progressSentence } = require('./weights-fetch.js')
 const {
   WATCH_WINDOW,
@@ -59,19 +60,27 @@ const STORE_FILE = join(DATA_DIR, 'seek.json')
  * OpenAI-compatible endpoint — the one a person's own `base_url` and API key already point
  * at — answers none of those three and cannot be asked for them; what it does answer is
  * `GET /v1/models`, one entry per model, so naming the model is how this half learns which
- * one is writing. Left unset, nothing changes: the server is a `llama-server` and is asked
- * `/props` exactly as before. Set with no `SEEK_WORK_SERVER`, the app refuses rather than
+ * one is writing. Left unset in the environment, the endpoint configured on this machine is
+ * read instead — the paragraph below — and with neither, the server is a `llama-server` and is
+ * asked `/props` exactly as before. Set with no `SEEK_WORK_SERVER`, the app refuses rather than
  * guesses, because a model name is a fact about a server and on its own says nothing to
  * ask. Set it and the words half's prompt is posted to a server that may not be this
  * machine: the store and the judgement stay local, and what a turn says is assembled here
  * and sent to the endpoint you named.
  *
+ * **And with none of that set, the words half is read from the endpoint this machine already
+ * has configured** (`~/.emrg/config.toml`, `[llm]`): `llm-config.js` holds that rule and why it
+ * exists. A double-click cannot set a variable, so without this a downloaded package could only
+ * ever write through the model it carries — the one measured not to call the tool a turn speaks
+ * through. The environment always wins, and the two sources never merge.
+ *
  * They are read here rather than in `host.js` so that the one place the environment is
  * consulted is the process that owns it — `host.js` takes them as arguments and stays
  * runnable under `node --test`.
  *
- * **Left unset, nothing changes**: that half is the kernel's placeholder and the window
- * says so. `SEEK_SERVER` without `SEEK_WINDOW` is a refusal rather than a guess, and the
+ * **With nothing named anywhere and no config to read, nothing changes**: that half is the
+ * kernel's placeholder on a store that has one, or the server this app carries, and the window
+ * says which. `SEEK_SERVER` without `SEEK_WINDOW` is a refusal rather than a guess, and the
  * window shows it.
  */
 const MODEL_SERVER = process.env.SEEK_SERVER
@@ -345,17 +354,53 @@ async function start() {
   const choice = serverChoiceFrom(process.env)
   let server = MODEL_SERVER
   let serverWindow = MODEL_WINDOW
-  let workServer = MODEL_WORK_SERVER
   let startRefusal = null
+
+  // **Which server writes the words: the environment, or the endpoint already configured on
+  // this machine.** `llm-config.js` holds the rule and the reason; two consequences matter
+  // here. First, the two sources never merge — an environment that names this half is used
+  // whole, and the config is read only when it is silent. Second, a config-provided endpoint
+  // is not a name in the environment, so `serverChoiceFrom` above still answers `start`: the
+  // app fetches its weights and starts the server it carries for the *judgement*, while the
+  // words go to that endpoint. That is the shape the two halves have had since they were
+  // split — one origin each — and this is the first time a downloaded app can reach the
+  // second one without a terminal.
+  const llmConfigPath = defaultConfigPath(app.getPath('home'))
+  const wordsHalf = wordsHalfFrom({
+    env: {
+      SEEK_WORK_SERVER: MODEL_WORK_SERVER,
+      SEEK_WORK_MODEL: MODEL_WORK_MODEL,
+      SEEK_API_KEY: MODEL_API_KEY,
+    },
+    config: readConfiguredEndpoint(llmConfigPath),
+  })
+  let workServer = wordsHalf?.workServer
+  const workModel = wordsHalf?.workModel
+  const workApiKey = wordsHalf?.workApiKey
+  let workServerRefusal = wordsHalf?.refusal ?? null
+  // True when the words half is the configured endpoint rather than the server this app
+  // starts, which is what decides whether a weights failure takes that half down with it.
+  const wordsFromConfig = wordsHalf?.from === 'config' && workServer !== undefined
 
   // **A model named with no server of your own is refused before the download, not after
   // it.** The server this app starts serves the model it carries, so a name given with no
   // origin is not a fact about it — and waiting until `stageTwoFor` ran would spend the
   // 2.2 GB first. The sentence is that layer's, read from it rather than written again.
   const workModelRefusal =
-    MODEL_WORK_MODEL !== undefined && (MODEL_WORK_SERVER === undefined || MODEL_WORK_SERVER === '')
+    wordsHalf?.from === 'environment' &&
+    wordsHalf.workModel !== undefined &&
+    wordsHalf.workServer === undefined
       ? WORK_MODEL_WITHOUT_SERVER
       : null
+
+  if (wordsFromConfig) {
+    // Said out loud and without the key, for the reason the weight host is said out loud: a
+    // launch that quietly reached a remote model would be indistinguishable in a terminal
+    // from one that never left this machine.
+    console.error(
+      `seek: the words half is ${workServer}, model '${workModel}' (from ${llmConfigPath})`,
+    )
+  }
 
   if (choice.mode === 'start') {
     // `process.resourcesPath` is a packaged app's `Contents/Resources`, which is where
@@ -382,7 +427,10 @@ async function start() {
       weightsRefusal = `${arrived.refusal}; launching Seek again continues where it stopped`
       startRefusal = weightsRefusal
       server = undefined
-      workServer = undefined
+      // Only the judgement is starved by missing weights. A words half that is the configured
+      // endpoint reads no file from this machine, so refusing it here would take down a half
+      // that is ready — and the window would say two things are broken where one is.
+      if (!wordsFromConfig) workServer = undefined
       console.error(`seek: the weights did not arrive — ${weightsRefusal}`)
       pushChanged()
     } else {
@@ -410,7 +458,7 @@ async function start() {
         // own (`FIRST_RUN_ROSTER`), so there is one origin and not two.
         startRefusal = started.refusal
         server = undefined
-        workServer = undefined
+        if (!wordsFromConfig) workServer = undefined
       } else {
         modelServer = started
         server = started.origin
@@ -418,7 +466,10 @@ async function start() {
         // `--window 24`, and the kernel leaves the number out
         // because the runtime cannot know one. This file *is* the caller, so it lives here.
         serverWindow = WATCH_WINDOW
-        workServer = started.origin
+        // The server this app started answers for the judgement. It answers for the words too
+        // only when nobody else does — a configured endpoint outranks it, or the half would be
+        // pulled back to the model that cannot call the tool a turn speaks through.
+        if (!wordsFromConfig) workServer = started.origin
         console.error(`seek: the model server is ${started.origin}`)
       }
     }
@@ -428,10 +479,14 @@ async function start() {
     server,
     window: serverWindow,
     workServer,
-    workModel: MODEL_WORK_MODEL,
+    workModel,
+    workApiKey,
     apiKey: MODEL_API_KEY,
     serverRefusal: startRefusal ?? undefined,
-    workServerRefusal: startRefusal ?? workModelRefusal ?? undefined,
+    // A refusal already known about this half wins, and the state of the server this app
+    // starts only reaches it when that server is the one it was going to use.
+    workServerRefusal:
+      workServerRefusal ?? workModelRefusal ?? (wordsFromConfig ? undefined : startRefusal) ?? undefined,
   })
   host = opened.host
   storeRefusal = opened.refusal

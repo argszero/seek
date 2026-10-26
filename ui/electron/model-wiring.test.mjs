@@ -554,5 +554,89 @@ test('the app hands the named model to the words half, read where the environmen
   // set the variable would have no way to tell that from an endpoint that was never used.
   const source = await readFile(new URL('./main.js', import.meta.url), 'utf8')
   assert.match(source, /const MODEL_WORK_MODEL = process\.env\.SEEK_WORK_MODEL/)
-  assert.match(source, /\bworkModel: MODEL_WORK_MODEL,/)
+  assert.match(source, /const wordsHalf = wordsHalfFrom\(\{/, 'the words half is decided by that rule')
+  assert.match(source, /^\s+workModel,$/m, 'and the model it chose is handed down')
+  assert.match(source, /^\s+workApiKey,$/m, 'along with the key that belongs to that origin')
+
+  // **The configured endpoint outranks the server the app starts**, which is the whole point:
+  // a launch with a config and no environment must not have its words half pulled back to the
+  // model the package carries. Asserted on the two lines that would do the pulling.
+  assert.match(
+    source,
+    /if \(!wordsFromConfig\) workServer = started\.origin/,
+    'a running bundled server does not take the words half back',
+  )
+  assert.match(
+    source,
+    /if \(!wordsFromConfig\) workServer = undefined/,
+    'and a weights failure does not refuse a half that needs no weights',
+  )
+})
+
+test('each half sends the key that belongs to its own origin, and no other', async () => {
+  // Two origins can want two keys. The one in the environment is a credential the person gave
+  // these servers, so it keeps reaching both; a key read out of another program's config names
+  // that endpoint alone, and sending it to a server the app started on this machine is a
+  // credential leaving the only origin it belongs to. So this is measured on the wire rather
+  // than argued: every request either half sent, and the header it carried.
+  const w = await oneBotWorld()
+  const watch = fakeServer({ candidates: ACTS })
+  const work = fakeHosted({ toolCalls: sayCall(w.world.room, 'shard 3 is retrying now') })
+  const seen = []
+  const record = (half, recorder) => async (url, init) => {
+    seen.push({ half, path: new URL(url).pathname, auth: init?.headers?.Authorization })
+    return recorder.fetch(url, init)
+  }
+  const host = await openHost(w.storeFile, {
+    server: 'http://127.0.0.1:8080',
+    window: '24',
+    fetch: record('watch', watch),
+    apiKey: 'the-environment-key',
+    workServer: 'https://endpoint.test/v1',
+    workModel: 'big',
+    workApiKey: 'the-configured-key',
+    workFetch: record('work', work),
+  })
+  try {
+    const snapshot = await postMessage(host, { roomId: w.world.room, text: 'the batch failed' })
+    assert.equal(messagesIn(snapshot, w.world.room)[1].text, 'shard 3 is retrying now')
+
+    const auths = (half) => [...new Set(seen.filter((one) => one.half === half).map((one) => one.auth))]
+    assert.ok(seen.some((one) => one.half === 'watch'), 'the watch half was asked something')
+    assert.deepEqual(auths('watch'), ['Bearer the-environment-key'])
+    assert.deepEqual(auths('work'), ['Bearer the-configured-key'], 'and the words half never saw the other one')
+  } finally {
+    closeHost(host)
+    await rm(w.dir, { recursive: true, force: true })
+  }
+})
+
+test('one key, when only one was given, still reaches both halves', async () => {
+  // The rule before this test existed, kept measurable: `SEEK_API_KEY` belongs to the origin a
+  // person named, and with two halves on origins they run themselves it is the same person's.
+  const w = await oneBotWorld()
+  const watch = fakeServer({ candidates: ACTS })
+  const work = fakeServer({ modelAlias: 'big', toolCalls: sayCall(w.world.room, 'on it') })
+  const seen = []
+  const record = (half, recorder) => async (url, init) => {
+    seen.push({ half, auth: init?.headers?.Authorization })
+    return recorder.fetch(url, init)
+  }
+  const host = await openHost(w.storeFile, {
+    server: 'http://127.0.0.1:8080',
+    window: '24',
+    fetch: record('watch', watch),
+    apiKey: 'the-one-key',
+    workServer: 'http://127.0.0.1:8081',
+    workFetch: record('work', work),
+  })
+  try {
+    await postMessage(host, { roomId: w.world.room, text: 'the batch failed' })
+    const auths = (half) => [...new Set(seen.filter((one) => one.half === half).map((one) => one.auth))]
+    assert.deepEqual(auths('watch'), ['Bearer the-one-key'])
+    assert.deepEqual(auths('work'), ['Bearer the-one-key'])
+  } finally {
+    closeHost(host)
+    await rm(w.dir, { recursive: true, force: true })
+  }
 })
