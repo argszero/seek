@@ -15,14 +15,18 @@
  * would be a different model, which is a different probability distribution and therefore
  * a different cut — so this is a constant rather than a setting.
  *
- * **What is a setting is the host.** `https://huggingface.co` is canonical and is the
- * default; `SEEK_WEIGHTS_BASE` points a run at a mirror instead, which is what a network
- * that cannot reach the canonical host needs. Measured on 2026-10-26 from the machine this
- * was written on: `hf-mirror.com` answers `206` with `content-range: bytes 0-99/1593894944`
- * for the first file and `/583109984` for the second — the repository path, both file names,
- * both declared sizes and `Range` support, in one reading each. The canonical host was not
- * reachable from that network, so its own answer is unmeasured here; nothing in this file
- * depends on which of the two it is.
+ * **What is a setting is the host, and the order is a ruling rather than a preference.** The
+ * host decided the mirror comes first and the canonical host second (`docs/host-rulings.md`,
+ * "Distribution"), because the network this product is being built on reaches `hf-mirror.com`
+ * and not `huggingface.co` — measured: the mirror answers `206` with `content-range: bytes
+ * 0-99/1593894944` for the first file and `/583109984` for the second, while the canonical
+ * host times out after 40 s, which is a first run that spends 40 s learning nothing. A person
+ * who wants one host exactly says so with `SEEK_WEIGHTS_BASE`, and then there is no second.
+ *
+ * **Two hosts resume across each other, and that is why the fallback costs nothing.** A `.part`
+ * holds bytes rather than a host's promise: both hosts serve the same two files, so a download
+ * that stopped on the first continues from its own bytes on the second with one `Range`
+ * request (`model-weights.js` decides that, and says why).
  *
  * This module exists rather than living in `main.js` for one reason: `main.js` requires
  * `electron` and cannot be run under `node --test`, and "how far has the download got" is
@@ -39,8 +43,11 @@ const { fetchWeights, WEIGHT_FILES } = require('./model-weights.js')
 /** The checkpoint the shipped cut was calibrated against (`calibration/vision/measured.json`). */
 const WEIGHTS_REPO = 'LiquidAI/LFM2.5-VL-3B-GGUF'
 
-/** Where the files come from when nobody says otherwise. */
-const WEIGHTS_BASE = 'https://huggingface.co'
+/** Where the files come from when nobody says otherwise, in the order they are tried. */
+const WEIGHTS_BASES = ['https://hf-mirror.com', 'https://huggingface.co']
+
+/** The first host tried, and the one a person sees named in a refusal. */
+const WEIGHTS_BASE = WEIGHTS_BASES[0]
 
 /**
  * Where one file is, given the host to ask.
@@ -86,6 +93,10 @@ function progressSentence({ name, received, total } = {}) {
  *
  * `onProgress` is called with the whole download's reading (`{name, received, total}`), not one
  * file's, so a caller drawing it needs no memory of which file came first.
+ *
+ * `host` on a success and `tried` on a failure say which hosts were used, because the log line
+ * and the sentence are the only places that fact exists: a run that quietly fell back to the
+ * second host would otherwise look exactly like one served by the first.
  */
 async function ensureWeights(options = {}) {
   const {
@@ -100,12 +111,20 @@ async function ensureWeights(options = {}) {
   } = options
   if (!dir) throw new TypeError('ensureWeights needs a directory to fetch into')
 
-  // `undefined` is "nobody said", which is what the default is for; a string that is empty
-  // once trimmed is somebody setting the variable to nothing — a shell expanding an unset one,
-  // a config line left blank — and that is the case this refuses rather than silently
-  // substituting the canonical host for the mirror the person thought they had configured.
-  const root = base === undefined ? String(WEIGHTS_BASE) : String(base ?? '').trim()
-  if (root === '') {
+  // `undefined` is "nobody said", which is what the list of defaults is for; a string that is
+  // empty once trimmed is somebody setting the variable to nothing — a shell expanding an unset
+  // one, a config line left blank — and that is the case this refuses rather than silently
+  // substituting a host for the one the person thought they had configured. A string that is
+  // not empty is that one host, and only it: a person who named a host meant that host. An
+  // array is a caller that wants an order of its own, which is what a test of the fallback
+  // needs — the alternative was a second setting meaning almost the same thing.
+  const roots =
+    base === undefined
+      ? [...WEIGHTS_BASES]
+      : Array.isArray(base)
+        ? base.map((one) => String(one ?? '').trim())
+        : [String(base ?? '').trim()]
+  if (roots[0] === '') {
     // Not a network failure and not a missing file: the build or the environment named no
     // host, and saying "the server could not be reached" about that would send a person to
     // check their wifi over a configuration mistake.
@@ -136,20 +155,53 @@ async function ensureWeights(options = {}) {
     }
   }
 
-  const result = await fetchWeights({ dir, files, urlFor: urlForAt(root), fetchImpl, onProgress: onOne, signal })
-  if (!result.ok) {
-    return { ok: false, refusal: result.refusal, files: result.files, bytes: result.bytes }
+  // Each host in turn, and every failure is remembered rather than returned: the sentence a
+  // person gets has to say which hosts were tried and what each one said, because "the weights
+  // did not arrive" over two hosts that failed differently is a sentence they cannot act on.
+  // A resume carries across the change of host — the bytes in `.part` are the file's, not the
+  // host's — so the second attempt does not start over.
+  const tried = []
+  for (const root of roots) {
+    const result = await fetchWeights({
+      dir,
+      files,
+      urlFor: urlForAt(root),
+      fetchImpl,
+      onProgress: onOne,
+      signal,
+    })
+    if (result.ok) {
+      return {
+        ok: true,
+        files: result.files,
+        bytes: result.bytes,
+        fetched: result.files.some((file) => file.status === 'fetched'),
+        host: root,
+      }
+    }
+    tried.push({ root, refusal: result.refusal, files: result.files, bytes: result.bytes })
   }
-  return {
-    ok: true,
-    files: result.files,
-    bytes: result.bytes,
-    fetched: result.files.some((file) => file.status === 'fetched'),
-  }
+
+  const last = tried[tried.length - 1]
+  // One host is the ordinary case and keeps its sentence verbatim — it is already written for
+  // this. Several are joined by naming each, because a person deciding what to do next needs
+  // to know whether both hosts were down (their network) or both said the file is not there
+  // (this build).
+  const refusal =
+    tried.length === 1
+      ? tried[0].refusal
+      : `from no host: ${tried.map((one) => `${hostName(one.root)} — ${one.refusal}`).join('; ')}`
+  return { ok: false, refusal, files: last.files, bytes: last.bytes, tried: tried.map((one) => one.root) }
+}
+
+/** A host as a person names it: no scheme, which is the part they did not choose. */
+function hostName(root) {
+  return String(root).replace(/^https?:\/\//, '').replace(/\/+$/, '')
 }
 
 module.exports = {
   WEIGHTS_BASE,
+  WEIGHTS_BASES,
   WEIGHTS_REPO,
   ensureWeights,
   gigabytes,
