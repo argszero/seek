@@ -44,6 +44,9 @@ const SAMPLES = {
   law: 'a bot belongs to its organization',
   // The topic list's: the room a thread started in.
   room: 'Design',
+  // The chat page's strips name the origin a half came from — a shape rather than a sentence,
+  // which is why it is a sample here and not a key.
+  origin: 'http://127.0.0.1:8080',
 }
 
 function paramsFor(template) {
@@ -64,7 +67,9 @@ function asked() {
   for (const name of readdirSync(RENDERER)) {
     if (!name.endsWith('.jsx') && !name.endsWith('.mjs')) continue
     const source = readFileSync(join(RENDERER, name), 'utf8')
-    for (const [, key] of source.matchAll(/\bt\(\s*'(ui\.[a-zA-Z.-]+)'/g)) keys.add(key)
+    // The class carries `0-9` because a key may: `ui.chat.stage1-asks` is a lookup this scan
+    // used to walk past in silence, so ten keys were shipped, drawn and compared by nothing.
+    for (const [, key] of source.matchAll(/\bt\(\s*'(ui\.[a-zA-Z0-9.-]+)'/g)) keys.add(key)
   }
   return [...keys].sort()
 }
@@ -378,6 +383,113 @@ test('the topics view says nothing a catalogue did not say', () => {
   assert.match(app, /function openTopic/, 'the way into a thread is the chat screen\'s')
 })
 
+test('the chat page says nothing a catalogue did not say', () => {
+  const source = readFileSync(join(RENDERER, 'App.jsx'), 'utf8')
+
+  // The last renderer file that wrote its own words, and the largest: the rail, the room list,
+  // the form that makes one, the composer, the thread panel, the four standing strips and the
+  // hover toolbar. `docs/design/i18n.md` §1 is the rule, and a text node between `>` and `<` is
+  // drawn as it stands.
+  //
+  // **The scan is naive, and this page is where that shows.** Eight of its hits are code rather
+  // than prose: an arrow function's `),` and a ternary's `) : view === 'contacts' ? (` put a `>`
+  // and a `<` around something that is not a word. They are separated out by the characters only
+  // code uses — prose here carries no parenthesis, no `?`, no `=` and no `&&` — and counted
+  // below, so the filter cannot quietly swallow the whole scan and leave it looking clean.
+  const CODE = /[()?=]|&&|\[\]/
+  const texts = [...source.matchAll(/>([^<>{}]*)</g)]
+    .map((match) => match[1].trim())
+    .filter((text) => /[A-Za-z]{2}/.test(text))
+  assert.deepEqual(
+    texts.filter((text) => !CODE.test(text)),
+    [],
+    'a text node carries words of its own instead of a key',
+  )
+  const misread = texts.filter((text) => CODE.test(text))
+  assert.ok(
+    misread.length >= 5,
+    `the scan read ${misread.length} code shapes, not the eight it used to — the pattern has ` +
+      'changed, so the empty list above is no longer a reading about this page',
+  )
+
+  // The attributes a person reads: a button's title and a field's hint are chrome too.
+  const attributes = [...source.matchAll(/\b(?:placeholder|title|aria-label)="([^"]*)"/g)]
+    .map((match) => match[1])
+    .filter((text) => /[A-Za-z]{2}/.test(text))
+  assert.deepEqual(attributes, [], 'an attribute carries words of its own instead of a key')
+
+  // **A node that writes its own words around a value is invisible to both scans above**, and
+  // this page had three of them — `replying to {name}`, `forwarded from {…}` and
+  // `<strong>stage 1 asks {stage1.server}</strong>`. `[^<>{}]*` cannot match across the `{`, so a
+  // page made entirely of those would pass the two assertions with English still on screen. This
+  // is the third shape, and it is here because it was measured on the page that had it rather
+  // than imagined (issue #123).
+  const WORDS = /^[A-Za-z0-9][A-Za-z0-9\s'’,.:;&-]*$/
+  const interpolated = [...source.matchAll(/>([^<>{}]*)\{/g)]
+    .map((match) => match[1])
+    .filter((text) => WORDS.test(text))
+  assert.deepEqual(interpolated, [], 'a text node writes its own words around a value')
+
+  // Anti-vacuity: three empty lists are exactly what a broken scan also produces.
+  const keys = [...source.matchAll(/\bt\(\s*'(ui\.chat\.[a-zA-Z0-9.-]+)'/g)].map(
+    (match) => match[1],
+  )
+  assert.ok(keys.length >= 60, `the scan found ${keys.length} lookups — the pattern is broken`)
+  assert.ok(new Set(keys).size >= 55, 'the page looks its words up rather than repeating a few')
+
+  // And every key it names is one of those lookups. A key written where the scan cannot read it
+  // — `t(one ? 'ui.chat.a' : 'ui.chat.b')` — is a key the two language-wide tests never check;
+  // the equality is what closes that hole.
+  const named = [...source.matchAll(/'(ui\.chat\.[a-zA-Z0-9.-]+)'/g)].map((match) => match[1])
+  assert.deepEqual(
+    [...new Set(named)].sort(),
+    [...new Set(keys)].sort(),
+    'a key is written where the scan cannot read it, so nothing checks that it is shipped',
+  )
+
+  // And the shapes that were here, one line each. Every one of these is a string this page used
+  // to write itself, and a sentence a catalogue has to be able to change is not this file's.
+  for (const [shape, what] of [
+    [/>Chats</, 'the room list heading written into the markup'],
+    [/>Thread</, 'the thread panel heading written into the markup'],
+    [/'no messages yet'/, 'an empty room second line written into the code'],
+    [/>nothing said here yet</, 'an empty room written into the markup'],
+    [/>this thread has nothing in it</, 'an empty thread written into the markup'],
+    [/>no room in this store</, 'the empty chat column written into the markup'],
+    [/>the store was not opened</, 'the store strip written into the markup'],
+    [/>no model server</, 'stage 1 placeholder title written into the markup'],
+    [/>no work server</, 'stage 2 placeholder title written into the markup'],
+    [/'copied to the clipboard'/, 'the note after a copy written into the handler'],
+    [/`forwarded into /, 'the note after a forward written into the handler'],
+    [/`stop addressing /, 'the mention chip title written into the markup'],
+    [/`Forward into /, 'a forward destination title written into the markup'],
+    [/`Message \$\{/, 'the composer hint built by concatenation'],
+    [/'no turn has run in this room yet'/, 'the spend title written into the markup'],
+    [/'that room'/, 'the fallback room name written into the handler'],
+    [/'a picture'/, 'a picture named by the window rather than the catalogue'],
+    [/'no words'/, 'a message with no words named by the window'],
+    [/\} tokens/, 'a count joined to the word `tokens`, which English alone gets right'],
+  ]) {
+    assert.doesNotMatch(source, shape, `${what}: it is the catalogue's to say`)
+  }
+
+  // A count on this page too, and this one is pinned by the strings rather than by a comparison
+  // between two of them: `notEqual(t(1), t(2))` passes on a catalogue with no `one` category at
+  // all, because the numeral in the sentence already differs. What a flattened plural cannot
+  // survive is the singular spelled out, and what a missing number format cannot survive is the
+  // thousands separator.
+  bindCatalogue(catalogueFor('en'))
+  assert.equal(t('ui.chat.spend', { count: 1 }), '1 token', 'one token, and `one` is English\'s')
+  assert.equal(t('ui.chat.spend', { count: 1204 }), '1,204 tokens', 'a count is the number format\'s too')
+  bindCatalogue(catalogueFor('zh-CN'))
+  assert.equal(
+    t('ui.chat.spend', { count: 1 }).replace('1', 'N'),
+    t('ui.chat.spend', { count: 7 }).replace('7', 'N'),
+    'one Chinese sentence, whatever the count',
+  )
+  bindCatalogue(catalogueFor('en'))
+})
+
 test('every word the window draws is translated, not copied', () => {
   // The reading an English run cannot give. A Chinese page still carrying English chrome looks
   // finished when the language is English — nothing in it is out of place — which is the same
@@ -414,6 +526,37 @@ test('nothing is drawn before a catalogue is bound, and the refusal says why', a
   fresh.bindCatalogue(catalogueFor(DEFAULT_LOCALE))
   assert.equal(fresh.catalogueBound(), true, 'binding is what makes the words drawable')
   assert.equal(fresh.t('ui.members', { count: 1 }), '1 member')
+})
+
+test('the window has its words before it draws its first frame', () => {
+  // The window was measured drawing nothing at all: `App`'s first frame is a sentence of its
+  // own (`ui.chat.opening-store`), the catalogue arrived from an IPC call in an effect, and
+  // `t()` refuses before `bindCatalogue()` — so the boot screen threw, React unmounted the
+  // tree, and the window stayed empty for as long as the store took. Not a wording problem:
+  // the screen that says what is happening could not be drawn.
+  //
+  // There is no DOM in this suite, so this holds the *order* rather than the frame. It is the
+  // same kind of claim `electron/documentation.test.mjs` makes about the bridge: a shape in a
+  // file that nothing else reads.
+  const main = readFileSync(join(RENDERER, 'main.jsx'), 'utf8')
+  const asked = main.indexOf('seekHost.catalogue()')
+  const bound = main.indexOf('bindCatalogue(catalogue)')
+  const drawn = main.indexOf('.render(')
+
+  for (const [what, at] of [['asks for the catalogue', asked], ['binds it', bound], ['draws', drawn]]) {
+    assert.ok(at !== -1, `main.jsx no longer ${what} — the pattern moved and this test is stale`)
+  }
+  assert.ok(
+    asked < bound && bound < drawn,
+    'the words are fetched and bound before the first render; a frame drawn before them is a ' +
+      'frame that throws (docs/design/i18n.md §1)',
+  )
+
+  // And the page never reads the catalogue again: a second reader could arrive at a different
+  // moment than the first, which is the disagreement this test exists to prevent.
+  const app = readFileSync(join(RENDERER, 'App.jsx'), 'utf8')
+  assert.equal(app.includes('seekHost.catalogue()'), false, 'App.jsx does not fetch its own words')
+  assert.equal(app.includes('bindCatalogue'), false, 'App.jsx does not bind a second catalogue')
 })
 
 test('the catalogue the window is handed is the one the kernel prints its report from', () => {

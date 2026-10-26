@@ -4,7 +4,7 @@ import Contacts from './Contacts.jsx'
 import Groups from './Groups.jsx'
 import Settings from './Settings.jsx'
 import Topics from './Topics.jsx'
-import { bindCatalogue, t } from './catalogue.mjs'
+import { t } from './catalogue.mjs'
 import { roomToOpen } from './room-to-open.mjs'
 
 /**
@@ -128,11 +128,6 @@ function ActionGlyph({ name }) {
  */
 export default function App() {
   const [snap, setSnap] = useState(null)
-  // The language the catalogue that arrived is in, or null before one has. Every count this
-  // window draws is looked up by key (`docs/design/i18n.md` §1), so drawing a room before the
-  // words are here would mean either an English literal or a thrown error — the window says
-  // it is opening instead.
-  const [words, setWords] = useState(null)
   const [activeId, setActiveId] = useState(null)
   // Which column this window is showing. Two, because the settings page is not a room: it is
   // where the endpoint is chosen, and a room list beside it would suggest it belongs to one.
@@ -202,18 +197,6 @@ export default function App() {
     // The kernel changes the store by itself when a bot answers. Without this the
     // window would only be right immediately after *you* typed.
     return window.seekHost.onChanged(adopt)
-  }, [])
-
-  useEffect(() => {
-    let live = true
-    window.seekHost.catalogue().then((catalogue) => {
-      if (!live) return
-      bindCatalogue(catalogue)
-      setWords(catalogue.locale)
-    })
-    return () => {
-      live = false
-    }
   }, [])
 
   const active = snap?.rooms.find((room) => room.id === activeId) ?? null
@@ -400,7 +383,7 @@ export default function App() {
       if (result.ok) {
         setSnap(result.snapshot)
         const target = result.snapshot.rooms.find((room) => room.id === targetId)
-        setNote(`forwarded into ${target?.name ?? 'that room'}`)
+        setNote(t('ui.chat.forwarded-into', { room: target?.name ?? t('ui.chat.that-room') }))
       } else {
         setError({ where: 'room', message: result.error })
       }
@@ -425,7 +408,7 @@ export default function App() {
     setError(null)
     try {
       const result = await window.seekHost.copy(message.text)
-      if (result.ok) setNote('copied to the clipboard')
+      if (result.ok) setNote(t('ui.chat.copied'))
       else setError({ where: 'room', message: result.error })
     } catch (failure) {
       setError({ where: 'room', message: failure instanceof Error ? failure.message : String(failure) })
@@ -599,7 +582,7 @@ export default function App() {
     setOpenThread(rootId)
   }
 
-  if (!snap || words === null) return <div className="booting">opening the store…</div>
+  if (!snap) return <div className="booting">{t('ui.chat.opening-store')}</div>
 
   const whoSaid = Object.fromEntries((active?.members ?? []).map((member) => [member.id, member]))
 
@@ -644,7 +627,7 @@ export default function App() {
       }`}
     >
       <nav className="rail">
-        <div className="rail-avatar" title={snap.me ?? 'me'}>
+        <div className="rail-avatar" title={snap.me ?? t('ui.chat.me')}>
           {(snap.me ?? 'me').slice(0, 1).toUpperCase()}
         </div>
         {snap.rooms.map((room) => (
@@ -693,7 +676,7 @@ export default function App() {
             on the other side of it is not a conversation. */}
         <button
           className={`rail-item rail-tail${view === 'settings' ? ' on' : ''}`}
-          title="settings"
+          title={t('ui.settings.title')}
           onClick={() => setView((now) => (now === 'settings' ? 'chat' : 'settings'))}
           data-view="settings"
         >
@@ -734,7 +717,7 @@ export default function App() {
         <>
       <section className="list-col">
         <header className="list-head">
-          <h1>Chats</h1>
+          <h1>{t('ui.chat.title')}</h1>
           {/* `space-between` with three children would centre the count; the tools are one
               group so the heading and the group are the two ends. */}
           <span className="list-tools">
@@ -744,7 +727,7 @@ export default function App() {
             <button
               className="list-new"
               data-new-room="open"
-              title="new room"
+              title={t('ui.chat.new-room')}
               onClick={startMaking}
             >
               +
@@ -770,7 +753,7 @@ export default function App() {
           >
             <input
               className="new-room-name"
-              placeholder="room name (optional)"
+              placeholder={t('ui.chat.room-name-hint')}
               value={newName}
               onChange={(event) => setNewName(event.target.value)}
             />
@@ -785,7 +768,7 @@ export default function App() {
                       onChange={() => togglePick(person.id)}
                     />
                     <span className="new-room-who">{person.name}</span>
-                    {person.bot && <span className="msg-bot">bot</span>}
+                    {person.bot && <span className="msg-bot">{t('ui.chat.bot')}</span>}
                   </label>
                 </li>
               ))}
@@ -795,7 +778,7 @@ export default function App() {
                   has a sentence for, and a disabled button would replace that sentence
                   with a silence. */}
               <button type="submit" data-new-room="create" disabled={sending}>
-                Create
+                {t('ui.chat.create')}
               </button>
               <button
                 type="button"
@@ -805,7 +788,7 @@ export default function App() {
                   setError(null)
                 }}
               >
-                Cancel
+                {t('ui.chat.cancel')}
               </button>
             </div>
           </form>
@@ -823,7 +806,7 @@ export default function App() {
                   <span className="conv-name">{room.name}</span>
                   <span className="conv-last">
                     {room.messages.length === 0
-                      ? 'no messages yet'
+                      ? t('ui.chat.no-messages')
                       : lastLineOf(room.messages.at(-1))}
                   </span>
                 </span>
@@ -862,7 +845,7 @@ export default function App() {
               <button
                 className="members"
                 data-people="open"
-                title="who is in this room"
+                title={t('ui.chat.members-hint')}
                 onClick={() => setPeopleOpen((open) => !open)}
               >
                 {t('ui.members', { count: active.members.length })}
@@ -889,10 +872,10 @@ export default function App() {
                     return (
                       <li key={person.id} className="people-row">
                         <span className="people-name">{person.name}</span>
-                        {person.bot && <span className="msg-bot">bot</span>}
+                        {person.bot && <span className="msg-bot">{t('ui.chat.bot')}</span>}
                         {inside ? (
                           <span className="people-state" data-people-in={person.id}>
-                            in this room
+                            {t('ui.chat.in-this-room')}
                           </span>
                         ) : (
                           <button
@@ -901,7 +884,7 @@ export default function App() {
                             disabled={adding}
                             onClick={() => addToRoom(person.id)}
                           >
-                            Add
+                            {t('ui.chat.add')}
                           </button>
                         )}
                       </li>
@@ -925,7 +908,7 @@ export default function App() {
                   chip
                 />
               ))}
-              {messages.length === 0 && <li className="empty">nothing said here yet</li>}
+              {messages.length === 0 && <li className="empty">{t('ui.chat.nothing-said')}</li>}
               <li ref={messagesEnd} aria-hidden="true" />
             </ol>
 
@@ -947,7 +930,7 @@ export default function App() {
                 className="composer-input"
                 rows={1}
                 value={draft}
-                placeholder={`Message ${active.name}`}
+                placeholder={t('ui.chat.message-hint', { room: active.name })}
                 onChange={(event) => setDraft(event.target.value)}
                 onKeyDown={(event) => keyDown(event, draft, undefined, roomMention)}
               />
@@ -958,7 +941,7 @@ export default function App() {
                 className="composer-mention"
                 type="button"
                 data-mention="open"
-                title="who this message addresses"
+                title={t('ui.chat.mention-hint')}
                 onClick={roomMention.toggleOpen}
                 disabled={sending}
               >
@@ -970,27 +953,27 @@ export default function App() {
               <button
                 className="composer-attach"
                 type="button"
-                title="Attach a picture"
+                title={t('ui.chat.attach')}
                 onClick={() => attachInto(undefined, roomMention)}
                 disabled={sending}
               >
-                Picture
+                {t('ui.chat.picture')}
               </button>
               <button className="composer-send" type="submit" disabled={sending || draft.trim() === ''}>
-                Send
+                {t('ui.chat.send')}
               </button>
             </form>
           </>
         ) : (
-          <div className="empty">no room in this store</div>
+          <div className="empty">{t('ui.chat.no-room')}</div>
         )}
       </section>
 
       {openThread && active && (
         <aside className="thread-col">
           <header className="thread-head">
-            <h3>Thread</h3>
-            <button className="thread-close" title="Close the thread" onClick={() => setOpenThread(null)}>
+            <h3>{t('ui.chat.thread')}</h3>
+            <button className="thread-close" title={t('ui.chat.close-thread')} onClick={() => setOpenThread(null)}>
               ×
             </button>
           </header>
@@ -1008,7 +991,7 @@ export default function App() {
                 actions={actions}
               />
             ))}
-            {thread.length === 0 && <li className="empty">this thread has nothing in it</li>}
+            {thread.length === 0 && <li className="empty">{t('ui.chat.thread-empty')}</li>}
             <li ref={threadEnd} aria-hidden="true" />
           </ol>
 
@@ -1026,7 +1009,7 @@ export default function App() {
               className="thread-composer-input"
               rows={1}
               value={threadDraft}
-              placeholder="Reply in thread"
+              placeholder={t('ui.chat.reply-hint')}
               onChange={(event) => setThreadDraft(event.target.value)}
               onKeyDown={(event) => keyDown(event, threadDraft, openThread, threadMention)}
             />
@@ -1037,7 +1020,7 @@ export default function App() {
               className="thread-mention"
               type="button"
               data-mention="open-thread"
-              title="who this reply addresses"
+              title={t('ui.chat.reply-mention-hint')}
               onClick={threadMention.toggleOpen}
               disabled={sending}
             >
@@ -1046,14 +1029,14 @@ export default function App() {
             <button
               className="thread-attach"
               type="button"
-              title="Attach a picture"
+              title={t('ui.chat.attach')}
               onClick={() => attachInto(openThread, threadMention)}
               disabled={sending}
             >
-              Picture
+              {t('ui.chat.picture')}
             </button>
             <button className="thread-send" type="submit" disabled={sending || threadDraft.trim() === ''}>
-              Reply
+              {t('ui.chat.reply')}
             </button>
           </form>
         </aside>
@@ -1129,9 +1112,9 @@ function QuoteStrip({ quoting, whoSaid, onClear }) {
   const name = whoSaid?.[quoting.senderId]?.name ?? quoting.senderId
   return (
     <div className="quote-strip" data-quoting={quoting.messageId}>
-      <span className="quote-strip-name">replying to {name}</span>
-      <span className="quote-strip-text">{quoting.text === '' ? 'a picture' : quoting.text}</span>
-      <button className="quote-strip-x" type="button" title="Stop quoting" onClick={onClear}>
+      <span className="quote-strip-name">{t('ui.chat.replying-to', { name })}</span>
+      <span className="quote-strip-text">{quoting.text === '' ? t('ui.chat.said.picture') : quoting.text}</span>
+      <button className="quote-strip-x" type="button" title={t('ui.chat.stop-quoting')} onClick={onClear}>
         ×
       </button>
     </div>
@@ -1143,14 +1126,14 @@ function Mentions({ members, mention }) {
     <>
       {mention.addressed.length > 0 && (
         <span className="mention-row" data-mention="picked">
-          <span className="mention-lead">addressing</span>
+          <span className="mention-lead">{t('ui.chat.addressing')}</span>
           {mention.addressed.map((one) => (
             <span className="mention-chip" data-mention-chip={one.id} key={one.id}>
               @{one.name}
               <button
                 className="mention-drop"
                 type="button"
-                title={`stop addressing ${one.name}`}
+                title={t('ui.chat.stop-addressing', { name: one.name })}
                 data-mention-drop={one.id}
                 onClick={() => mention.toggle(one)}
               >
@@ -1173,7 +1156,7 @@ function Mentions({ members, mention }) {
               onClick={() => mention.toggle(member)}
             >
               {member.name}
-              {member.bot && <span className="msg-bot">bot</span>}
+              {member.bot && <span className="msg-bot">{t('ui.chat.bot')}</span>}
             </button>
           ))}
         </span>
@@ -1201,7 +1184,7 @@ function StoreRefused({ refusal }) {
 
   return (
     <div className="store refused" data-store="refused">
-      <strong>the store was not opened</strong>
+      <strong>{t('ui.chat.store-refused')}</strong>
       <span className="store-why">{refusal}</span>
     </div>
   )
@@ -1222,7 +1205,7 @@ function WeightsArriving({ text }) {
 
   return (
     <div className="weights waiting" data-weights="waiting">
-      <strong>the weights are arriving</strong>
+      <strong>{t('ui.chat.weights-arriving')}</strong>
       <span className="weights-why">{text}</span>
     </div>
   )
@@ -1256,7 +1239,7 @@ function StageOne({ stage1 }) {
   if (stage1.refusal) {
     return (
       <div className="stage1 refused" data-stage1="refused">
-        <strong>the model server was not used</strong>
+        <strong>{t('ui.chat.stage1-refused')}</strong>
         <span className="stage1-why">{stage1.refusal}</span>
       </div>
     )
@@ -1265,21 +1248,16 @@ function StageOne({ stage1 }) {
   if (stage1.server) {
     return (
       <div className="stage1 bound" data-stage1="bound">
-        <strong>stage 1 asks {stage1.server}</strong>
-        <span className="stage1-why">
-          whether it answers is the model&apos;s verdict; what it says is stage 2, below
-        </span>
+        <strong>{t('ui.chat.stage1-asks', { origin: stage1.server })}</strong>
+        <span className="stage1-why">{t('ui.chat.stage1-asks-why')}</span>
       </div>
     )
   }
 
   return (
     <div className="stage1" data-stage1="placeholder">
-      <strong>no model server</strong>
-      <span className="stage1-why">
-        the bot decides with the kernel&apos;s placeholder — set SEEK_SERVER and SEEK_WINDOW
-        to ask a real model
-      </span>
+      <strong>{t('ui.chat.stage1-placeholder')}</strong>
+      <span className="stage1-why">{t('ui.chat.stage1-placeholder-why')}</span>
     </div>
   )
 }
@@ -1299,7 +1277,7 @@ function StageTwo({ stage2 }) {
   if (stage2.refusal) {
     return (
       <div className="stage2 refused" data-stage2="refused">
-        <strong>the work server was not used</strong>
+        <strong>{t('ui.chat.stage2-refused')}</strong>
         <span className="stage2-why">{stage2.refusal}</span>
       </div>
     )
@@ -1308,19 +1286,16 @@ function StageTwo({ stage2 }) {
   if (stage2.server) {
     return (
       <div className="stage2 bound" data-stage2="bound">
-        <strong>stage 2 asks {stage2.server}</strong>
-        <span className="stage2-why">the words in the room are the model&apos;s, written through its `say` call</span>
+        <strong>{t('ui.chat.stage2-asks', { origin: stage2.server })}</strong>
+        <span className="stage2-why">{t('ui.chat.stage2-asks-why')}</span>
       </div>
     )
   }
 
   return (
     <div className="stage2" data-stage2="placeholder">
-      <strong>no work server</strong>
-      <span className="stage2-why">
-        the bot says the kernel&apos;s placeholder line — set SEEK_WORK_SERVER to let a model
-        write the reply
-      </span>
+      <strong>{t('ui.chat.stage2-placeholder')}</strong>
+      <span className="stage2-why">{t('ui.chat.stage2-placeholder-why')}</span>
     </div>
   )
 }
@@ -1355,9 +1330,9 @@ function Spend({ spend }) {
       data-spend-turns={spend.turns}
       data-spend-in={spend.input_tokens}
       data-spend-out={spend.output_tokens}
-      title={perBot === '' ? 'no turn has run in this room yet' : perBot}
+      title={perBot === '' ? t('ui.chat.no-turn-yet') : perBot}
     >
-      {TOKENS.format(total)} tokens
+      {t('ui.chat.spend', { count: total })}
     </span>
   )
 }
@@ -1386,7 +1361,7 @@ function Line({ message, sender, replies, inThread, onOpen, chip = false, me = n
       <span className="msg-body">
         <span className="msg-sender">
           {name}
-          {sender?.bot && <span className="msg-bot">bot</span>}
+          {sender?.bot && <span className="msg-bot">{t('ui.chat.bot')}</span>}
         </span>
         {/* Where a forward came from. Drawn above the words rather than inside them: the
             kernel keeps `forwarded_from` as its own field (`src/types.ts`), and the words
@@ -1394,7 +1369,7 @@ function Line({ message, sender, replies, inThread, onOpen, chip = false, me = n
         {message.forwardedFrom && (
           <span className="msg-forwarded" data-forwarded-from={message.forwardedFrom.messageId}>
             <ActionGlyph name="forward" />
-            <span>forwarded from {message.forwardedFrom.name}</span>
+            <span>{t('ui.chat.forwarded-from', { name: message.forwardedFrom.name })}</span>
           </span>
         )}
         {/* What a reply answered, as the store kept it: the name and the first 160 characters
@@ -1462,22 +1437,22 @@ function Line({ message, sender, replies, inThread, onOpen, chip = false, me = n
             <button
               className="act-emoji"
               data-react-pick={message.id}
-              title="React to this message"
+              title={t('ui.chat.react-hint')}
               onClick={() => actions.pickEmoji(message)}
             >
               <span>{emojiGlyph(actions.lastEmoji)}</span>
             </button>
             <span className="act-seg">
-              <button data-quote-msg={message.id} title="Reply with a quote" onClick={() => actions.quote(message)}>
+              <button data-quote-msg={message.id} title={t('ui.chat.quote-hint')} onClick={() => actions.quote(message)}>
                 <ActionGlyph name="reply" />
               </button>
-              <button data-forward-msg={message.id} title="Forward to another room" onClick={() => actions.forward(message)}>
+              <button data-forward-msg={message.id} title={t('ui.chat.forward-hint')} onClick={() => actions.forward(message)}>
                 <ActionGlyph name="forward" />
               </button>
-              <button data-open-topic={message.id} title="Open this thread" onClick={() => onOpen(message)}>
+              <button data-open-topic={message.id} title={t('ui.chat.open-thread-hint')} onClick={() => onOpen(message)}>
                 <ActionGlyph name="topic" />
               </button>
-              <button data-msg-more={message.id} title="More" onClick={() => actions.more(message)}>
+              <button data-msg-more={message.id} title={t('ui.chat.more')} onClick={() => actions.more(message)}>
                 <ActionGlyph name="more" />
               </button>
             </span>
@@ -1512,12 +1487,12 @@ function Line({ message, sender, replies, inThread, onOpen, chip = false, me = n
             snapshot already carries, so no name is invented here. */}
         {actions && actions.forwardingId === message.id && (
           <span className="forward-pop">
-            <span className="forward-lead">Forward to</span>
+            <span className="forward-lead">{t('ui.chat.forward-lead')}</span>
             {actions.rooms.map((room) => (
               <button
                 key={room.id}
                 data-forward-into={room.id}
-                title={`Forward into ${room.name}`}
+                title={t('ui.chat.forward-into', { room: room.name })}
                 onClick={() => actions.forwardInto(room.id)}
               >
                 {room.name}
@@ -1531,7 +1506,7 @@ function Line({ message, sender, replies, inThread, onOpen, chip = false, me = n
         {actions && actions.moreOnId === message.id && (
           <span className="more-menu">
             <button data-copy-msg={message.id} onClick={() => actions.copy(message)}>
-              Copy text
+              {t('ui.chat.copy')}
             </button>
           </span>
         )}
@@ -1549,8 +1524,8 @@ function Line({ message, sender, replies, inThread, onOpen, chip = false, me = n
  */
 function lastLineOf(message) {
   if (typeof message?.text === 'string' && message.text !== '') return message.text
-  if (message?.kind === 'image') return 'a picture'
-  return 'no words'
+  if (message?.kind === 'image') return t('ui.chat.said.picture')
+  return t('ui.chat.said.nothing')
 }
 
 /**
@@ -1597,9 +1572,7 @@ function Picture({ media }) {
   }
   if (!src) {
     return (
-      <span className="msg-pic-opening" data-picture="opening">
-        opening the picture…
-      </span>
+      <span className="msg-pic-opening" data-picture="opening">{t('ui.chat.opening-picture')}</span>
     )
   }
   return <img className="msg-pic" data-picture="shown" src={src} alt={media.key} />
