@@ -25,6 +25,34 @@ const RENDERER = join(HERE, '..', 'src')
 /** The counts a count-bearing label is drawn for, including the ones the trap is about. */
 const COUNTS = [0, 1, 2, 3, 5, 11, 21, 1000]
 
+/**
+ * A sample value for every placeholder the shipped catalogues name.
+ *
+ * Read off the template rather than listed per key: a key that starts naming a placeholder the
+ * test has no sample for fails here, rather than being skipped because this table never heard
+ * of it — a value the test forgot is a key the test stopped comparing.
+ */
+const SAMPLES = {
+  path: '/tmp/seek-i18n/store.json',
+  name: 'Design',
+  model: 'a-model',
+  tail: '0f3c',
+  length: 33,
+  words: 'the endpoint said no',
+}
+
+function paramsFor(template) {
+  const params = {}
+  for (const [, name] of template.matchAll(/\{(\w+)\}/g)) {
+    // `count` is not a sample: a plural entry is drawn for every count in `COUNTS` below, so
+    // this walk supplies the other placeholders and the loop supplies that one.
+    if (name === 'count') continue
+    assert.ok(name in SAMPLES, `this test has no sample value for {${name}}`)
+    params[name] = SAMPLES[name]
+  }
+  return params
+}
+
 /** Every `ui.*` key the renderer asks for, read out of the components themselves. */
 function asked() {
   const keys = new Set()
@@ -63,15 +91,18 @@ test('the window and the kernel put the same words around the same count', () =>
     bindCatalogue(catalogue)
 
     for (const key of keys) {
-      const plural = typeof catalogue.messages[key] === 'object'
+      const message = catalogue.messages[key]
+      const plural = typeof message === 'object'
       if (!plural) {
-        assert.equal(t(key), theirs(key), `${tag} ${key}`)
+        const params = paramsFor(message)
+        assert.equal(t(key, params), theirs(key, params), `${tag} ${key}`)
         continue
       }
+      const params = paramsFor(message.other)
       for (const count of COUNTS) {
         assert.equal(
-          t(key, { count }),
-          theirs(key, { count }),
+          t(key, { ...params, count }),
+          theirs(key, { ...params, count }),
           `${tag} ${key} at ${count}: the renderer and the kernel disagree about the words`,
         )
       }
@@ -138,6 +169,83 @@ test('the count labels the window used to write itself are gone, and stay gone',
 
   assert.match(app, /t\('ui\.members', \{ count:/, 'the member count is drawn by key')
   assert.match(app, /t\('ui\.replies', \{ count:/, 'the thread chip is drawn by key')
+})
+
+test('the settings page says nothing a catalogue did not say', () => {
+  const source = readFileSync(join(RENDERER, 'Settings.jsx'), 'utf8')
+
+  // The gap this closed: sixty strings, every one of them written in that page. The scan is the
+  // mechanical form of `docs/design/i18n.md` §1 — a text node between `>` and `<` is drawn as it
+  // stands, so a word in one is a word no language but English can change.
+  const prose = [...source.matchAll(/>([^<>{}]*)</g)]
+    .map((match) => match[1].trim())
+    .filter((text) => /[A-Za-z]{2}/.test(text))
+  assert.deepEqual(prose, [], 'a text node carries words of its own instead of a key')
+
+  // The same claim for the attributes a person reads: a field hint is chrome too.
+  const attributes = [...source.matchAll(/\b(?:placeholder|title|aria-label)="([^"]*)"/g)]
+    .map((match) => match[1])
+    .filter((text) => /[A-Za-z]{2}/.test(text))
+  assert.deepEqual(attributes, [], 'an attribute carries words of its own instead of a key')
+
+  // Anti-vacuity: two empty lists above are exactly what a broken scan also produces.
+  const keys = [...source.matchAll(/\bt\(\s*'(ui\.settings\.[a-zA-Z.-]+)'/g)].map(
+    (match) => match[1],
+  )
+  assert.ok(keys.length >= 55, `the scan found ${keys.length} lookups — the pattern is broken`)
+  assert.ok(new Set(keys).size >= 55, 'the page looks its words up rather than repeating a few')
+
+  // And the shapes that were there. A return here is the whole page speaking English again.
+  for (const [shape, what] of [
+    [/<h2>Settings<\/h2>/, 'the page title written into the markup'],
+    [/placeholder="a name/, 'the organization field hint written into the markup'],
+    [/\$\{answer\.models\.length\} models/, 'a count joined to the word `models`'],
+    [/'saved — this half uses it/, 'the sentence after a save written into the handler'],
+    [/count === 1 \?/, 'the `count === 1 ?` comparison'],
+  ]) {
+    assert.doesNotMatch(source, shape, `${what}: it is the catalogue's to say`)
+  }
+
+  // A count on this page too, in the language where the shortcut cannot be the rule: Chinese
+  // carries one category, so the numeral changes and the sentence does not.
+  bindCatalogue(catalogueFor('zh-CN'))
+  assert.equal(
+    t('ui.settings.models.none-listed', { count: 1 }).replace('1', 'N'),
+    t('ui.settings.models.none-listed', { count: 7 }).replace('7', 'N'),
+    'one Chinese sentence, whatever the count',
+  )
+  bindCatalogue(catalogueFor('en'))
+  assert.notEqual(
+    t('ui.settings.models.none-listed', { count: 1 }),
+    t('ui.settings.models.none-listed', { count: 2 }),
+    'English changes form at two, and that change is the catalogue saying so',
+  )
+})
+
+test('every word the window draws is translated, not copied', () => {
+  // The reading an English run cannot give. A Chinese page still carrying English chrome looks
+  // finished when the language is English — nothing in it is out of place — which is the same
+  // shape as the `count === 1` shortcut that only bites under a language with three plural
+  // categories. So the claim is made where it is cheap: one key, two languages, and the two
+  // must not say the same thing.
+  //
+  // The exception is not a hole. It names the same thing in both languages because it is a
+  // shape rather than a sentence, and a translated one would be worse than the original.
+  const SAME_IN_BOTH = new Set(['ui.settings.models.address-hint'])
+
+  const en = catalogueFor('en').messages
+  const zh = catalogueFor('zh-CN').messages
+  const keys = asked().filter((key) => !SAME_IN_BOTH.has(key))
+
+  assert.ok(keys.length > 0, 'no key was compared, so this proves nothing')
+  for (const key of keys) {
+    assert.notDeepEqual(
+      en[key],
+      zh[key],
+      `${key} says the same thing in both languages: that is a translation nobody wrote, ` +
+        'and it reads as finished from the base language',
+    )
+  }
 })
 
 test('nothing is drawn before a catalogue is bound, and the refusal says why', async () => {
