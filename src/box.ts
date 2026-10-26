@@ -68,7 +68,7 @@ export interface BoxVerdict {
   /**
    * When that entry arrived.
    *
-   * The verdict carries no timestamp of its own (`decisions.md` default 6: on the
+   * The verdict carries no timestamp of its own (on the
    * entry it judged, and nowhere else), so this is the arrival time of the entry
    * it was written on — named for what it is rather than passed off as the moment
    * the judgement was made.
@@ -130,8 +130,7 @@ export interface BoxMedia {
  * boundary the option token is appended at — so the text, the option ids bound to
  * its end, and the shipped cut are one artifact. A question carried here as well
  * would be a second one, free to disagree with the text and with the mask measured
- * against it, and the roster has no field for it either (`docs/decisions.md`,
- * defaults 15 and 18) — so there is no path by which a caller can ask two.
+ * against it, and the roster has no field for it either — so there is no path by which a caller can ask two.
  */
 export interface RoomBox {
   botId: Id;
@@ -237,7 +236,7 @@ function workAgentId(store: SeekStore, botId: Id): Id | undefined {
 /**
  * The newest entry carrying a verdict.
  *
- * Derived, never stored: `decisions.md` default 6 puts a verdict on the entry it
+ * Derived, never stored: a verdict lives on the entry it
  * judged and nowhere else, so a "last verdict" field would be a second version
  * of one fact — free to disagree with the entries it summarises.
  */

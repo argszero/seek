@@ -7,7 +7,7 @@ const { contextBridge, ipcRenderer } = require('electron')
  * message, a room, and one more member — because a renderer that could reach the store
  * directly would be a second writer, and the kernel has one.
  *
- * `attach` and `media` are the picture pair (`docs/decisions.md` row 17). They are two
+ * `attach` and `media` are the picture pair. They are two
  * calls rather than one because they answer different questions at different moments:
  * `attach` writes bytes once, when a person chooses a file, and `media` reads them back
  * every time a message carrying a reference is drawn. Neither hands the renderer a path —

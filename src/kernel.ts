@@ -85,7 +85,7 @@ export interface KernelOptions {
   /**
    * When a delta has outgrown itself: a count, an age, or both.
    *
-   * §3 and `decisions.md` default 3 give the shape and leave the numbers to
+   * §3 gives the shape and leaves the numbers to
    * measurement, so they are the caller's — with none configured, nothing is
    * ever due.
    */
@@ -159,7 +159,7 @@ export class Kernel {
    *
    * The roster is read here, from `agents.yml` beside the store, and the store's
    * agents are rebuilt from it before anything can wake a bot — the file is the
-   * roster and the shard is derived from it (`docs/decisions.md`, default 14).
+   * roster and the shard is derived from it.
    * A store with no roster file beside it keeps whatever agents it already has:
    * a missing file says nothing, while a file with no rows says the bot has no
    * agents. A store over an empty directory therefore starts, arms nothing and
@@ -291,7 +291,7 @@ export class Kernel {
     // read from, so the grouping only decides *which rooms* this tick touched.
     for (const roomId of byRoom.keys()) {
       // The question the runtime answers for itself and never puts to a model:
-      // a count and an age, both free (§3, `decisions.md` default 3).
+      // a count and an age, both free (§3).
       if (!this.compactor.due(botId, roomId)) continue;
 
       const run = this.compactor.compact(botId, roomId).then(

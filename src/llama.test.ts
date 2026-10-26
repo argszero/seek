@@ -576,7 +576,7 @@ test('a picture reading is summed over the spellings of the option, as text is',
 
 test('a picture with no way to read its bytes is refused, not judged from its caption', async () => {
   // `box.ts` keeps `key` opaque, so a transport with no loader cannot resolve one and
-  // must not invent a path. The alternative is the defect row 22 was written for: a
+  // must not invent a path. The alternative is the defect the picture path exists to prevent: a
   // verdict from the caption that looks like one reached with the picture present.
   const recorder = pictureServer();
   const model = llamaWatchModel(serverOf(recorder));

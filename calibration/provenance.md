@@ -3,7 +3,7 @@
 This directory is **data, not runtime**. Nothing under `src/` imports it, and no test reads a
 case from it to decide a verdict. It is here so that the shipped prompt and the shipped
 operating point have a source a reader can inspect, and so that the numbers behind
-`docs/decisions.md` are not only a paragraph claiming they were measured.
+ them are not only a paragraph claiming they were measured.
 
 ## What the cases are
 
@@ -37,7 +37,7 @@ question was measured too, and scored at chance on every model tried.
 | `val.json` | `round3.py: VAL` | 16 | the third set, opened once the grid had chosen |
 | `set4.json` | `validate.py: SET4` | 24 | **written after every prompt choice was made, and used to pick nothing** |
 
-24 + 12 + 16 + 24 = **76**, the figure `docs/decisions.md` and `docs/design/agent-lifecycle.md`
+24 + 12 + 16 + 24 = **76**, the figure `docs/design/agent-lifecycle.md`
 quote. The sets are disjoint: no message appears in two of them.
 
 `round3.py` also holds a further 12-case set (`TEST`) and `final3.py` a 12-case generalisation
@@ -84,8 +84,8 @@ place a repository can cite.
   `bindOptions` still measures one id per option, but that id is where the answer is read,
   not the quantity read there — the design's single-token rule is about the option surviving
   as one token, not about reading one id's probability alone. This bullet used to say the
-  runtime masked a single id and that `docs/decisions.md` carried the difference as an open
-  tension; the row exists (`docs/decisions.md` row 19), it settles the reading the other way,
+  runtime masked a single id, and that this was carried as an open
+  tension; the design settles the reading the other way,
   and `calibration/vision/server-transport.json` is the replay that holds it. One difference
   between the two descriptions is **not** settled: `vocab.py` normalised over the pair and
   `readingOf` returns the raw sum — `measured.json` records that as a question, not as a

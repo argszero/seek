@@ -39,7 +39,7 @@ function meOf(store) {
  * two different readings and the window must not draw them as one: nothing named is a
  * state — this build has no model until someone configures one — while a server that was
  * named and not used is a failure, and a window showing both as "no model" would hide the
- * second (`docs/decisions.md` row 20).
+ * second.
  *
  * Both are strings or `null`, so the renderer holds no error object and no stack: what it
  * draws is a sentence somebody wrote, passed through unchanged.
@@ -62,7 +62,7 @@ function stageOneOf(stage1) {
  * The halves refuse independently: a store whose watch row is served and whose work row
  * claims a model the work server does not serve is a real state, and drawing one strip
  * for both would let the good half hide the broken one. Nothing named is a state; named
- * and not used is a failure (`docs/decisions.md` row 27, one half over).
+ * and not used is a failure (one half over).
  */
 function stageTwoOf(stage2) {
   return {
@@ -174,7 +174,7 @@ const NOTHING_SPENT = { turns: 0, input_tokens: 0, output_tokens: 0, bots: [] }
  * reading that is true for a moment on every start and means nothing is wrong — while a
  * refusal means the app will not work until somebody acts on that sentence. A window that
  * drew the second as the first would show a broken install as a slow one, and the person
- * would wait for a store that is never coming (`docs/decisions.md` row 20's reasoning, one
+ * would wait for a store that is never coming (the design's reasoning, one
  * layer down). Both are strings or `null`, so the renderer still holds no error object.
  */
 function snapshotOf(store, storeFile, stage1 = null, stage2 = null, storeRefusal = null) {
@@ -217,7 +217,7 @@ function snapshotOf(store, storeFile, stage1 = null, stage2 = null, storeRefusal
       sender: message.sender_id,
       text: message.text,
       // `kind` and `media` are the kernel's own two fields for a picture
-      // (`docs/decisions.md` row 17): `kind: 'image'` with one `{key, mime}` reference in
+      // `kind: 'image'` with one `{key, mime}` reference in
       // `media`, present exactly when the kind is `image`. The interface draws a picture
       // when it sees `image` and never infers it from the text, because a message whose
       // kind says `image` and whose bytes nothing can find is a claim, not a fact.

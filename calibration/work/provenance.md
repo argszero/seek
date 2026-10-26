@@ -96,7 +96,7 @@ agents behind this bot are: …`, reading its own system prompt back instead of 
 reading the set exists to make visible, and it is the opposite of the single column one
 would have measured. The shipped model's `stayed quiet` is **0/3** — it writes
 `I'm sorry, but I can't help with that.` to every one of the three, which is *no message*
-under the kernel's own rule (`docs/decisions.md` row 28: nothing reaches a room except
+under the kernel's own rule (nothing reaches a room except
 through `say`), but it is not the behaviour of a turn that says nothing. So today's model
 fails one direction outright and does not achieve the other; the candidates fail the other
 direction outright. **Silence is the column no model reached even once.**
@@ -163,7 +163,7 @@ measurement's:
 - the 4B that delivers all six is **2,497,281,664 B** against the shipped model's
   1,593,894,944 B, so first-run weights grow from ≈1.5 GiB to ≈2.3 GiB before any projector;
 - the judgement half reads **token probabilities** and its `0.600` cut is calibrated against
-  `LFM2.5-VL-3B` on 56 cases (`../provenance.md`, `docs/decisions.md` row 12). A different
+  `LFM2.5-VL-3B` on 56 cases (`../provenance.md`). A different
   model is a different distribution, so a work model that also served stage 1 would need
   that cut recalibrated — which is a second measurement, not a line to change;
 - the two halves are wired to separate servers (`SEEK_SERVER` / `SEEK_WORK_SERVER`), so

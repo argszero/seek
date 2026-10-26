@@ -173,8 +173,8 @@ test('every file the kernel reads beside itself travels in a download', () => {
   // simply beside the module — and nothing at launch said so either, because the shipped state
   // names no model server and the kernel's placeholder reads no artifact. Naming one on a
   // download returned the kernel's own refusal: *the watch prompt artifact could not be read
-  // from …/Resources/src/prompts/watch-v1.json: ENOENT*. So stage 1 and stage 2, which default
-  // 27 and default 28 describe and which are the whole point of naming a server, were
+  // from …/Resources/src/prompts/watch-v1.json: ENOENT*. So stage 1 and stage 2, which the two
+  // halves of the design describe and which are the whole point of naming a server, were
   // unreachable in every download up to `v0.1.2`.
   //
   // Which is why the filter is checked against the kernel rather than counted by hand: an

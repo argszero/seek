@@ -39,11 +39,11 @@ const STORE_FILE = join(DATA_DIR, 'seek.json')
  *
  * **Three variables, and each half of the bot takes its own.** Stage 1 needs two facts and
  * neither has a default this app may invent: `SEEK_SERVER` is which `llama-server` decides
- * *whether* the bot acts, and `SEEK_WINDOW` is how much one judgement may read
- * (`docs/decisions.md` row 20). Stage 2 needs one: `SEEK_WORK_SERVER` is which server
+ * *whether* the bot acts, and `SEEK_WINDOW` is how much one judgement may read.
+ * Stage 2 needs one: `SEEK_WORK_SERVER` is which server
  * writes the *words*, and it is a separate origin because a server serves one model while
- * the roster's watch and work rows may name two (`docs/decisions.md` row 24 — the work
- * row's model "belongs to the other server"). A turn's prompt is checked against that
+ * the roster's watch and work rows may name two — the work
+ * row's model "belongs to the other server". A turn's prompt is checked against that
  * server's own window per turn, so this half takes no budget.
  *
  * They are read here rather than in `host.js` so that the one place the environment is
@@ -379,7 +379,7 @@ async function start() {
         modelServer = started
         server = started.origin
         // How much one judgement may read: `src/main.ts` asks the measured watch model with
-        // `--window 24`, and `docs/decisions.md` row 20 leaves the number out of the kernel
+        // `--window 24`, and the kernel leaves the number out
         // because the runtime cannot know one. This file *is* the caller, so it lives here.
         serverWindow = WATCH_WINDOW
         workServer = started.origin

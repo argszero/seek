@@ -117,8 +117,8 @@ export type MessageKind = 'text' | 'image' | 'file' | 'tool_card' | 'system';
  *
  * **Present exactly when `kind` is `image`**, which `deliver()` enforces instead
  * of trusting a caller to remember: this cut carries pictures, and a file or a
- * tool card gets a carrier when something reads one (`docs/decisions.md`,
- * default 17).
+ * tool card gets a carrier when something reads one. Nothing reads
+ * a file or a tool card's carrier today.
  */
 export interface MessageMedia {
   /** Which blob, in whatever scheme the client keeps its files under. */
@@ -264,7 +264,7 @@ export interface Observation {
    * means, and a second copy could disagree with it.
    *
    * **A consumed entry stays.** The inbox is append-only (§3), and a verdict lives
-   * on the entry it judged and nowhere else (`decisions.md` default 6) — so an
+   * on the entry it judged and nowhere else — so an
    * entry that carried one and were dropped would take the only copy of the
    * judgement with it, and the box's last-verdict part could never be filled.
    */
@@ -319,7 +319,7 @@ export interface Session {
  * the state this pair was in until it existed.
  *
  * There is no money in it. The model runs on the caller's own machine
- * (`docs/decisions.md` row 20), so nothing is billed, and the only number a server
+ * so nothing is billed, and the only number a server
  * reports is tokens.
  */
 export interface TokenUsage {
@@ -338,7 +338,7 @@ export interface Turn extends TokenUsage {
    * Always `0`, and that is the honest figure rather than a forgotten one.
    *
    * Nothing is billed: the model runs on the caller's own machine
-   * (`docs/decisions.md` row 20), so a currency number would have to be invented out of
+   * so a currency number would have to be invented out of
    * a price list nobody here quoted — exactly the "a number chosen at a call site is a
    * number no measurement stands behind" the repository refuses elsewhere. What a turn
    * spends is its tokens, and they are above it in `TokenUsage`.

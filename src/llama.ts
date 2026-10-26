@@ -30,7 +30,7 @@
  * all **56** image cases were read through `/v1/chat/completions` to within
  * **0.0011** per case of the recorded rig, keeping the shipped cut's figures exactly
  * (41/56 at 0.600, `act` 13/28, `ignore` 28/28 — `remeasured.json`'s own numbers),
- * which is the condition `docs/decisions.md` row 22 set and row 23 records.
+ * which is the condition the picture path had to meet.
  *
  * **The picture's place is the measured one, and it is not "wherever".** It travels
  * between the box's text and the artifact's last part, because that is where the
@@ -41,8 +41,8 @@
  *
  * **The estimator is the calibration's, not a convenient one.** The shipped cut was
  * measured as the full next-token distribution summed over *every* token whose
- * decoded form strips to the option — `calibration/provenance.md`, and now
- * `docs/decisions.md` row 19. So the same case read the other way — one masked id —
+ * decoded form strips to the option — `calibration/provenance.md`.
+ * So the same case read the other way — one masked id —
  * would not be a different implementation of this cut, it would be a different cut.
  * The reading below is therefore the summed one, and `readingOf` is where that is
  * enforced rather than remembered.
@@ -139,8 +139,8 @@ export interface LlamaServer {
    *
    * Optional, and its absence is a refusal rather than a silent text-only reading: a
    * box that carries a picture and a transport that cannot read its bytes used to
-   * produce a verdict from the caption alone, which is the defect row 22 was written
-   * for, one layer down.
+   * produce a verdict from the caption alone, which is the defect the picture path exists
+   * to prevent, one layer down.
    */
   loadMedia?: (media: BoxMedia) => Promise<Uint8Array>;
   /** What to call instead of `globalThis.fetch`. A test's recorder. */
@@ -209,8 +209,8 @@ export function llamaWatchModel(server: LlamaServer): WatchModel {
  *
  * 1. **The caller can produce the bytes.** `box.ts` keeps `key` opaque, so this file
  *    has no way to resolve one and will not invent a path. A box with a picture and
- *    no `loadMedia` is refused, because the alternative is the very thing row 22 was
- *    written for: `act` or `ignore` read off a caption while the reading looks like
+ *    no `loadMedia` is refused, because the alternative is the very thing the picture path
+ *    exists to prevent: `act` or `ignore` read off a caption while the reading looks like
  *    one the model reached with the picture in front of it.
  * 2. **The server has a projector.** `/props` `modalities.vision` is the server's own
  *    statement that an image part will be encoded rather than skipped, and a server
@@ -242,7 +242,7 @@ async function readWithPictures(
         'bytes: box.ts keeps a picture key opaque, so the caller supplies a loader ' +
         '(LlamaServer.loadMedia) rather than have a file path guessed here. Judging the ' +
         'text alone would answer from the caption while looking like a verdict reached ' +
-        'with the picture in front of the model (docs/decisions.md row 23)',
+        'with the picture in front of the model',
     );
   }
   if (!(await canSee())) {
@@ -251,7 +251,7 @@ async function readWithPictures(
         `${JSON.stringify(picture.key)}) and this server reports no projector: /props ` +
         'modalities.vision is not true, so the image would be dropped on the way in and ' +
         'the reading would come from the caption alone. Start the server with an mmproj ' +
-        '(`--mmproj`) so it can see (docs/decisions.md row 23)',
+        '(`--mmproj`) so it can see',
     );
   }
   const user = userTurn(server.artifact, input.prompt.text);
@@ -280,7 +280,7 @@ function onePicture(media: BoxMedia[]): BoxMedia {
     `this judgement's box carries ${media.length} pictures and this transport was ` +
       'measured on one per box: where a second picture sits relative to the first was ' +
       'never replayed, and the placement is what the reading depends on ' +
-      '(calibration/vision/server-transport-images.json; docs/decisions.md row 23)',
+      '(calibration/vision/server-transport-images.json)',
   );
 }
 
@@ -327,7 +327,7 @@ function splitAtQuestion(
  * A rejected probe is not remembered: a server that was unreachable for one tick may
  * be up for the next, and caching the failure would turn a blip into a permanent
  * refusal. `propsOf` is reused rather than a bare `modalities` read, so a
- * picture-bearing judgement also gets the window and template checks of row 21 — the
+ * picture-bearing judgement also gets the window and template checks the preflight makes — the
  * ones a box carrying an image is in more need of, not less.
  */
 function visionProbe(server: LlamaServer): () => Promise<boolean> {
@@ -412,7 +412,7 @@ export interface ServerShape {
    *
    * Read from `/props` and acted on: a box that carries a picture is refused when this
    * is `false`, because the image part would be dropped on the way in and the reading
-   * would come from the caption alone (`readWithPictures`, decisions row 23).
+   * would come from the caption alone (`readWithPictures`).
    */
   vision: boolean;
 }
@@ -506,7 +506,7 @@ async function requireTemplate(server: LlamaServer): Promise<ServerShape> {
  *
  * How much room a turn *should* have left is **not** decided here. That would be a
  * number, and a number chosen at a call site is a number no measurement stands behind
- * (`box.ts` on `window`, `docs/decisions.md` rows 12 and 21).
+ * (`box.ts` on `window`).
  */
 export async function requireChatShape(
   server: LlamaServer,
@@ -770,7 +770,7 @@ export interface ChatTurn {
  * **No generation budget is passed, and that is deliberate.** `max_tokens`, a
  * temperature and the rest of the sampler are numbers, and the record this repository
  * keeps about numbers is that a value chosen at a call site is a value no measurement
- * stands behind (`box.ts` on `window`, `docs/decisions.md` rows 12 and 21). A turn's
+ * stands behind (`box.ts` on `window`). A turn's
  * length is bounded by the server's own window instead — and what a caller can and
  * cannot afford to read is not this function's to decide.
  *

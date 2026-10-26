@@ -59,7 +59,7 @@ estimator `../provenance.md` describes for the text run.
 comes through `libmtmd` and `libllama` from a llama.cpp built at `701fd25`, with a one-shot
 scorer that loads the checkpoint and prints the distribution. And the checkpoint is the
 **Q4_0** file rather than whichever was to hand, because that is the quant
-`docs/decisions.md` names as bundled — the point of the run is to describe the artifact the
+ the kernel declares as bundled — the point of the run is to describe the artifact the
 kernel would ship. Both model files were checked against the SHA-256 the hub publishes for
 them before anything was measured; the hashes are in `measured.json`.
 
@@ -99,7 +99,7 @@ prompt and the 32 cases all fixed, a cut of **0.150** scores the same checkpoint
 in either half exceeds p_act 0.134, while act cases have medians of 0.616 and 0.735, so the
 classes barely overlap and it is the **0.600 cut slicing through the middle of the act range**
 that produces most of the misses, not a failure to see. The cut was calibrated on text cases
-(`docs/decisions.md` row 12) and does not transfer to image-bearing messages. Choosing it on
+and does not transfer to image-bearing messages. Choosing it on
 one half and scoring the other gives 0.150 from each half independently, cross-validated at
 0.906 — so the finding is not a cut picked on the cases that then scored it, though two folds
 of sixteen synthetic screenshots still is not a calibrated operating point.
@@ -140,7 +140,7 @@ confirms the interval and states what moving costs — next section.
 
 ## A set written to choose the cut, and what moving it costs
 
-`boundary.json` is the set the first two could not be. Line 25 and `docs/decisions.md` row 12 both
+`boundary.json` is the set the first two could not be. Line 25 and this record both
 ended at "choosing a cut for the image path needs a set written for that purpose", and the first 32
 could not supply one: their accuracy-maximal interval, (0.134, 0.168], was pinned by exactly one
 case on each side — `i6` at 0.1340 and `a8` at 0.1680 — so the boundary rested on two pictures
@@ -194,7 +194,7 @@ difference.
 **The picture was appended after the question.** The shipped shape is the artifact's order:
 the system line, `Message: <caption>`, the picture, the question. The rig put the marker at
 the very end instead, so the model read *"…Answer act or ignore."* and only then met the
-image. `agent-lifecycle.md` §2 and `decisions.md` row 17 both say the picture reaches the
+image. `agent-lifecycle.md` §2 says the picture reaches the
 judgement with the message it belongs to, so the rig was wrong and the prose above was
 right. **The prompt also ended without the question part's trailing space**, which `watch-v1`
 declares as `after: " "` and `src/prompts.ts` appends — that space is the boundary the option
@@ -236,7 +236,7 @@ better on **both** paths and costs no precision on either: text 20/24 → 24/24,
 41/56 → 48/56, `ignore` 28/28 either way. That is not a trade, so the earlier framing — a
 second cut, or a choice between missing incidents and sending what it should not — was an
 artefact of the wrong rig too. `src/prompts/watch-v1.json` still declares 0.600 and the cut is
-not changed here; choosing it is `decisions.md` row 12's, and this record only says what the
+not changed here; choosing it belongs to the design, and this record only says what the
 labelled sets now say.
 
 ## The Chinese half, measured on its own
@@ -279,9 +279,9 @@ before, and not enough to rank models on Chinese vision.
   rank models on vision.
 - **The estimator.** The scorer reads the whole next-token distribution, summed over every
   token that spells the option. The kernel's own mask names a single id per option, and this
-  sentence used to say that difference *was already recorded* in `docs/decisions.md` — it was
-  recorded nowhere, and four files repeated the claim. The row exists now (`docs/decisions.md`
-  row 19), and it settles the reading rather than describing two: the runtime sums the
+  sentence used to say that difference *was already recorded* somewhere — it was
+  recorded nowhere, and four files repeated the claim. The reading is settled now, and it is not
+  two readings: the runtime sums the
   distribution as the measurement did, and `calibration/vision/server-transport.json` shows that
   transport reproducing this file's text set exactly — AUC 1.000, 20/24 at 0.600, per-case
   difference at most 0.0008. What is still open on that path is the images: `/completion` takes
@@ -289,7 +289,7 @@ before, and not enough to rank models on Chinese vision.
   at all, and none should be quoted as if it had.
 - **No rule was changed.** The 0.600 cut is unchanged in `src/prompts/watch-v1.json`. The
   re-measurement above says one cut near 0.39 serves both paths and dominates 0.600 on each, but
-  choosing it is `decisions.md` row 12's to do, not a measurement's to declare.
+  choosing it belongs to the design, not to a measurement.
 - **The Chinese reading is 12 cases.** Enough to call the multilingual half measured and unmet;
   not enough to rank models on Chinese vision, and not enough to say whether the deficit is the
   script, the pictures this set chose, or the model's training mix.

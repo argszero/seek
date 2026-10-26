@@ -1,6 +1,6 @@
 {
  "_what_this_is": "A third image set, written to CHOOSE a cut for the image path rather than to describe the model.",
- "_why_they_exist": "src/README.md line 25 and docs/decisions.md row 12 both end at the same sentence: choosing a cut for image-bearing messages needs a set written for that purpose, and none had been. On the first 32 cases the accuracy-maximal cut is the interval (0.134, 0.168], pinned by exactly one case on each side (i6 and a8), so the boundary rested on two pictures that were never chosen to be boundary cases.",
+ "_why_they_exist": "src/README.md line 25 ends at the same sentence: choosing a cut for image-bearing messages needs a set written for that purpose, and none had been. On the first 32 cases the accuracy-maximal cut is the interval (0.134, 0.168], pinned by exactly one case on each side (i6 and a8), so the boundary rested on two pictures that were never chosen to be boundary cases.",
  "source": "hand-written in this project's own session (seek-opensource-task), 2026-10-25, after calibration/vision/probe.json was produced",
  "question": "Do you need to do something about this message? Answer act or ignore.",
  "labels": {

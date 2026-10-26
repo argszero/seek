@@ -7,8 +7,8 @@
 **Every document ships in both English and Chinese, and the two are kept in step.** The convention is a suffix beside the original, never a parallel tree:
 
 ```
-README.md            README.zh-CN.md
-docs/decisions.md    docs/decisions.zh-CN.md
+README.md              README.zh-CN.md
+docs/host-rulings.md   docs/host-rulings.zh-CN.md
 ```
 
 **Both halves are the document.** When they disagree, that is a defect in the pair and is fixed at once, not a hierarchy where one wins by default. So a change to an English file is not finished until its Chinese twin is changed in the same commit; a pull request that updates one and not the other is incomplete.
@@ -25,14 +25,14 @@ The design is settled and the kernel is being written. **`src/README.md` is the 
 
 ## What not to do
 
-- **Do not write behaviour the documents do not state.** Every rule comes from `docs/host-rulings.md`, `docs/decisions.md` or `docs/design/`. Where they are silent, the table of defaults in `docs/decisions.md` records the choice that was made and the word that would change it; where even that is silent, ask before building it. A rule invented in code is the one thing here that has to be undone later.
+- **Do not write behaviour the documents do not state.** Every rule comes from `docs/host-rulings.md` or `docs/design/`. Where both are silent, ask before building it. A rule invented in code is the one thing here that has to be undone later.
 - **Do not refactor `prototype/`.** It is an archive of the previous version, kept to show what a Feishu-style layout looks like. It is not the starting point: its data model is single-user and incompatible with this one.
 
 ## Rules
 
 1. **Settle the data model before the interface.** Everything visible on screen must map to an entity. If it does not, the design has a hole.
 2. **The host's rulings are the base** (`docs/host-rulings.md`): what he decided, stated as it stands, carrying no dates and no superseded entries. Everything else answers to it.
-3. **`docs/decisions.md` holds what the rulings do not**: the facts checked outside this repository, what the design had to derive from a ruling, and every number the host left open. A default is listed as a default, with the word that would change it — never dressed up as a ruling.
+3. **A figure lives where it is used.** What was measured is recorded in `calibration/`, and what the design had to derive from a ruling is stated in `docs/design/`. Neither is dressed up as a ruling.
 4. **A document holds the result, not the process.** What a rule used to be, what it was changed into and why do not appear; the git log carries that.
 5. **Say it plainly.** Avoid invented jargon; if a new term is unavoidable, define it the first time it appears.
 

@@ -160,7 +160,7 @@ export class SeekStore {
    * What is still waiting to be taken: the queue the loop sees.
    *
    * A consumed entry stays in the record (its verdict lives on it and nowhere
-   * else — `decisions.md` default 6), so "the queue" and "the inbox" are no longer
+   * else), so "the queue" and "the inbox" are no longer
    * the same list. This is the difference, and it is a read: nothing is moved.
    */
   pending(botId: Id): Observation[] {
@@ -210,7 +210,7 @@ export class SeekStore {
    *
    * **What is taken is marked `consumed`, not removed.** The entries are returned
    * to the caller, which is where a verdict is written on them — and a verdict
-   * lives on its entry and nowhere else (`decisions.md` default 6). Splicing them
+   * lives on its entry and nowhere else. Splicing them
    * out here would mean the judgement's only copy is destroyed by the same tick
    * that produced it, and the box's last-verdict part could never be filled: the
    * mark is what makes a verdict survive to be read back.
@@ -339,7 +339,7 @@ function shapeOf(value: unknown): string {
  * atomic, so `save()` does not lose data; `load()` did, and then committed it.
  *
  * That is the one failure a local-only store has no answer for. There is no other copy:
- * `docs/decisions.md` and the README both put the data in the client and nowhere else,
+ * The design and the README both put the data in the client, and nowhere else,
  * so a read that silently reinterprets the file is a read that can destroy the only
  * copy of a person's history, and the next `save()` makes it permanent.
  *
@@ -359,7 +359,7 @@ function shapeOf(value: unknown): string {
  * later will make every file written before it unreadable, and that pressure is the
  * point: the alternative is a version boundary crossed in silence, which is the same
  * defect one release later. A migration written when the shard is added is the cost,
- * and `docs/decisions.md` default 14 already argues that a file read as configuration
+ * and the design already argues that a file read as configuration
  * should fail loudly rather than quietly mean something else.
  *
  * **Keys outside the eleven are kept, not refused.** `save()` writes `this.data`

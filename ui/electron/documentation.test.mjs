@@ -36,7 +36,7 @@
  * The paragraph stood at two release states — before the two halves were wired, and after —
  * as though naming the boundary at `v0.1.0` made every later release the second one. It does
  * not: `v0.1.1` and `v0.1.2` are a third, with both halves wired in the code and the four
- * artifacts they read in no package at all (`docs/decisions.md`, default 26), so naming a
+ * artifacts they read in no package at all, so naming a
  * server on either is refused rather than answered — and that was the state the release page
  * was serving while the paragraph named two. Two things came of it. The paragraph now names
  * each state a reader can land in, and this comment names that paragraph by its subject

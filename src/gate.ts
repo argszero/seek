@@ -123,8 +123,7 @@ export function classify(
  * holding anything that fast-passes is an act tick however much chatter arrived
  * with it.
  *
- * A settled `ignore` is recorded on the entry it judged, and nowhere else
- * (defaults table row 6): the verdict is the observation's, because the room's
+ * A settled `ignore` is recorded on the entry it judged, and nowhere else: the verdict is the observation's, because the room's
  * message log is a shared fact and a per-reader judgement on it would have to be
  * copied once per bot. A fast-pass entry skips the verdict altogether (see
  * `data-model.md`, the Observation row), and a `judge` entry has none yet —

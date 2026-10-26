@@ -1,7 +1,7 @@
 /**
  * One roster claim meeting one server: which model this half is supposed to be.
  *
- * `agents.yml` lets a row declare `model` (defaults 15), `Agent.model` carries it, and
+ * `agents.yml` lets a row declare `model`, `Agent.model` carries it, and
  * **until this module nothing read it** — so a person could write a model name, get no
  * complaint, and be served by whatever was in front of the port. That is the failure
  * this repository keeps writing about in another form: a number that looks like a
@@ -11,7 +11,7 @@
  *
  * **It takes a role now, and that is the whole reason it is a module.** The check was
  * written for the watch seam, which is the half the cut was measured for, and
- * `docs/decisions.md` row 24 recorded the tension by hand: the `work` row's model
+ * The tension was recorded by hand: the `work` row's model
  * belongs to *another server*. That server now exists (`work-server.ts`), so the same
  * claim has to be compared twice, against two different ports — and comparing the work
  * row against the watch server would refuse every correct roster. A copy of this

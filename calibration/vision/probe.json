@@ -1109,13 +1109,13 @@
  },
  "the_finding_that_matters": {
   "what": "The control's 9/16 at the shipped 0.600 is not the model's ceiling on these cases. At a cut of 0.150 the same checkpoint, same prompt, same cases score 0.906 with act 13/16 and ignore still 16/16 perfect.",
-  "why_the_cut_is_wrong_here": "0.600 was calibrated on text cases (docs/decisions.md row 12). On image-bearing messages the probabilities sit lower: across both halves no ignore case ever exceeds p_act 0.134, while act cases have medians of 0.616 and 0.735 and minimums of 0.095 and 0.024. The classes barely overlap — AUC 0.891 — but 0.600 slices through the middle of the act range.",
+  "why_the_cut_is_wrong_here": "0.600 was calibrated on text cases. On image-bearing messages the probabilities sit lower: across both halves no ignore case ever exceeds p_act 0.134, while act cases have medians of 0.616 and 0.735 and minimums of 0.095 and 0.024. The classes barely overlap — AUC 0.891 — but 0.600 slices through the middle of the act range.",
   "not_self_chosen": "The cut was not picked on the cases that then scored it: choosing it on one half and scoring the other gives 0.150 from each half independently, with cross-validated accuracy 0.906 (heldout 15/16, first 14/16).",
   "still_a_32_case_result": "Two folds of sixteen is not a calibrated operating point, and both halves are synthetic screenshots. What it establishes is where the gap lives, not what the cut should be."
  },
  "what_was_not_measured": [
   "The text path was not re-measured, so the claim that image verdicts sit lower than text ones rests on the two sets' own earlier readings (text AUC 1.000 at 0.600 on set4) rather than on a run that interleaves them.",
-  "No cut for image-bearing messages is proposed here. Changing the operating point is docs/decisions.md row 12, and choosing it needs a set written for that purpose.",
+  "No cut for image-bearing messages is proposed here. Changing the operating point is not a measurement's to declare, and choosing it needs a set written for that purpose.",
   "One message with one image, rendered screenshots, 32 cases — the same limits the two reading files carry."
  ]
 }

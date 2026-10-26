@@ -151,7 +151,7 @@ test('a store that is not open yet says so instead of throwing', () => {
   // Both halves are read out of the same absent host, so a window that opened before the
   // store carries two placeholder readings rather than two missing fields — a strip whose
   // fact is `undefined` is drawn by whatever the renderer does with `undefined`, which is
-  // how a fallback starts looking like a configuration (`docs/decisions.md` row 27).
+  // how a fallback starts looking like a configuration.
   assert.deepEqual(snapshot.stage1, { server: null, refusal: null, pending: null })
   assert.deepEqual(snapshot.stage2, { server: null, refusal: null, pending: null })
 })
@@ -162,7 +162,7 @@ test('a store that is not open yet says so instead of throwing', () => {
  * "no server" is the state this build ships in; "a server in use" is the measured watch
  * model; "a server that was named and not used" is a failure. A window that drew the third
  * like the first would be showing a fallback as a configuration, which is the one thing a
- * silent switch of mode cannot be allowed to do (`docs/decisions.md` row 20).
+ * silent switch of mode cannot be allowed to do.
  */
 test('the snapshot says which stage 1 it is, and a refusal is not the same reading as silence', () => {
   const off = snapshotOf(seeded(), '/tmp/seek.json')
@@ -181,7 +181,7 @@ test('the snapshot says which stage 1 it is, and a refusal is not the same readi
 /**
  * A picture reaches the interface as the kernel's own reference, never as bytes.
  *
- * `docs/decisions.md` row 17 gives the kernel `media` on a message — one `{key, mime}` —
+ * The design gives the kernel `media` on a message — one `{key, mime}` —
  * and says the bytes are the client's business. The snapshot is the seam between the two,
  * so it is the one place where getting this wrong is silent: a `kind` dropped here draws a
  * picture message as a text message with nothing in it, and a `media` dropped here draws a

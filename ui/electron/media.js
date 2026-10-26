@@ -3,7 +3,7 @@
 /**
  * The client's half of a picture message.
  *
- * `docs/decisions.md` row 17 settles what the *kernel* carries: a message whose `kind` is
+ * The design settles what the *kernel* carries: a message whose `kind` is
  * `image` names one `{key, mime}` reference in `media`, and **the bytes are not in the
  * store** — the store rewrites its shards whole on every save, so an inlined picture would
  * be re-serialised on every unrelated turn. The row says the rest in one clause: *"naming

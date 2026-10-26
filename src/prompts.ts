@@ -1,6 +1,6 @@
 /**
  * The watch prompt, as a versioned artifact on disk rather than a string built at
- * a call site (src/README.md line 27, `docs/decisions.md` §"the question put to
+ * a call site (src/README.md line 27, and the prompt artifact's §"the question put to
  * the watch model").
  *
  * Why the prompt is a file and not a template literal in `watch.ts`: rewording
@@ -317,7 +317,7 @@ function assertArtifact(value: unknown, source: string): PromptArtifact {
  * with a number nobody measured.
  *
  * What the facts are, and what stays out: the identity arrives as `AgentIdentity`
- * (default 16 — facts, not a sentence) and the entries arrive already stripped of
+ * (facts, not a sentence) and the entries arrive already stripped of
  * the watch side's verdict and reason (`turn.ts`, `handOver`). The one thing this
  * file adds to the record is the line §4 says opens such a turn — *"you decided to
  * say this yourself; nobody called you"* — and it belongs in the artifact for the
@@ -360,7 +360,7 @@ export interface WorkArtifact {
    * Here rather than beside the transport, for the reason the rest of the prompt is
    * here: a tool's name, its description and its argument schema are text a model
    * reads, so they are prompt text — and prompt text is a versioned artifact rather
-   * than a string built at a call site (`docs/decisions.md` row 18). Which tools the
+   * than a string built at a call site. Which tools the
    * runtime can actually *execute* is a different fact, and `work-server.ts` refuses
    * at bind time when the file offers one it does not know.
    *

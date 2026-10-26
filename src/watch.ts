@@ -28,7 +28,7 @@
  *   0.98, far from even, so a default in here would be a wrong answer wearing the
  *   shape of a considered one. `threshold` has no default and cannot be omitted.
  * - **The question, and the order it is asked in** (checklist line 27,
- *   `decisions.md` "the question put to the watch model is part of the contract").
+ * **the prompt artifact's** "the question put to the watch model is part of the contract").
  *   Rewording alone moved one model's discrimination from 0.09 to 0.77 and
  *   inverted it between Chinese and English, so the prompt is a versioned artifact
  *   read from a file (`prompts.ts`, `src/prompts/watch-v1.json`) — never a string
@@ -48,7 +48,7 @@
  *   unreachable and reads as a confident wrong answer; nothing here may assume the
  *   two ids are the same, and nothing here may pick a tokeniser, which is the
  *   model's.
- * - **Where the verdict lives** (`decisions.md` default 6): on the entry it judged,
+ * - **Where the verdict lives**: on the entry it judged,
  *   and nowhere else. Nothing here keeps a copy.
  *
  * **The resident context is this file's, and the tokens are still the model's.** §4
@@ -85,7 +85,7 @@ import type { Id, Observation, Verdict } from './types.ts';
  * The text a judgement continues from, as one string.
  *
  * `version` is part of the value because the operating point is calibrated
- * *against* a prompt: `decisions.md` §"the question put to the watch model" makes
+ * *against* a prompt: the prompt artifact's §"the question put to the watch model" makes
  * the two one contract. `text` is what was actually encoded — handed to the model
  * exactly as it stands, and **assembled by this runtime** from the versioned
  * artifact (`prompts.ts`) and the box, never left for the model to lay out. A
@@ -587,7 +587,7 @@ function checkedMask(mask: OptionBinding): OptionBinding {
  * Not here, deliberately: the counts, the last verdict, who spoke and the caller's
  * question set. They change with every tick, so a head that claimed them would be
  * invalidated by the next arrival — which is the cost the whole mechanism exists to
- * avoid. `decisions.md` default 11 is the row that says so.
+ * avoid. That is why the counts are not in the head.
  *
  * Serialised as a JSON array rather than joined with a separator: a summary is free
  * text, and a delimiter it can contain is a key two different heads can share.
@@ -750,7 +750,7 @@ function bindOne(
  * The operating point in force, checked against the question it claims to belong to.
  *
  * A cut outside (0, 1) is not a cut: at 0 every answer acts and at 1 none does,
- * and neither is a decision. A version mismatch is the one `decisions.md` warns
+ * and neither is a decision. A version mismatch is the one the design warns
  * about — a well-meant prompt edit that silently moves the threshold — so it is
  * refused here instead of being discovered from the verdicts later.
  *

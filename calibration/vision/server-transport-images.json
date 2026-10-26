@@ -1,6 +1,6 @@
 {
  "_what_this_is": "The image calibration re-read through a local llama.cpp HTTP server, case by case against the recorded one-shot CLI rig, to show that the transport the kernel uses reads the same picture the rig did.",
- "_why_this_file_exists": "The transport reaches the watch model over a server (src/llama.ts), and /completion -- the endpoint the text run was measured through -- takes no projector. So the image figures in this directory had been taken on the one-shot llama-mtmd-cli rig and were never replayed over HTTP, and src/llama.ts refused a box carrying a picture rather than send one over a route nobody had measured (docs/decisions.md row 22). Row 22 named its own release condition: replay the image set through the server and show the reading keeps the cut. This is that replay. Without it, sending a picture would be a probability read over an unmeasured route, which is row 19's failure one layer down -- the number would move while the artifact stood still.",
+ "_why_this_file_exists": "The transport reaches the watch model over a server (src/llama.ts), and /completion -- the endpoint the text run was measured through -- takes no projector. So the image figures in this directory had been taken on the one-shot llama-mtmd-cli rig and were never replayed over HTTP, and src/llama.ts refused a box carrying a picture rather than send one over a route nobody had measured. The condition was named: replay the image set through the server and show the reading keeps the cut. This is that replay. Without it, sending a picture would be a probability read over an unmeasured route, which is the estimator's failure one layer down -- the number would move while the artifact stood still.",
  "date": "2026-10-25",
  "measured_on": "this machine, CPU/Metal, no network",
  "model": {
@@ -87,7 +87,7 @@
  "what_this_settles": [
   "All 56 image cases reproduce the rig's recorded reading to within 0.0011 per case (mean 0.0003), so sending a picture over HTTP reads the same quantity the shipped cut was taken on.",
   "The pooled figures are the record's own: 41/56 at the shipped 0.600 (act 13/28, ignore 28/28) and 48/56 at 0.4042 -- exactly what remeasured.json holds, so the gap at 0.600 is the operating point and not the transport, the same conclusion the text replay reached.",
-  "The cut does not move on this account. The text set needs 0.4042 or lower for 24/24 and 0.4042 is also the best the image sets reach (48/56), so one cut near 0.40 still serves both paths; moving 0.600 remains docs/decisions.md row 12's to do.",
+  "The cut does not move on this account. The text set needs 0.4042 or lower for 24/24 and 0.4042 is also the best the image sets reach (48/56), so one cut near 0.40 still serves both paths; moving 0.600 remains the design's to do.",
   "The endpoint question is closed for text: /v1/chat/completions and /apply-template + /completion agree to 0.0000, so a transport may keep text on the measured /completion path and take pictures through the chat endpoint without reading two different quantities.",
   "The picture reaches the model rather than being dropped: removing it changes p_act on 26 of 32 cases (mean |delta| 0.2845), which a dropped image could not do."
  ],
@@ -718,7 +718,7 @@
  ],
  "the_chinese_set_on_the_same_route": {
   "_what_this_is": "The twelve Chinese cases read through the same chat endpoint, with their images, and then swept over every cut — the same question the English probe asked a different way.",
-  "_why_it_is_here": "src/README.md line 25 and docs/decisions.md row 10 both carried a guess about the Chinese half: that its low score was the operating point, the way the English images' misses were. Sweeping the cuts answers it, and the answer is the opposite. These twelve cases are not a text set — they are hand-drawn Chinese ops dashboards whose captions carry nothing (\"the morning's\", \"the report just came out\"), so the label lives only in the pixels. The multilingual requirement and the multimodal one are therefore one measurement, and a figure quoted for Chinese is an image figure.",
+  "_why_it_is_here": "src/README.md line 25 carried a guess about the Chinese half: that its low score was the operating point, the way the English images' misses were. Sweeping the cuts answers it, and the answer is the opposite. These twelve cases are not a text set — they are hand-drawn Chinese ops dashboards whose captions carry nothing (\"the morning's\", \"the report just came out\"), so the label lives only in the pixels. The multilingual requirement and the multimodal one are therefore one measurement, and a figure quoted for Chinese is an image figure.",
   "n": 12,
   "cases_are_images": true,
   "route": "POST /v1/chat/completions, the image part present, identical to the English 56: text, picture, question",
@@ -777,12 +777,12 @@
   "the_classes_interleave": "Four of the six act images read below two of the six ignore images: z-a1 0.0646, z-a4 0.0845, z-a6 0.1341 and z-a3 0.1385 against z-i5 0.2605 and z-i1 0.2123. No threshold separates the two classes, so no cut reaches the recall the English set reaches.",
   "what_this_settles": [
    "The Chinese shortfall is the model's discrimination, not the operating point. Any cut reaches at most 8/12, one case better than the shipped 0.600's 7/12, and it buys that by firing on four of six negatives.",
-   "Moving default 12 is an English-only remedy: the English image set gains 41/56 to 48/56 from a lower cut with ignore held at 28/28, while the Chinese set cannot be moved by any cut at all.",
+   "Moving the cut is an English-only remedy: the English image set gains 41/56 to 48/56 from a lower cut with ignore held at 28/28, while the Chinese set cannot be moved by any cut at all.",
    "The multilingual half and the multimodal half are one measurement. A Chinese figure is an image figure, and quoting it as a text result would misdescribe both."
   ],
   "what_this_does_not_settle": [
    "Nothing about whether another checkpoint or a larger model clears the Chinese bar — that is line 25's open question, and it needs a model, not a measurement of this one.",
-   "Nothing about the cut itself: 0.600 is what the artifact declares and what governs, and moving it is docs/decisions.md row 12's to do. This section says only that moving it would not help here.",
+   "Nothing about the cut itself: 0.600 is what the artifact declares and what governs, and moving it is the design's to do. This section says only that moving it would not help here.",
    "Twelve cases is a small set. The ceiling of 8/12 rests on it, so a wider Chinese set could raise the ceiling — but the interleaving would have to disappear for any cut to separate the classes, and interleaving is not a small-sample artefact."
   ]
  }

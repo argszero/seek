@@ -14,10 +14,10 @@
  * file.** On 2026-10-25 `how_the_probability_was_read` still said *"the measurement
  * and the runtime do not read the same estimator today"*, named `bindOptions` as the
  * runtime's reader, and called the difference *"a stated open tension, not a settled
- * fact — docs/decisions.md carries it with the word that would change it"*. Three of
+ * fact — the design carries it with the word that would change it"*. Three of
  * those four things were false at once: `src/llama.ts`'s `readingOf` sums every
  * candidate whose decoded form spells the option, `src/llama.test.ts` asserts that
- * sum, and `docs/decisions.md` row 19 settles the reading rather than carrying it as
+ * sum, and the design settles the reading rather than carrying it as
  * open. And `what_was_not_measured` still led with *"vision: no image case was ever
  * run"* while `model.vision_projector`, eleven lines above it in the same object,
  * reported vision being measured — 56 English image cases and 12 Chinese, 41/56 at

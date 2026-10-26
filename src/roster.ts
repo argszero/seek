@@ -5,7 +5,7 @@
  * `agents.yml` registers **agents**, not bots, each bot is the grouping, a bot
  * may hold more than two rows and nothing caps it. What the ruling does not
  * spell out is the file's shape or when it is read, so both are recorded in
- * `docs/decisions.md` as defaults (rows 14 and 15) rather than invented here.
+ * the design as defaults rather than invented here.
  *
  * **The file is the roster, and the store's `agents` shard is derived from it.**
  * The ruling gives the reason for keeping identity off the agent — *"a rename or
@@ -38,7 +38,7 @@
  * default, and what the shipped roster says — claims nothing. Any other value is
  * checked when stage 1 is bound: it must equal one of the two names the server reports
  * for itself on `/props`, and a mismatch is refused rather than run (`watch-server.ts`,
- * `docs/decisions.md` row 24). `prompt` is still read by nothing: the question a
+ *. `prompt` is still read by nothing: the question a
  * judgement asks belongs to the prompt artifact, not to a roster row
  * (`agent-lifecycle.md` §"the question set is the prompt artifact's").
  *

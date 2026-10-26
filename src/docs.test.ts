@@ -138,7 +138,6 @@ test('the twin convention is read from the tree, not from a list kept beside it'
   for (const expected of [
     'README.md',
     'CONTRIBUTING.md',
-    'docs/decisions.md',
     'docs/host-rulings.md',
     'src/README.md',
   ]) {
