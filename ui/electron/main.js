@@ -20,6 +20,13 @@ const { basename, join } = require('node:path')
 
 const { addMember, closeHost, createRoom, openHostOrRefuse, postMessage } = require('./host.js')
 const { BY_MIME, mimeForPath, readMedia, saveMedia } = require('./media.js')
+const {
+  WATCH_WINDOW,
+  bundledServerPath,
+  serverChoiceFrom,
+  startBundledServer,
+  weightsDirectory,
+} = require('./server.js')
 const { snapshotOf } = require('./snapshot.js')
 
 const DEV_URL = process.env.SEEK_UI_DEV_URL
@@ -49,6 +56,27 @@ const STORE_FILE = join(DATA_DIR, 'seek.json')
 const MODEL_SERVER = process.env.SEEK_SERVER
 const MODEL_WINDOW = process.env.SEEK_WINDOW
 const MODEL_WORK_SERVER = process.env.SEEK_WORK_SERVER
+
+/**
+ * The server the app starts for itself, when nobody named one.
+ *
+ * A person who double-clicks the app cannot set an environment variable, so the three above
+ * could only ever be supplied from a terminal — which left every downloaded app on the
+ * kernel's placeholder. The package now carries `llama-server` (`extraResources`), and this
+ * is where it is started, fed to both halves and stopped. The decision lives in `server.js`,
+ * including the rule that a person who *did* name a server is not overruled.
+ */
+let modelServer = null
+
+/**
+ * Why the server this app started is no longer in use, or `null` while it is.
+ *
+ * The same fact a server the person *named* reports, in the same place: `snapshot.js` draws
+ * `refusal` as "a server that was in use and is not", and a bundled server that died
+ * mid-run is exactly that. It is held here rather than thrown because the window must stay
+ * open — the store is local and every message in it is still readable.
+ */
+let modelServerRefusal = null
 
 /** The kernel, opened once, and the one window that may be told when it changes. */
 let host = null
@@ -86,15 +114,21 @@ function createWindow() {
 }
 
 /** What the interface is allowed to see: a plain, serialisable read of the store. */
-ipcMain.handle('seek:snapshot', () =>
-  snapshotOf(
+function snapshotNow() {
+  // A bundled server that stopped replaces both halves' reason and nothing else: the origin
+  // each half was bound to is still true, and `server` is what the window prints beside it.
+  const half = (stage) =>
+    modelServerRefusal === null ? stage : { ...stage, refusal: modelServerRefusal }
+  return snapshotOf(
     host?.store ?? null,
     STORE_FILE,
-    host?.stage1 ?? null,
-    host?.stage2 ?? null,
+    half(host?.stage1 ?? null),
+    half(host?.stage2 ?? null),
     storeRefusal,
-  ),
-)
+  )
+}
+
+ipcMain.handle('seek:snapshot', () => snapshotNow())
 ipcMain.handle('seek:data-path', () => STORE_FILE)
 
 /**
@@ -237,10 +271,58 @@ ipcMain.handle('seek:media', (_event, reference) => {
  * changes.
  */
 async function start() {
+  // **Nobody named a server, so the app starts the one it carries.**
+  // `serverChoiceFrom` reads the environment and nothing else, and it answers `named` for a
+  // person who did — a terminal run is not overruled by a package that holds a binary.
+  const choice = serverChoiceFrom(process.env)
+  let server = MODEL_SERVER
+  let serverWindow = MODEL_WINDOW
+  let workServer = MODEL_WORK_SERVER
+  let startRefusal = null
+
+  if (choice.mode === 'start') {
+    // `process.resourcesPath` is a packaged app's `Contents/Resources`, which is where
+    // `extraResources` puts `server/`. An unpackaged run points at Electron's own resources
+    // instead, so it is given the directory the packaging copies *from* — otherwise the only
+    // way to see this code run would be to build a `.app` first.
+    const resources = app.isPackaged ? process.resourcesPath : join(__dirname, '..', 'resources')
+    const started = await startBundledServer({
+      binaryPath: bundledServerPath(resources),
+      weightsDir: weightsDirectory(app.getPath('userData')),
+      log: (line) => console.error(`seek: model server — ${line}`),
+      // Only a server the app has *already opened on* is this handler's business. Before
+      // that, a child that exits is `startBundledServer`'s answer — it returns the refusal
+      // itself — and reporting it here as well would say it twice, in the wrong order.
+      onStop: (how) => {
+        if (modelServer !== null) serverStopped(how)
+      },
+    })
+    if (started.refusal) {
+      // No binary, no weights, a model that would not load: every one of them is a state a
+      // first run can be in, and each is said rather than crashed. Both halves are refused
+      // together because one server answers for both — the roster's two rows name no model
+      // of their own (`FIRST_RUN_ROSTER`), so there is one origin and not two.
+      startRefusal = started.refusal
+      server = undefined
+      workServer = undefined
+    } else {
+      modelServer = started
+      server = started.origin
+      // How much one judgement may read: `src/main.ts` asks the measured watch model with
+      // `--window 24`, and `docs/decisions.md` row 20 leaves the number out of the kernel
+      // because the runtime cannot know one. This file *is* the caller, so it lives here.
+      serverWindow = WATCH_WINDOW
+      workServer = started.origin
+      console.error(`seek: the model server is ${started.origin}`)
+    }
+  }
+
   const opened = await openHostOrRefuse(STORE_FILE, {
-    server: MODEL_SERVER,
-    window: MODEL_WINDOW,
-    workServer: MODEL_WORK_SERVER,
+    server,
+    window: serverWindow,
+    workServer,
+    serverRefusal: startRefusal ?? undefined,
+    workServerRefusal: startRefusal ?? undefined,
   })
   host = opened.host
   storeRefusal = opened.refusal
@@ -263,6 +345,29 @@ async function start() {
   })
 }
 
+/**
+ * The bundled server stopped after the app had opened on it.
+ *
+ * Nothing restarts it. A server that dies is a fact about this run, and a restart loop would
+ * hide the reason behind a spinner while the child's own last words — the only place a
+ * llama.cpp start-up failure explains itself — scroll away unread. Both halves take the
+ * sentence because both were bound to the one process.
+ *
+ * The kernel keeps the judge it was built with, which is now pointed at a dead origin; a
+ * message that asks it gets a transport failure, and the strip above the room says why.
+ */
+function serverStopped({ reason, code, signal, tail }) {
+  const how =
+    reason === 'exited'
+      ? `stopped (exit ${code}${signal ? `, ${signal}` : ''})`
+      : String(reason ?? 'stopped')
+  const said = String(tail ?? '').trim() || 'it said nothing'
+  modelServerRefusal = `the model server this app started ${how}: ${said}`
+  modelServer = null
+  console.error(`seek: the model server stopped — ${modelServerRefusal}`)
+  if (win && !win.isDestroyed()) win.webContents.send('seek:changed', snapshotNow())
+}
+
 app.whenReady().then(start)
 
 app.on('window-all-closed', () => {
@@ -276,4 +381,9 @@ app.on('window-all-closed', () => {
 // due while nothing was sweeping is caught by the next start, once (`§12 (c)`).
 app.on('before-quit', () => {
   if (host) closeHost(host)
+  // **The child does not die with the app.** A process started without `detached` is
+  // reparented when its parent goes, not killed, so a quit that only closed the store would
+  // leave a `llama-server` holding a model in memory behind every launch. `stop()` sends
+  // SIGTERM synchronously, before its first `await`, so calling it here is enough.
+  if (modelServer) modelServer.stop()
 })

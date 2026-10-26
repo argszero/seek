@@ -200,6 +200,16 @@ async function seedFirstRun(mods, store, rows) {
  * `MilestoneRun.stage1Server`).
  */
 async function stageOneFor(mods, store, options) {
+  // A server the app meant to supply and could not — a build with no binary, a first run with
+  // no weights, a child that died on start-up — arrives here as a sentence rather than as an
+  // origin. It is refused before anything is bound, because there is nothing to bind to: the
+  // strip says which server was not used and why, in exactly the shape a named server's
+  // refusal has had since PR #88. Without this the app would fall back to the placeholder in
+  // silence, and "no model server" would be drawn over a server that was supposed to be there.
+  if (typeof options?.serverRefusal === 'string' && options.serverRefusal !== '') {
+    throw new Error(options.serverRefusal);
+  }
+
   const server = typeof options?.server === 'string' && options.server !== '' ? options.server : undefined;
   const rawWindow = typeof options?.window === 'string' && options.window !== '' ? options.window : undefined;
 
@@ -261,6 +271,12 @@ async function stageOneFor(mods, store, options) {
  * mid-turn, and `openHost` turns each into a fact the window shows.
  */
 async function stageTwoFor(mods, store, options) {
+  // The same fact as stage 1's, on the half that writes the words. Each half is refused on its
+  // own so that one answer does not decide the other (`openHost`'s comment says why).
+  if (typeof options?.workServerRefusal === 'string' && options.workServerRefusal !== '') {
+    throw new Error(options.workServerRefusal);
+  }
+
   const server =
     typeof options?.workServer === 'string' && options.workServer !== '' ? options.workServer : undefined;
 

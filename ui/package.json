@@ -53,6 +53,10 @@
       {
         "from": "resources/src-package.json",
         "to": "src/package.json"
+      },
+      {
+        "from": "resources/server",
+        "to": "server"
       }
     ],
     "mac": {
