@@ -172,10 +172,10 @@ test('with no server named, the placeholder decides and the window is told there
 
     const snapshot = await postMessage(host, { roomId: w.world.room, text: 'the deploy is red' })
 
-    assert.deepEqual(snapshot.stage1, { server: null, refusal: null }, 'the window carries it too')
+    assert.deepEqual(snapshot.stage1, { server: null, refusal: null, pending: null }, 'the window carries it too')
     assert.deepEqual(
       snapshot.stage2,
-      { server: null, refusal: null },
+      { server: null, refusal: null, pending: null },
       'and stage 2 is the placeholder too — nothing named, nothing refused',
     )
     const messages = messagesIn(snapshot, w.world.room)

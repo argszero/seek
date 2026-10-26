@@ -143,7 +143,9 @@ body {
    about the process, so it stays until the fact changes. `bound` is the measured model and
    `refused` is a server that was named and not used — the second must not read like the
    first, or a fallback looks like a configuration. Two strips (`stage1`, `stage2`) because
-   the two halves are two servers and either can refuse without the other.
+   the two halves are two servers and either can refuse without the other. `waiting` is the
+   fourth reading and takes the base colours on purpose: a first run fetching its weights is
+   the app working, and painting it with `refused` would report it as broken.
 
    `store` is the third, and it sits above them because it is the reason for them: a store
    the kernel would not open means no room, no message and no model to ask about any of it.
