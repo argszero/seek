@@ -2,7 +2,7 @@
  "_what_this_is": "Every calibration set re-scored in the prompt shape the kernel actually assembles, after two rig defects were found and fixed.",
  "_why_this_file_exists": "the earlier image readings were taken with the picture placed AFTER the question, and that placement moved every number: AUC 0.701 -> 0.840 on the boundary set alone. The figures in measured.json and boundary-measured.json were produced that way; this file is the corrected reading, and it is the one later work should quote.",
  "_the_two_defects": [
-  "The picture was appended after the question. calibration/vision/provenance.md said 'then the image, then the question', so the prose and the rig disagreed; the rig was wrong. The picture now rides on the message it belongs to, which is also where the box names it (agent-lifecycle §2, decisions row 17).",
+  "The picture was appended after the question. calibration/vision/provenance.md said 'then the image, then the question', so the prose and the rig disagreed; the rig was wrong. The picture now rides on the message it belongs to, which is also where the box names it (agent-lifecycle §2).",
   "The prompt ended without the question part's trailing space. watch-v1 declares after=' ' for the question, and src/prompts.ts appends it; that space is the boundary the option ids are bound at, so dropping it moves the next-token distribution. It is restored.",
   "A third shape was tried and rejected on measurement, not taste: the artifact's parts fed to the model as one flat string with no chat template scores set4.json at AUC 0.469 with act 0/12 -- below chance. The model is a chat model and needs its template; the assembled text is the user turn, not the whole prompt."
  ],

@@ -5,7 +5,7 @@
 # role gets a third row and the two that were there first need no migration.
 #
 # This file is the roster, and the store's agents are rebuilt from it every time
-# the kernel opens the store beside it (`docs/decisions.md`, defaults 14 and 15).
+# the kernel opens the store beside it.
 # A row's id is derived from its bot and its role, so a row keeps the sessions
 # and memories it had before the rebuild.
 #

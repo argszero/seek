@@ -7,7 +7,7 @@
   "file": "LFM2.5-VL-3B-Q4_0.gguf",
   "bytes": 1593894944,
   "sha256": "364224c6bd45b4ff4bf8af71f7be384ea166fa0f573d68bc0b6e10ef9ae7ae58",
-  "quant": "Q4_0 — the quant docs/decisions.md names as the bundled one, so this reading describes the shipped artifact",
+  "quant": "Q4_0 — the quant the kernel declares as the bundled one, so this reading describes the shipped artifact",
   "projector": {
    "file": "mmproj-LFM2.5-VL-3B-Q8_0.gguf",
    "bytes": 583109984,

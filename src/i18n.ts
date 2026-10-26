@@ -59,7 +59,7 @@ export type Params = Readonly<Record<string, string | number>>;
 /** A lookup bound to one catalogue. */
 export type Translate = (key: string, params?: Params) => string;
 
-/** The language a run speaks unless it is told otherwise (docs/decisions.md row 13). */
+/** The language a run speaks unless it is told otherwise. */
 export const DEFAULT_LOCALE = 'en';
 
 /** The categories `Intl.PluralRules` may select — anything else is a typo in a file. */

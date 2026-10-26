@@ -28,12 +28,12 @@
  *
  * **Two servers, not one, because a server serves one model.** `SEEK_SERVER` names the
  * watch half's server and `SEEK_WORK_SERVER` the work half's, and the reason is
- * `docs/decisions.md` row 24: a roster row's `model` is a claim about the server it is
+ * a roster row's `model` is a claim about the server it is
  * served by, checked by role. One origin reports one `model_alias`, so a store whose
- * two rows name two models cannot be served by one server — and row 24 already says the
+ * two rows name two models cannot be served by one server — and the design already says the
  * work row's model "belongs to the other server". Springing stage 2 from `SEEK_SERVER`
  * would have forced every roster onto one model, which is a decision about which model
- * reads the cut, and that is the host's (`docs/decisions.md` rows 20 and 24).
+ * reads the cut, and that is the host's.
  */
 
 const { writeFile } = require('node:fs/promises')
@@ -69,14 +69,14 @@ async function kernelModules() {
 /**
  * The roster a first run writes, and why it is a file rather than rows in memory.
  *
- * `docs/decisions.md` default 14 rejects the reading that `agents.yml` is a one-time seed:
+ * The design rejects the reading that `agents.yml` is a one-time seed:
  * the file **is** the roster, read on every open, and the store's `agents` shard is rebuilt
  * from it. Putting the agents into the store on first run and leaving no file would be
  * exactly the design that row rejects — configuration turned into state, with nothing left
  * for a person to edit afterwards. So the first run writes the file, and the ordinary open
  * path reads it back like any other roster.
  *
- * The shape is `default 15`'s subset, and it is not trusted: the text is parsed by the
+ * The shape is the roster format's subset, and it is not trusted: the text is parsed by the
  * kernel's own `parseRoster` on the open that follows, so a typo here fails the first
  * launch instead of quietly landing a bot with no agents.
  *
@@ -90,7 +90,7 @@ const FIRST_RUN_ROSTER = `# agents.yml — the roster of agents (\`host-rulings.
 # row and the two that were there first need no migration.
 #
 # This file is the roster, and the store's agents are rebuilt from it every time the kernel
-# opens the store beside it (\`docs/decisions.md\`, defaults 14 and 15). A row's id is derived
+# opens the store beside it. A row's id is derived
 # from its bot and its role, so a row keeps the sessions and memories it had before.
 #
 # A first run writes this file because a fresh install has no other way to have an agent at
@@ -217,7 +217,7 @@ async function stageOneFor(mods, store, options) {
     throw new Error(
       server === undefined
         ? 'SEEK_WINDOW gives a budget with no SEEK_SERVER: which model server to ask is ' +
-            "yours to name (`docs/decisions.md` row 20), so a budget on its own says " +
+            "yours to name, so a budget on its own says " +
             'nothing to ask it of'
         : 'SEEK_SERVER names a model server with no SEEK_WINDOW: how much one judgement ' +
             'may read is your number (`box.ts`), and this app will not choose one for you',
@@ -255,7 +255,7 @@ async function stageOneFor(mods, store, options) {
  * **This is stage 2, and it is a separate server from stage 1's.** Row 24 checks a
  * roster row's `model` claim against the server that serves that row, and one origin
  * reports one `model_alias` — so a store whose watch row names one model and whose work
- * row names another needs two servers, which is what row 24 already calls "the other
+ * row names another needs two servers, which is what the design already calls "the other
  * server". A single `SEEK_SERVER` serving both would silently collapse that into "one
  * model does everything", which is a choice about which model reads the cut.
  *
@@ -306,11 +306,11 @@ async function stageTwoFor(mods, store, options) {
  * The one bot stage 1 is bound to.
  *
  * `watchOverServer` binds **one** bot, because two of the facts it checks are that bot's:
- * the `model` its watch row declares (`docs/decisions.md` row 24) and the identity its
+ * the `model` its watch row declares and the identity its
  * agents are told. `Kernel` takes a single `judge` for every bot it drains, so this build
  * can bind exactly one. A store holding more than one is therefore refused rather than
  * bound to whichever key came first — that would check one bot's claim and then let every
- * other bot be served by whatever is in front of the port, which is the failure row 24
+ * other bot be served by whatever is in front of the port, which is the failure the claim check
  * exists to stop. The store a first run makes holds one bot, which is why this build is
  * exact there.
  */
@@ -360,7 +360,7 @@ async function openHost(storeFile, options = {}) {
   const store = await mods.store.SeekStore.load(storeFile)
 
   // Agents are rebuilt from the roster beside the store every time the kernel opens it
-  // (`docs/decisions.md`, defaults 14 and 15). `undefined` means no file was found, and
+  // `undefined` means no file was found, and
   // then the store keeps the agents it already carries — that is not an empty roster.
   let rows = await mods.roster.readRosterFor(store)
   // A first run writes both halves, and the roster it wrote is then read back through this
@@ -522,7 +522,7 @@ async function postMessage(host, input) {
   const text = typeof input?.text === 'string' ? input.text : ''
   // A picture is a message whose words may be nothing: the caption is optional, and
   // `deliver()` accepts an `image` with an empty text as long as `media` names the blob
-  // (`docs/decisions.md` row 17). A text message with no words is still not a message.
+  // A text message with no words is still not a message.
   const isPicture = input?.kind === 'image'
   if (text.trim() === '' && !isPicture) {
     throw new Error('an empty message is not a message, so nothing was sent')
@@ -549,7 +549,7 @@ async function postMessage(host, input) {
     // "media on a `text` message: only 'image' carries a picture". Dropping it here instead
     // would be this file quietly discarding the bytes a caller asked to send, and an app
     // whose picture vanished with no sentence is the silent failure this whole slice is
-    // about (`docs/decisions.md` row 17).
+    // about it.
     kind: isPicture ? 'image' : 'text',
     media: mediaOf(input?.media),
     // Who the message addresses. The kernel stores the pairs and derives its own answer from

@@ -33,7 +33,7 @@
  *   the measured watch model as soon as the caller names a server it started
  *   (`--server <origin> --window <n>`): the model comes from a server the caller
  *   supplies, named by its origin, and nothing here starts, supervises or stops
- *   that process (`docs/decisions.md` row 20). What stays true either way is the
+ * that process. What stays true either way is the
  *   one thing the printed report must never do: let a placeholder read as a bot
  *   that thought. So the report says which of the two answered. A stub that says
  *   "act" without reading demonstrates the plumbing and is evidence about
@@ -42,7 +42,7 @@
  * - **The agents are the roster's, not this file's.** `seedOneRoom` builds the
  *   people, the bot and the room and stops there; `src/roster.ts` reads
  *   `agents.yml` beside the store and rebuilds the store's agents from it
- *   (checklist lines 13 and 20, `docs/decisions.md` defaults 14 and 15). A run
+ * (checklist lines 13 and 20). A run
  *   with no roster file is a bot with no agents, and it says so rather than
  *   falling back on rows written here.
  * - **No interface.** The checklist line says "no interface", so this writes to
@@ -71,7 +71,7 @@
  * purpose: the server is the caller's to start, and how much one judgement may
  * read is the caller's number rather than one this harness may invent
  * (`box.ts`). What that does not buy is a picture: a box carrying one is still
- * refused rather than read from its caption (`docs/decisions.md` row 23), because
+ * refused rather than read from its caption, because
  * the bytes arrive through a loader this harness has no blob scheme for — and a
  * seed here writes none, so no run of this file exercises that path.
  */
@@ -220,7 +220,7 @@ export interface MilestoneOptions {
   /**
    * A stage-1 model server the caller has already started, named by its origin.
    *
-   * The kernel starts nothing and supervises nothing (`docs/decisions.md` row 20),
+   * The kernel starts nothing and supervises nothing,
    * so reaching a real judgement is the caller's act: this is the object
    * `watch-server.ts` binds stage 1 over, and `window` beside it is the budget its
    * box is filled against. An explicit `judge` wins over this one, because a
@@ -691,7 +691,7 @@ export async function main(
     throw new Error(t('cli.repeated-flag', { flag: parsed.repeated[0] }));
   }
   // The server and the box's budget arrive together or not at all. The first is
-  // whose process reads the room — the caller's, per `docs/decisions.md` row 20 —
+  // whose process reads the room — the caller's —
   // and the second is the caller's number too (`box.ts`), so either one alone is a
   // request to guess the missing half of a judgement.
   if ((parsed.server === undefined) !== (parsed.window === undefined)) {

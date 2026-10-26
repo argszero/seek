@@ -6,13 +6,13 @@
  * order and in one place:
  *
  * 1. settle the artifact — the prompt, the cut and the option ids are one contract
- *    (`prompts.ts`, `docs/decisions.md` row 18);
+ * (`prompts.ts`);
  * 2. refuse a server that cannot be read this way at all — no chat template in
  *    effect, or a window too small for the question alone (`requireServerShape`,
- *    `docs/decisions.md` row 21). Both failures come back as a number rather than as
+ *. Both failures come back as a number rather than as
  *    an error, which is why the check is here and not left to the caller;
  * 3. refuse a roster that names one model while this server serves another
- *    (`requireServedModel`, `docs/decisions.md` row 24) — the one claim in
+ * (`requireServedModel`) — the one claim in
  *    `agents.yml` nothing else in the kernel reads, and the one a reader is most
  *    likely to believe: the cut is calibrated against a model, so a run against a
  *    different one is not the same measurement;
@@ -29,14 +29,14 @@
  * **No server is started here, and none is stopped.** `LlamaServer.baseUrl` is the
  * origin of a `llama-server` somebody else is running; where the weights live and
  * who supervises that process is stated by no ruling and no measurement, so it is
- * not decided in this file. `docs/decisions.md` row 20 records the default as it
+ * not decided in this file. The design records the default as it
  * stands, together with the word that would change it.
  *
  * **A box carrying a picture needs `server.loadMedia`, and that is the caller's.**
  * `box.ts` keeps a picture's `key` opaque — how a client names a file is its business
  * — so the bytes come in through a loader travelling on the same `LlamaServer` object
  * this function is handed. Without one, a picture-bearing judgement is refused rather
- * than read from its caption (`llama.ts`, `docs/decisions.md` row 23). Nothing else
+ * than read from its caption (`llama.ts`). Nothing else
  * here changes for it: the four steps above measure the *text*, and a reading is keyed
  * by the option's own token rather than by an id (`probabilityOf`), so a picture
  * changes what the model sees and not how its answer is named.

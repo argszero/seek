@@ -36,7 +36,7 @@
  * pretending — which is also the state a judgement sees as "compaction cannot
  * run", to be degraded visibly rather than retried forever.
  *
- * **No threshold numbers are invented.** `docs/decisions.md` default 3 settles
+ * **No threshold numbers are invented.** The design settles
  * the *shape* of the line — "a number of observations, or an age, whichever
  * comes first" — and says the numbers themselves are settled by measurement,
  * which has not happened. So the lines are the caller's, and with none
@@ -65,7 +65,7 @@ export interface SummariseInput {
 export type Summarise = (input: SummariseInput) => Promise<string> | string;
 
 /**
- * When a delta has outgrown itself (`docs/decisions.md` default 3).
+ * When a delta has outgrown itself.
  *
  * Both are optional because the numbers are the host's to settle by measurement,
  * and a line nobody stated is not a line. The one stated rule is "whichever
@@ -121,8 +121,8 @@ export function digestOf(
  *
  * **Read off the record, not off the queue**, and the two are no longer the same
  * list: `drain` marks an entry consumed instead of splicing it out, because a
- * verdict lives on the entry it judged and nowhere else (`decisions.md` default
- * 6), so discarding the entry would destroy the judgement's only copy. That
+ * verdict lives on the entry it judged and nowhere else, so
+ * discarding the entry would destroy the judgement's only copy. That
  * changes what this function may read. A tick's own entries used to be gone from
  * the queue by the time a box or a compaction asked, and a caller had to hand
  * them back in (`inFlight`) for the delta to be the delta and not "the room after

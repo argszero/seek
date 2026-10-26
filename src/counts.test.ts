@@ -34,7 +34,7 @@
  * commit rather than from arithmetic, which is the whole point: the guard cannot be
  * introduced without the thing it guards being made true.
  *
- * **What is deliberately not compared is prose arithmetic.** `docs/decisions.md` and
+ * **What is deliberately not compared is prose arithmetic.** `docs/design/` and
  * `docs/design/` quote many figures (a 0.600 cut, an 0.840 AUC, 41 of 56 image cases),
  * and extracting "the documented number" from a sentence is the mistake `src/docs.test.ts`
  * records: the set of numbers in a document is noise. What is compared here is a fixed,

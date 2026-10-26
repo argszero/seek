@@ -2,7 +2,7 @@
 
 `llama-server` is built from [llama.cpp](https://github.com/ggml-org/llama.cpp) and shipped in
 the app's `Resources/server/`, so a downloaded app can answer on its own instead of asking a
-person to start a server from a terminal first (issue #89; `docs/decisions.md` row 20 — nothing
+person to start a server from a terminal first (issue #89 — nothing
 *in the kernel* starts or supervises it, the app does).
 
 ## What it is

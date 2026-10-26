@@ -133,7 +133,7 @@ test("row 3: another bot's broadcast is ignored, and the verdict lands on the en
   // Row 3's own ending: nothing else runs, and nothing is spent.
   assert.equal(result.action, 'return');
   assert.deepEqual(result.ignore, [entry]);
-  // Defaults table row 6: recorded on the entry it judged, and nowhere else.
+  // Recorded on the entry it judged, and nowhere else.
   assert.equal(entry.verdict, 'ignore');
 });
 

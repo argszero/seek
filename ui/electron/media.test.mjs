@@ -1,7 +1,7 @@
 /**
  * The client's half of a picture message.
  *
- * `docs/decisions.md` row 17 gives the kernel a reference and no bytes: a message whose
+ * The design gives the kernel a reference and no bytes: a message whose
  * `kind` is `image` names one `{key, mime}` in `media`, and *"naming a blob is a client's
  * scheme"*. This file is the tests for that scheme, and it runs under plain `node --test`
  * because the scheme is ordinary filesystem code — none of it needs a window.

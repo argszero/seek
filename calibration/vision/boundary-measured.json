@@ -7,7 +7,7 @@
   "file": "LFM2.5-VL-3B-Q4_0.gguf",
   "bytes": 1593894944,
   "sha256": "364224c6bd45b4ff4bf8af71f7be384ea166fa0f573d68bc0b6e10ef9ae7ae58",
-  "quant": "Q4_0 — the quant docs/decisions.md names as the bundled one, so this reading describes the shipped artifact",
+  "quant": "Q4_0 — the quant the kernel declares as the bundled one, so this reading describes the shipped artifact",
   "projector": {
    "file": "mmproj-LFM2.5-VL-3B-Q8_0.gguf",
    "bytes": 583109984,
@@ -491,7 +491,7 @@
   "One message, one image. A box carrying several messages or several images is not measured here.",
   "Synthetic screenshots: rendered, not captured. No chrome, scale factor or compression.",
   "n = 56 across the three sets, and this set is balanced 12/12 by construction while a real room is far more lopsided. A cut chosen on a balanced set is not a cut chosen on the traffic the kernel will see, which is why the plateau is reported as an interval and the choice inside it is left to a ruling.",
-  "The estimator reads the whole next-token distribution; the kernel masks one id per option. That tension is already recorded in docs/decisions.md."
+  "The estimator reads the whole next-token distribution; the kernel masks one id per option. That tension is recorded, and the reading is settled."
  ],
  "_correction": "The image figures here were taken with the picture placed after the question. That placement, not the model, produced the AUC 0.701 and the three false positives this file reports at a 0.151 cut. Re-scored with the picture on its message the same cases give AUC 0.840, and no negative in any of the 56 image cases fires at the best cut. See remeasured.json"
 }

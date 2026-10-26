@@ -9,7 +9,7 @@
  * a first run downloaded weights nothing read: `model-weights.js` fetched them (PR #92) and no
  * file imported it. This is the half that turns both into behaviour.
  *
- * **The kernel is not touched by this and must not be.** `docs/decisions.md` row 20 says
+ * **The kernel is not touched by this and must not be.** The design says
  * nothing *in the kernel* starts, supervises or stops the process, and its change-phrase is
  * "let the kernel start and supervise it". Spawning from the Electron main process leaves that
  * row exactly as written: the app is a caller that supplies an origin, which is all `llama.ts`
@@ -17,7 +17,7 @@
  *
  * **The person's own variables win, and are not a fallback.** A person who names a server has
  * said which model judges their rooms; starting a second one beside it would be this file
- * overruling them, and two servers answering for one bot is the state row 24 exists to
+ * overruling them, and two servers answering for one bot is the state the claim check exists to
  * prevent. So `SEEK_SERVER` (or `SEEK_WORK_SERVER`) present means this file does nothing at
  * all — it does not start, and it does not refuse.
  *
@@ -47,7 +47,7 @@ const SERVER_NAME = 'llama-server'
  * watch model" with `--server … --window 24` — so a bundled run reads its rooms the way the
  * measurements in `calibration/` read them. It is **not** a number this file is entitled to
  * invent: `box.ts` says the window is the caller's because the runtime cannot know one, and
- * row 20 leaves it out of the kernel for that reason. It therefore lives here, in the file
+ * That is why the kernel leaves it out. It therefore lives here, in the file
  * that is the caller, rather than beside the artifact.
  */
 const WATCH_WINDOW = '24'
@@ -145,8 +145,7 @@ async function freePort() {
  *
  * **Ready means answering, not started.** A process that has been spawned has not loaded a
  * model, and handing its origin to stage 1 first would make the first message of every launch
- * a refusal. So the origin comes back only once `/props` answers — the same endpoint row 24
- * has the kernel compare a roster's claimed model against.
+ * a refusal. So the origin comes back only once `/props` answers — the same endpoint the kernel compares a roster's claimed model against.
  */
 async function startBundledServer(options = {}) {
   const {

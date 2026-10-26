@@ -21,7 +21,7 @@
  *
  * 1. **settle the artifact** — the words, the split between the system line and the
  *    user turn, and the tools the model is offered are one file (`prompts.ts`,
- *    `docs/decisions.md` row 18). A tool's description is prompt text, so it is not a
+ *. A tool's description is prompt text, so it is not a
  *    string literal in this file.
  * 2. **refuse a server that could not hold the smallest possible turn** —
  *    `requireChatShape` over the assembly with no description and no entries. Refused
@@ -29,7 +29,7 @@
  *    runtime bound to a server that cannot answer runs happily and never speaks, and
  *    the only symptom is a silent bot.
  * 3. **refuse a roster that names one model while this server serves another** —
- *    `requireServedModel` on the **work** row. `docs/decisions.md` row 24 recorded that
+ * `requireServedModel` on the **work** row. The design recorded that
  *    row as belonging to a different server, which is the fact that made the check
  *    role-aware; this is the server it belongs to.
  * 4. **refuse a file that offers a tool this runtime cannot execute.** A prompt

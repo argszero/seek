@@ -118,7 +118,7 @@ test('an empty message is refused rather than delivered', async () => {
  * picture"), so this file forwards the reference verbatim and lets that sentence reach the
  * caller. Dropping it instead would answer `ok` to a send whose bytes went nowhere, and a
  * picture that vanishes with no sentence is the exact failure this slice exists to prevent
- * (`docs/decisions.md` row 17).
+ * from happening.
  */
 test('a picture sent on a text message is refused by the kernel, not dropped in silence', async () => {
   const w = await world()

@@ -173,9 +173,9 @@ jobs:
       # longer holds — the download is signed and notarized from this tag on, so macOS stops
       # objecting — and the other one still does: the package carries no model, so the bot
       # answers in the kernel's placeholder until the reader starts a `llama-server` of their
-      # own and names it (defaults 20 and 27). `Latest` claims a program that does the thing
+      # own and names it. `Latest` claims a program that does the thing
       # the product is about when it opens, and this one needs a server named first. Recorded
-      # as default 29 in `docs/decisions.md`, which is where the word that changes it is
+      # as a pre-release, and this line is where the word that changes it lives
       # written down.
       - name: Publish the release
         if: startsWith(github.ref, 'refs/tags/')

@@ -62,7 +62,7 @@ function makeVocab() {
  * A server that answers by path and records what it was asked.
  *
  * `/props` is the answer that decides whether the server is usable at all — the model it
- * names is what the roster's claim is checked against (`docs/decisions.md` row 24) — so it
+ * names is what the roster's claim is checked against — so it
  * is the one this file shapes per test.
  */
 function fakeServer(options = {}) {
@@ -300,7 +300,7 @@ test('a store holding two bots is refused rather than bound to whichever came fi
   // `watchOverServer` binds one bot, because the model it checks is that bot's watch row
   // and the identity its agents are told is that bot's. `Kernel` takes a single `judge`, so
   // a second bot would be served by the same server without its own claim being checked —
-  // the failure row 24 exists to stop, one bot over.
+  // the failure the claim check exists to stop, one bot over.
   const dir = await mkdtemp(join(tmpdir(), 'seek-ui-model-'))
   try {
     const storeFile = join(dir, 'seek.json')
@@ -325,7 +325,7 @@ test('a store holding two bots is refused rather than bound to whichever came fi
 test('a work server makes the words in the room the model’s, and the window names both', async () => {
   // Two servers, because a server serves one model and the fixture's two roster rows claim
   // two: `gate` decides whether the bot acts, `big` writes what it says
-  // (`docs/decisions.md` row 24). Binding both to one origin is the shape this test rules
+  // Binding both to one origin is the shape this test rules
   // out by measuring it — the work row's claim would be checked against `gate` and refused.
   const w = await oneBotWorld()
   const watch = fakeServer({ candidates: ACTS })

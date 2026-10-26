@@ -715,8 +715,8 @@ function Mentions({ members, mention }) {
  *
  * It reads `storeRefusal` and never `error` on purpose: `error` says "the store is not open
  * yet", which is true for a moment on every single start and is not a failure. Drawing the
- * two as one line would show a broken install as a slow one (`docs/decisions.md` row 20,
- * one layer down from the two model strips).
+ * two as one line would show a broken install as a slow one —
+ * one layer down from the two model strips.
  */
 function StoreRefused({ refusal }) {
   if (!refusal) return null
@@ -743,7 +743,7 @@ function StoreRefused({ refusal }) {
  *   mode nobody can switch is a mode nobody knows they are in.
  * - **bound** — stage 1 is the measured watch model at that origin. The origin is named
  *   because a verdict without the model that gave it is a number that looks like a
- *   measurement (`docs/decisions.md` row 24), and the line also says the *answer* is still
+ * measurement, and the line also says the *answer* is still
  *   the placeholder: stage 1 is whether to act, stage 2 is what to say
  *   (`src/main.ts`, `STUB_REPLY`), and one line drawn for both would be a lie about one.
  * - **refused** — a server was named and this build did not use it. Drawn in the error
@@ -806,7 +806,7 @@ function StageOne({ stage1 }) {
  * whose work row claims another model is a real state, and one strip for both would let
  * the working half hide the refused one. `bound` means a model wrote the words, and
  * `placeholder` means `STUB_REPLY` did — a difference a reader has to be able to see,
- * because a stub line looks exactly like a bot that thought (`docs/decisions.md` row 27).
+ * because a stub line looks exactly like a bot that thought.
  */
 function StageTwo({ stage2 }) {
   if (!stage2) return null
@@ -895,7 +895,7 @@ function Spend({ spend }) {
  */
 function Line({ message, sender, replies, inThread, onOpen, chip = false }) {
   const name = sender?.name ?? message.sender
-  // A picture is drawn because the kernel's `kind` says so (`docs/decisions.md` row 17),
+  // A picture is drawn because the kernel's `kind` says so,
   // never because the text looks like one: a message whose kind disowns its bytes is one
   // every reader drops in silence, and guessing from the text is the same drop, later.
   const picture = message.kind === 'image' && message.media ? message.media : null

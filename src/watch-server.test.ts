@@ -73,10 +73,10 @@ function makeVocab(): (content: string) => number[] {
  * a process, and nothing waits on one.
  *
  * `/props` is the one answer a caller can shape here, because what a server reports
- * about itself is what the preflight exists to refuse (`docs/decisions.md` row 21):
+ * about itself is what the preflight exists to refuse:
  * an empty `chatTemplate` is a server that will read a flat prompt, `nCtx: null` is
  * one that will not say how large its window is, and a small number is one that would
- * truncate the question. The same holds for the model it serves (`row 24`): by
+ * truncate the question. The same holds for the model it serves: by
  * default this fake stands for the model `makeWorld` gives the watch row — `'gate'` —
  * and `modelAlias: null` / `modelPath: null` is a server that names itself not at
  * all, which is a different reading from one that names another model.

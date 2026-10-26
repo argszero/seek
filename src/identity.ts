@@ -8,7 +8,7 @@
  * `role`, what it does and its home directory. The next sentence is the whole
  * reason this module has the shape it has: **"It is pushed, not stored: the
  * agent holds no copy of the bot's identity or of its siblings, so a rename or a
- * new row reaches every agent of that bot at once."** `docs/decisions.md` states
+ * new row reaches every agent of that bot at once."** The design states
  * the same rule from the other side — one copy of the name, avatar and
  * description lives on the bot.
  *
@@ -24,7 +24,7 @@
  * 27, and `prompts.ts` says why — rewording alone moved one model's
  * discrimination from 0.09 to 0.77 and inverted it between Chinese and English).
  * What the runtime owes a prompt is the facts, so they are handed over as
- * fields. `docs/decisions.md` default 16 records that reading, with the word
+ * fields. The design records that reading, with the word
  * that would change it.
  *
  * **"What it does" is the row's role and tools.** The roster carries no

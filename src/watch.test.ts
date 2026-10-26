@@ -815,7 +815,7 @@ test('the question is the artifact’s, and no caller can hand the judgement a s
 
   // The box used to take a caller's question set and hand it to the model *beside*
   // the question the artifact already asks. Two questions then reach one forward
-  // pass and only one of them was measured, which is the defect `decisions.md`'s
+  // pass and only one of them was measured, which is the defect the design's
   // "the question put to the watch model is part of the contract" was written
   // against. The seam is gone, and this is the shape a caller still arrives in: an
   // extra property on an options object — which a JavaScript caller passes happily,
