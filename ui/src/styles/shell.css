@@ -203,9 +203,268 @@ body {
   place-items: center;
 }
 
-.msg-body { display: flex; flex-direction: column; min-width: 0; }
+/* `position: relative` is the anchor the hover toolbar is placed against, and the max-width is
+   the gutter it sits in: the toolbar is drawn to the right of this box, so a body that filled
+   the column would put it outside the column. `140px` is the square plus the pill plus the
+   6px gap, rounded up — see `.msg-actions` below, which is also where the prototype's
+   `.narrow` flip is explained away. */
+.msg-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  position: relative;
+  max-width: calc(100% - 140px);
+}
 .msg-sender { color: var(--N500); font-size: 12px; }
 .msg-text { color: var(--N900); white-space: pre-wrap; }
+
+/* ---------------------------------------------------------------- message toolbar
+   Sizes measured off the reference screenshots rather than chosen: the emoji is a white square
+   26×26 (one pixel taller than the pill, which is what makes it read as a separate control),
+   2px away from a white pill 26 high holding four 24-wide cells with a 1px rule between them,
+   both at radius 6 and both carrying the same small drop shadow.
+
+   `left: 100%` against `msg-body` is the whole point: the toolbar sits behind *this message's*
+   words, so a short line gets it right after the text instead of at the far end of the column.
+   That is also why `.msg-body` above caps its own width — the flip the prototype needed
+   (`.narrow`, riding above the row when there is no room) is unreachable here, because the
+   gutter is left unconditionally. */
+.msg-actions {
+  position: absolute;
+  top: -9px;
+  left: 100%;
+  margin-left: 6px;
+  display: none;
+  align-items: center;
+  gap: 2px;
+  white-space: nowrap;
+  z-index: 2;
+}
+
+.msg:hover .msg-actions,
+.msg:focus-within .msg-actions {
+  display: flex;
+}
+
+.msg-actions .act-emoji {
+  width: 26px;
+  height: 26px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  background: var(--bg-float);
+  border: 1px solid var(--line-border-card);
+  box-shadow: var(--shadow-s2-down);
+  font-size: 15px;
+  line-height: 1;
+}
+
+.msg-actions .act-emoji { cursor: pointer; }
+.msg-actions .act-emoji:hover { background: var(--fill-hover); }
+
+.msg-actions .act-seg {
+  display: flex;
+  align-items: stretch;
+  border-radius: var(--radius-md);
+  background: var(--bg-float);
+  border: 1px solid var(--line-border-card);
+  box-shadow: var(--shadow-s2-down);
+  overflow: hidden;
+}
+
+.msg-actions .act-seg button {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* The browser's own button chrome — a 2px outset border and `buttonface` behind it — is
+     what a cell would otherwise be drawn as, and the pill would read as four boxes rather
+     than one control with rules in it. This file has no global reset, so each button that
+     wants to be bare says so (`.msg-thread` above does the same). */
+  border: 0;
+  background: transparent;
+  color: var(--icon-n1);
+  cursor: pointer;
+}
+
+.msg-actions .act-seg button + button { border-left: 1px solid var(--line-border-card); }
+.msg-actions .act-seg button:hover { background: var(--fill-hover); }
+
+/* The three surfaces the toolbar opens, in place under the message rather than as modals: a
+   reaction is chosen where it will appear, a room to forward into is chosen next to the
+   message being forwarded, and *more* opens under the glyph that opened it. */
+.react-pop,
+.more-menu,
+.forward-pop {
+  position: absolute;
+  top: 22px;
+  left: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border-radius: var(--radius-md);
+  background: var(--bg-float);
+  border: 1px solid var(--line-border-card);
+  box-shadow: var(--shadow-popup);
+}
+
+.react-pop .react-pick {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.react-pop .react-pick:hover { background: var(--fill-hover); }
+/* Already reacted with, by this person: pressing it again is the undo, and saying so before
+   the press is the difference between a toggle and a guess. */
+.react-pop .react-pick.mine { background: var(--fill-selected); }
+
+.more-menu,
+.forward-pop {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  min-width: 120px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.more-menu button,
+.forward-pop button {
+  padding: 5px 10px;
+  text-align: left;
+  font-size: 12px;
+  color: var(--N900);
+  border: 0;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.more-menu button:hover,
+.forward-pop button:hover { background: var(--fill-hover); }
+
+.forward-pop .forward-lead {
+  padding: 3px 10px;
+  font-size: 11px;
+  color: var(--text-caption);
+}
+
+/* ------------------------------------------------------------- what a message carries
+   The reaction row, the quotation a reply kept and the line a forward came from. All three
+   are drawn from the kernel's own fields (`src/types.ts`); nothing here is derived from the
+   words of the message. */
+.msg-reactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.reaction {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 11px;
+  background: var(--bg-body-overlay);
+  border: 1px solid transparent;
+  font-size: 12px;
+  color: var(--text-caption);
+}
+
+.reaction { cursor: pointer; }
+.reaction:hover { background: var(--fill-hover); }
+
+/* Mine is the border and the tint, not a second glyph: `operators[]` holds this person's id,
+   and that is the same fact the picker highlights. */
+.reaction.mine {
+  border-color: var(--primary-fill-default);
+  background: var(--fill-selected);
+  color: var(--primary-content-default);
+}
+
+.reaction-glyph { font-size: 13px; line-height: 1; }
+
+.msg-forwarded {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 1px 0 2px;
+  font-size: 12px;
+  color: var(--text-caption);
+}
+
+.msg-quote {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 2px 0 3px;
+  padding: 2px 8px;
+  border-left: 2px solid var(--line-border-card);
+  background: var(--bg-body-overlay);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  font-size: 12px;
+  color: var(--text-caption);
+  max-width: 100%;
+}
+
+.msg-quote-name { flex: none; color: var(--N600); }
+.msg-quote-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* What the next message from either box will quote. Above the composer and inset like the
+   refusal line above it, so the box keeps one border and one shape. */
+.quote-strip {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0 20px;
+  padding: 5px 12px;
+  border-left: 2px solid var(--primary-fill-default);
+  background: var(--bg-body-overlay);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  font-size: 12px;
+  color: var(--text-caption);
+}
+
+.thread-col .quote-strip { margin: 0 16px; }
+.quote-strip-name { flex: none; color: var(--N600); }
+.quote-strip-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.quote-strip-x {
+  flex: none;
+  margin-left: auto;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--text-caption);
+  font: inherit;
+  cursor: pointer;
+}
+
+/* One line answering an action whose result no snapshot carries — a copy that reached the
+   clipboard, a forward that landed in another room. Caption colour, not the refusal red:
+   it reports what happened rather than what did not. */
+.composer-note {
+  margin: 0 20px;
+  padding: 4px 12px;
+  font-size: 12px;
+  color: var(--text-caption);
+}
 
 /* A bot's avatar is a different shape, not a different colour: the palette has no
    second accent to spare, and the badge beside the name says the same thing twice. */

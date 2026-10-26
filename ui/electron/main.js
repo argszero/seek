@@ -14,7 +14,7 @@
  * handle: it asks, and the kernel answers.
  */
 
-const { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell } = require('electron')
+const { app, BrowserWindow, clipboard, dialog, ipcMain, nativeTheme, shell } = require('electron')
 const { readFile } = require('node:fs/promises')
 const { basename, join } = require('node:path')
 const { randomUUID } = require('node:crypto')
@@ -27,6 +27,7 @@ const {
   createRoom,
   openHostOrRefuse,
   postMessage,
+  reactToMessage,
 } = require('./host.js')
 const { BY_MIME, mimeForPath, readMedia, saveMedia } = require('./media.js')
 const { defaultConfigPath, readConfiguredEndpoint, wordsHalfFrom } = require('./llm-config.js')
@@ -469,6 +470,44 @@ ipcMain.handle('seek:post', async (_event, input) => {
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) }
   }
+})
+
+/**
+ * The hover toolbar's emoji square: one person's reaction, added or taken back.
+ *
+ * The same envelope as `seek:post`, and for the same reason — a refusal has to be *shown*,
+ * and a rejected renderer call would put the kernel's sentence in a console nobody reads.
+ * It broadcasts, because a reaction is written into the store and every window drawing that
+ * room has to see it. **One call both ways**: pressing the same emoji twice is the undo, so
+ * there is no second channel for removing one (`toggleReaction()` in `src/delivery.ts`).
+ */
+ipcMain.handle('seek:react', async (_event, input) => {
+  try {
+    const snapshot = await reactToMessage(host, input ?? {})
+    if (win && !win.isDestroyed()) win.webContents.send('seek:changed', snapshot)
+    return { ok: true, snapshot }
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+  }
+})
+
+/**
+ * The toolbar's *more* menu, whose one item copies a message's words.
+ *
+ * Copying writes no store, so nothing broadcasts and this is not a capability in the sense
+ * the other writes are: it is the window handing a string to the platform's clipboard.
+ * **It is a call rather than a `navigator.clipboard` write in the page**, because the page's
+ * own copy path is gated on a user gesture and answered a programmatic press with a failure
+ * — measured on the prototype, where a scripted click reported "复制失败" while a real one
+ * worked. A message with no words (a picture alone) has nothing to copy, and says so rather
+ * than clearing the clipboard into silence.
+ */
+ipcMain.handle('seek:copy', (_event, text) => {
+  if (typeof text !== 'string' || text === '') {
+    return { ok: false, error: 'this message has no words to copy' }
+  }
+  clipboard.writeText(text)
+  return { ok: true }
 })
 
 /**
