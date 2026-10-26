@@ -17,7 +17,7 @@ import { join } from 'node:path'
 import test from 'node:test'
 
 import { DEFAULT_LOCALE, catalogueFor, locales, translator } from '../../src/i18n.ts'
-import { bindCatalogue, catalogueBound, t } from '../src/catalogue.mjs'
+import { bindCatalogue, catalogueBound, size, t } from '../src/catalogue.mjs'
 
 const HERE = import.meta.dirname
 const RENDERER = join(HERE, '..', 'src')
@@ -47,6 +47,11 @@ const SAMPLES = {
   // The chat page's strips name the origin a half came from — a shape rather than a sentence,
   // which is why it is a sample here and not a key.
   origin: 'http://127.0.0.1:8080',
+  // The download line's three: two sizes already written in the language's form (`size()` in
+  // `catalogue.mjs` is what writes them) and the file's own name, which stays an identifier.
+  got: '0.2 GB',
+  all: '2.2 GB',
+  file: 'LFM2.5-VL-3B-Q4_0.gguf',
 }
 
 function paramsFor(template) {
@@ -514,6 +519,42 @@ test('every word the window draws is translated, not copied', () => {
         'and it reads as finished from the base language',
     )
   }
+})
+
+test('the download line is the window’s to write, in the language it is running in', () => {
+  // The reading a real first run produced: the download had reached part of the model, and the
+  // window drew `0.2 GB of 2.2 GB — LFM2.5-VL-3B-Q4_0.gguf` under a heading that said the
+  // weights were arriving. The heading came from the catalogue; the line under it came from
+  // `ui/electron/weights-fetch.js`, so a window in any language drew that line in English. It is
+  // composed here now, out of the facts the main process hands over — which makes the whole
+  // line, its frame and its numbers and its unit, this test's subject.
+  const facts = { received: 200_000_000, total: 2_177_004_928, file: 'LFM2.5-VL-3B-Q4_0.gguf' }
+  const line = () =>
+    t('ui.weights.arriving-amount', {
+      got: size(facts.received),
+      all: size(facts.total),
+      file: facts.file,
+    })
+
+  bindCatalogue(catalogueFor('en'))
+  assert.equal(line(), '0.2 GB of 2.2 GB — LFM2.5-VL-3B-Q4_0.gguf', 'the English line is unchanged')
+
+  bindCatalogue(catalogueFor('zh-CN'))
+  const chinese = line()
+  assert.notEqual(chinese, '0.2 GB of 2.2 GB — LFM2.5-VL-3B-Q4_0.gguf', 'the frame is not English')
+  assert.ok(chinese.includes('2.2 GB'), 'the size keeps its digits and the unit this locale writes')
+  assert.ok(chinese.includes(facts.file), 'a file key is an identifier and stays as it is (§7)')
+
+  // Nothing named is not a missing line: the same reading without a file still has words, and
+  // the zero reading keeps its decimal rather than dropping to `0 GB` beside `2.2 GB`.
+  bindCatalogue(catalogueFor('en'))
+  assert.equal(t('ui.weights.arriving-amount-no-file', { got: size(0), all: size(0) }), '0.0 GB of 0.0 GB')
+
+  // The separators are the locale's, and this is the reading that says so where English and
+  // Chinese agree: past a thousand the grouped form is `1,234.5 GB`, which no `toFixed` and no
+  // concatenated `' GB'` produces. Without it a formatter that had quietly stopped asking `Intl`
+  // would still draw this line correctly in the two languages that ship.
+  assert.equal(size(1_234_500_000_000), '1,234.5 GB', 'the number goes through the locale too')
 })
 
 test('nothing is drawn before a catalogue is bound, and the refusal says why', async () => {

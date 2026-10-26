@@ -26,6 +26,9 @@ let translate = null
 /** The instant formatter, bound once by the same call. `null` until a catalogue arrives. */
 let stamps = null
 
+/** The size formatter, bound by the same call. `null` until a catalogue arrives. */
+let sizes = null
+
 /**
  * Bind this window to one catalogue.
  *
@@ -38,6 +41,20 @@ let stamps = null
 export function bindCatalogue(catalogue) {
   const plural = new Intl.PluralRules(catalogue.locale)
   const numbers = new Intl.NumberFormat(catalogue.locale)
+  // A size is the same kind of fact as a count, and `docs/design/i18n.md` §4 names it in the
+  // table of things that must never be concatenated at a call site. `Intl` writes `2.2 GB` in
+  // English and in Chinese, `2,2 GB` in German and `2,2 Go` in French, so the unit costs no
+  // catalogue key of its own — a key beside it would be a second place to get it wrong.
+  sizes = new Intl.NumberFormat(catalogue.locale, {
+    style: 'unit',
+    unit: 'gigabyte',
+    unitDisplay: 'short',
+    // A size is read down a column of readings, so it keeps one decimal at every magnitude:
+    // `0.0 GB` beside `2.2 GB`, never `0 GB` beside `2.2 GB`. That is also the form the line
+    // already had before it moved here, so the move changes no number a person has seen.
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  })
   // A date is the same kind of fact as a count: the shape of it is the locale's, not this
   // file's. Asking for a month, a day and a time is all this window has to say so far — a
   // relative "3 minutes ago" would need plural forms and translated words
@@ -136,4 +153,26 @@ export function when(iso) {
   const at = new Date(iso)
   if (Number.isNaN(at.getTime())) return ''
   return stamps.format(at)
+}
+
+/**
+ * A byte count in the form this language writes a size.
+ *
+ * `docs/design/i18n.md` §4 puts a file size in this layer for two reasons, and both are the
+ * shape of this function: the number's separators are the locale's, and the unit is written here
+ * rather than concatenated at a call site. **One gigabyte is 1,000,000,000 bytes** — decimal,
+ * which is how a download is quoted — and the choice is stated once, here, rather than left to
+ * whichever call site drew first, because §4 asks for one and forbids switching mid-interface.
+ *
+ * The unit is not a catalogue key: `Intl` already knows the word in every language. Only the
+ * frame the number sits in is the catalogue's business (`ui.weights.arriving-amount`).
+ */
+export function size(bytes) {
+  if (sizes === null) {
+    throw new Error(
+      'no catalogue is bound yet, so a size has no form — the window draws nothing until ' +
+        'seek:catalogue has answered',
+    )
+  }
+  return sizes.format(Math.max(0, Number(bytes) || 0) / 1e9)
 }

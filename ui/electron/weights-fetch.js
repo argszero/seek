@@ -7,7 +7,7 @@
  * file comes from — "the canonical host and any mirror beside it is a choice about
  * distribution rather than about this mechanism". This file is that choice, made once, and
  * the wiring that a launch goes through: which repository, which URL shape, how far the
- * whole download has got, and what a person is told while it runs.
+ * whole download has got, and what the window is told while it runs.
  *
  * **The repository is not invented here.** `LiquidAI/LFM2.5-VL-3B-GGUF` is the checkpoint
  * `calibration/vision/measured.json` names as the one the `0.600` cut was calibrated
@@ -60,25 +60,24 @@ function urlForAt(base) {
   return (file) => `${root}/${WEIGHTS_REPO}/resolve/main/${file.name}`
 }
 
-/** A byte count as a person reads it: gigabytes to one decimal, which is what a progress line needs. */
-function gigabytes(bytes) {
-  return `${(Math.max(0, Number(bytes) || 0) / 1e9).toFixed(1)} GB`
-}
-
 /**
- * The sentence the standing strip shows while the weights arrive, in the window's own terms.
+ * What a progress reading is: three facts, and no words.
  *
- * It names the whole download rather than the current file, because the person is waiting for
- * "can I use this app yet", not for a file: `received` and `total` are counts across both
- * files. The file being fetched is named too — the second one is 583 MB against the first's
- * 1.59 GB, so a bar that appeared to jump backwards without a name beside it would read as a
+ * `received` and `total` count across both files rather than across the current one, because
+ * the person waiting is waiting for "can I use this app yet", not for a file. `name` is the file
+ * being fetched, and it travels with them — the second file is 583 MB against the first's
+ * 1.59 GB, so a strip whose number jumped backwards without a name beside it would read as a
  * restart, which is the one thing a resumable download must never look like.
+ *
+ * **The sentence is not composed here, and that is the point of the shape.** `docs/design/
+ * i18n.md` §1 forbids a user-visible string in code, and §4 puts a file size in the layer that
+ * formats per locale and forbids the concatenation at the call site. A sentence built in this
+ * process has picked a language and a decimal separator before any catalogue is consulted —
+ * which is exactly what a window on a first run used to draw: `0.2 GB of 2.2 GB —
+ * LFM2.5-VL-3B-Q4_0.gguf` under a heading the catalogue had already translated. So this module
+ * hands the three facts over (`onProgress`) and the window asks its catalogue for the frame
+ * around them (`ui/src/App.jsx`, and `size()` in `catalogue.mjs` for the numbers).
  */
-function progressSentence({ name, received, total } = {}) {
-  const got = gigabytes(received)
-  const all = gigabytes(total)
-  return name ? `${got} of ${all} — ${name}` : `${got} of ${all}`
-}
 
 /**
  * Make sure the two weight files are on disk, fetching whatever is missing or short.
@@ -204,7 +203,5 @@ module.exports = {
   WEIGHTS_BASES,
   WEIGHTS_REPO,
   ensureWeights,
-  gigabytes,
-  progressSentence,
   urlForAt,
 }

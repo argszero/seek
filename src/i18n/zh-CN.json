@@ -230,6 +230,8 @@
     "ui.topics.card.id": "标识",
     "ui.topics.open": "进入会话",
     "ui.topics.said.picture": "一张图片",
+    "ui.weights.arriving-amount": "{all} 中的 {got} — {file}",
+    "ui.weights.arriving-amount-no-file": "{all} 中的 {got}",
     "ui.topics.said.nothing": "没有文字"
   }
 }
