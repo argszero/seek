@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { deliver } from './delivery.ts';
+import { deliver, toggleReaction } from './delivery.ts';
 import { makeDirectWorld, makeWorld } from './fixtures.ts';
 
 test('mentionsMe is derived at delivery and never written onto the message', () => {
@@ -223,4 +223,280 @@ test('an image message whose bytes are not an image is refused', () => {
     /bytes say otherwise/,
   );
   assert.equal(world.store.messagesOf(world.room).length, 0);
+});
+
+/**
+ * The three things a message carries besides its own words — `quoted`,
+ * `forwarded_from` and `reactions` (`src/types.ts`).
+ *
+ * Both snapshots are taken by `deliver()` out of the store, and both are refused
+ * when the caller tries to supply them from outside: a quotation is a claim about
+ * what somebody said, and the only copy of that this program has is the message
+ * itself.
+ */
+test('a reply keeps the quoted message as it read when the reply was sent', () => {
+  const world = makeWorld();
+  const first = deliver(world.store, {
+    roomId: world.room,
+    senderId: world.me,
+    text: 'the gate stays local',
+    now: '2026-10-26T01:00:00.000Z',
+  });
+  const reply = deliver(world.store, {
+    roomId: world.room,
+    senderId: world.botA,
+    text: 'agreed',
+    quoteOf: first.message.id,
+    now: '2026-10-26T01:01:00.000Z',
+  });
+
+  assert.deepEqual(reply.message.quoted, {
+    message_id: first.message.id,
+    name: 'me',
+    text: 'the gate stays local',
+  });
+
+  // A snapshot, not a live view: renaming the quoted sender afterwards is a fact
+  // about the roster, not a rewrite of what the reply answered.
+  world.store.data.principals[world.me].name = 'renamed';
+  assert.equal(reply.message.quoted?.name, 'me');
+});
+
+test('a quotation is cut to the block that draws it', () => {
+  const world = makeWorld();
+  const first = deliver(world.store, {
+    roomId: world.room,
+    senderId: world.me,
+    text: 'x'.repeat(400),
+  });
+  const reply = deliver(world.store, {
+    roomId: world.room,
+    senderId: world.botA,
+    text: 'that is long',
+    quoteOf: first.message.id,
+  });
+  assert.equal(reply.message.quoted?.text.length, 160, 'one line, cut where the block ends');
+});
+
+test('a forward carries the original message and says whose words they are', () => {
+  const world = makeWorld();
+  const original = deliver(world.store, {
+    roomId: world.room,
+    senderId: world.me,
+    text: 'the numbers are in the sheet',
+  });
+  const forward = deliver(world.store, {
+    roomId: world.room,
+    senderId: world.botB,
+    forwardOf: original.message.id,
+  });
+
+  assert.notEqual(forward.message.id, original.message.id, 'a forward is its own message');
+  assert.equal(forward.message.text, 'the numbers are in the sheet', 'with the same words');
+  assert.equal(forward.message.kind, 'text');
+  assert.deepEqual(forward.message.forwarded_from, {
+    message_id: original.message.id,
+    name: 'me',
+  });
+  assert.equal('quoted' in forward.message, false, 'a forward quotes nothing');
+});
+
+test('forwarding a picture carries the picture, not a claim about it', () => {
+  const world = makeWorld();
+  const original = deliver(world.store, {
+    roomId: world.room,
+    senderId: world.me,
+    kind: 'image',
+    text: '',
+    media: { key: 'blobs/screen.png', mime: 'image/png' },
+  });
+  const forward = deliver(world.store, {
+    roomId: world.room,
+    senderId: world.botA,
+    forwardOf: original.message.id,
+  });
+
+  assert.equal(forward.message.kind, 'image');
+  assert.deepEqual(forward.message.media, { key: 'blobs/screen.png', mime: 'image/png' });
+  // The reference is copied, not shared: two messages must not point at one
+  // mutable object, which is the reason `mediaFor` copies too.
+  assert.notEqual(forward.message.media, original.message.media);
+});
+
+test('a forward cannot be given content of its own', () => {
+  const world = makeWorld();
+  const original = deliver(world.store, {
+    roomId: world.room,
+    senderId: world.me,
+    text: 'the original',
+  });
+  assert.throws(
+    () =>
+      deliver(world.store, {
+        roomId: world.room,
+        senderId: world.botA,
+        text: 'something else entirely',
+        forwardOf: original.message.id,
+      }),
+    /carrying content of its own/,
+  );
+  assert.equal(world.store.messagesOf(world.room).length, 1, 'a refusal writes nothing');
+});
+
+test('a message cannot both quote and forward', () => {
+  const world = makeWorld();
+  const original = deliver(world.store, {
+    roomId: world.room,
+    senderId: world.me,
+    text: 'the original',
+  });
+  assert.throws(
+    () =>
+      deliver(world.store, {
+        roomId: world.room,
+        senderId: world.botA,
+        text: '',
+        quoteOf: original.message.id,
+        forwardOf: original.message.id,
+      }),
+    /both quotes and forwards/,
+  );
+});
+
+test('naming a message that is not in this room is refused, not ignored', () => {
+  const world = makeWorld();
+  assert.throws(
+    () =>
+      deliver(world.store, {
+        roomId: world.room,
+        senderId: world.me,
+        text: 'reply to nothing',
+        quoteOf: 'om_not_here',
+      }),
+    /unknown message in/,
+  );
+  assert.throws(
+    () =>
+      deliver(world.store, {
+        roomId: world.room,
+        senderId: world.me,
+        forwardOf: 'om_not_here',
+      }),
+    /unknown message in/,
+  );
+  assert.equal(world.store.messagesOf(world.room).length, 0);
+});
+
+test('a message nobody reacted to, quoted or forwarded carries none of the three', () => {
+  const world = makeWorld();
+  const sent = deliver(world.store, {
+    roomId: world.room,
+    senderId: world.me,
+    text: 'plain',
+  });
+  const stored = JSON.stringify(sent.message);
+  for (const field of ['reactions', 'quoted', 'forwarded_from']) {
+    assert.equal(stored.includes(field), false, `${field} is absent until something sets it`);
+  }
+});
+
+test('a reaction stores its operators and no count of its own', () => {
+  const world = makeWorld();
+  const sent = deliver(world.store, {
+    roomId: world.room,
+    senderId: world.me,
+    text: 'who is in?',
+  });
+
+  const once = toggleReaction(world.store, {
+    roomId: world.room,
+    messageId: sent.message.id,
+    principalId: world.botA,
+    emojiType: 'OK',
+  });
+  assert.deepEqual(once.reactions, [{ emoji_type: 'OK', operators: [world.botA] }]);
+
+  toggleReaction(world.store, {
+    roomId: world.room,
+    messageId: sent.message.id,
+    principalId: world.botB,
+    emojiType: 'OK',
+  });
+  assert.deepEqual(once.reactions?.[0].operators, [world.botA, world.botB]);
+
+  // The count Feishu stores is this array's length and nothing else: a stored
+  // total beside a list is a second answer, and a hand-repaired file could then
+  // say four people while naming two.
+  const stored = JSON.stringify(world.store.messagesOf(world.room));
+  assert.equal(stored.includes('"count"'), false, 'no stored count');
+  assert.equal(stored.includes('"mine"'), false, "and no per-reader 'mine'");
+
+  // The same click takes it back.
+  toggleReaction(world.store, {
+    roomId: world.room,
+    messageId: sent.message.id,
+    principalId: world.botA,
+    emojiType: 'OK',
+  });
+  assert.deepEqual(once.reactions?.[0].operators, [world.botB]);
+});
+
+test('taking back the last reaction leaves no field behind', () => {
+  const world = makeWorld();
+  const sent = deliver(world.store, {
+    roomId: world.room,
+    senderId: world.me,
+    text: 'anyone?',
+  });
+  const input = {
+    roomId: world.room,
+    messageId: sent.message.id,
+    principalId: world.botA,
+    emojiType: 'SMILE',
+  };
+  toggleReaction(world.store, input);
+  const after = toggleReaction(world.store, input);
+
+  assert.equal('reactions' in after, false, 'no zero row to draw');
+  const stored = JSON.stringify(world.store.messagesOf(world.room));
+  assert.equal(stored.includes('reactions'), false, 'and nothing on disk either');
+});
+
+test('a reaction needs a real principal who is in the room, and an emoji', () => {
+  const world = makeWorld();
+  const sent = deliver(world.store, {
+    roomId: world.room,
+    senderId: world.me,
+    text: 'hello',
+  });
+  const base = {
+    roomId: world.room,
+    messageId: sent.message.id,
+    principalId: world.botA,
+    emojiType: 'OK',
+  };
+
+  assert.throws(
+    () => toggleReaction(world.store, { ...base, principalId: 'ou_nobody' }),
+    /unknown principal/,
+  );
+
+  // A principal the store knows but this room has never heard of: a reaction is
+  // somebody's answer to a message they were there for.
+  world.store.data.principals.ou_outsider = {
+    id: 'ou_outsider',
+    kind: 'human',
+    name: 'outsider',
+  };
+  assert.throws(
+    () => toggleReaction(world.store, { ...base, principalId: 'ou_outsider' }),
+    /not a member of/,
+  );
+
+  assert.throws(
+    () => toggleReaction(world.store, { ...base, emojiType: '   ' }),
+    /no emoji_type/,
+  );
+
+  assert.equal('reactions' in sent.message, false, 'no refusal wrote anything');
 });

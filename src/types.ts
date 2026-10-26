@@ -149,11 +149,62 @@ export interface Mention {
 }
 
 /**
- * An immutable shared fact.
+ * One entry of `Message.reactions` — one emoji and the principals who chose it.
+ *
+ * Feishu's own pair is `emoji_type` and `count`, and only the first is stored:
+ * `count` is the length of `operators`, so there is one answer rather than two
+ * that can disagree — a hand-repaired entry naming two operators cannot also
+ * claim four people (`Message.depth` reads the same way). The other half of
+ * Feishu's shape is "did *I* react", which is derived where it is asked, for the
+ * reason `mentionsMe` is: a reader's viewpoint does not go on the shared log
+ * (data-model rule 15).
+ */
+export interface Reaction {
+  emoji_type: string;
+  /** The principals who chose this emoji, in the order they chose it. */
+  operators: Id[];
+}
+
+/**
+ * The message a reply quotes, read at the moment the reply was sent.
+ *
+ * A snapshot, not a pointer: the quoted message can be dropped afterwards, and a
+ * quotation that changes after the reply is written puts words in the replying
+ * author's mouth that they never answered.
+ */
+export interface QuotedMessage {
+  message_id: Id;
+  /** The quoted message's sender, by name, as it read then. */
+  name: string;
+  /** The quoted message's words, cut to what the block draws. */
+  text: string;
+}
+
+/**
+ * Where a forwarded message came from, read at the moment it was forwarded.
+ *
+ * The forwarded message carries the original's own words and picture as *its*
+ * content (`deliver()` copies both), so this records the one thing that content
+ * cannot say for itself: whose words they are.
+ */
+export interface ForwardedFrom {
+  message_id: Id;
+  name: string;
+}
+
+/**
+ * A shared fact whose own words are written once.
  *
  * `mentions` is the only stored form of "who was named". There is deliberately
  * no `mentionsMe` here: that is one reader's viewpoint, and it belongs on that
- * reader's queue entry (data-model rule 15).
+ * reader's queue entry (data-model rule 15). The same rule is why `reactions`
+ * keeps `operators[]` and neither a `count` nor a "mine".
+ *
+ * What a message *says* never changes after `deliver()` writes it — its words,
+ * its picture, its mentions, its cause. What other people add to it does: a
+ * reaction is another principal's answer to the message, arriving after it was
+ * sent, and it is the one field here that moves. `toggleReaction()` is the only
+ * thing that writes it.
  */
 export interface Message {
   id: Id;
@@ -174,6 +225,19 @@ export interface Message {
    */
   media?: MessageMedia;
   mentions: Mention[];
+  /**
+   * Who reacted to this message, with what — absent until somebody does.
+   *
+   * The one field on a stored message that moves after it is written:
+   * `toggleReaction()` adds and takes back one principal's entry. An entry whose
+   * last operator leaves is dropped, so a message whose reactions were all taken
+   * back is the same as one nobody ever reacted to.
+   */
+  reactions?: Reaction[];
+  /** The message this one quotes, as it read when this one was sent. */
+  quoted?: QuotedMessage;
+  /** Where this one was forwarded from, as it read when it was forwarded. */
+  forwarded_from?: ForwardedFrom;
   /** The message this one answers, when it answers one. */
   root_id?: Id;
   /** The message that caused this one. */
