@@ -169,14 +169,21 @@ jobs:
             ui/release/*.zip
           if-no-files-found: error
 
-      # A pre-release, and deliberately so. One of the two reasons it was published that way no
-      # longer holds — the download is signed and notarized from this tag on, so macOS stops
-      # objecting — and the other one still does: the package carries no model, so the bot
-      # answers in the kernel's placeholder until the reader starts a `llama-server` of their
-      # own and names it. `Latest` claims a program that does the thing
-      # the product is about when it opens, and this one needs a server named first. Recorded
-      # as a pre-release, and this line is where the word that changes it lives
-      # written down.
+      # A pre-release, and deliberately so — but the reason has changed twice, and this is what
+      # it is now. The first reason (an unsigned download, which macOS refused) stopped holding
+      # at `v0.1.2`. The second one, written here until `v0.1.4`, said "the package carries no
+      # model, so the bot answers in the kernel's placeholder until the reader starts a
+      # `llama-server` of their own" — that stopped holding when the package began carrying the
+      # server and fetching its weights on first launch.
+      #
+      # What still holds is narrower and measured: the judgement runs on the model the package
+      # carries, and that model does not call the tool a turn speaks through — three of them
+      # produced prose and zero `tool_calls`, so a room stays empty. The words come instead from
+      # a hosted endpoint, which a downloaded app reaches only where this machine already has
+      # one configured (`llm-config.js`). So a fresh machine with no such config still opens a
+      # bot that decides to speak and cannot. `Latest` claims a program that does the thing the
+      # product is about when it opens; this one does it on a machine that was already set up,
+      # and this line is where the word that changes it lives.
       - name: Publish the release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
