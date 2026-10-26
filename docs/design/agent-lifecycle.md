@@ -109,6 +109,7 @@ Everything alive sits on the bot; everything that runs sits on an agent.
 Bot                                     ← the contact: what a room shows and @-mentions
 ├─ Identity
 │   id / name / avatar / description    ← the only copy of the identity; pushed down to agents
+│   gender / position / personality     ← the card a person fills in when adding a bot
 ├─ Attention
 │   rooms[]        ← which rooms it watches
 │   interests[]    ← keywords / topics / "answer when someone asks about X" subscriptions
@@ -147,7 +148,7 @@ The one gap this leaves today: the daemon presses "identity" and "runtime" into 
 
 **Bot and Agent are two entities with two jobs.** The bot is the contact and the living thing: it owns the name, the avatar and the description, it owns the inbox and the loop, and it is what a room shows and what an @-mention names. The agents are the runnables behind it: each owns a persona, a model, a session and a memory, and runs when the bot's loop calls it. **The bot pushes its identity down to its agents** — an agent has no name of its own, only a `role` — so renaming a bot reaches every agent at once, and the room never sees two contacts where there is one.
 
-**An agent is told whose it is.** Every agent's system prompt carries the bot it belongs to — name, avatar, description — and the roster of that bot: for each agent, itself included, its `role`, what it does and its home directory. The same text may be handed over as a skill file the agent reads, which is what keeps it current without the agent asking for it. **It is pushed, not stored:** the agent holds no copy of the bot's identity or of its siblings, so a rename or a new row reaches every agent of that bot at once. A bot that later has a third agent needs no migration for the two that were there first.
+**An agent is told whose it is.** Every agent's system prompt carries the bot it belongs to — its name and avatar, and the card a person fills in when adding it: what it is, what it does in its organization and how it talks and works — and the roster of that bot: for each agent, itself included, its `role`, what it does and its home directory. The same text may be handed over as a skill file the agent reads, which is what keeps it current without the agent asking for it. **It is pushed, not stored:** the agent holds no copy of the bot's identity or of its siblings, so a rename or a new row reaches every agent of that bot at once. A bot that later has a third agent needs no migration for the two that were there first.
 
 **`agents.yml` registers agents, not bots.** Each bot is at least two rows today — one that watches, one that works — and nothing caps it at two: a bot that later needs a third role gets a third row. This is cheap because each row is a plain runnable: a model, a prompt, tools, a memory. No lifecycle to write for it, because the lifecycle is the bot's.
 

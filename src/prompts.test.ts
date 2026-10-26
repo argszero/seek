@@ -9,8 +9,11 @@ import { deliver } from './delivery.ts';
 import { makeWorld, type World } from './fixtures.ts';
 import {
   assemblePrompt,
+  assembleWorkPrompt,
   loadPromptArtifact,
+  loadWorkArtifact,
   shippedPromptPath,
+  shippedWorkPromptPath,
   skeletonOf,
   type PromptArtifact,
 } from './prompts.ts';
@@ -301,4 +304,122 @@ test('the accuracy the artifact advertises is the one its record gives at that c
     cut > highestIgnore && cut <= lowestAct,
     `a cut scores every case only inside (${highestIgnore}, ${lowestAct}]; this one is ${cut}`,
   );
+});
+
+// ---------------------------------------------------------------------------
+// The turn prompt: what a bot's card reaches, and what it leaves alone
+// ---------------------------------------------------------------------------
+
+/** The artifact `calibration/work/` measured. It ships beside the one that ships now. */
+const MEASURED_WORK = new URL('./prompts/work-v1.json', import.meta.url);
+
+/** One turn's values; the card is passed in as a person may have filled it. */
+function turnValues(card: { description?: string; position?: string; personality?: string }) {
+  return {
+    bot: 'Echo',
+    description: card.description ?? '',
+    position: card.position ?? '',
+    personality: card.personality ?? '',
+    gender: '',
+    room: 'oc_0000000000000000',
+    roster: '- role=work tools=say home=/tmp/seek/echo/work self=true',
+    entries: [{ sender: '邵安清', text: 'deploy is red' }],
+  };
+}
+
+test('the shipped turn artifact is v2, and a blank card is asked the measured text', () => {
+  const shipped = loadWorkArtifact();
+  assert.equal(shipped.version, 'work-v2');
+  assert.match(shippedWorkPromptPath().pathname, /work-v2\.json$/);
+
+  // Byte for byte the v1 prompt, for a bot whose card says nothing. That is what
+  // lets `calibration/work/` keep measuring v1 while this tree ships v2: the two
+  // parts v2 adds are exactly the ones a blank card does not fill.
+  const measured = loadWorkArtifact(MEASURED_WORK);
+  const values = turnValues({ description: 'the one who watches the nightly batch' });
+  const before = assembleWorkPrompt(measured, values);
+  const after = assembleWorkPrompt(shipped, values);
+  assert.equal(after.system, before.system);
+  assert.equal(after.rest, before.rest);
+});
+
+test('a filled card reaches the turn, and an empty one leaves no sentence behind', () => {
+  const shipped = loadWorkArtifact();
+
+  const filled = assembleWorkPrompt(
+    shipped,
+    turnValues({
+      position: '接口与联调',
+      personality: '先给结论再给理由；\n改接口前列出谁会被影响。',
+    }),
+  );
+  assert.ok(
+    filled.rest.includes('What this bot does in this organization: 接口与联调'),
+    'the position is what the bot does here, and it is quoted as written',
+  );
+  // Verbatim, newline included: the personality is what the person typed.
+  assert.ok(
+    filled.rest.includes('先给结论再给理由；\n改接口前列出谁会被影响。'),
+    'a personality over several lines arrives with its line break',
+  );
+
+  const blank = assembleWorkPrompt(shipped, turnValues({}));
+  assert.equal(
+    blank.rest.includes('What this bot does in this organization'),
+    false,
+    'a bot whose card nobody filled in is not told about a position it does not have',
+  );
+  assert.equal(blank.rest.includes('How this bot talks and works'), false);
+});
+
+test('a part that quotes a card field depends on exactly that field', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'seek-work-prompt-'));
+  const tools = [{ name: 'say', description: 'post one message', parameters: { type: 'object' } }];
+  const artifactWith = async (part: Record<string, unknown>, index: number) => {
+    const file = join(dir, `work-${index}.json`);
+    await writeFile(
+      file,
+      JSON.stringify({
+        version: 'test-v1',
+        system: 'You are {bot}.',
+        afterSystem: '\n',
+        parts: [part],
+        tools,
+      }),
+    );
+    return file;
+  };
+
+  try {
+    // Rendered while the bot may have no position: the model reads a blank in the
+    // middle of a sentence and fills it in itself.
+    const loose = await artifactWith(
+      { name: 'p', text: 'It does {position}.', after: '\n', when: 'always' },
+      1,
+    );
+    assert.throws(
+      () => loadWorkArtifact(loose),
+      /fills \{position\} but is rendered when the bot has none/,
+    );
+
+    // And the other half: a part that says it depends on a personality and never
+    // quotes one leaves the prompt for a reason nothing in its own text explains.
+    const pointless = await artifactWith(
+      { name: 'p', text: 'Say something now.', after: '\n', when: 'personality' },
+      2,
+    );
+    assert.throws(
+      () => loadWorkArtifact(pointless),
+      /is skipped without a personality and does not quote one/,
+    );
+
+    // A per-entry part has one text per message, so it cannot depend on the bot.
+    const repeated = await artifactWith(
+      { name: 'p', text: '{sender}: {text} ({gender})', after: '\n', when: 'gender', each: 'entry' },
+      3,
+    );
+    assert.throws(() => loadWorkArtifact(repeated), /cannot both repeat per entry/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });

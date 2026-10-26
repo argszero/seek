@@ -283,6 +283,54 @@ test('the prompt carries the entry and not the watch side’s verdict', async ()
   );
 });
 
+test('the card a person filled in is quoted in the turn the model reads', async () => {
+  const world = makeWorld();
+  const bot = world.store.data.bots[world.botA];
+  bot.position = '接口与联调';
+  bot.personality = '先给结论再给理由；\n改接口前列出谁会被影响。';
+
+  const recorder = fakeServer({ content: 'nothing worth adding' });
+  const decide = await workOverServer(world.store, world.botA, serverOf(recorder), {
+    prompt: ARTIFACT,
+  });
+  await turnWith(world, decide, await entriesOf(world));
+
+  const chat = recorder.calls.find((call) => call.path === '/v1/chat/completions');
+  assert.ok(chat, 'the model was asked');
+  const asked = (chat.body.messages as { role: string; content: string }[])
+    .map((message) => message.content)
+    .join('\n');
+
+  // From the store to the body the server receives, in one reading: `identityFor` hands
+  // the card over as fields and `valuesOf` fills the parts from them, so either of those
+  // two seams can drop a field while both halves' own tests stay green.
+  assert.match(asked, /What this bot does in this organization: 接口与联调/);
+  assert.ok(
+    asked.includes('先给结论再给理由；\n改接口前列出谁会被影响。'),
+    'the personality reaches the model as the person typed it, its line break included',
+  );
+  // The failure this rules out is silent: `fill` leaves an unknown placeholder whole, so
+  // a fact the assembly does not carry arrives as the field's name in a sentence.
+  assert.doesNotMatch(asked, /\{(position|personality|gender)\}/, 'no placeholder left whole');
+});
+
+test('a bot whose card nobody filled in is told nothing about a position', async () => {
+  const world = makeWorld();
+  const recorder = fakeServer({ content: 'nothing worth adding' });
+  const decide = await workOverServer(world.store, world.botA, serverOf(recorder), {
+    prompt: ARTIFACT,
+  });
+  await turnWith(world, decide, await entriesOf(world));
+
+  const chat = recorder.calls.find((call) => call.path === '/v1/chat/completions');
+  assert.ok(chat, 'the model was asked');
+  const asked = (chat.body.messages as { role: string; content: string }[])
+    .map((message) => message.content)
+    .join('\n');
+  assert.doesNotMatch(asked, /What this bot does in this organization/);
+  assert.doesNotMatch(asked, /How this bot talks and works/);
+});
+
 test('a hosted endpoint is asked only what it can answer, and the words still arrive through say', async () => {
   const world = makeWorld();
   const recorder = hostedServer({
@@ -424,7 +472,7 @@ test('the roster this repository ships allows everything the prompt it ships off
   for (const tool of ARTIFACT.tools) {
     assert.ok(
       work.tools.includes(tool.name),
-      `the shipped work row allows '${tool.name}', which ${'work-v1.json'} offers`,
+      `the shipped work row allows '${tool.name}', which work-v2.json offers`,
     );
   }
 });
