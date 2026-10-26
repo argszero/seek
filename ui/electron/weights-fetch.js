@@ -1,0 +1,158 @@
+'use strict'
+
+/**
+ * What a first run needs before it can start the server it carries: the two weight files.
+ *
+ * The mechanism is `model-weights.js`, and it deliberately decides nothing about *where* a
+ * file comes from — "the canonical host and any mirror beside it is a choice about
+ * distribution rather than about this mechanism". This file is that choice, made once, and
+ * the wiring that a launch goes through: which repository, which URL shape, how far the
+ * whole download has got, and what a person is told while it runs.
+ *
+ * **The repository is not invented here.** `LiquidAI/LFM2.5-VL-3B-GGUF` is the checkpoint
+ * `calibration/vision/measured.json` names as the one the `0.600` cut was calibrated
+ * against, and the two file names are the ones that record carries. A different repository
+ * would be a different model, which is a different probability distribution and therefore
+ * a different cut — so this is a constant rather than a setting.
+ *
+ * **What is a setting is the host.** `https://huggingface.co` is canonical and is the
+ * default; `SEEK_WEIGHTS_BASE` points a run at a mirror instead, which is what a network
+ * that cannot reach the canonical host needs. Measured on 2026-10-26 from the machine this
+ * was written on: `hf-mirror.com` answers `206` with `content-range: bytes 0-99/1593894944`
+ * for the first file and `/583109984` for the second — the repository path, both file names,
+ * both declared sizes and `Range` support, in one reading each. The canonical host was not
+ * reachable from that network, so its own answer is unmeasured here; nothing in this file
+ * depends on which of the two it is.
+ *
+ * This module exists rather than living in `main.js` for one reason: `main.js` requires
+ * `electron` and cannot be run under `node --test`, and "how far has the download got" is
+ * exactly the kind of arithmetic that is worth pinning down.
+ *
+ * **It is not called `first-run.js`, and that is not an oversight.** `first-run.test.mjs`
+ * already exists in this repository and measures the other thing a first run does — a fresh
+ * store landing in a room rather than on an empty window (`src/main.ts`'s seeding, PR #61).
+ * Two different first runs, two names.
+ */
+
+const { fetchWeights, WEIGHT_FILES } = require('./model-weights.js')
+
+/** The checkpoint the shipped cut was calibrated against (`calibration/vision/measured.json`). */
+const WEIGHTS_REPO = 'LiquidAI/LFM2.5-VL-3B-GGUF'
+
+/** Where the files come from when nobody says otherwise. */
+const WEIGHTS_BASE = 'https://huggingface.co'
+
+/**
+ * Where one file is, given the host to ask.
+ *
+ * A trailing slash on the base is trimmed, because `//resolve/main` is a different path and
+ * some hosts answer it with a redirect to a login page rather than a file.
+ */
+function urlForAt(base) {
+  const root = String(base ?? '').trim().replace(/\/+$/, '')
+  return (file) => `${root}/${WEIGHTS_REPO}/resolve/main/${file.name}`
+}
+
+/** A byte count as a person reads it: gigabytes to one decimal, which is what a progress line needs. */
+function gigabytes(bytes) {
+  return `${(Math.max(0, Number(bytes) || 0) / 1e9).toFixed(1)} GB`
+}
+
+/**
+ * The sentence the standing strip shows while the weights arrive, in the window's own terms.
+ *
+ * It names the whole download rather than the current file, because the person is waiting for
+ * "can I use this app yet", not for a file: `received` and `total` are counts across both
+ * files. The file being fetched is named too — the second one is 583 MB against the first's
+ * 1.59 GB, so a bar that appeared to jump backwards without a name beside it would read as a
+ * restart, which is the one thing a resumable download must never look like.
+ */
+function progressSentence({ name, received, total } = {}) {
+  const got = gigabytes(received)
+  const all = gigabytes(total)
+  return name ? `${got} of ${all} — ${name}` : `${got} of ${all}`
+}
+
+/**
+ * Make sure the two weight files are on disk, fetching whatever is missing or short.
+ *
+ * Returns `{ ok: true, bytes, files, fetched }` when both are whole on disk, and
+ * `{ ok: false, refusal, bytes, files }` when they are not, with the refusal being a sentence
+ * something can draw. Nothing throws: a first run with no network still has a window to open,
+ * and the sentence is what that window says.
+ *
+ * `fetched` is false when both files were already there — a second launch must not pay 1.6 GB
+ * again, and a launch that re-reads nothing should not claim it did.
+ *
+ * `onProgress` is called with the whole download's reading (`{name, received, total}`), not one
+ * file's, so a caller drawing it needs no memory of which file came first.
+ */
+async function ensureWeights(options = {}) {
+  const {
+    dir,
+    // No default here on purpose: `undefined` and an empty string are different readings, and
+    // a destructuring default would collapse them before this could tell them apart.
+    base,
+    files = WEIGHT_FILES,
+    fetchImpl = globalThis.fetch,
+    onProgress,
+    signal,
+  } = options
+  if (!dir) throw new TypeError('ensureWeights needs a directory to fetch into')
+
+  // `undefined` is "nobody said", which is what the default is for; a string that is empty
+  // once trimmed is somebody setting the variable to nothing — a shell expanding an unset one,
+  // a config line left blank — and that is the case this refuses rather than silently
+  // substituting the canonical host for the mirror the person thought they had configured.
+  const root = base === undefined ? String(WEIGHTS_BASE) : String(base ?? '').trim()
+  if (root === '') {
+    // Not a network failure and not a missing file: the build or the environment named no
+    // host, and saying "the server could not be reached" about that would send a person to
+    // check their wifi over a configuration mistake.
+    return {
+      ok: false,
+      refusal:
+        'no address is configured for the weights: this build has no host to fetch ' +
+        `${WEIGHTS_REPO} from, so set SEEK_WEIGHTS_BASE to one (see README)`,
+      files: [],
+      bytes: 0,
+    }
+  }
+
+  const total = files.reduce((sum, file) => sum + file.bytes, 0)
+  // The whole download's reading, kept here because `model-weights.js` reports one file at a
+  // time and has no business knowing how many files a caller asked for.
+  let behind = 0
+  let current = null
+  const onOne = (one) => {
+    if (one.name !== current) {
+      if (current !== null) {
+        behind += files.find((file) => file.name === current)?.bytes ?? 0
+      }
+      current = one.name
+    }
+    if (onProgress) {
+      onProgress({ name: one.name, received: behind + one.received, total })
+    }
+  }
+
+  const result = await fetchWeights({ dir, files, urlFor: urlForAt(root), fetchImpl, onProgress: onOne, signal })
+  if (!result.ok) {
+    return { ok: false, refusal: result.refusal, files: result.files, bytes: result.bytes }
+  }
+  return {
+    ok: true,
+    files: result.files,
+    bytes: result.bytes,
+    fetched: result.files.some((file) => file.status === 'fetched'),
+  }
+}
+
+module.exports = {
+  WEIGHTS_BASE,
+  WEIGHTS_REPO,
+  ensureWeights,
+  gigabytes,
+  progressSentence,
+  urlForAt,
+}

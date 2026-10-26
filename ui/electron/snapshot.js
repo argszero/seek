@@ -48,6 +48,11 @@ function stageOneOf(stage1) {
   return {
     server: typeof stage1?.server === 'string' && stage1.server !== '' ? stage1.server : null,
     refusal: typeof stage1?.refusal === 'string' && stage1.refusal !== '' ? stage1.refusal : null,
+    // A third reading, and it is not a failure: the weights are still arriving, and this is how
+    // far. It is a field of its own rather than a soft refusal because the window draws the two
+    // in different colours, and a download in progress painted in the error colour would report
+    // the app as broken for the first ten minutes of its life.
+    pending: typeof stage1?.pending === 'string' && stage1.pending !== '' ? stage1.pending : null,
   }
 }
 
@@ -63,6 +68,7 @@ function stageTwoOf(stage2) {
   return {
     server: typeof stage2?.server === 'string' && stage2.server !== '' ? stage2.server : null,
     refusal: typeof stage2?.refusal === 'string' && stage2.refusal !== '' ? stage2.refusal : null,
+    pending: typeof stage2?.pending === 'string' && stage2.pending !== '' ? stage2.pending : null,
   }
 }
 

@@ -20,6 +20,7 @@ const { basename, join } = require('node:path')
 
 const { addMember, closeHost, createRoom, openHostOrRefuse, postMessage } = require('./host.js')
 const { BY_MIME, mimeForPath, readMedia, saveMedia } = require('./media.js')
+const { ensureWeights, progressSentence } = require('./weights-fetch.js')
 const {
   WATCH_WINDOW,
   bundledServerPath,
@@ -78,6 +79,18 @@ let modelServer = null
  */
 let modelServerRefusal = null
 
+/**
+ * The weights: how far the download has got, and why it stopped.
+ *
+ * A first run fetches 2.1 GB before any model exists, so this is the state the window spends
+ * the longest in, and it is two readings rather than one — "still arriving, this far" and
+ * "stopped, and why" — because they are drawn in different colours and only the second is a
+ * failure. `null` in both means nothing is being fetched and nothing went wrong, which is
+ * every launch after the first.
+ */
+let weightsPending = null
+let weightsRefusal = null
+
 /** The kernel, opened once, and the one window that may be told when it changes. */
 let host = null
 let win = null
@@ -115,10 +128,16 @@ function createWindow() {
 
 /** What the interface is allowed to see: a plain, serialisable read of the store. */
 function snapshotNow() {
-  // A bundled server that stopped replaces both halves' reason and nothing else: the origin
-  // each half was bound to is still true, and `server` is what the window prints beside it.
-  const half = (stage) =>
-    modelServerRefusal === null ? stage : { ...stage, refusal: modelServerRefusal }
+  // The model-server facts replace each half's own reading and nothing else: the origin each
+  // half was bound to is still true, and `server` is what the window prints beside it. They
+  // are stated in the order they win — a download under way is the newest fact, the reason it
+  // stopped is the next, and a server that died while the window was open is the last.
+  const half = (stage) => {
+    if (weightsPending !== null) return { ...stage, pending: weightsPending, refusal: null }
+    if (weightsRefusal !== null) return { ...stage, pending: null, refusal: weightsRefusal }
+    if (modelServerRefusal !== null) return { ...stage, pending: null, refusal: modelServerRefusal }
+    return stage
+  }
   return snapshotOf(
     host?.store ?? null,
     STORE_FILE,
@@ -126,6 +145,11 @@ function snapshotNow() {
     half(host?.stage2 ?? null),
     storeRefusal,
   )
+}
+
+/** Tell the window the facts changed, if there is a window listening. */
+function pushChanged() {
+  if (win && !win.isDestroyed()) win.webContents.send('seek:changed', snapshotNow())
 }
 
 ipcMain.handle('seek:snapshot', () => snapshotNow())
@@ -271,6 +295,15 @@ ipcMain.handle('seek:media', (_event, reference) => {
  * changes.
  */
 async function start() {
+  // **The window is made first, before anything that can take minutes.** A first run fetches
+  // 2.1 GB before a model exists, and a launch that opened the window afterwards would spend
+  // that whole download showing nothing at all — indistinguishable from an app that did not
+  // start, which is the failure `openHostOrRefuse` was written for one layer down. The
+  // snapshot reports "the store is not open yet" in the meantime, which is a state it already
+  // had for exactly this moment.
+  createWindow()
+  registerActivate()
+
   // **Nobody named a server, so the app starts the one it carries.**
   // `serverChoiceFrom` reads the environment and nothing else, and it answers `named` for a
   // person who did — a terminal run is not overruled by a package that holds a binary.
@@ -286,34 +319,58 @@ async function start() {
     // instead, so it is given the directory the packaging copies *from* — otherwise the only
     // way to see this code run would be to build a `.app` first.
     const resources = app.isPackaged ? process.resourcesPath : join(__dirname, '..', 'resources')
-    const started = await startBundledServer({
-      binaryPath: bundledServerPath(resources),
-      weightsDir: weightsDirectory(app.getPath('userData')),
-      log: (line) => console.error(`seek: model server — ${line}`),
-      // Only a server the app has *already opened on* is this handler's business. Before
-      // that, a child that exits is `startBundledServer`'s answer — it returns the refusal
-      // itself — and reporting it here as well would say it twice, in the wrong order.
-      onStop: (how) => {
-        if (modelServer !== null) serverStopped(how)
-      },
+    const weightsDir = weightsDirectory(app.getPath('userData'))
+
+    // The weights come first, because a server started over files that are not there refuses
+    // by design and the reason would be the wrong one. `SEEK_WEIGHTS_BASE` is how a run is
+    // pointed at a mirror; unset means the canonical host (`weights-fetch.js`).
+    const arrived = await ensureWeights({
+      dir: weightsDir,
+      base: process.env.SEEK_WEIGHTS_BASE,
+      onProgress: (reading) => weightProgress(reading),
     })
-    if (started.refusal) {
-      // No binary, no weights, a model that would not load: every one of them is a state a
-      // first run can be in, and each is said rather than crashed. Both halves are refused
-      // together because one server answers for both — the roster's two rows name no model
-      // of their own (`FIRST_RUN_ROSTER`), so there is one origin and not two.
-      startRefusal = started.refusal
+    weightsPending = null
+    if (!arrived.ok) {
+      // Offline, a host that refused, a file that stopped short: one sentence, drawn where the
+      // model strips already draw "which server, and why not". The download resumes where it
+      // stopped on the next launch, which is what the sentence tells the person to do.
+      weightsRefusal = `${arrived.refusal}; launching Seek again continues where it stopped`
+      startRefusal = weightsRefusal
       server = undefined
       workServer = undefined
+      console.error(`seek: the weights did not arrive — ${weightsRefusal}`)
+      pushChanged()
     } else {
-      modelServer = started
-      server = started.origin
-      // How much one judgement may read: `src/main.ts` asks the measured watch model with
-      // `--window 24`, and `docs/decisions.md` row 20 leaves the number out of the kernel
-      // because the runtime cannot know one. This file *is* the caller, so it lives here.
-      serverWindow = WATCH_WINDOW
-      workServer = started.origin
-      console.error(`seek: the model server is ${started.origin}`)
+      if (arrived.fetched) console.error(`seek: the weights arrived (${arrived.bytes} bytes)`)
+      const started = await startBundledServer({
+        binaryPath: bundledServerPath(resources),
+        weightsDir,
+        log: (line) => console.error(`seek: model server — ${line}`),
+        // Only a server the app has *already opened on* is this handler's business. Before
+        // that, a child that exits is `startBundledServer`'s answer — it returns the refusal
+        // itself — and reporting it here as well would say it twice, in the wrong order.
+        onStop: (how) => {
+          if (modelServer !== null) serverStopped(how)
+        },
+      })
+      if (started.refusal) {
+        // No binary, a model that would not load: every one of them is a state a first run can
+        // be in, and each is said rather than crashed. Both halves are refused together
+        // because one server answers for both — the roster's two rows name no model of their
+        // own (`FIRST_RUN_ROSTER`), so there is one origin and not two.
+        startRefusal = started.refusal
+        server = undefined
+        workServer = undefined
+      } else {
+        modelServer = started
+        server = started.origin
+        // How much one judgement may read: `src/main.ts` asks the measured watch model with
+        // `--window 24`, and `docs/decisions.md` row 20 leaves the number out of the kernel
+        // because the runtime cannot know one. This file *is* the caller, so it lives here.
+        serverWindow = WATCH_WINDOW
+        workServer = started.origin
+        console.error(`seek: the model server is ${started.origin}`)
+      }
     }
   }
 
@@ -339,7 +396,13 @@ async function start() {
   if (host?.stage2?.refusal) {
     console.error(`seek: the work server was not used — ${host.stage2.refusal}`)
   }
-  createWindow()
+  // The window was made before any of this, so what is left is telling it what it now knows:
+  // the store is open, the halves are bound or refused, or the store itself was refused.
+  pushChanged()
+}
+
+/** One `activate` handler, however many times `start` runs. */
+function registerActivate() {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
@@ -365,7 +428,27 @@ function serverStopped({ reason, code, signal, tail }) {
   modelServerRefusal = `the model server this app started ${how}: ${said}`
   modelServer = null
   console.error(`seek: the model server stopped — ${modelServerRefusal}`)
-  if (win && !win.isDestroyed()) win.webContents.send('seek:changed', snapshotNow())
+  pushChanged()
+}
+
+/**
+ * The download's reading, drawn on the strips.
+ *
+ * Two things are decided here rather than in `weights-fetch.js`. The sentence is formatted for a
+ * strip that truncates with an ellipsis, so it leads with the numbers. And the pushes are
+ * throttled: a 2.1 GB body arrives in thousands of chunks, and re-rendering the window once
+ * per chunk would spend the download's own bandwidth on IPC. Half a second is finer than a
+ * person reads and coarse enough that the message never grows to a queue.
+ */
+const PROGRESS_INTERVAL_MS = 500
+let lastPushed = 0
+
+function weightProgress(reading) {
+  weightsPending = progressSentence(reading)
+  const now = Date.now()
+  if (now - lastPushed < PROGRESS_INTERVAL_MS) return
+  lastPushed = now
+  pushChanged()
 }
 
 app.whenReady().then(start)

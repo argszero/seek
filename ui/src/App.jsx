@@ -732,9 +732,13 @@ function StoreRefused({ refusal }) {
 /**
  * What the bot's judgement is, in one standing line.
  *
- * Three readings, and the difference between them is the whole point of drawing it:
+ * Four readings, and the difference between them is the whole point of drawing it:
  *
- * - **no server** — the state this build ships in. The bot decides with the kernel's
+ * - **waiting** — a first run is fetching the weights, and this is how far it has got. Not a
+ *   failure and not the neutral "no server" state either: the model server exists and is
+ *   unusable for a reason that is being fixed while the line is read, so it is drawn in the
+ *   ordinary colour with a number in it rather than in the error colour.
+ * - **no server** — the state a build with no model server ships in. The bot decides with the kernel's
  *   placeholder, and the line names the two variables that would change that, because a
  *   mode nobody can switch is a mode nobody knows they are in.
  * - **bound** — stage 1 is the measured watch model at that origin. The origin is named
@@ -751,6 +755,18 @@ function StoreRefused({ refusal }) {
  */
 function StageOne({ stage1 }) {
   if (!stage1) return null
+
+  // Before `refusal`, because a download under way is the newer fact: while the weights are
+  // arriving nothing has been refused yet, and a half that showed its older refusal over an
+  // active download would report a failure that is being repaired as it is read.
+  if (stage1.pending) {
+    return (
+      <div className="stage1 waiting" data-stage1="waiting">
+        <strong>the weights are arriving</strong>
+        <span className="stage1-why">{stage1.pending}</span>
+      </div>
+    )
+  }
 
   if (stage1.refusal) {
     return (
@@ -794,6 +810,15 @@ function StageOne({ stage1 }) {
  */
 function StageTwo({ stage2 }) {
   if (!stage2) return null
+
+  if (stage2.pending) {
+    return (
+      <div className="stage2 waiting" data-stage2="waiting">
+        <strong>the weights are arriving</strong>
+        <span className="stage2-why">{stage2.pending}</span>
+      </div>
+    )
+  }
 
   if (stage2.refusal) {
     return (

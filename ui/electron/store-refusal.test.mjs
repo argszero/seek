@@ -162,6 +162,15 @@ test('the window is made whether or not the store opened', async () => {
   // is called in it unconditionally — not after an await that can reject.
   assert.match(code, /app\.whenReady\(\)\.then\(start\)/, 'whenReady runs the startup as a whole')
   assert.match(code, /async function start\(\)/, 'and that startup is a named function')
-  assert.match(code, /createWindow\(\)\n\s+app\.on\('activate'/, 'the window and the activate handler are made together')
+  // The window is made on the first two statements of the startup, before anything that waits:
+  // `registerActivate()` sits beside it because the handler and the window have to arrive
+  // together — a startup that threw between them left an app with no window *and* no handler,
+  // which is the defect this test was written for. What changed is that a first run now fetches
+  // 2.1 GB before it can start a server, so "before the first await" is the claim that has to
+  // hold rather than "immediately after the store opened".
+  const beforeFirstAwait = code.slice(code.indexOf('async function start()')).split(/\bawait\b/)[0]
+  assert.match(beforeFirstAwait, /createWindow\(\)/, 'the window is made before anything is awaited')
+  assert.match(beforeFirstAwait, /registerActivate\(\)/, 'and its handler is registered beside it')
+  assert.match(code, /app\.on\('activate'/, 'the handler is still registered on the app')
   assert.match(code, /storeRefusal/, 'the refusal is state the window can be told about')
 })

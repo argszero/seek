@@ -152,8 +152,8 @@ test('a store that is not open yet says so instead of throwing', () => {
   // store carries two placeholder readings rather than two missing fields — a strip whose
   // fact is `undefined` is drawn by whatever the renderer does with `undefined`, which is
   // how a fallback starts looking like a configuration (`docs/decisions.md` row 27).
-  assert.deepEqual(snapshot.stage1, { server: null, refusal: null })
-  assert.deepEqual(snapshot.stage2, { server: null, refusal: null })
+  assert.deepEqual(snapshot.stage1, { server: null, refusal: null, pending: null })
+  assert.deepEqual(snapshot.stage2, { server: null, refusal: null, pending: null })
 })
 
 /**
@@ -166,13 +166,13 @@ test('a store that is not open yet says so instead of throwing', () => {
  */
 test('the snapshot says which stage 1 it is, and a refusal is not the same reading as silence', () => {
   const off = snapshotOf(seeded(), '/tmp/seek.json')
-  assert.deepEqual(off.stage1, { server: null, refusal: null }, 'nothing named, nothing refused')
+  assert.deepEqual(off.stage1, { server: null, refusal: null, pending: null }, 'nothing named, nothing refused')
 
   const bound = snapshotOf(seeded(), '/tmp/seek.json', { server: 'http://127.0.0.1:8080' })
-  assert.deepEqual(bound.stage1, { server: 'http://127.0.0.1:8080', refusal: null })
+  assert.deepEqual(bound.stage1, { server: 'http://127.0.0.1:8080', refusal: null, pending: null })
 
   const refused = snapshotOf(seeded(), '/tmp/seek.json', { refusal: 'it serves another model' })
-  assert.deepEqual(refused.stage1, { server: null, refusal: 'it serves another model' })
+  assert.deepEqual(refused.stage1, { server: null, refusal: 'it serves another model', pending: null })
 
   const shut = snapshotOf(null, null, { refusal: 'why not' })
   assert.equal(shut.stage1.refusal, 'why not', 'a store that is not open still says why')
