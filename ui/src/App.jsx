@@ -5,7 +5,7 @@ import Groups from './Groups.jsx'
 import Icon from './icons.jsx'
 import Settings from './Settings.jsx'
 import Topics from './Topics.jsx'
-import { size, t } from './catalogue.mjs'
+import { size, t, weightsReason } from './catalogue.mjs'
 import {
   NAV_ICON,
   RAIL,
@@ -13,8 +13,8 @@ import {
   TAIL_ICON,
   THEME_TO_DARK,
   THEME_TO_LIGHT,
-} from './rail.mjs'import { roomToOpen } from './room-to-open.mjs'
-
+} from './rail.mjs'
+import { roomToOpen } from './room-to-open.mjs'
 /**
  * Tokens are counts, so they are drawn by `Intl.NumberFormat` rather than by string
  * arithmetic: `1204` and `1,204` are the same figure and only one of them reads as one.
@@ -852,9 +852,12 @@ export default function App() {
             while the download runs, so drawing each half's strip printed the same sentence
             twice, one line under the other. It is drawn once here, and the two strips come
             back when the download ends. They stay two because a *refusal* is per half —
-            only the download is shared. */}
+            only the download is shared, and the same is true of the download that stopped
+            (`weights`), which is the same directory failing for both halves. */}
         {snap.stage1?.pending ? (
           <WeightsArriving facts={snap.stage1.pending} />
+        ) : snap.stage1?.weights ? (
+          <WeightsRefused weights={snap.stage1.weights} />
         ) : (
           <>
             <StageOne stage1={snap.stage1} />
@@ -1246,6 +1249,34 @@ function WeightsArriving({ facts }) {
           ? t('ui.weights.arriving-amount-no-file', { got, all })
           : t('ui.weights.arriving-amount', { got, all, file: facts.file })}
       </span>
+    </div>
+  )
+}
+
+/**
+ * Why the weights did not arrive, in the language this window speaks.
+ *
+ * The other half of `WeightsArriving`, and drawn in the same place for the same reason: the
+ * weights are one directory shared by both halves, so `half()` in `ui/electron/main.js` hands
+ * both of them the same reading. A strip each printed the same sentence twice, and two identical
+ * lines read as two problems rather than as one download that stopped.
+ *
+ * **The words are the catalogue's, and what is not is deliberate.** `docs/design/i18n.md` §1
+ * puts every string in the catalogue, §4 puts list joining in that layer — `"A, B and C"`, not a
+ * `; `, because the conjunction is the language's — and §2 forbids rewriting what a sender said,
+ * so a host's own refusal is carried through exactly as it came. That last one is the boundary
+ * this reading draws: the frames around the hosts are translated, and the sentences inside them
+ * are the hosts' words. A reader in Chinese therefore sees Chinese framing around a host's
+ * English, which is honest about where each half came from and is not the same thing as a
+ * translated page.
+ */
+function WeightsRefused({ weights }) {
+  if (!weights) return null
+
+  return (
+    <div className="weights refused" data-weights="refused">
+      <strong>{t('ui.chat.weights-refused')}</strong>
+      <span className="weights-why">{t('ui.weights.refused-and-resumes', { why: weightsReason(weights) })}</span>
     </div>
   )
 }

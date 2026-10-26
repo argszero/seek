@@ -42,7 +42,7 @@ const {
   switchOrganization,
   writeIndex,
 } = require('./organizations.js')
-const { ensureWeights } = require('./weights-fetch.js')
+const { describe, ensureWeights } = require('./weights-fetch.js')
 const {
   WATCH_WINDOW,
   bundledServerPath,
@@ -172,15 +172,19 @@ let modelServerRefusal = null
  * failure. `null` in both means nothing is being fetched and nothing went wrong, which is
  * every launch after the first.
  *
- * **`weightsPending` is facts and `weightsRefusal` is a sentence**, and the asymmetry is the
- * language rule rather than an oversight: how far the download has got is three numbers and a
- * file name, so every language can put it into its own words — it travels as those facts (named
- * in `ui/electron/snapshot.js`, drawn in `ui/src/App.jsx`). A refusal is prose from the layer
- * that failed, and translating somebody else's sentence is what `docs/design/i18n.md` §2
- * forbids.
+ * **Both are facts, and neither is a sentence**, which is the language rule rather than a
+ * coincidence: how far the download has got is three numbers and a file name, and why it stopped
+ * is one of three shapes — nobody named a host, one host said its piece, or several did — so
+ * every language can put each into its own words. They travel as those facts (named in
+ * `ui/electron/snapshot.js`, drawn in `ui/src/App.jsx`), because a sentence composed here would
+ * be English in every language this app runs in (`docs/design/i18n.md` §1).
+ *
+ * The one English phrase that survives is `describe(why)`, and it is not drawn: it is the
+ * kernel's own statement about a half it cannot use, and the log line beside it (§7 keeps log
+ * lines English).
  */
 let weightsPending = null
-let weightsRefusal = null
+let weightsWhy = null
 
 /** The kernel, opened once, and the one window that may be told when it changes. */
 let host = null
@@ -235,8 +239,11 @@ function snapshotNow() {
   // are stated in the order they win — a download under way is the newest fact, the reason it
   // stopped is the next, and a server that died while the window was open is the last.
   const half = (stage) => {
-    if (weightsPending !== null) return { ...stage, pending: weightsPending, refusal: null }
-    if (weightsRefusal !== null) return { ...stage, pending: null, refusal: weightsRefusal }
+    if (weightsPending !== null) return { ...stage, pending: weightsPending, refusal: null, weights: null }
+    // The weights failure keeps its own field and clears `refusal`: the window draws those facts
+    // in its own language, so the kernel's English sentence about the same thing has no business
+    // reaching a screen. Two producers, two shapes, and the sentence stops at the process edge.
+    if (weightsWhy !== null) return { ...stage, pending: null, refusal: null, weights: weightsWhy }
     if (modelServerRefusal !== null) return { ...stage, pending: null, refusal: modelServerRefusal }
     return stage
   }
@@ -950,18 +957,20 @@ async function start() {
     })
     weightsPending = null
     if (!arrived.ok) {
-      // Offline, a host that refused, a file that stopped short: one sentence, drawn where the
-      // model strips already draw "which server, and why not". The download resumes where it
-      // stopped on the next launch, which is what the sentence tells the person to do.
-      weightsRefusal = `${arrived.refusal}; launching Seek again continues where it stopped`
-      startRefusal = weightsRefusal
+      // Offline, a host that refused, a file that stopped short: the facts go to the window,
+      // which draws them in the language it is running in and adds the one thing a person has
+      // to know next — that a second launch continues where this one stopped.
+      weightsWhy = arrived.why
+      // The kernel is told in English, which is what it speaks: this sentence is its own
+      // reading of a half it cannot use, and it is the same string the log below prints.
+      startRefusal = describe(arrived.why)
       server = undefined
       // Only the judgement is starved by missing weights. A words half somebody named — in a
       // file or in the environment — reads no file from this machine, so refusing it here
       // would take down a half that is ready, and the window would say two things are broken
       // where one is.
       if (!wordsNamed) workServer = undefined
-      console.error(`seek: the weights did not arrive — ${weightsRefusal}`)
+      console.error(`seek: the weights did not arrive — ${startRefusal}`)
       pushChanged()
     } else {
       // Which host served them is said out loud, because a run that quietly fell back would

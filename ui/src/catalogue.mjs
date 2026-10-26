@@ -29,6 +29,9 @@ let stamps = null
 /** The size formatter, bound by the same call. `null` until a catalogue arrives. */
 let sizes = null
 
+/** The list formatter, bound by the same call. `null` until a catalogue arrives. */
+let lists = null
+
 /**
  * Bind this window to one catalogue.
  *
@@ -65,6 +68,12 @@ export function bindCatalogue(catalogue) {
     hour: '2-digit',
     minute: '2-digit',
   })
+  // A list is the same kind of fact as a count, and §4 names the shape it takes when it is not:
+  // `"A, B and C"` — the conjunction differs, so a `; ` or a `.join(', ')` at a call site is this
+  // file's subject in the form that reads correctly in English and nowhere else. The kernel has
+  // it too (`joinList` in `src/i18n.ts`), and the two are held to one answer per language in
+  // `ui/electron/catalogue.test.mjs`.
+  lists = new Intl.ListFormat(catalogue.locale, { style: 'long', type: 'conjunction' })
 
   translate = (key, params = {}) => {
     const message = catalogue.messages[key]
@@ -175,4 +184,52 @@ export function size(bytes) {
     )
   }
   return sizes.format(Math.max(0, Number(bytes) || 0) / 1e9)
+}
+
+/**
+ * Several items as one phrase in this language's own list convention.
+ *
+ * `docs/design/i18n.md` §4 names list joining as a formatting decision rather than a string
+ * one: German writes `A, B und C` and Chinese `A、B和C`, so a call site that joins with `; ` or
+ * `', '` has decided the language of its own separator. `Intl.ListFormat` decides it here
+ * instead, once, from the locale — which is why a language added by writing a file needs
+ * nothing from this file.
+ *
+ * The kernel's `joinList` is the same function, written there because that module cannot be
+ * imported into the page; `ui/electron/catalogue.test.mjs` holds the two to one answer for every
+ * language that ships.
+ */
+export function joinList(items) {
+  if (lists === null) {
+    throw new Error(
+      'no catalogue is bound yet, so a list has no form — the window draws nothing until ' +
+        'seek:catalogue has answered',
+    )
+  }
+  return lists.format(items)
+}
+
+/**
+ * Why the weights did not arrive, in this language.
+ *
+ * Three shapes (`weightsOf` in `ui/electron/snapshot.js` validates them), because there are
+ * three different things to say and they do not carry the same kind of words:
+ *
+ * - `no-host` is entirely ours — a build with no address configured — so the whole sentence is
+ *   a catalogue entry with the repository in it.
+ * - `refused` is one host's own sentence. It is drawn exactly as it came: `docs/design/i18n.md`
+ *   §2 forbids rewriting what a sender said, and a host that answered is a sender. Translating
+ *   it would be this window putting words in somebody else's mouth.
+ * - `hosts` is several of them, and only the frame and the joining are ours: §4 makes the list
+ *   form the language's (`"A, B and C"`), so the pairs go through `joinList()` rather than a `; `.
+ *
+ * This lives here rather than in the component for the reason `size()` does: it is a pure
+ * function of the catalogue, and a component cannot be imported by the suite that has to hold
+ * it to what a person actually reads.
+ */
+export function weightsReason(weights) {
+  if (weights.kind === 'no-host') return t('ui.weights.no-host', { repo: weights.repo })
+  if (weights.kind === 'refused') return weights.words
+  const each = weights.hosts.map((one) => t('ui.weights.host-said', { host: one.host, words: one.words }))
+  return t('ui.weights.from-no-host', { hosts: joinList(each) })
 }

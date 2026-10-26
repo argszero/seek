@@ -232,8 +232,11 @@ body {
    first, or a fallback looks like a configuration. Two strips (`stage1`, `stage2`) because
    the two halves are two servers and either can refuse without the other. `weights` is the
    fourth reading and is a single line rather than a strip per half: the download is one
-   fact about the process, and it takes the base colours on purpose — a first run fetching
-   its weights is the app working, and painting it with `refused` would report it broken.
+   fact about the process, and while it is running it takes the base colours on purpose — a
+   first run fetching its weights is the app working, and painting it with `refused` would
+   report it broken. When it *stops*, that is a failure and it takes the refused colours
+   (`.weights.refused`, below), which is the same line `main.js` draws between the two
+   readings: "still arriving, this far" is the app working, "stopped, and why" is not.
 
    `store` is the third, and it sits above them because it is the reason for them: a store
    the kernel would not open means no room, no message and no model to ask about any of it.
@@ -263,6 +266,16 @@ body {
 }
 .store.bound, .stage1.bound, .stage2.bound { background: var(--B50); color: var(--B700); }
 .store.refused, .stage1.refused, .stage2.refused { background: var(--R50); color: var(--R600); }
+/* A download that stopped is the failure the base colours were holding back, and its sentence
+   is the one that says what to do — which host refused, and that a second launch continues —
+   so it wraps like the store's instead of being cut off with an ellipsis. */
+.weights.refused { background: var(--R50); color: var(--R600); }
+.weights.refused .weights-why {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 
 .messages { list-style: none; margin: 0; padding: 16px 20px; overflow-y: auto; flex: 1; }
 
