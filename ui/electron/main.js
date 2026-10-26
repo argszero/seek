@@ -263,6 +263,30 @@ ipcMain.handle('seek:data-path', () => STORE_FILE)
 ipcMain.handle('seek:settings-path', () => SETTINGS_FILE)
 
 /**
+ * The words this window puts around what people and bots typed.
+ *
+ * `docs/design/i18n.md` §1 — no user-visible string is written into code — and the window is
+ * the surface that had none of it: the kernel's report has been read out of
+ * `src/i18n/<tag>.json` by key since the milestone, while the window wrote its own English.
+ *
+ * **Read at run time, from the catalogue the kernel loads.** Bundling the file into the page
+ * would make `src/i18n.ts`'s promise false for the window — that a language added by writing
+ * a file needs no code change — and the file already travels in a download (`extraResources`
+ * carries `i18n/*.json`, checked by `packaging.test.mjs`), so the read is one call at start-up
+ * rather than a build step that has to be kept in step with it.
+ *
+ * **The language is the kernel's own default**, `DEFAULT_LOCALE`: "the language a run speaks
+ * unless it is told otherwise". Nothing here invents a second answer to what tells it —
+ * `docs/design/i18n.md` §2 says the interface language is a setting and does not say where
+ * that setting lives, so this handler is where that choice will land rather than a decision
+ * taken quietly in the renderer.
+ */
+ipcMain.handle('seek:catalogue', async () => {
+  const { DEFAULT_LOCALE, catalogueFor } = await import('../../src/i18n.ts')
+  return catalogueFor(DEFAULT_LOCALE)
+})
+
+/**
  * Re-open the host over a different organization's store.
  *
  * **Switching moves nothing.** Each organization is a directory that already exists; this
