@@ -349,6 +349,35 @@ export interface Observation {
    */
   state?: ObservationState;
   /**
+   * What was decided about this entry, when something was.
+   *
+   * `data-model.md` §2.4 gives the entry *"a verdict (ignore / snooze / keep /
+   * act)"* beside the reason behind it, and `agent-lifecycle.md` §3 reaches it
+   * through the state machine: `new → watched (act | ignore | snooze | keep) →
+   * consumed`. `watched` is what this field means, which is why `state` has two
+   * values and not three.
+   *
+   * **An entry may skip it altogether.** Stage 0's fast pass — an @-mention, a
+   * reply, a direct message, a reminder coming due — consumes the entry without
+   * asking the watch agent (§4), so an entry settled that way carries no verdict
+   * and no reason. Absent therefore means *nothing judged this*, never *the
+   * judgement had nothing to say*. A rule never writes one either: the only
+   * writers are `gate.ts` for a decision read off the hints and `watch.ts` for
+   * one that came back from the judgement.
+   *
+   * **It does not cross into the work agent's context**, for the reason the
+   * reason doesn't: the copy handed to a turn is `HandedEntry` in `turn.ts`,
+   * which removes this field and the reason so a prompt is not told what was
+   * decided about it before it reads the message.
+   *
+   * Declared here because it was already true everywhere else: `gate.ts` and
+   * `watch.ts` have been writing it, `box.ts` reading it and `turn.ts` stripping
+   * it while this file — the one place that states the shape of the record —
+   * denied it existed. Nothing noticed, because this repository runs the tests
+   * with `node --test` and never asks a compiler.
+   */
+  verdict?: Verdict;
+  /**
    * What the judgement said about this entry, when it said anything.
    *
    * `agent-lifecycle.md` §4: *"The reason is still recorded — on the observation
