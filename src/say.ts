@@ -40,7 +40,7 @@ export interface SayOptions {
   /** The message this one answers, when it answers one. */
   replyTo?: Id;
   /**
-   * The principals this message addresses, Feishu's `{id, name}` pairs.
+   * The principals this message addresses, the open platform's `{id, name}` pairs.
    *
    * A bot that wants another bot to hear it has to name it: §11.4 says a bot
    * message wakes a bot only when it "@-mentions that bot, replies to one of its

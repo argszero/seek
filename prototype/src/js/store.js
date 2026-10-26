@@ -65,26 +65,31 @@
     } catch (err) {
       console.error('[seek] load failed', err)
     }
-    if (!loaded || !loaded.accounts || !loaded.store) {
+    if (!loaded || !loaded.orgs || !loaded.store) {
       loaded = M.createInitialState()
     }
     // forward-compatible defaults
     loaded.version = loaded.version || M.SCHEMA_VERSION
     loaded.theme = loaded.theme || 'light'
+    loaded.llm = loaded.llm || Object.assign({}, LLM_DEFAULTS)
+    // 老数据没有 dir：一个组织一个目录，缺了就按 org_id 补上
+    loaded.orgs.forEach((a) => {
+      if (!a.dir) a.dir = a.org_id
+    })
     Object.keys(loaded.store || {}).forEach((id) => {
       const d = loaded.store[id]
       d.chatters = d.chatters || []
       d.chats = d.chats || []
       d.messages = d.messages || {}
       d.drafts = d.drafts || {}
-      d.settings = d.settings || { sendWithEnter: true }
+      d.settings = d.settings || {}
     })
-    if (!loaded.accounts.length) {
+    if (!loaded.orgs.length) {
       const fresh = M.createInitialState()
       Object.assign(loaded, fresh)
     }
-    if (!loaded.store[loaded.currentAccountId]) {
-      loaded.currentAccountId = loaded.accounts[0].account_id
+    if (!loaded.store[loaded.currentOrgId]) {
+      loaded.currentOrgId = loaded.orgs[0].org_id
     }
     state.data = loaded
     state.ready = true
@@ -97,23 +102,23 @@
   // selectors
   // -------------------------------------------------------------------------
 
-  function account() {
+  function org() {
     const d = state.data
-    return d.accounts.find((a) => a.account_id === d.currentAccountId) || d.accounts[0]
+    return d.orgs.find((a) => a.org_id === d.currentOrgId) || d.orgs[0]
   }
 
   function data() {
-    return state.data.store[state.data.currentAccountId]
+    return state.data.store[state.data.currentOrgId]
   }
 
   function selfChatter() {
-    const acc = account()
+    const current = org()
     return (
-      data().chatters.find((c) => c.open_id === acc.open_id) || {
-        open_id: acc.open_id,
-        name: acc.name,
-        avatar_color: acc.avatar_color,
-        avatar_text: acc.avatar_text
+      data().chatters.find((c) => c.open_id === current.open_id) || {
+        open_id: current.open_id,
+        name: '我',
+        avatar_color: M.colorFor(current.open_id),
+        avatar_text: M.initialsOf('我')
       }
     )
   }
@@ -192,6 +197,16 @@
       .sort((a, b) => a.name.localeCompare(b.name, 'zh-Hans-CN'))
   }
 
+  // 这个组织的花名册：谁是「我」、谁是人、谁是机器人。
+  // 机器人辨认人类靠的就是这一份——成员自己带着 kind，不靠名字猜。
+  function roster() {
+    const all = data().chatters.slice()
+    const me = all.find((c) => c.is_self) || null
+    const humans = all.filter((c) => !c.is_self && c.kind !== 'bot')
+    const bots = all.filter((c) => c.kind === 'bot')
+    return { me, humans, bots }
+  }
+
   function groups() {
     return chats()
       .filter((c) => c.chat_mode === 'group' || c.chat_mode === 'topic')
@@ -236,6 +251,10 @@
         avatar_text: me.avatar_text
       }
     })
+    // 转发过来的消息记住它从谁那儿来，界面上标一行「转发自 X」。
+    if (o.forwardedFrom) msg.forwarded_from = o.forwardedFrom
+    // 引用回复：把被引用那条的说话人和原话一起存下，界面上画成一小块。
+    if (o.quoted) msg.quoted = o.quoted
     list.push(msg)
     const c = chat(chatId)
     if (c) {
@@ -366,15 +385,15 @@
     return c
   }
 
+  // 往这个组织里加一个机器人。机器人有名字和「它负责什么」，没有部门、城市、邮箱。
   function addFriend(fields) {
     const person = M.newChatter({
       name: fields.name,
-      department: fields.department,
-      city: fields.city,
-      email: fields.email,
-      mobile: fields.mobile,
-      description: fields.description,
-      is_friend: true
+      gender: fields.gender,
+      position: fields.position,
+      personality: fields.personality,
+      is_friend: true,
+      kind: 'bot'
     })
     data().chatters.push(person)
     touch('chatter')
@@ -439,82 +458,101 @@
     return s[key] === undefined ? fallback : s[key]
   }
 
+  // -------------------------------------------------------------------------
+  // 模型设置（机器级，不属于任何组织）
+  //
+  // 原型里原来没有这一块。现在「说话那半」要把请求发给哪家、用哪个模型、
+  // 拿什么 key 换，都得有个地方记，而它和组织无关——换组织不该换模型。
+  // key 只记「有没有」和尾号四位：界面上永远不再显示整串，
+  // 要换就整串覆盖。这是设计的意图，不是原型的偷懒。
+  // -------------------------------------------------------------------------
+
+  const LLM_DEFAULTS = {
+    baseUrl: 'https://atp-dev.shenbiai.net/v1',
+    model: 'deepseek-flash',
+    keyTail: '',      // 空＝没存过 key
+    keyLen: 0,
+    // 这三样到底是从哪儿读来的。这台机器上可能有三份说法：
+    //   emrg   = EMRG 的 ~/.emrg/config.toml 里那份（用户装 Seek 之前就有的）
+    //   own    = 就在设置页那张卡片里按过「保存」
+    //   env    = 启动 Seek 时给的环境变量（改了也不会写回文件）
+    // 界面上必须说清楚，否则人改了半天不知道改的是哪一份。
+    origin: 'emrg'
+  }
+
+  function llm() {
+    if (!state.data.llm) state.data.llm = Object.assign({}, LLM_DEFAULTS)
+    const cur = state.data.llm
+    Object.keys(LLM_DEFAULTS).forEach((k) => {
+      if (cur[k] === undefined) cur[k] = LLM_DEFAULTS[k]
+    })
+    return cur
+  }
+
+  function setLlm(patch) {
+    Object.assign(llm(), patch)
+    touch('llm')
+  }
+
   function setTheme(theme) {
     state.data.theme = theme
     if (window.seekHost && window.seekHost.setTheme) window.seekHost.setTheme(theme)
     touch('theme')
   }
 
-  function switchAccount(accountId) {
-    if (!state.data.store[accountId]) return
-    state.data.currentAccountId = accountId
-    touch('account')
+  function switchOrg(orgId) {
+    if (!state.data.store[orgId]) return
+    state.data.currentOrgId = orgId
+    touch('org')
   }
 
-  function updateAccount(patch) {
-    const acc = account()
-    Object.assign(acc, patch)
-    const self = data().chatters.find((c) => c.open_id === acc.open_id)
-    if (self) {
-      if (patch.name) {
-        self.name = patch.name
-        self.avatar_text = M.initialsOf(patch.name)
-      }
-      if (patch.department) self.department = patch.department
-      if (patch.email) self.email = patch.email
-      if (patch.mobile) self.mobile = patch.mobile
-      if (patch.description) self.description = patch.description
+  // 组织名只是一个展示标签：改它只改这一行文字。
+  // 它不同步到房间里「我」的名字，也不改这个组织里的任何一条数据。
+  function renameOrg(name) {
+    const next = String(name || '').trim()
+    if (!next) return false
+    org().name = next
+    touch('org')
+    return true
+  }
+
+  // 新建组织只问一个名字。名字是标签，数据从空白开始，
+  // 落在自己的目录里（seek-data/<dir>/），和别的组织一个字都不共享。
+  function addOrg(name) {
+    const label = String(name || '').trim()
+    if (!label) return null
+    const orgId = M.uid('org')
+    const self = M.newChatter({ name: '我', is_self: true })
+    const org = {
+      org_id: orgId,
+      dir: orgId,
+      open_id: self.open_id,
+      name: label,
+      created_at: Date.now()
     }
-    touch('account')
+    state.data.orgs.push(org)
+    state.data.store[orgId] = {
+      chatters: [self],
+      chats: [],
+      messages: {},
+      drafts: {},
+      // Enter 发送、Shift+Enter 换行是固定的，不存成设置项
+      settings: {}
+    }
+    state.data.currentOrgId = orgId
+    touch('org')
+    return org
   }
 
-  function addAccount(fields) {
-    const seeded = (function () {
-      // reuse the seed builder indirectly: a bare account with no chats
-      const self = M.newChatter({
-        name: fields.name || '新账号',
-        department: fields.department || '',
-        email: fields.email || '',
-        is_self: true
-      })
-      return {
-        account: {
-          account_id: M.uid('acc'),
-          open_id: self.open_id,
-          union_id: self.union_id,
-          name: self.name,
-          en_name: '',
-          avatar_color: self.avatar_color,
-          avatar_text: self.avatar_text,
-          email: fields.email || '',
-          mobile: fields.mobile || '',
-          department: fields.department || '',
-          tenant_name: fields.tenant_name || 'Seek 本地空间',
-          created_at: Date.now()
-        },
-        data: {
-          chatters: [self],
-          chats: [],
-          messages: {},
-          drafts: {},
-          settings: { sendWithEnter: true }
-        }
-      }
-    })()
-    state.data.accounts.push(seeded.account)
-    state.data.store[seeded.account.account_id] = seeded.data
-    state.data.currentAccountId = seeded.account.account_id
-    touch('account')
-    return seeded.account
-  }
-
-  function removeAccount(accountId) {
+  // 删除组织＝连目录一起删：列表里那一行和 seek-data/<dir>/ 里的东西一起没掉，
+  // 没有回收站，也找不回来。调用方必须先问过一遍。
+  function removeOrg(orgId) {
     const d = state.data
-    if (d.accounts.length <= 1) return false
-    d.accounts = d.accounts.filter((a) => a.account_id !== accountId)
-    delete d.store[accountId]
-    if (d.currentAccountId === accountId) d.currentAccountId = d.accounts[0].account_id
-    touch('account')
+    if (d.orgs.length <= 1) return false
+    d.orgs = d.orgs.filter((a) => a.org_id !== orgId)
+    delete d.store[orgId]
+    if (d.currentOrgId === orgId) d.currentOrgId = d.orgs[0].org_id
+    touch('org')
     return true
   }
 
@@ -556,7 +594,7 @@
     subscribe,
     emit,
     state,
-    account,
+    org,
     data,
     selfChatter,
     chats,
@@ -569,6 +607,7 @@
     topics,
     replies,
     friends,
+    roster,
     groups,
     totalUnread,
     findP2P,
@@ -591,10 +630,12 @@
     setSetting,
     setting,
     setTheme,
-    switchAccount,
-    updateAccount,
-    addAccount,
-    removeAccount,
+    llm,
+    setLlm,
+    switchOrg,
+    renameOrg,
+    addOrg,
+    removeOrg,
     search,
     exportJSON
   }

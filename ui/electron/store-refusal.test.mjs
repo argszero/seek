@@ -48,7 +48,7 @@ const OLD_SHAPED_STORE = JSON.stringify(
   {
     version: 1,
     theme: 'light',
-    currentAccountId: 'acc_5678a0b140',
+    currentOrganizationId: 'acc_5678a0b140',
     accounts: [{ id: 'acc_5678a0b140', name: 'an account' }],
     store: { acc_5678a0b140: { rooms: [], messages: {} } },
   },

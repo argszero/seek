@@ -267,6 +267,46 @@ test('everyone the store knows is offered to a room that does not exist yet', ()
 })
 
 /**
+ * A bot's card, carried whole.
+ *
+ * The host asked for four things on a bot — 姓名／性别／职位／性格 (`src/types.ts`, `Bot`) — and the
+ * kernel's own seed fills three of them (男 / 研发 / 实事求是、老实听话). A field the seed writes
+ * but this projection drops is a card nobody can draw, so each one is asserted here rather than
+ * trusted to the shape of a spread.
+ */
+test("a bot's gender, position and personality are carried to the window as written", () => {
+  const store = seeded()
+  store.data.bots['bo_echo'] = {
+    id: 'bo_echo',
+    name: 'Echo',
+    description: 'the bot this milestone is about',
+    gender: '男',
+    position: '研发',
+    personality: '实事求是、老实听话',
+  }
+
+  const echoed = snapshotOf(store, '/tmp/seek.json').people.find((person) => person.id === 'bo_echo')
+  assert.deepEqual(echoed, {
+    id: 'bo_echo',
+    name: 'Echo',
+    bot: true,
+    kind: 'bot',
+    description: 'the bot this milestone is about',
+    gender: '男',
+    position: '研发',
+    personality: '实事求是、老实听话',
+  })
+
+  // A bot that has said none of it is drawn as "not said" on all three rather than as no card
+  // at all: the two are different, and `bo_work` above is the bot that has said none of it.
+  const bare = snapshotOf(store, '/tmp/seek.json').people.find((person) => person.id === 'bo_watch')
+  assert.deepEqual(
+    { gender: bare.gender, position: bare.position, personality: bare.personality },
+    { gender: null, position: null, personality: null },
+  )
+})
+
+/**
  * A principal the store holds no name for is still somebody a room can be given, and the
  * id is what the store files them under — the same fallback `members` already makes.
  */
@@ -274,8 +314,20 @@ test('a person with no name is offered under their id', () => {
   const store = new SeekStore(emptyData())
   store.data.principals['pr_anon'] = { id: 'pr_anon', kind: 'human' }
 
+  // The id stands in for the name, and every other field is present and empty: a person is
+  // not a bot, so the four a bot may say about itself are `null` here rather than absent —
+  // the window can then draw "not said" without asking whether that is what absence meant.
   assert.deepEqual(snapshotOf(store, '/tmp/seek.json').people, [
-    { id: 'pr_anon', name: 'pr_anon', bot: false },
+    {
+      id: 'pr_anon',
+      name: 'pr_anon',
+      bot: false,
+      kind: 'human',
+      description: null,
+      gender: null,
+      position: null,
+      personality: null,
+    },
   ])
 })
 
@@ -379,4 +431,22 @@ test('a room nothing has been spent in reads zeros, which is a reading rather th
   // leave a reader unable to tell "nothing spent" from "nothing measured".
   const room = snapshotOf(seeded(), '/tmp/seek.json').rooms[0]
   assert.deepEqual(room.spend, { turns: 0, input_tokens: 0, output_tokens: 0, bots: [] })
+})
+
+/**
+ * The first law rides with every snapshot, because three screens quote it and none of them may
+ * write it.
+ *
+ * The words are the prototype's (`ui/electron/law.js` says where they come from), and the point
+ * of them being here rather than in a component is that a copy per screen is a copy per drift.
+ * The empty-store case is asserted too: a window that never opened a store is exactly where a
+ * reader most needs to know what the app is for.
+ */
+test('the first law is carried by every snapshot, in the words the app keeps', () => {
+  const FIRST_LAW = '人大于机器人：机器人不得越过人，也不得替人做决定。'
+
+  assert.equal(snapshotOf(seeded(), '/tmp/seek.json').firstLaw, FIRST_LAW)
+  const empty = snapshotOf(null, null)
+  assert.equal(empty.firstLaw, FIRST_LAW)
+  assert.equal(empty.error, 'the store is not open yet', 'the empty shape is still the empty shape')
 })

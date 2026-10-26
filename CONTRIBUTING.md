@@ -26,7 +26,7 @@ The design is settled and the kernel is being written. **`src/README.md` is the 
 ## What not to do
 
 - **Do not write behaviour the documents do not state.** Every rule comes from `docs/host-rulings.md` or `docs/design/`. Where both are silent, ask before building it. A rule invented in code is the one thing here that has to be undone later.
-- **Do not refactor `prototype/`.** It is an archive of the previous version, kept to show what a Feishu-style layout looks like. It is not the starting point: its data model is single-user and incompatible with this one.
+- **Do not refactor `prototype/`.** It is an archive of the previous version, kept to show what a desktop-messenger layout looks like. It is not the starting point: its data model is single-user and incompatible with this one.
 
 ## Rules
 

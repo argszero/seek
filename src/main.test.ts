@@ -222,6 +222,24 @@ test('a second run continues the room instead of seeding a second one', async ()
   }
 });
 
+test('the seeded bot carries the card the host named, filled rather than blank', async () => {
+  const { store, dir } = await onDisk();
+  try {
+    const world = seedOneRoom(store);
+    const bot = store.data.bots[world.bot];
+
+    // The three the host stated on 2026-10-26T21:22, in his own words. They are content
+    // rather than chrome, so no catalogue translates them and a test compares them as they
+    // were written (`docs/design/i18n.md` §2).
+    assert.deepEqual(
+      { gender: bot.gender, position: bot.position, personality: bot.personality },
+      { gender: '男', position: '研发', personality: '实事求是、老实听话' },
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('the roster supplies the agents, the seed supplies the world', async () => {
   const { store, dir } = await onDisk();
   try {

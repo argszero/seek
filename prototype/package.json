@@ -2,7 +2,7 @@
   "name": "seek",
   "productName": "Seek",
   "version": "0.1.0",
-  "description": "Seek — a local-only, Feishu(Lark)-style desktop client. No server.",
+  "description": "Seek — a local-only desktop messenger. No server, no account, no network.",
   "main": "main.js",
   "private": true,
   "scripts": {

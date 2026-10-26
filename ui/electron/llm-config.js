@@ -16,10 +16,17 @@
  * the chat call has to name the model it is asked of, and an endpoint named without one cannot
  * be asked for a turn at all.
  *
- * **The environment still wins, and the two never merge.** These are the settings of another
- * program on the same machine, so they are used only where the person said nothing: with
- * `SEEK_WORK_SERVER` or `SEEK_WORK_MODEL` set, this file is not consulted. Merging them would
- * produce a server from one source and a model from the other — a pairing nobody typed.
+ * **The environment still wins, and the sources never merge.** These are the settings of
+ * another program on the same machine, so they are used only where the person said nothing:
+ * with `SEEK_WORK_SERVER` or `SEEK_WORK_MODEL` set, this file is not consulted. Merging them
+ * would produce a server from one source and a model from the other — a pairing nobody typed.
+ *
+ * **Three sources now, in the order a person would expect.** The environment first (a run
+ * started from a terminal overrides files it never edited), then Seek's own `settings.json`
+ * — what someone chose inside the app, which is the ordinary case once there is a settings
+ * page — and only then this file, for a machine where the other program was configured first.
+ * Each source is still used whole or not at all, so the no-merge rule above holds for all
+ * three rather than only for the first two.
  *
  * **A configured endpoint is not a server the app was *told* about.** `server.js` answers
  * `named` for an origin in the environment and then starts nothing, and that rule is untouched
@@ -166,7 +173,7 @@ function readConfiguredEndpoint(configPath = defaultConfigPath()) {
  * takes this half down with it: a configured endpoint does not depend on those files, so it is
  * not refused along with the judgement.
  */
-function wordsHalfFrom({ env, config } = {}) {
+function wordsHalfFrom({ env, settings, config } = {}) {
   const server = textOf(env?.SEEK_WORK_SERVER)
   const model = textOf(env?.SEEK_WORK_MODEL)
   if (server !== undefined || model !== undefined) {
@@ -175,6 +182,19 @@ function wordsHalfFrom({ env, config } = {}) {
       workModel: model,
       workApiKey: textOf(env?.SEEK_API_KEY),
       from: 'environment',
+      refusal: null,
+    }
+  }
+  // This app's own settings come second: they are the answer a person gave inside Seek, so
+  // they outrank the config of another program on the same machine — but not the environment,
+  // which is how a run started from a terminal overrides a file it did not edit.
+  if (settings?.refusal) return { from: 'settings', refusal: settings.refusal }
+  if (settings?.baseUrl !== undefined) {
+    return {
+      workServer: settings.baseUrl,
+      workModel: settings.model,
+      workApiKey: settings.apiKey,
+      from: 'settings',
       refusal: null,
     }
   }

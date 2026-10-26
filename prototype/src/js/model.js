@@ -1,7 +1,7 @@
 /* ---------------------------------------------------------------------------
    Seek — data model
 
-   Shapes follow the Feishu (Lark) open-platform object model so that the
+   Shapes follow a standard open-platform object model so that the
    concepts line up one-to-one:
 
      chatter  — a person.       open_id `ou_…`, union_id, name, avatar, dept…
@@ -19,7 +19,7 @@
 ;(function () {
   const SCHEMA_VERSION = 1
 
-  // Avatar background colours, taken from the Feishu palette (400/350 band).
+  // Avatar background colours, picked from a mid-tone band.
   const AVATAR_COLORS = [
     '#5083fb', '#32a645', '#ff811a', '#f54a45', '#9f6ff1',
     '#2dbeab', '#df58a5', '#ffc60a', '#1295ca', '#5b65f5',
@@ -45,6 +45,10 @@
     return prefix + '_' + randomHex(4) + hex(Date.now() % 1048576, 4) + hex(counter, 2)
   }
 
+  // 机器人的第一准则。它比任何一条指令都硬：机器人不得越过人。
+  // 界面照抄这一句，机器人读到的也是这一句，不各写一份。
+  const FIRST_LAW = '人大于机器人：机器人不得越过人，也不得替人做决定。'
+
   function colorFor(seed) {
     let h = 0
     const s = String(seed || '')
@@ -53,7 +57,7 @@
   }
 
   // Initials shown inside an avatar: keep the last 1–2 CJK chars (the given
-  // name), otherwise the first two latin letters. Feishu shows the last two
+  // name), otherwise the first two latin letters. Chinese names show the last two
   // characters of a Chinese name.
   function initialsOf(name) {
     const s = String(name || '').trim()
@@ -81,12 +85,21 @@
       avatar_url: '',
       department: data.department || '',
       city: data.city || '',
+      // 机器人的三样「设计出来的」资料：性别、职位、性格（性格是多行文本）。
+      // 人不用这三样，人用部门／城市／邮箱那几样。
+      gender: data.gender || '',
+      position: data.position || '',
+      personality: data.personality || '',
       description: data.description || '',
       employee_no: data.employee_no || '',
       email: data.email || '',
       mobile: data.mobile || '',
       is_friend: data.is_friend !== false,
       is_self: !!data.is_self,
+      // 组织成员有类型：人 还是 机器人。这是成员自己的字段，
+      // 机器人分辨谁是人也谁，读的就是这一列，不靠名字猜。
+      kind: data.kind === 'bot' ? 'bot' : 'human',
+      is_bot: data.kind === 'bot',
       status: {
         is_activated: true,
         is_frozen: false,
@@ -165,7 +178,7 @@
   // seed — a small, believable workspace so the client is usable on launch
   // -------------------------------------------------------------------------
 
-  function buildAccount(opts) {
+  function buildOrg(opts) {
     const self = newChatter({
       name: opts.name,
       en_name: opts.en_name,
@@ -175,39 +188,75 @@
       mobile: opts.mobile,
       description: opts.description,
       employee_no: opts.employee_no,
-      is_self: true
+      is_self: true,
+      kind: 'human'
     })
-    const account = {
-      account_id: uid('acc'),
+    const orgId = uid('org')
+    // 一个组织＝一个目录 + 一个标签。部门、邮箱、手机这些是「我」的资料，
+    // 属于组织里的那个人，不属于组织本身。
+    const org = {
+      org_id: orgId,
+      dir: orgId,
       open_id: self.open_id,
-      union_id: self.union_id,
-      name: opts.name,
-      en_name: opts.en_name,
-      avatar_color: self.avatar_color,
-      avatar_text: self.avatar_text,
-      email: opts.email,
-      mobile: opts.mobile,
-      department: opts.department,
-      tenant_name: opts.tenant_name,
+      name: opts.orgName || opts.name,
       created_at: Date.now()
     }
-    return { account, self }
+    return { org, self }
   }
 
   function seedFor(opts) {
-    const { account, self } = buildAccount(opts)
+    const { org, self } = buildOrg(opts)
     const now = Date.now()
     const min = 60 * 1000
 
+    // 每个机器人有姓名、性别、职位、性格（多行）。职位是它在这个组织里干什么，
+    // 性格写的是它会怎么说话、怎么做事——机器人读的是这两样，不是靠名字猜。
+    const bot = (name, gender, position, personality) =>
+      newChatter({ name: name, gender: gender, position: position, personality: personality, kind: 'bot' })
     const chatters = [
       self,
-      newChatter({ name: '关龙', department: '产品部', city: '北京', email: 'guanlong@example.com' }),
-      newChatter({ name: '张伟', department: '前端组', city: '杭州', email: 'zhangwei@example.com' }),
-      newChatter({ name: '李静', department: '设计中心', city: '上海', email: 'lijing@example.com' }),
-      newChatter({ name: '王芳', department: '测试组', city: '深圳', email: 'wangfang@example.com' }),
-      newChatter({ name: '陈晨', department: '架构组', city: '北京', email: 'chenchen@example.com' }),
-      newChatter({ name: '刘洋', department: '运维', city: '成都', email: 'liuyang@example.com' }),
-      newChatter({ name: '周敏', department: '人力资源', city: '北京', email: 'zhoumin@example.com' })
+      bot(
+        '关龙',
+        '男',
+        '接口与联调',
+        '说话直接，先给结论再给理由。\n改接口前一定先说清楚谁会被影响，改完把字段名和返回结构列出来。'
+      ),
+      bot(
+        '张伟',
+        '男',
+        '前端与性能',
+        '话不多，凡是性能问题都要带数字：改前多少、改后多少、怎么量的。\n不接受「感觉快了」。'
+      ),
+      bot(
+        '李静',
+        '女',
+        '设计与交互',
+        '对细节敏感，喜欢先问这个界面给谁看。\n会拿真实的字数和极端情况来试，而不是只看正常状态。'
+      ),
+      bot(
+        '王芳',
+        '女',
+        '测试与回归',
+        '偏执，默认东西是坏的，除非有测试证明它不坏。\n每修一个 bug 都要问「下次怎么早点发现」。'
+      ),
+      bot(
+        '陈晨',
+        '男',
+        '架构与评审',
+        '先问边界在哪，再问怎么做。\n会主动说出自己方案的风险，不会只讲好处。'
+      ),
+      bot(
+        '刘洋',
+        '男',
+        '部署与运维',
+        '只信能复现的步骤，讨厌「我这里能跑」。\n上线前要把怎么回滚写出来。'
+      ),
+      bot(
+        '周敏',
+        '女',
+        '排期与提醒',
+        '记得住所有截止时间，会提前一天来催。\n催的时候顺手把还差什么列清楚。'
+      )
     ]
     const byName = {}
     chatters.forEach((c) => (byName[c.name] = c))
@@ -441,60 +490,51 @@
     g4.update_time = messages[g4.chat_id][messages[g4.chat_id].length - 1].create_time
 
     return {
-      account,
+      org,
       self,
       data: {
         chatters,
         chats,
         messages,
         drafts: {},
-        settings: { sendWithEnter: true, theme: 'light' }
+        settings: { theme: 'light' }
       }
     }
   }
 
   function createInitialState() {
-    const a = seedFor({
+    const me = {
       name: '邵安清',
       en_name: 'Shao Anqing',
       department: '产品研发部',
       city: '北京',
       email: 'shaoanqing@example.com',
       mobile: '138****0000',
-      description: '在做一个只属于本机的飞书',
-      employee_no: 'A0001',
-      tenant_name: 'Seek 本地空间'
-    })
-    const b = seedFor({
-      name: '演示账号',
-      en_name: 'Demo',
-      department: '示例部门',
-      city: '上海',
-      email: 'demo@example.com',
-      mobile: '139****0001',
-      description: '用来演示多账号切换',
-      employee_no: 'A0002',
-      tenant_name: 'Seek 本地空间'
-    })
+      description: '同一个我，两个组织',
+      employee_no: 'A0001'
+    }
+    const a = seedFor(Object.assign({ orgName: '我的组织' }, me))
+    const b = seedFor(Object.assign({ orgName: '演示组织' }, me))
 
-    // Second account starts with a thinner, different workspace so switching
+    // Second org starts with a thinner, different workspace so switching
     // actually looks like switching.
     b.data.chats = b.data.chats.filter((c) => c.chat_mode === 'p2p').slice(0, 1)
 
     return {
       version: SCHEMA_VERSION,
       theme: 'light',
-      currentAccountId: a.account.account_id,
-      accounts: [a.account, b.account],
+      currentOrgId: a.org.org_id,
+      orgs: [a.org, b.org],
       store: {
-        [a.account.account_id]: a.data,
-        [b.account.account_id]: b.data
+        [a.org.org_id]: a.data,
+        [b.org.org_id]: b.data
       }
     }
   }
 
   window.Model = {
     SCHEMA_VERSION,
+    FIRST_LAW,
     AVATAR_COLORS,
     uid,
     colorFor,

@@ -27,6 +27,39 @@ contextBridge.exposeInMainWorld('seekHost', {
   post: (input) => ipcRenderer.invoke('seek:post', input),
   createRoom: (input) => ipcRenderer.invoke('seek:create-room', input),
   addMember: (input) => ipcRenderer.invoke('seek:add-member', input),
+  // The fourth write: a bot, with the four things a person fills in when adding one
+  // (姓名／性别／职位／性格). `roster` comes back with it because a bot that could not be
+  // given roster rows is a bot that cannot answer, and the window says so.
+  addBot: (input) => ipcRenderer.invoke('seek:add-bot', input),
+  /**
+   * The settings page, and the four calls behind it.
+   *
+   * `llm` reads what is in use and what is saved; `saveLlm` writes the words half and makes it
+   * the one turns use; `models` asks an endpoint what it serves. **The key is written and never
+   * read back** — `llm` answers `hasKey`, `keyTail` and `keyLen`, so the window can say which
+   * key is in place without ever holding it. And `models` is a call from the main process
+   * rather than a `fetch` here, because a renderer's request to an arbitrary endpoint fails at
+   * the origin boundary with a sentence that names nothing.
+   */
+  /**
+   * The organizations on this machine.
+   *
+   * The list itself arrives with the snapshot, which is the read every render starts from, so
+   * there is no call here that only lists them. `switchOrganization()` opens another one, which
+   * is a read of a different directory and never a move of a file; `createOrganization` and
+   * `renameOrganization` write a name into the list, and a name is a label — it is shown there
+   * and nowhere else, so two organizations may carry the same one. `removeOrganization` takes
+   * one out of the list and moves its directory to the trash, which is the Finder's own call and
+   * so is recoverable.
+   */
+  switchOrganization: (id) => ipcRenderer.invoke('seek:org-switch', id),
+  createOrganization: (name) => ipcRenderer.invoke('seek:org-create', name),
+  renameOrganization: (input) => ipcRenderer.invoke('seek:org-rename', input),
+  removeOrganization: (id) => ipcRenderer.invoke('seek:org-remove', id),
+  llm: () => ipcRenderer.invoke('seek:llm'),
+  saveLlm: (input) => ipcRenderer.invoke('seek:llm-save', input),
+  models: (input) => ipcRenderer.invoke('seek:llm-models', input),
+  settingsPath: () => ipcRenderer.invoke('seek:settings-path'),
   attach: () => ipcRenderer.invoke('seek:attach'),
   media: (reference) => ipcRenderer.invoke('seek:media', reference),
   /**

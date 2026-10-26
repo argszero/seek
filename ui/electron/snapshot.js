@@ -18,6 +18,8 @@
  * messages by calling `deliver()`, so the kernel's shape is the only shape in play.
  */
 
+const { FIRST_LAW } = require('./law.js')
+
 /**
  * The person the interface speaks as.
  *
@@ -93,12 +95,30 @@ function peopleOf(store) {
   const people = [
     ...Object.values(store.data.principals),
     ...Object.values(store.data.bots),
-  ].map((who) => ({
-    id: who.id,
-    name: typeof who.name === 'string' && who.name !== '' ? who.name : who.id,
-    bot: Boolean(store.data.bots[who.id]),
-  }))
+  ].map((who) => {
+    const isBot = Boolean(store.data.bots[who.id])
+    return {
+      id: who.id,
+      name: typeof who.name === 'string' && who.name !== '' ? who.name : who.id,
+      bot: isBot,
+      // The two kinds read different fields, and neither is invented here. A person has a
+      // `description` and no four-part card; a bot has the four the host asked for
+      // (`src/types.ts`, `Bot`) and every one of them may be absent on a bot written before
+      // those fields existed — so each is `null` rather than missing, and the window can draw
+      // "not said" without asking whether absence means that or a rename that went wrong.
+      kind: isBot ? 'bot' : 'human',
+      description: textOrNull(who.description),
+      gender: isBot ? textOrNull(who.gender) : null,
+      position: isBot ? textOrNull(who.position) : null,
+      personality: isBot ? textOrNull(who.personality) : null,
+    }
+  })
   return people
+}
+
+/** A stored string, or `null` when it is absent, empty or not a string at all. */
+function textOrNull(value) {
+  return typeof value === 'string' && value !== '' ? value : null
 }
 
 /**
@@ -187,6 +207,10 @@ function snapshotOf(store, storeFile, stage1 = null, stage2 = null, storeRefusal
       stage1: stageOneOf(stage1),
       stage2: stageTwoOf(stage2),
       storeRefusal,
+      // The rule a person is shown on the bot's card is a fact about the product, not about
+      // this store, so it is here even on a window that never opened one: a refusal is when a
+      // reader most needs to know what the app is for.
+      firstLaw: FIRST_LAW,
       error: 'the store is not open yet',
     }
   }
@@ -225,7 +249,7 @@ function snapshotOf(store, storeFile, stage1 = null, stage2 = null, storeRefusal
       media: message.media ? { key: message.media.key, mime: message.media.mime } : null,
       // The kernel's field is `created_at`; `at` is this snapshot's own name for it.
       at: message.created_at,
-      // Who this message addresses, in the kernel's own pairs: `mentions` is Feishu's field,
+      // Who this message addresses, in the kernel's own pairs: `mentions` is the field,
       // `{id, name}` each, and rule 15 of `docs/design/data-model.md` says it is "what the
       // interface draws as blue @-text" — so a snapshot without it is a window that cannot
       // draw a mention at all, and the message would keep carrying one where nothing reads
@@ -257,6 +281,8 @@ function snapshotOf(store, storeFile, stage1 = null, stage2 = null, storeRefusal
     // A store that opened has nothing to refuse; the field is present so a window reading
     // it never has to ask whether its absence means "fine" or "not asked".
     storeRefusal: null,
+    // Quoted, not written here: one sentence with three screens reading it (`law.js`).
+    firstLaw: FIRST_LAW,
   }
 }
 

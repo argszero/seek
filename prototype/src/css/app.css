@@ -1,6 +1,6 @@
 /* ---------------------------------------------------------------------------
    Seek — application styles
-   Layout mirrors the Feishu desktop client: a 64px nav rail, a 300px
+   Layout mirrors a conventional desktop messenger: a 64px nav rail, a 300px
    conversation list, the message column, and an optional right panel.
    --------------------------------------------------------------------------- */
 
@@ -160,7 +160,8 @@ svg {
   height: 32px;
   margin-bottom: 10px;
   position: relative;
-  cursor: pointer;
+  /* 不是按钮：不给手型光标，免得看起来能点。 */
+  cursor: default;
 }
 
 .rail-avatar .presence {
@@ -524,6 +525,15 @@ svg {
   min-width: 0;
 }
 
+/* 正文紧包一层：它自己按最长一行收窄，悬停工具条才能贴着消息右沿站，
+   而不是钉在整行的右端（短消息时那样会飘出很远）。 */
+.msg-content {
+  display: inline-block;
+  position: relative;
+  max-width: 100%;
+  vertical-align: top;
+}
+
 .msg-head {
   display: flex;
   align-items: baseline;
@@ -632,23 +642,203 @@ svg {
   color: var(--primary-content-default);
 }
 
+/* 悬停工具条照飞书量出来的尺寸：表情＝独立白方块 26×26（比药丸高出 1px），
+   右边一条白药丸 26 高，四格各 24 宽，格间 1px 细线，圆角 6，同一条投影。 */
 .msg-actions {
   position: absolute;
-  top: -14px;
-  right: 12px;
+  top: -9px;
+  left: 100%;
+  margin-left: 6px;
   display: none;
   align-items: center;
-  gap: 1px;
-  padding: 2px;
-  border-radius: var(--radius-md);
-  background: var(--bg-float);
-  border: 1px solid var(--line-border-card);
-  box-shadow: var(--shadow-s2-down);
+  gap: 2px;
+  white-space: nowrap;
   z-index: 2;
 }
 
-.msg-row:hover .msg-actions {
+/* 消息顶到右边、后面放不下这条工具条时，改成骑在消息上方、右沿对齐。 */
+.msg-row.narrow .msg-actions {
+  left: auto;
+  right: 0;
+  margin-left: 0;
+  top: auto;
+  bottom: calc(100% + 3px);
+}
+
+.msg-row:hover .msg-actions,
+.msg-row:focus-within .msg-actions {
   display: flex;
+}
+
+.msg-actions .act-emoji {
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  background: var(--bg-float);
+  border: 1px solid var(--line-border-card);
+  box-shadow: var(--shadow-s2-down);
+  font-size: 15px;
+  line-height: 1;
+}
+
+.msg-actions .act-emoji:hover {
+  background: var(--fill-hover);
+}
+
+.msg-actions .act-seg {
+  display: flex;
+  align-items: stretch;
+  border-radius: var(--radius-sm);
+  background: var(--bg-float);
+  border: 1px solid var(--line-border-card);
+  box-shadow: var(--shadow-s2-down);
+  overflow: hidden;
+}
+
+.msg-actions .act-seg button {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--icon-n1);
+  transition: background-color 0.1s ease;
+}
+
+.msg-actions .act-seg button + button {
+  border-left: 1px solid var(--line-border-card);
+}
+
+.msg-actions .act-seg button:hover {
+  background: var(--fill-hover);
+}
+
+/* 引用回复：被引的话缩进一小块，左边一道竖线，和正文区分开。 */
+.msg-quote {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 2px 0 3px;
+  padding: 2px 8px;
+  border-left: 2px solid var(--line-border-card);
+  background: var(--bg-body-overlay);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  font-size: var(--fs-caption);
+  line-height: 18px;
+  color: var(--text-caption);
+  max-width: 100%;
+}
+
+.msg-quote-name {
+  flex: 0 0 auto;
+  font-weight: 500;
+}
+
+.msg-quote-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 输入框上面那条「正在回复谁」：能看清原话，右边一个 × 取消。 */
+.composer-quote {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+  padding: 5px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-body-overlay);
+  border-left: 2px solid var(--primary-fill-default);
+  font-size: var(--fs-caption);
+  line-height: 18px;
+  color: var(--text-caption);
+}
+
+.composer-quote-main {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+
+.composer-quote-name {
+  flex: 0 0 auto;
+  font-weight: 500;
+  color: var(--text-title);
+}
+
+.composer-quote-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-quote-x {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-xs);
+  color: var(--icon-n2);
+}
+
+.composer-quote-x:hover {
+  background: var(--fill-hover);
+  color: var(--icon-n1);
+}
+
+/* 转发过来的消息：顶上标一行来源，像飞书那样让人一眼看出这话不是本群的人说的。 */
+.msg-forwarded {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--text-placeholder);
+  margin-bottom: 2px;
+}
+
+/* 表情回复面板：贴在按钮下方的小浮层，八列，点一下加／取消。 */
+.react-pop {
+  position: fixed;
+  z-index: 60;
+  display: grid;
+  grid-template-columns: repeat(8, 28px);
+  gap: 2px;
+  padding: 8px;
+  border-radius: var(--radius-lg);
+  background: var(--bg-float);
+  border: 1px solid var(--line-border-card);
+  box-shadow: var(--shadow-s2-down);
+}
+
+.react-pick {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.react-pick:hover {
+  background: var(--fill-hover);
+}
+
+.react-pick.mine {
+  background: var(--fill-selected);
 }
 
 .thread-replies {
@@ -1257,6 +1447,47 @@ textarea.field-input {
   background: var(--fill-selected);
   color: var(--primary-content-default);
 }
+.chip.bad {
+  background: var(--R100);
+  color: var(--R500);
+}
+
+/* 「对方是怎么说的」——连不上时把这句原话摆出来。
+   它不该长得像正文，也不该被藏进 tooltip：人要靠它判断是地址错了、key 错了，
+   还是这一家压根没有这个模型名。 */
+/* 输入框 + 它右边那颗小按钮（读取列表） */
+.field-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.field-row .field-input {
+  flex: 1;
+  min-width: 0;
+}
+.field-row .btn {
+  flex: 0 0 auto;
+}
+
+.llm-error {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--R100);
+  color: var(--R500);
+  font-size: 12px;
+  line-height: 18px;
+  word-break: break-word;
+}
+.llm-error-title {
+  font-weight: 500;
+}
+.llm-error-raw {
+  margin-top: 2px;
+  font-family: var(--font-mono);
+  opacity: 0.85;
+  white-space: pre-wrap;
+}
 
 .side-by-side {
   display: flex;
@@ -1266,20 +1497,6 @@ textarea.field-input {
 
 .grow {
   flex: 1;
-}
-
-/* --- the empty-thread entry only appears on hover, as in Feishu ------------ */
-
-.thread-replies.ghost {
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.12s ease;
-}
-
-.msg-row:hover .thread-replies.ghost,
-.msg-row:focus-within .thread-replies.ghost {
-  opacity: 1;
-  pointer-events: auto;
 }
 
 /* --- attachments: image messages, file cards, drop target, lightbox ------- */

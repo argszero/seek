@@ -5,7 +5,7 @@
  * private interpretation.** A room has one message log, and every bot derives
  * its own answer from it once, when a message is delivered to it.
  *
- * Identifiers use the Feishu prefixes of data-model rule 10: `ou_` a principal
+ * Identifiers use the prefixes of data-model rule 10: `ou_` a principal
  * (a human or a bot), `oc_` a room, `om_` a message, `ag_` an agent.
  */
 
@@ -36,6 +36,21 @@ export interface Bot {
   name: string;
   avatar?: string;
   description?: string;
+  /**
+   * What the bot is, in the four things a person fills in when adding one.
+   *
+   * The host asked for these on 2026-10-26T20:18, in these words: 姓名／性别／职位／性格.
+   * **`position` is what the bot does in this organization and `personality` is how it talks and
+   * works** — two different questions, which is why the second is free text over several lines
+   * and the first is a short label. `name` is above; `gender` is one of a short list the window
+   * offers and is stored as written, `''` included, because a person may decline to say.
+   *
+   * They are stored on the bot and not on its agents: every agent of the bot speaks as it, and a
+   * description copied onto each agent would disagree with itself the first time one was edited.
+   */
+  gender?: string;
+  position?: string;
+  personality?: string;
 }
 
 /**
@@ -56,14 +71,14 @@ export interface Agent {
   tools: string[];
 }
 
-/** Feishu's three chat modes, stored for fidelity. */
+/** The open platform's three chat modes, stored for fidelity. */
 export type ChatMode = 'group' | 'topic' | 'p2p';
 
 /**
  * Where a group of participants talks.
  *
  * A direct message is a headcount, not a type: it is an ordinary room with two
- * members. `chat_mode` is carried because Feishu has the field, and **no domain
+ * members. `chat_mode` is carried because the open platform has the field, and **no domain
  * logic branches on it**.
  */
 export interface Room {
@@ -127,7 +142,7 @@ export interface MessageMedia {
   mime: string;
 }
 
-/** One entry of `Message.mentions` — Feishu's own `{id, name}` pair. */
+/** One entry of `Message.mentions` — the open platform's `{id, name}` pair. */
 export interface Mention {
   id: Id;
   name: string;
