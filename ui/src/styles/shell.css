@@ -28,50 +28,109 @@ body {
    back to the room instead of standing empty. */
 .app {
   display: grid;
-  grid-template-columns: 64px 288px minmax(0, 1fr);
+  /* The three widths are the prototype's own tokens (`prototype/src/css/tokens.css`):
+     `--rail-w: 64px`, `--list-w: 300px`, `--side-w: 380px`. They were 288 and 340 here —
+     numbers measured off a screenshot rather than read out of the spec, which is the drift
+     the host named on 2026-10-27 as 「位置」. */
+  grid-template-columns: 64px 300px minmax(0, 1fr);
   height: 100%;
   background: var(--N00);
 }
 
-.app.with-thread { grid-template-columns: 64px 288px minmax(0, 1fr) 340px; }
+.app.with-thread { grid-template-columns: 64px 300px minmax(0, 1fr) 380px; }
 
 /* The settings page is not a room, so it takes the whole width beside the rail: the list
    column is gone, and a grid still laid out as three columns would push the page into the
-   288px slot the list used to occupy. */
+   300px slot the list used to occupy. */
 .app.with-settings { grid-template-columns: 64px minmax(0, 1fr); }
 
+/* The rail, and every number in it is the prototype's (`prototype/src/css/app.css`, `.rail`
+   and `.rail-btn`): 64px wide (its `--rail-w`), a 4px gap, 56px of top padding, and **no
+   border of its own**. The line between this column and the list beside it belongs to the
+   list — the prototype puts it on `.list-col` — and a second one here would draw a seam the
+   spec does not have.
+
+   The top padding is also clearance: `titleBarStyle: 'hiddenInset'` (`ui/electron/main.js`)
+   draws the close/minimise/zoom trio at this column's top-left corner, and the prototype's
+   56px is measured to sit below it. */
 .rail {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  /* The window's own buttons sit *over* this column: `titleBarStyle: 'hiddenInset'`
-     (`ui/electron/main.js`) draws the close/minimise/zoom trio at the top-left of the
-     window, which is this rail's corner — and at 12px they were on top of the first
-     avatar. The top padding is the height they occupy, and it lands the avatar level with
-     the first row of the room list, whose header is 44px tall (`.list-head`). */
-  padding: 44px 0 12px;
-  background: var(--N100);
-  border-right: 1px solid var(--N300);
+  gap: 4px;
+  padding: 56px 0 12px;
+  background: var(--rail-bg);
+  /* This column is part of the window's title bar on macOS. The prototype drags it and makes
+     each child opt out; without that an avatar or a row would move the window instead of
+     answering a click. */
+  -webkit-app-region: drag;
+  position: relative;
+  z-index: 3;
 }
+.rail > * { -webkit-app-region: no-drag; }
 
-.rail-avatar,
-.rail-item {
+.rail-btn {
   width: 40px;
   height: 40px;
-  border: 0;
-  border-radius: 10px;
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--N700);
-  background: var(--N300);
+  /* The four below are not `.rail-btn`'s own: they are the prototype's global `button`
+     reset (`prototype/src/css/app.css:29`), which this window has no equivalent of. Same
+     four answers, so the tile has no fill and answers like a button rather than looking
+     like one. */
+  padding: 0;
+  border: none;
+  background: none;
   cursor: pointer;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--rail-icon);
+  position: relative;
+  transition: background-color 0.1s ease;
+}
+.rail-btn:hover { background: var(--fill-hover); }
+.rail-btn:active { background: var(--fill-pressed); }
+/* A row that is showing is a colour, not a filled tile: the prototype changes
+   `--rail-icon-active` and nothing else, so the current column keeps its shape and gains ink. */
+.rail-btn.active { color: var(--rail-icon-active); }
+
+/* What stands between the four navigation rows and the two at the foot. */
+.rail-spacer { flex: 1; }
+
+/* Who this window speaks as. A 32px box around the 28px face (`.avatar.sm` in the prototype),
+   the same green dot at its corner, and `cursor: default` — the prototype is explicit that
+   this is not a button and that organization switching lives on the settings page. */
+.rail-avatar {
+  width: 32px;
+  height: 32px;
+  margin-bottom: 10px;
   display: grid;
   place-items: center;
+  position: relative;
+  cursor: default;
 }
-
-.rail-avatar { background: var(--B500); color: var(--N00); }
-.rail-item.on { background: var(--B100); color: var(--B700); }
+.rail-avatar-face {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--N500);
+  color: var(--N00);
+  font-size: 12px;
+  font-weight: 500;
+  user-select: none;
+}
+.rail-avatar .presence {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--G350);
+  border: 2px solid var(--rail-bg);
+}
 
 .list-col {
   display: flex;
