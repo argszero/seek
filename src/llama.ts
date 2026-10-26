@@ -96,6 +96,21 @@ export interface LlamaServer {
   /** Origin of a running `llama-server`, e.g. `http://127.0.0.1:8080`. */
   baseUrl: string;
   /**
+   * A credential this server asks for, sent as `Authorization: Bearer …`.
+   *
+   * `llama-server` takes one with `--api-key`, and a hosted endpoint that speaks the
+   * same chat API refuses every request without one — so before this field this file
+   * could speak only to a server that wanted no credential at all.
+   *
+   * Optional, and an empty or whitespace-only string is **not** a credential: it sends
+   * no header. A request that goes out with `Bearer ` comes back a 401 that reads like
+   * a wrong key rather than a missing one, and half a credential is worse than none.
+   * The key itself is sent as given — it is the server's string, not ours to edit — and
+   * no refusal in this file quotes it: what a refusal carries is the server's own
+   * answer.
+   */
+  apiKey?: string;
+  /**
    * The artifact the assembled text belongs to.
    *
    * Required, and not because the runtime wants the question again: the text handed
@@ -911,6 +926,22 @@ async function postJson(server: LlamaServer, path: string, body: unknown): Promi
 }
 
 /**
+ * The headers one request carries: JSON, and the credential when there is one.
+ *
+ * Every request in this file goes through `request`, `/props` included, so this is the
+ * one place a credential has to be attached — measured rather than assumed: the GET and
+ * the two chat calls are the only calls the file makes.
+ */
+function headersOf(server: LlamaServer): Record<string, string> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const key = server.apiKey;
+  if (typeof key === 'string' && key.trim() !== '') {
+    headers.Authorization = `Bearer ${key}`;
+  }
+  return headers;
+}
+
+/**
  * One request, refused loudly when it did not arrive.
  *
  * A transport failure throws: the kernel already treats a model that fell over as a
@@ -928,7 +959,7 @@ async function request(
   const fetcher = server.fetch ?? (globalThis.fetch as unknown as Fetcher);
   const response = await fetcher(`${base}${path}`, {
     method,
-    headers: { 'Content-Type': 'application/json' },
+    headers: headersOf(server),
     body,
   });
   const text = await response.text();

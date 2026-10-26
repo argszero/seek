@@ -238,6 +238,7 @@ async function stageOneFor(mods, store, options) {
     onlyBotId(store),
     {
       baseUrl: server,
+      ...(apiKeyOf(options) === undefined ? {} : { apiKey: apiKeyOf(options) }),
       artifact: mods.prompts.loadPromptArtifact(),
       ...(options?.fetch === undefined ? {} : { fetch: options.fetch }),
     },
@@ -287,6 +288,7 @@ async function stageTwoFor(mods, store, options) {
     onlyBotId(store),
     {
       baseUrl: server,
+      ...(apiKeyOf(options) === undefined ? {} : { apiKey: apiKeyOf(options) }),
       // Stage 2 reads this for nothing — `work-server.ts` takes the words from its own
       // artifact (`src/prompts/work-v1.json`) and uses the server only for `/props`,
       // rendering and the chat call. It is here because `LlamaServer` requires it, and
@@ -335,8 +337,23 @@ function onlyBotId(store) {
  * and `options.workServer` is what `SEEK_WORK_SERVER` carried. Left out, the half each
  * one belongs to is the kernel's placeholder, as the published build has been until now.
  * `options.fetch` and `options.workFetch` are a test's recorders, handed to the two
- * transports.
+ * transports. `options.apiKey` is what `SEEK_API_KEY` carried: the credential the named
+ * servers ask for. It belongs to an origin rather than to a half, so both transports are
+ * given the same one — and blank means no header at all rather than an empty `Bearer`.
  */
+
+/**
+ * The credential both halves send, when there is one.
+ *
+ * One function rather than two reads, because it is one rule: empty and whitespace-only
+ * are not credentials (`llama.ts`'s `headersOf` sends no header for them), so a variable
+ * set to nothing behaves exactly like one that was never set.
+ */
+function apiKeyOf(options) {
+  const key = options?.apiKey
+  return typeof key === 'string' && key.trim() !== '' ? key : undefined
+}
+
 async function openHost(storeFile, options = {}) {
   const mods = await kernelModules()
 
