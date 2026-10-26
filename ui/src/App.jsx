@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 
+import Contacts from './Contacts.jsx'
 import Settings from './Settings.jsx'
 import { bindCatalogue, t } from './catalogue.mjs'
 
@@ -151,19 +152,10 @@ export default function App() {
   // `adding` is only ever the one call in flight, so a second press cannot race the first.
   const [peopleOpen, setPeopleOpen] = useState(false)
   const [adding, setAdding] = useState(false)
-  // Making a bot, and looking at one. The four fields are the four things a bot is —
-  // 姓名／性别／职位／性格 — and they are the form's own state until `Add` hands them over; the
-  // kernel decides what a card may hold (`src/bots.ts`), and this window keeps no copy of a
-  // bot after the snapshot that carries it.
-  const [makingBot, setMakingBot] = useState(false)
-  const [botName, setBotName] = useState('')
-  const [botGender, setBotGender] = useState('')
-  const [botPosition, setBotPosition] = useState('')
-  const [botPersonality, setBotPersonality] = useState('')
-  // The bot whose card is on show, and what the last add came to — `'none'` is the store
-  // that has no roster file beside it, which is a bot that cannot answer yet and says so.
-  const [openBotId, setOpenBotId] = useState(null)
-  const [botNote, setBotNote] = useState(null)
+  // Making a bot, and looking at one, moved to `Contacts.jsx`: the four fields a bot is —
+  // 姓名／性别／职位／性格 — are that view's own state until `Add` hands them to the main process,
+  // and nothing on this screen draws them. What stays here is the snapshot the add hands back,
+  // which is the same snapshot every other write on this screen arrives as.
   // The hover toolbar's surfaces, one at a time: the emoji picker on one message, the message
   // the next thing sent will quote, and the message waiting to be forwarded. `moreOn` is the
   // fourth — the *more* menu, whose one item copies the message's words. None of these is
@@ -519,52 +511,49 @@ export default function App() {
   }
 
   /**
-   * Make a bot, with the four things the form asked for.
+   * Open the conversation with one person, making it if this store has none.
    *
-   * **One call, and the kernel decides everything else.** `createBot()` writes the bot and
-   * refuses the one thing that cannot be stored — a name of nothing — in its own sentence,
-   * which lands beside the form. The main process also writes the two roster rows the bot
-   * needs into `agents.yml`, because a bot with no `work` row cannot answer at all; it says
-   * back whether it could, and `roster: 'none'` is a store with no roster file beside it —
-   * a bot that is created and mute, which the window says rather than hides.
+   * A conversation here is a room of exactly two, and **the kernel stores no "is a direct
+   * message" flag to look for**: `Room.chat_mode` is stored and never branched on, and
+   * `ui/electron/host.js` says so where it declines to ask for it. So "do these two already
+   * have a room" is asked of the membership rows, which is the only place that answer exists —
+   * a room whose two members are exactly me and them.
    *
-   * The new bot's card opens on success: a person who just filled in four fields wants to see
-   * what they came to, and the bot list is otherwise a row that looks like the others.
+   * **The name is taken once, at the moment of making it.** `createRoom` keeps whatever name
+   * it is given, so renaming the person afterwards leaves the room under the name it was made
+   * with — the same as any other room made from the list. Taking it here is what makes the
+   * rail row readable now, which is the whole point of the button.
+   *
+   * A room that is refused lands beside the list in the kernel's own sentence, because
+   * `createRoom()` is the one that refuses and this file re-checks none of it.
    */
-  async function makeBot() {
-    if (sending || botName.trim() === '') {
-      // The one refusal the form can make without asking anybody: an empty name is refused by
-      // the kernel too, but a round trip to be told what this knows already is a delay.
-      if (botName.trim() === '') setError({ where: 'new-bot', message: '请输入姓名' })
+  async function messagePerson(person) {
+    if (!snap || !snap.me || person.id === snap.me || sending) return
+    const already = snap.rooms.find((room) => {
+      const ids = (room.members ?? []).map((member) => member.id)
+      return ids.length === 2 && ids.includes(snap.me) && ids.includes(person.id)
+    })
+    if (already) {
+      setView('chat')
+      enterRoom(already.id)
       return
     }
     setSending(true)
     setError(null)
-    setBotNote(null)
     try {
-      const made = await window.seekHost.addBot({
-        name: botName,
-        gender: botGender,
-        position: botPosition,
-        personality: botPersonality,
+      const made = await window.seekHost.createRoom({
+        name: person.name,
+        members: [snap.me, person.id],
       })
       if (!made.ok) {
-        setError({ where: 'new-bot', message: made.error })
+        setError({ where: 'contacts', message: made.error })
         return
       }
       setSnap(made.snapshot)
-      setMakingBot(false)
-      setBotName('')
-      setBotGender('')
-      setBotPosition('')
-      setBotPersonality('')
-      setOpenBotId(made.botId)
-      setView('bots')
-      if (made.roster === 'none') {
-        setBotNote(
-          'added, but this store has no agents.yml beside it, so the bot has no agents yet and cannot answer',
-        )
-      }
+      // Making a conversation and staying in the list is a click that appears to have done
+      // nothing, which is the same reason `makeRoom` goes into the room it just made.
+      setView('chat')
+      enterRoom(made.roomId)
     } finally {
       setSending(false)
     }
@@ -628,13 +617,15 @@ export default function App() {
             {room.name.slice(0, 1).toUpperCase()}
           </button>
         ))}
-        {/* Who works in this organization, one rail above the way to its endpoint: a bot is
-            not a conversation, and the list that holds them is where one is added. */}
+        {/* Everyone in this organization but me, one rail above the way to its endpoint: a
+            person is not a conversation, and the list that holds them is where a bot is added
+            and where a conversation with one starts. This is the prototype's rail row, and
+            the word on it is the prototype's too — 机器人 (`prototype/src/js/app.js`). */}
         <button
-          className={`rail-item${view === 'bots' ? ' on' : ''}`}
-          title="bots"
-          onClick={() => setView((now) => (now === 'bots' ? 'chat' : 'bots'))}
-          data-view="bots"
+          className={`rail-item${view === 'contacts' ? ' on' : ''}`}
+          title={t('ui.contacts.title')}
+          onClick={() => setView((now) => (now === 'contacts' ? 'chat' : 'contacts'))}
+          data-view="contacts"
         >
           🤖
         </button>
@@ -652,26 +643,16 @@ export default function App() {
 
       {view === 'settings' ? (
         <Settings snapshot={snap} />
-      ) : view === 'bots' ? (
-        <BotsView
+      ) : view === 'contacts' ? (
+        <Contacts
           people={snap.people ?? []}
+          me={snap.me}
           firstLaw={snap.firstLaw}
-          openBotId={openBotId}
-          setOpenBotId={setOpenBotId}
-          making={makingBot}
-          setMaking={setMakingBot}
-          name={botName}
-          setName={setBotName}
-          gender={botGender}
-          setGender={setBotGender}
-          position={botPosition}
-          setPosition={setBotPosition}
-          personality={botPersonality}
-          setPersonality={setBotPersonality}
-          onAdd={makeBot}
-          sending={sending}
-          refusal={error?.where === 'new-bot' ? error.message : null}
-          note={botNote}
+          // A room this view asked for and did not get is the kernel's sentence, drawn beside
+          // the list it was asked from.
+          refusal={error?.where === 'contacts' ? error.message : null}
+          onMessage={messagePerson}
+          onSnapshot={setSnap}
         />
       ) : (
         <>
@@ -1546,201 +1527,4 @@ function Picture({ media }) {
     )
   }
   return <img className="msg-pic" data-picture="shown" src={src} alt={media.key} />
-}
-
-/**
- * Who works in this organization: the bots, and the form that adds one.
- *
- * **The prototype's flow, kept whole** (`prototype/src/js/app.js`, `modalAddFriend`): the view
- * that lists bots carries the `+`, and the form asks for the four things a bot is — 姓名 required,
- * 性别 from a short list, 职位 one line, 性格 several — beside the first law, because adding a
- * bot is the moment a person is told what a bot may not do. The prototype put all of that in a
- * modal; this window draws it above the list instead, so the refusal the kernel writes lands
- * next to the fields that produced it rather than over the screen.
- *
- * **A bot is a member of this organization and of nothing else** — the sentence the prototype
- * put under the fields, and the reason there is no organization picker here: this window is
- * looking at one organization's store, and another organization's bots are not in it.
- *
- * What a card holds is drawn as the store has it. A field nobody filled in reads `not said`
- * rather than blank, because "not said" is a fact and an empty row is a rendering fault — and
- * every bot made before these fields existed has three of them.
- */
-function BotsView({
-  people,
-  firstLaw,
-  openBotId,
-  setOpenBotId,
-  making,
-  setMaking,
-  name,
-  setName,
-  gender,
-  setGender,
-  position,
-  setPosition,
-  personality,
-  setPersonality,
-  onAdd,
-  sending,
-  refusal,
-  note,
-}) {
-  const bots = people.filter((person) => person.bot)
-  const open = bots.find((bot) => bot.id === openBotId) ?? null
-
-  return (
-    <>
-      <section className="list-col">
-        <header className="list-head">
-          <h1>Bots</h1>
-          <span className="list-tools">
-            <span className="count">{bots.length}</span>
-            <button
-              className="list-new"
-              data-new-bot="open"
-              title="add bot"
-              onClick={() => setMaking(!making)}
-            >
-              +
-            </button>
-          </span>
-        </header>
-
-        {refusal && (
-          <div className="composer-err" data-new-bot="refused">
-            {refusal}
-          </div>
-        )}
-        {note && (
-          <div className="composer-err" data-new-bot="note">
-            {note}
-          </div>
-        )}
-
-        {making && (
-          <form
-            className="new-room"
-            data-new-bot="form"
-            onSubmit={(event) => {
-              event.preventDefault()
-              onAdd()
-            }}
-          >
-            <label className="field-label" htmlFor="bot-name">
-              Name
-            </label>
-            <input
-              id="bot-name"
-              className="new-room-name"
-              data-new-bot="name"
-              autoFocus
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-            />
-
-            <label className="field-label" htmlFor="bot-gender">
-              Gender
-            </label>
-            <select
-              id="bot-gender"
-              className="new-room-name"
-              data-new-bot="gender"
-              value={gender}
-              onChange={(event) => setGender(event.target.value)}
-            >
-              <option value="">not said</option>
-              <option value="女">女</option>
-              <option value="男">男</option>
-              <option value="其他">其他</option>
-            </select>
-
-            <label className="field-label" htmlFor="bot-position">
-              Position
-            </label>
-            <input
-              id="bot-position"
-              className="new-room-name"
-              data-new-bot="position"
-              placeholder="what it does here, such as 接口与联调"
-              value={position}
-              onChange={(event) => setPosition(event.target.value)}
-            />
-
-            <label className="field-label" htmlFor="bot-personality">
-              Personality
-            </label>
-            <textarea
-              id="bot-personality"
-              className="new-room-name"
-              data-new-bot="personality"
-              rows={4}
-              placeholder="how it talks and works — several lines allowed"
-              value={personality}
-              onChange={(event) => setPersonality(event.target.value)}
-            />
-
-            {/* The rule, quoted where the bot is made. `firstLaw` comes from the snapshot,
-                which reads it from `ui/electron/law.js` — one copy for the three screens. */}
-            <p className="pane-desc" data-new-bot="law">
-              It belongs to this organization; no other organization can see it. Its kind is
-              bot, and the first law is {firstLaw}
-            </p>
-
-            <div className="new-room-actions">
-              <button type="submit" data-new-bot="create" disabled={sending}>
-                Add
-              </button>
-              <button type="button" data-new-bot="cancel" onClick={() => setMaking(false)}>
-                Cancel
-              </button>
-            </div>
-          </form>
-        )}
-
-        <ul className="conv-list">
-          {bots.map((bot) => (
-            <li key={bot.id}>
-              <button
-                className={`conv${bot.id === openBotId ? ' on' : ''}`}
-                data-bot-row={bot.id}
-                onClick={() => setOpenBotId(bot.id)}
-              >
-                <span className="conv-av">{bot.name.slice(0, 1).toUpperCase()}</span>
-                <span className="conv-body">
-                  <span className="conv-name">{bot.name}</span>
-                  {/* The prototype's own line for a bot under its name: what it does, and
-                      its description only where nobody said. */}
-                  <span className="conv-last">{bot.position ?? bot.description ?? 'bot'}</span>
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      <section className="main-col">
-        {open ? <BotCard bot={open} firstLaw={firstLaw} /> : <div className="empty">pick a bot</div>}
-      </section>
-    </>
-  )
-}
-
-/** One bot's card: the four fields, and the law under them. */
-function BotCard({ bot, firstLaw }) {
-  const said = (value) => (value === null || value === undefined || value === '' ? 'not said' : value)
-  return (
-    <div className="pane" data-bot-card={bot.id}>
-      <h2 className="pane-title">{bot.name}</h2>
-      <p className="pane-desc">
-        Gender {said(bot.gender)} · Position {said(bot.position)}
-      </p>
-      <p className="card-sub" data-bot-card="personality">
-        {said(bot.personality)}
-      </p>
-      <p className="pane-desc" data-bot-card="law">
-        {firstLaw}
-      </p>
-    </div>
-  )
 }
