@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
 import Contacts from './Contacts.jsx'
+import Groups from './Groups.jsx'
 import Settings from './Settings.jsx'
 import { bindCatalogue, t } from './catalogue.mjs'
 
@@ -559,6 +560,20 @@ export default function App() {
     }
   }
 
+  /**
+   * Go into a room another view chose.
+   *
+   * A group is a room, so the way in is the way every room is entered: the chat screen draws
+   * it, the rail marks it and the composer writes into it. The view switch is here rather
+   * than inside `Groups.jsx` because a file that both draws a list and changes which screen is
+   * on would be two things, and because this screen is the only place that knows the chat half
+   * is where a room lives.
+   */
+  function openGroup(roomId) {
+    setView('chat')
+    enterRoom(roomId)
+  }
+
   if (!snap || words === null) return <div className="booting">opening the store…</div>
 
   const whoSaid = Object.fromEntries((active?.members ?? []).map((member) => [member.id, member]))
@@ -629,6 +644,16 @@ export default function App() {
         >
           🤖
         </button>
+        {/* The rooms that are not one conversation between two, beside the people they are
+            made of — the prototype's rail order, where 群组 follows 机器人. */}
+        <button
+          className={`rail-item${view === 'groups' ? ' on' : ''}`}
+          title={t('ui.groups.title')}
+          onClick={() => setView((now) => (now === 'groups' ? 'chat' : 'groups'))}
+          data-view="groups"
+        >
+          👥
+        </button>
         {/* The way to the endpoint, at the end of the column and away from the rooms: what is
             on the other side of it is not a conversation. */}
         <button
@@ -652,6 +677,16 @@ export default function App() {
           // the list it was asked from.
           refusal={error?.where === 'contacts' ? error.message : null}
           onMessage={messagePerson}
+          onSnapshot={setSnap}
+        />
+      ) : view === 'groups' ? (
+        <Groups
+          rooms={snap.rooms}
+          people={snap.people ?? []}
+          me={snap.me}
+          onOpen={openGroup}
+          // The snapshot a group answers with is the same one every other write arrives as,
+          // and it is what makes the new row appear before the screen changes.
           onSnapshot={setSnap}
         />
       ) : (

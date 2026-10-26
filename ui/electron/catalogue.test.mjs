@@ -269,6 +269,54 @@ test('the contacts view says nothing a catalogue did not say', () => {
   assert.doesNotMatch(app, /<BotsView/, 'no component draws the deleted view')
 })
 
+test('the groups view says nothing a catalogue did not say', () => {
+  const source = readFileSync(join(RENDERER, 'Groups.jsx'), 'utf8')
+
+  // The same two scans the contacts view is held to: text nodes and the attributes a person
+  // reads are chrome, so a word in either is a word no other language can change.
+  const prose = [...source.matchAll(/>([^<>{}]*)</g)]
+    .map((match) => match[1].trim())
+    .filter((text) => /[A-Za-z]{2}/.test(text))
+  assert.deepEqual(prose, [], 'a text node carries words of its own instead of a key')
+
+  const attributes = [...source.matchAll(/\b(?:placeholder|title|aria-label)="([^"]*)"/g)]
+    .map((match) => match[1])
+    .filter((text) => /[A-Za-z]{2}/.test(text))
+  assert.deepEqual(attributes, [], 'an attribute carries words of its own instead of a key')
+
+  // Anti-vacuity: two empty lists above are exactly what a broken scan produces.
+  const keys = [...source.matchAll(/\bt\(\s*'(ui\.groups\.[a-zA-Z.-]+)'/g)].map(
+    (match) => match[1],
+  )
+  assert.ok(keys.length >= 18, `the scan found ${keys.length} lookups — the pattern is broken`)
+  assert.ok(new Set(keys).size >= 15, 'the view looks its words up rather than repeating a few')
+
+  // What makes a room a group here is the headcount, because that is the kernel's own
+  // definition of a direct message (`deriveHints()`: `membershipsOf(room).length === 2`).
+  // `chat_mode` is stored and never branched on, so a view that filtered rows by it would be
+  // the prototype's rule running against a store that does not keep what it filters on.
+  assert.match(source, /\.length !== 2/, 'a group is decided by the headcount, as the kernel does')
+  assert.doesNotMatch(
+    source,
+    /chat_mode\s*[=!]==/,
+    'a mode comparison is the prototype rule this store cannot support',
+  )
+
+  for (const [shape, what] of [
+    [/<h1>Groups<\/h1>/, 'the list heading written into the markup'],
+    [/placeholder="search/i, 'the search hint written into the markup'],
+    [/'请输入群名称'/, 'the empty name refusal written into the code'],
+    [/还没有群聊/, 'the empty list written into the markup'],
+  ]) {
+    assert.doesNotMatch(source, shape, `${what}: it is the catalogue's to say`)
+  }
+
+  // And the way in: the rail offers it, and the main screen draws it.
+  const app = readFileSync(join(RENDERER, 'App.jsx'), 'utf8')
+  assert.match(app, /view === 'groups'/, 'the main screen routes to the groups view')
+  assert.match(app, /data-view="groups"/, 'the rail offers the way in')
+})
+
 test('every word the window draws is translated, not copied', () => {
   // The reading an English run cannot give. A Chinese page still carrying English chrome looks
   // finished when the language is English — nothing in it is out of place — which is the same
