@@ -106,6 +106,55 @@ case, at temperature 0, changed no outcome in any of the three models (0/9 unsta
 What that establishes is determinism, not quality: it says these are not coin flips, and it
 says nothing about what a different sampling would do.
 
+## What the gate does with them
+
+The work model is stage 2. A message arrives there when stage 0's rules fast-pass it or when
+stage 1 reads `act` at the shipped cut, and is consumed with nothing spent otherwise — so the
+table above is a cost only where these nine cases get that far. `measure-gate.mjs`, beside
+this file, is the driver; `gate.json` is what it wrote,
+taken the same way as the rest of this directory: the kernel's own `classify`, `watchAs` and
+the shipped `0.600` over a real server, one message per judgement, run twice, identical both
+times.
+
+| case | wants | stage 0 | stage 1 (`act`) | reaches stage 2 |
+|---|---|---|---|---|
+| the nightly batch failed again — can you look at it? | speak | judge | **0.7486 → act** | **yes** |
+| @Echo what is the retry queue doing right now? | speak | **act (named)** | not asked | **yes** |
+| did you finish the reconciliation you mentioned yesterday? | speak | judge | 0.2935 → ignore | no |
+| 今天的对账跑完了吗？ | speak | judge | 0.1995 → ignore | no |
+| @Echo 那条重试队列现在什么情况？ | speak | **act (named)** | not asked | **yes** |
+| 批处理又挂了，你能看一眼吗？ | speak | judge | 0.362 → ignore | no |
+| ok | quiet | judge | 0.0879 → ignore | no |
+| thanks! | quiet | judge | 0.1828 → ignore | no |
+| 好的收到 | quiet | judge | 0.1383 → ignore | no |
+
+**Three of the six that should speak reach a work model. None of the three that should stay
+quiet does.**
+
+Two readings follow, and both narrow the table above rather than extend it.
+
+**1. The quiet column has no price at this cut.** All three should-be-quiet cases die at
+stage 1, far below it — 0.0879, 0.1383, 0.1828. So the Qwen candidates' `3/3` in that column
+would cost nothing in a room: a work model cannot speak about a message it is never shown. It
+is still a defect — it says what the model does when handed a message nobody needed answered
+— but it is not one a user meets with the shipped gate.
+
+**2. The delivery column has a ceiling, and the model does not set it.** Three of the six
+should-speak cases never arrive: `did you finish the reconciliation…`, `今天的对账跑完了吗？`
+and `批处理又挂了…` read 0.1995–0.362 and are consumed as `ignore` before stage 2 runs. A work
+model that delivers 6/6 — the 4B's row — would therefore deliver **at most three** of these
+six in a room. Stage 1 runs `LFM2.5-VL-3B` whatever work model ships, so no choice in the
+table above moves that ceiling.
+
+That changes what the table is for. It is not "which model says something"; it is "which model
+says something **about the messages that reach it**" — and of this set, three.
+
+**One condition, and it is not the room's.** Every case was judged alone with `window` 10. The
+runtime judges a delta — a summary plus several entries — and a different box is a different
+prompt, so these are a controlled reading of the cases rather than a replay of a live room.
+Two of the three refused should-speak cases are Chinese, the weak side the judgement half's
+own record already states; that is agreement, not a cause, and nothing here isolates it.
+
 ## What this does not decide
 
 **Which model ships.** That is a cost and a horizon, and both are the owner's word, not a
@@ -123,10 +172,13 @@ measurement's:
 
 ## What was not measured
 
-- **Stage 1 on these nine cases.** In production a work turn exists only after the judgement
-  said `act`, so how many of the three quiet cases would ever reach a work model is not
-  measured here. The gate's own reading of them is a separate measurement and this file does
-  not supply it — which is why the quiet column is reported rather than interpreted.
+- **Stage 1 on several of these cases at once.** `gate.json` reads each case alone, and the
+  section above is what it says about them one at a time. A box holding several entries, or a
+  summary, or a different `window`, is a different prompt — and the runtime judges deltas.
+  That reading is not here.
+- **Any cut but 0.600, and any watch model but the shipped one.** The refused cases read
+  0.1995–0.362, so a cut inside that band changes which of them arrive; moving it is the
+  host's word, not this file's.
 - **Images.** Every case is text and neither Qwen row was loaded with a projector. Nothing
   here says they see. `src/README.md` line 25's multimodal requirement is stated of the
   watch model; whether the work model must see too is a question this set does not answer.

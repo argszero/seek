@@ -317,3 +317,139 @@ test('the prose tables say what the record says, cell for cell', () => {
     }
   }
 });
+
+interface GateRow {
+  label: 'speak' | 'quiet';
+  text: string;
+  mentions: boolean;
+  stage0: 'act' | 'ignore' | 'judge' | 'block';
+  actProbability?: number;
+  stage1: 'act' | 'ignore' | null;
+  reachesWork: boolean;
+}
+
+interface GateRecord {
+  rig: { artifact: string; threshold: number };
+  table: {
+    cases: number;
+    readByStage1: number;
+    speakReachesWork: number;
+    quietReachesWork: number;
+    quietStoppedByRules: number;
+    quietStoppedByStage1: number;
+  };
+  rows: GateRow[];
+  files: Record<string, { bytes: number; sha256: string }>;
+}
+
+const GATE = 'calibration/work/gate.json';
+
+test('the gate record counts the rows it holds, and each row agrees with itself', () => {
+  const gate = read<GateRecord>(GATE);
+  assert.ok(Array.isArray(gate.rows) && gate.rows.length > 0, `${GATE} holds no rows`);
+
+  for (const row of gate.rows) {
+    const where = `the gate row for ${JSON.stringify(row.text)}`;
+    // Where a case stops and what it reached are two spellings of one fact, and a row
+    // that says `judge` without a stage-1 answer, or reaches stage 2 while both stages
+    // refused it, is a transcription rather than a reading.
+    if (row.stage0 === 'judge') {
+      assert.ok(
+        row.stage1 === 'act' || row.stage1 === 'ignore',
+        `${where} was left to stage 1 and records no verdict for it`,
+      );
+      assert.equal(
+        typeof row.actProbability,
+        'number',
+        `${where} was read by stage 1 and keeps no probability — the number is what makes ` +
+          'the verdict checkable against the cut instead of taken on trust',
+      );
+    } else {
+      assert.equal(
+        row.stage1,
+        null,
+        `${where} was settled by stage 0's rules and records a stage-1 verdict anyway — ` +
+          'one of the two columns is describing a call that never happened',
+      );
+      assert.equal(
+        row.actProbability,
+        undefined,
+        `${where} was settled by stage 0's rules and keeps a stage-1 probability anyway`,
+      );
+    }
+    assert.equal(
+      row.reachesWork,
+      row.stage0 === 'act' || row.stage1 === 'act',
+      `${where} says reaches-work=${String(row.reachesWork)} while its stages say ` +
+        `${row.stage0}/${String(row.stage1)} — the summary and the row disagree`,
+    );
+  }
+
+  const derived = {
+    cases: gate.rows.length,
+    readByStage1: gate.rows.filter((row) => row.stage0 === 'judge').length,
+    speakReachesWork: gate.rows.filter((row) => row.label === 'speak' && row.reachesWork).length,
+    quietReachesWork: gate.rows.filter((row) => row.label === 'quiet' && row.reachesWork).length,
+    quietStoppedByRules: gate.rows.filter((row) => row.label === 'quiet' && row.stage0 !== 'judge')
+      .length,
+    quietStoppedByStage1: gate.rows.filter(
+      (row) => row.label === 'quiet' && row.stage0 === 'judge' && !row.reachesWork,
+    ).length,
+  };
+  for (const [field, value] of Object.entries(derived)) {
+    assert.equal(
+      gate.table[field as keyof GateRecord['table']],
+      value,
+      `${GATE}'s table says ${field}=${String(gate.table[field as keyof GateRecord['table']])} and ` +
+        `its own rows give ${value}`,
+    );
+  }
+});
+
+test('the gate record read exactly the cases the work table was measured on', () => {
+  const gate = read<GateRecord>(GATE);
+  const declared = cases.cases.map((one) => `${one.label}\u0000${one.text}`).sort();
+  const readBack = gate.rows.map((row) => `${row.label}\u0000${row.text}`).sort();
+  assert.deepEqual(
+    readBack,
+    declared,
+    `${GATE} and ${CASES} disagree about which cases these are. The two records are only ` +
+      'comparable because they answer the same nine; a case swapped in one of them turns ' +
+      '"three of six arrive" into a sentence about a different set',
+  );
+});
+
+test('the gate record was read at the cut this tree ships', () => {
+  const gate = read<GateRecord>(GATE);
+  const artifact = read<{
+    version: string;
+    operatingPoint?: { threshold?: number };
+  }>(`src/prompts/${gate.rig.artifact}.json`);
+  const shipped = artifact.operatingPoint?.threshold;
+  assert.equal(
+    gate.rig.threshold,
+    shipped,
+    `${GATE}'s rig records the cut as ${String(gate.rig.threshold)} and ${gate.rig.artifact} ` +
+      `ships ${String(shipped)}`,
+  );
+  assert.equal(
+    typeof shipped,
+    'number',
+    `${gate.artifact} declares no operating point, so the gate record's verdicts belong to ` +
+      'a cut nothing states',
+  );
+  // Re-derive every verdict from the probability the row kept. A record that says
+  // `ignore` at a reading above the cut is either mis-transcribed or was taken at
+  // another cut, and only this comparison tells the two apart.
+  for (const row of gate.rows) {
+    if (row.stage0 !== 'judge') continue;
+    const expected = (row.actProbability as number) >= (shipped as number) ? 'act' : 'ignore';
+    assert.equal(
+      row.stage1,
+      expected,
+      `the gate row for ${JSON.stringify(row.text)} reads ${String(row.actProbability)} and ` +
+        `records ${String(row.stage1)}; ${gate.rig.artifact} ships ${String(shipped)}, which makes ` +
+        `it ${expected}. Either the row was written down wrong or it was taken at another cut`,
+    );
+  }
+});
