@@ -1,0 +1,47 @@
+{
+ "source": "written for this measurement in the project's own session (seek-opensource-task), 2026-10-26",
+ "role": "the labelled set the work model is scored on",
+ "labels": {
+  "speak": "this turn should end with a say() call carrying words",
+  "quiet": "this turn should end having said nothing"
+ },
+ "why_both": "the two failures are opposite and both are defects: a turn that should speak and posts nothing leaves the room empty, and a turn that should stay silent speaks into a room where nobody asked it anything",
+ "cases": [
+  {
+   "label": "speak",
+   "text": "the nightly batch failed again — can you look at it?"
+  },
+  {
+   "label": "speak",
+   "text": "@Echo what is the retry queue doing right now?"
+  },
+  {
+   "label": "speak",
+   "text": "did you finish the reconciliation you mentioned yesterday?"
+  },
+  {
+   "label": "speak",
+   "text": "今天的对账跑完了吗？"
+  },
+  {
+   "label": "speak",
+   "text": "@Echo 那条重试队列现在什么情况？"
+  },
+  {
+   "label": "speak",
+   "text": "批处理又挂了，你能看一眼吗？"
+  },
+  {
+   "label": "quiet",
+   "text": "ok"
+  },
+  {
+   "label": "quiet",
+   "text": "thanks!"
+  },
+  {
+   "label": "quiet",
+   "text": "好的收到"
+  }
+ ]
+}
