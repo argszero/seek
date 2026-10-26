@@ -310,6 +310,20 @@ function storeWritingChannels() {
  */
 const CLAIMS = {
   'seek:post': { en: /takes what you type/, zh: /你输入的消息/ },
+  // The toolbar's emoji. A reaction is a write in the store, and the one whose undo is the
+  // same call — so the claim is about the press rather than about `toggleReaction`: a person
+  // picks a face and it appears under the message, and picking it again takes it away.
+  'seek:react': {
+    en: /the six a person may pick/,
+    zh: /可以挑的六个/,
+  },
+  // `Copy text` in the *more* menu. It writes no store, so the derivation from `seek:changed`
+  // cannot see it, and it is claimed because it is a button a person presses: the sentence has
+  // to say where the words go and why the call is the main process's rather than the page's.
+  'seek:copy': {
+    en: /`Copy text`, which reaches the clipboard from the main process/,
+    zh: /`Copy text` ?，它从主进程写剪贴板/,
+  },
   'seek:create-room': { en: /makes a room/, zh: /造一个房间/ },
   'seek:add-member': { en: /one more person/, zh: /把一个人加进去/ },
   // A bot is a member too, and the claim is about what a person fills in rather than about the

@@ -581,13 +581,42 @@ function mentionsOf(mentions) {
  * What it returns is the snapshot to draw, taken after `whenIdle()` — so the bot's
  * answer is in it, not in the next one.
  */
+/**
+ * A forward's address, as `{roomId, messageId}` — or a refusal.
+ *
+ * The window always sends the pair, because the message being forwarded was drawn in a room
+ * and that room is normally not the one it is being sent to. A bare id is the kernel's
+ * one-room form and passes through unchanged. **A half address is refused rather than
+ * dropped**: reading it as "no forward" would send an ordinary empty message, and a person
+ * who pressed *forward* would get a silently blank line instead of the sentence saying what
+ * went wrong.
+ */
+function forwardAddressOf(value) {
+  if (value === undefined || value === null) return undefined
+  if (typeof value === 'string') return value === '' ? undefined : value
+  const roomId = typeof value.roomId === 'string' ? value.roomId : ''
+  const messageId = typeof value.messageId === 'string' ? value.messageId : ''
+  if (roomId === '' || messageId === '') {
+    throw new Error(
+      'a forwarded message names both the room it is in and the message itself, ' +
+        'so nothing was sent'
+    )
+  }
+  return { roomId, messageId }
+}
+
 async function postMessage(host, input) {
   const text = typeof input?.text === 'string' ? input.text : ''
   // A picture is a message whose words may be nothing: the caption is optional, and
   // `deliver()` accepts an `image` with an empty text as long as `media` names the blob
   // A text message with no words is still not a message.
   const isPicture = input?.kind === 'image'
-  if (text.trim() === '' && !isPicture) {
+  // **A forward has no words of its own**, and that is the whole of what it is: its text,
+  // kind and picture are copied off the stored original inside `deliver()`. So it is the
+  // second case where an empty box is not an empty message — and the one where passing
+  // anything beside `forwardOf` is refused by the kernel as a second copy of a fact.
+  const forwarding = forwardAddressOf(input?.forwardOf)
+  if (text.trim() === '' && !isPicture && !forwarding) {
     throw new Error('an empty message is not a message, so nothing was sent')
   }
 
@@ -613,8 +642,11 @@ async function postMessage(host, input) {
     // would be this file quietly discarding the bytes a caller asked to send, and an app
     // whose picture vanished with no sentence is the silent failure this whole slice is
     // about it.
-    kind: isPicture ? 'image' : 'text',
-    media: mediaOf(input?.media),
+    // A forward's kind and picture are the original's, read out of the store by the kernel —
+    // so passing anything here would be the "carrying content of its own" refusal, and would
+    // be this file inventing a second copy of a fact the store already holds.
+    kind: forwarding ? undefined : isPicture ? 'image' : 'text',
+    media: forwarding ? undefined : mediaOf(input?.media),
     // Who the message addresses. The kernel stores the pairs and derives its own answer from
     // them per receiving bot (`mentionsMe`), so a message that names a bot is the one case
     // stage 0 settles without asking the watch model — and until this line existed the window
@@ -626,6 +658,14 @@ async function postMessage(host, input) {
     // that is not a message in this room is refused by `deliver()` itself, and that
     // refusal reaches the composer as the sentence the kernel wrote.
     rootId: typeof input?.rootId === 'string' && input.rootId !== '' ? input.rootId : undefined,
+    // What this message quotes or forwards. Both are addresses the caller names and neither
+    // is content: `deliver()` reads the named message out of the store and keeps the snapshot
+    // of it, because a caller's copy of somebody's words is a claim about what they said.
+    // A quotation is always a message in this room — a reply answers where it is — while a
+    // forward names the room the original is in, because forwarding sends it somewhere else
+    // (`forwardOf` in `src/delivery.ts`).
+    quoteOf: typeof input?.quoteOf === 'string' && input.quoteOf !== '' ? input.quoteOf : undefined,
+    forwardOf: forwarding,
   })
   await host.store.save()
 
@@ -638,6 +678,39 @@ async function postMessage(host, input) {
   // The same facts the window's first snapshot carried, for both halves: a send replaces
   // the whole snapshot in the renderer, so leaving either out here would make its strip
   // disappear the moment the person said anything.
+  return snapshotOf(host.store, host.storeFile, host.stage1, host.stage2)
+}
+
+/**
+ * One person's reaction on one message, and the snapshot that now shows it.
+ *
+ * **This is the kernel's one write for it.** `toggleReaction()` in `src/delivery.ts` adds the
+ * person to `operators[]` or takes them out again — the same call both ways, because a second
+ * press *is* the undo — and refuses an empty emoji, a principal this store has never heard of,
+ * and a reactor who is not in the room. Its sentences are what the window shows, in the same
+ * envelope as `seek:post`, and none of them is re-checked here.
+ *
+ * **A reaction wakes nobody.** It writes no observation, so unlike `postMessage` there is no
+ * `tick()` and no `whenIdle()`: a message that already had its turn does not get a second one
+ * because somebody nodded at it. The store is saved, because a reaction lives in the store.
+ *
+ * The snapshot is returned whole rather than the message: the window replaces what it draws
+ * from one snapshot (`seek:changed` carries the same thing), so a field-level answer here
+ * would be a second shape for the same fact.
+ */
+async function reactToMessage(host, input) {
+  const principalId = meOf(host.store)
+  if (!principalId) {
+    throw new Error('this store holds nobody to react as, so nothing was recorded')
+  }
+  const mods = await kernelModules()
+  mods.delivery.toggleReaction(host.store, {
+    roomId: typeof input?.roomId === 'string' ? input.roomId : '',
+    messageId: typeof input?.messageId === 'string' ? input.messageId : '',
+    principalId,
+    emojiType: typeof input?.emojiType === 'string' ? input.emojiType : '',
+  })
+  await host.store.save()
   return snapshotOf(host.store, host.storeFile, host.stage1, host.stage2)
 }
 
@@ -833,4 +906,5 @@ module.exports = {
   openHost,
   openHostOrRefuse,
   postMessage,
+  reactToMessage,
 }

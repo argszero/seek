@@ -10,6 +10,74 @@ import Settings from './Settings.jsx'
 const TOKENS = new Intl.NumberFormat()
 
 /**
+ * The hover toolbar's four glyphs, and the emoji its square picks from.
+ *
+ * The paths are not drawn here and not adapted from an icon set: each one is the pixel mask
+ * of the same glyph in the reference screenshots, folded row by row into a path and checked
+ * against the mask by drawing it back (`prototype/src/js/icons.js`, where the measurements
+ * live). They are **filled** rather than stroked — the shape carries the meaning at 16px, and
+ * a 1.6px outline at that size reads as a smudge — so the `<svg>` below says
+ * `fill="currentColor" stroke="none"` rather than inheriting the stroked default.
+ *
+ * The emoji table is the join between what a person sees and what the kernel stores: Feishu's
+ * `emoji_type` is a *name* (`THUMBSUP`, not `👍`), and `toggleReaction()` takes the name. A
+ * reaction whose name this window has no glyph for is drawn as its name rather than dropped —
+ * `emojiGlyph()` below — because a row of reactions is the store's, not this file's.
+ */
+const ACTION_GLYPHS = {
+  reply: (
+    <path
+      fillRule="evenodd"
+      d="M6.4 5H17.6A1.9 1.9 0 0 1 19.5 6.9V16.1A1.9 1.9 0 0 1 17.6 18H15.6L15.3 19.35H10.9L10.6 18H6.4A1.9 1.9 0 0 1 4.5 16.1V6.9A1.9 1.9 0 0 1 6.4 5ZM9.75 10.3a1.15 1.15 0 1 0 0 2.3 1.15 1.15 0 0 0 0-2.3ZM13.5 10.3a1.15 1.15 0 1 0 0 2.3 1.15 1.15 0 0 0 0-2.3ZM17.25 10.3a1.15 1.15 0 1 0 0 2.3 1.15 1.15 0 0 0 0-2.3Z"
+    />
+  ),
+  forward: (
+    <path d="M12.75 5L14.25 5.75L15 6.5L15.75 7.25L16.5 8L17.25 8.75L18 9.5L18.75 10.25L19.5 11L19.5 11.75L19.5 12.5L18.75 13.25L18.75 14L18 14.75L17.25 15.5L16.5 16.25L15.75 17L15 17.75L14.25 18.5L12.75 18.5L12.75 15.6L7.5 15.6L7.5 16.25L6 17L4.5 17.75L4.5 15.5L4.5 14.75L5.25 14L5.25 13.25L6 12.5L6 11.75L6.75 11L8.25 10.25L9 9.5L12 8.75L12.75 8Z" />
+  ),
+  topic: (
+    <path
+      fillRule="evenodd"
+      d="M7.7 5H17.9A1.7 1.7 0 0 1 19.6 6.7V17.3A1.7 1.7 0 0 1 17.9 19H7.7A1.7 1.7 0 0 1 6 17.3V13.5L4.5 12.6A.6.6 0 0 1 4.5 11.4L6 10.5V6.7A1.7 1.7 0 0 1 7.7 5ZM9.95 9.4h5.9a1.15 1.15 0 0 1 0 2.3h-5.9a1.15 1.15 0 0 1 0-2.3ZM9.95 13.2h5.9a1.15 1.15 0 0 1 0 2.3h-5.9a1.15 1.15 0 0 1 0-2.3Z"
+    />
+  ),
+  more: (
+    <>
+      <circle cx="4.7" cy="12" r="1.8" />
+      <circle cx="12" cy="12" r="1.8" />
+      <circle cx="19.3" cy="12" r="1.8" />
+    </>
+  ),
+}
+
+const EMOJI = [
+  { type: 'THUMBSUP', glyph: '👍' },
+  { type: 'OK', glyph: '✅' },
+  { type: 'SMILE', glyph: '😄' },
+  { type: 'PARTY', glyph: '🎉' },
+  { type: 'EYES', glyph: '👀' },
+  { type: 'HEART', glyph: '❤️' },
+]
+
+/** The glyph for a stored `emoji_type`, or the name itself when there is none. */
+function emojiGlyph(type) {
+  return EMOJI.find((one) => one.type === type)?.glyph ?? type
+}
+
+/**
+ * One of the toolbar's four glyphs.
+ *
+ * Filled, and `aria-hidden` because the button that holds it carries the title: a screen
+ * reader announcing "picture" beside "Reply" says the same thing twice.
+ */
+function ActionGlyph({ name }) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true">
+      {ACTION_GLYPHS[name]}
+    </svg>
+  )
+}
+
+/**
  * The shell: a messenger window over the kernel's own store.
  *
  * The room list, the members, the messages and the threads all come from `snapshot()`
@@ -90,6 +158,23 @@ export default function App() {
   // that has no roster file beside it, which is a bot that cannot answer yet and says so.
   const [openBotId, setOpenBotId] = useState(null)
   const [botNote, setBotNote] = useState(null)
+  // The hover toolbar's surfaces, one at a time: the emoji picker on one message, the message
+  // the next thing sent will quote, and the message waiting to be forwarded. `moreOn` is the
+  // fourth — the *more* menu, whose one item copies the message's words. None of these is
+  // store state: a picker nobody is looking at is not a fact about the world, and the moment
+  // one of them writes, the kernel's own snapshot is what this window redraws from.
+  const [picking, setPicking] = useState(null)
+  const [quoting, setQuoting] = useState(null)
+  const [forwarding, setForwarding] = useState(null)
+  const [moreOn, setMoreOn] = useState(null)
+  // The glyph the emoji square shows. Feishu's square remembers the last one used, and that
+  // is a fact about this window's session rather than about the store — so it lives here and
+  // starts at the same 👍 the reference screenshot shows.
+  const [lastEmoji, setLastEmoji] = useState('THUMBSUP')
+  // One line answering an action that wrote nothing a snapshot could show — a copy that
+  // reached the clipboard, a forward that landed in another room. Cleared by the next thing
+  // the person does, so it never turns into a claim about a state that has moved on.
+  const [note, setNote] = useState(null)
   // Who each composer's next message addresses. Two instances rather than one list, because
   // the room's composer and the thread's are on screen at the same time when a thread is
   // open: a chip picked in one box must not silently name somebody in a message sent from
@@ -138,6 +223,7 @@ export default function App() {
     if (!active || sending || (body === '' && !media)) return
     setSending(true)
     setError(null)
+    setNote(null)
     try {
       // A reply is the same call with a parent named; the kernel decides the rest of
       // the thread from it. A picture is the same call with `kind` and `media`, and the
@@ -151,9 +237,16 @@ export default function App() {
         // them on the message verbatim (`mentionsOf` in `ui/electron/host.js` copies them and
         // decides nothing); an empty list is a message that addresses the room.
         mentions: mention.addressed,
+        // What this message quotes, when the toolbar's reply button named one. An id and
+        // nothing else: `deliver()` reads that message out of the store and keeps the
+        // snapshot of it, so the quotation cannot say anything the store does not hold.
+        ...(quoting ? { quoteOf: quoting.messageId } : {}),
       })
       if (result.ok) {
         setSnap(result.snapshot)
+        // The quotation belonged to the message that just went out; a strip left behind
+        // would quietly quote the same person into the next message as well.
+        setQuoting(null)
         // The mention belonged to the message that just went out, so the next one starts
         // addressing nobody — a chip left behind would silently name somebody in a message
         // written after the person stopped thinking about it.
@@ -209,6 +302,112 @@ export default function App() {
     setOpenThread(message.chain)
     setThreadDraft('')
     setError(null)
+  }
+
+  /**
+   * One reaction, and the kernel decides which direction.
+   *
+   * `seek:react` carries `toggleReaction()` (`src/delivery.ts`): the person who is not in
+   * `operators[]` is added, and the one who is, is taken out — the same call, because a
+   * second press *is* the undo. That is why this file has no "remove" path to keep in step
+   * with an "add" one, and why the reaction row below is drawn from the snapshot rather than
+   * from an optimistic guess: the store answers with what it now holds.
+   */
+  async function reactTo(message, emojiType) {
+    if (!active) return
+    setPicking(null)
+    setMoreOn(null)
+    setNote(null)
+    setError(null)
+    try {
+      const result = await window.seekHost.react({
+        roomId: active.id,
+        messageId: message.id,
+        emojiType,
+      })
+      if (result.ok) {
+        setSnap(result.snapshot)
+        setLastEmoji(emojiType)
+      } else {
+        setError({ where: 'room', message: result.error })
+      }
+    } catch (failure) {
+      setError({ where: 'room', message: failure instanceof Error ? failure.message : String(failure) })
+    }
+  }
+
+  /** Reply with a quotation: the next message from either box carries this one's words. */
+  function startQuote(message) {
+    setPicking(null)
+    setMoreOn(null)
+    setForwarding(null)
+    setNote(null)
+    setQuoting({ messageId: message.id, senderId: message.sender, text: message.text })
+  }
+
+  /** Forward: pick the room it goes to, then send it there. */
+  function startForward(message) {
+    setPicking(null)
+    setMoreOn(null)
+    setQuoting(null)
+    setNote(null)
+    setForwarding({ roomId: active.id, messageId: message.id, senderId: message.sender })
+  }
+
+  /**
+   * Send a forward into a room.
+   *
+   * **`forwardOf` names where the original is**, as a `{roomId, messageId}` pair, because the
+   * message being forwarded was said in this room and is going to another one — the kernel
+   * reads it out of the store and copies its words, kind and picture (`src/delivery.ts`).
+   * Nothing is typed here and nothing of the forward's own is passed: the kernel refuses a
+   * forward carrying content beside the address, since that would be a second copy of a fact
+   * the store already holds.
+   */
+  async function forwardInto(targetId) {
+    const source = forwarding
+    if (!source || sending) return
+    setSending(true)
+    setError(null)
+    try {
+      const result = await window.seekHost.post({
+        roomId: targetId,
+        text: '',
+        forwardOf: { roomId: source.roomId, messageId: source.messageId },
+      })
+      if (result.ok) {
+        setSnap(result.snapshot)
+        const target = result.snapshot.rooms.find((room) => room.id === targetId)
+        setNote(`forwarded into ${target?.name ?? 'that room'}`)
+      } else {
+        setError({ where: 'room', message: result.error })
+      }
+    } catch (failure) {
+      setError({ where: 'room', message: failure instanceof Error ? failure.message : String(failure) })
+    } finally {
+      setSending(false)
+      setForwarding(null)
+    }
+  }
+
+  /**
+   * The *more* menu's one item: the message's words, onto the platform clipboard.
+   *
+   * From the main process rather than from `navigator.clipboard` here, because a page's own
+   * write is gated on a user gesture and the prototype measured that a scripted press is
+   * answered with a failure while a real one works — the same call from the main process has
+   * no such gate. A picture with no caption has no words, and the call says so.
+   */
+  async function copyMessage(message) {
+    setMoreOn(null)
+    setError(null)
+    try {
+      const result = await window.seekHost.copy(message.text)
+      if (result.ok) setNote('copied to the clipboard')
+      else setError({ where: 'room', message: result.error })
+    } catch (failure) {
+      setError({ where: 'room', message: failure instanceof Error ? failure.message : String(failure) })
+    }
   }
 
   function enterRoom(roomId) {
@@ -356,6 +555,40 @@ export default function App() {
   if (!snap) return <div className="booting">opening the store…</div>
 
   const whoSaid = Object.fromEntries((active?.members ?? []).map((member) => [member.id, member]))
+
+  /**
+   * What a message's toolbar may call, as one object.
+   *
+   * `Line` stays a drawing component: it is handed these and never reaches into this file's
+   * state, which is the same rule the composer follows with `post()`. Two of the four are
+   * toggles on a surface rather than writes — pressing the emoji square twice closes the
+   * picker — and the other two (`quote`, `forward`) put a message *into* the next thing sent,
+   * which is state about the composer rather than about the store.
+   */
+  const actions = active
+    ? {
+        lastEmoji,
+        pickingId: picking,
+        moreOnId: moreOn,
+        forwardingId: forwarding?.messageId ?? null,
+        // Every room this store holds, because forwarding is *sending it somewhere else* and
+        // this window is the only one a person can name that somewhere in.
+        rooms: snap.rooms,
+        forwardInto,
+        pickEmoji: (message) => {
+          setMoreOn(null)
+          setPicking((current) => (current === message.id ? null : message.id))
+        },
+        react: reactTo,
+        quote: startQuote,
+        forward: startForward,
+        more: (message) => {
+          setPicking(null)
+          setMoreOn((current) => (current === message.id ? null : message.id))
+        },
+        copy: copyMessage,
+      }
+    : null
 
   return (
     <div
@@ -612,6 +845,8 @@ export default function App() {
                   replies={repliesIn[message.chain] ?? 0}
                   inThread={openThread !== null && message.chain === openThread}
                   onOpen={openThreadOf}
+                  me={snap.me}
+                  actions={actions}
                   chip
                 />
               ))}
@@ -620,6 +855,11 @@ export default function App() {
             </ol>
 
             {error?.where === 'room' && <div className="composer-err">{error.message}</div>}
+            {/* One line answering an action whose result a snapshot cannot show — a copy that
+                reached the clipboard, a forward that landed in another room. Cleared by the
+                next thing the person does, so it never outlives the moment it describes. */}
+            {note && <div className="composer-note">{note}</div>}
+            <QuoteStrip quoting={quoting} whoSaid={whoSaid} onClear={() => setQuoting(null)} />
             <form
               className="composer"
               onSubmit={(event) => {
@@ -689,6 +929,8 @@ export default function App() {
                 replies={repliesIn[message.chain] ?? 0}
                 inThread={false}
                 onOpen={openThreadOf}
+                me={snap.me}
+                actions={actions}
               />
             ))}
             {thread.length === 0 && <li className="empty">this thread has nothing in it</li>}
@@ -696,6 +938,7 @@ export default function App() {
           </ol>
 
           {error?.where === 'thread' && <div className="composer-err">{error.message}</div>}
+          <QuoteStrip quoting={quoting} whoSaid={whoSaid} onClear={() => setQuoting(null)} />
           <form
             className="thread-composer"
             onSubmit={(event) => {
@@ -797,6 +1040,29 @@ function useMentions() {
  * with `flex-wrap`), so the chips sit above the box without a second container, a second
  * border, or a second place for this layout to disagree with the messages above.
  */
+/**
+ * What the next message will quote.
+ *
+ * One strip per composer, both drawn from one piece of state, because the reply button on any
+ * message — in the room or in the thread panel — puts *that one* message into *whichever box
+ * sends next*. Drawn above the box rather than inside it, the way the mention chips are, so
+ * the box keeps one border and one shape. A picture with no caption has no words to quote, so
+ * the strip says what it is instead of drawing an empty line.
+ */
+function QuoteStrip({ quoting, whoSaid, onClear }) {
+  if (!quoting) return null
+  const name = whoSaid?.[quoting.senderId]?.name ?? quoting.senderId
+  return (
+    <div className="quote-strip" data-quoting={quoting.messageId}>
+      <span className="quote-strip-name">replying to {name}</span>
+      <span className="quote-strip-text">{quoting.text === '' ? 'a picture' : quoting.text}</span>
+      <button className="quote-strip-x" type="button" title="Stop quoting" onClick={onClear}>
+        ×
+      </button>
+    </div>
+  )
+}
+
 function Mentions({ members, mention }) {
   return (
     <>
@@ -1028,12 +1294,17 @@ function Spend({ spend }) {
  * when it has none — because a thread that cannot be started from the message it would
  * belong to is a panel nobody can open.
  */
-function Line({ message, sender, replies, inThread, onOpen, chip = false }) {
+function Line({ message, sender, replies, inThread, onOpen, chip = false, me = null, actions = null }) {
   const name = sender?.name ?? message.sender
   // A picture is drawn because the kernel's `kind` says so,
   // never because the text looks like one: a message whose kind disowns its bytes is one
   // every reader drops in silence, and guessing from the text is the same drop, later.
   const picture = message.kind === 'image' && message.media ? message.media : null
+  // The reactions the store holds, and nothing this file counted: `operators[]` is the fact
+  // (`src/types.ts`), so the number drawn beside a glyph is that array's length and "mine"
+  // is whether the person this window speaks as is in it. A reaction nobody has reacted with
+  // has no entry at all — the kernel deletes a row whose last operator took it back.
+  const reactions = message.reactions ?? []
   return (
     <li className={`msg${inThread ? ' on' : ''}`}>
       <span className={`msg-av${sender?.bot ? ' bot' : ''}`}>{name.slice(0, 2)}</span>
@@ -1042,6 +1313,25 @@ function Line({ message, sender, replies, inThread, onOpen, chip = false }) {
           {name}
           {sender?.bot && <span className="msg-bot">bot</span>}
         </span>
+        {/* Where a forward came from. Drawn above the words rather than inside them: the
+            kernel keeps `forwarded_from` as its own field (`src/types.ts`), and the words
+            below it are the original's — copied, not retyped. */}
+        {message.forwardedFrom && (
+          <span className="msg-forwarded" data-forwarded-from={message.forwardedFrom.messageId}>
+            <ActionGlyph name="forward" />
+            <span>forwarded from {message.forwardedFrom.name}</span>
+          </span>
+        )}
+        {/* What a reply answered, as the store kept it: the name and the first 160 characters
+            of the quoted message, snapshotted when the reply was sent (`QUOTE_CHARS` in
+            `src/delivery.ts`). Read from the message and never looked up now, so a reply goes
+            on quoting what it answered even after that message is gone. */}
+        {message.quoted && (
+          <span className="msg-quote" data-quote-of={message.quoted.messageId}>
+            <span className="msg-quote-name">{message.quoted.name}</span>
+            <span className="msg-quote-text">{message.quoted.text}</span>
+          </span>
+        )}
         {picture && <Picture media={picture} />}
         {/* Who the message named, drawn from the pairs the message carries and never from the
             roster: `@Echo` said last week keeps the name it was said with, because a message
@@ -1059,10 +1349,116 @@ function Line({ message, sender, replies, inThread, onOpen, chip = false }) {
           </span>
         )}
         {message.text !== '' && <span className="msg-text">{message.text}</span>}
+        {reactions.length > 0 && (
+          <span className="msg-reactions">
+            {reactions.map((reaction) => {
+              const mine = me !== null && reaction.operators.includes(me)
+              const count = reaction.operators.length
+              return (
+                <button
+                  key={reaction.emojiType}
+                  className={`reaction${mine ? ' mine' : ''}`}
+                  data-react={reaction.emojiType}
+                  title={`${count} ${count === 1 ? 'reaction' : 'reactions'}`}
+                  onClick={() => actions?.react(message, reaction.emojiType)}
+                >
+                  <span className="reaction-glyph">{emojiGlyph(reaction.emojiType)}</span>
+                  <span className="reaction-count">{count}</span>
+                </button>
+              )
+            })}
+          </span>
+        )}
         {chip && (
           <button className="msg-thread" data-thread-for={message.id} onClick={() => onOpen(message)}>
             {replies > 0 ? `${replies} ${replies === 1 ? 'reply' : 'replies'}` : 'reply in thread'}
           </button>
+        )}
+        {/* The hover toolbar: one white square for the emoji, then one white pill holding four
+            icons 24px apart. It is a child of `msg-body` rather than of the row, so `left:100%`
+            puts it against the right edge of *this message's words* — a short message gets it
+            right behind the text instead of at the far end of the column (`shell.css`,
+            `.msg-actions`). Every button is a real write or a real surface: an emoji toggles a
+            reaction, reply quotes, forward carries, the topic glyph opens the thread the store
+            already records, and *more* offers the one platform action this build has. Nothing
+            here is drawn for a behaviour that does not exist. */}
+        {actions && (
+          <span className="msg-actions">
+            <button
+              className="act-emoji"
+              data-react-pick={message.id}
+              title="React to this message"
+              onClick={() => actions.pickEmoji(message)}
+            >
+              <span>{emojiGlyph(actions.lastEmoji)}</span>
+            </button>
+            <span className="act-seg">
+              <button data-quote-msg={message.id} title="Reply with a quote" onClick={() => actions.quote(message)}>
+                <ActionGlyph name="reply" />
+              </button>
+              <button data-forward-msg={message.id} title="Forward to another room" onClick={() => actions.forward(message)}>
+                <ActionGlyph name="forward" />
+              </button>
+              <button data-open-topic={message.id} title="Open this thread" onClick={() => onOpen(message)}>
+                <ActionGlyph name="topic" />
+              </button>
+              <button data-msg-more={message.id} title="More" onClick={() => actions.more(message)}>
+                <ActionGlyph name="more" />
+              </button>
+            </span>
+          </span>
+        )}
+        {/* The emoji picker, in place under the square rather than as a modal: the six the
+            toolbar offers, with the ones this person already reacted with highlighted. The
+            `mine` flag is the same array read twice — `operators[]` is the whole fact
+            (`src/types.ts`), so a picker and a reaction row cannot disagree. */}
+        {actions && actions.pickingId === message.id && (
+          <span className="react-pop">
+            {EMOJI.map((one) => {
+              const mine =
+                me !== null &&
+                reactions.some((r) => r.emojiType === one.type && r.operators.includes(me))
+              return (
+                <button
+                  key={one.type}
+                  className={`react-pick${mine ? ' mine' : ''}`}
+                  data-react-now={one.type}
+                  title={one.type}
+                  onClick={() => actions.react(message, one.type)}
+                >
+                  {one.glyph}
+                </button>
+              )
+            })}
+          </span>
+        )}
+        {/* Forward: which room it goes to. The list is the store's own room list — a forward
+            names the room the original is in and the room it lands in, and both are facts the
+            snapshot already carries, so no name is invented here. */}
+        {actions && actions.forwardingId === message.id && (
+          <span className="forward-pop">
+            <span className="forward-lead">Forward to</span>
+            {actions.rooms.map((room) => (
+              <button
+                key={room.id}
+                data-forward-into={room.id}
+                title={`Forward into ${room.name}`}
+                onClick={() => actions.forwardInto(room.id)}
+              >
+                {room.name}
+              </button>
+            ))}
+          </span>
+        )}
+        {/* The *more* menu. One item, because one platform action is what this build has:
+            copying the words. A menu drawn with entries nothing answers would be the same
+            lie as a toolbar button that does nothing. */}
+        {actions && actions.moreOnId === message.id && (
+          <span className="more-menu">
+            <button data-copy-msg={message.id} onClick={() => actions.copy(message)}>
+              Copy text
+            </button>
+          </span>
         )}
       </span>
     </li>

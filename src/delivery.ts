@@ -31,6 +31,17 @@ import type {
   QuotedMessage,
 } from './types.ts';
 
+/**
+ * A message named together with the room holding it.
+ *
+ * The pair rather than the id alone, because a forward's source is wherever the
+ * original was said and the destination is somewhere else — see `forwardOf` below.
+ */
+export interface ForwardedSource {
+  roomId: Id;
+  messageId: Id;
+}
+
 export interface PostMessageInput {
   roomId: Id;
   senderId: Id;
@@ -53,8 +64,15 @@ export interface PostMessageInput {
    * The message this one forwards. Its words, kind and picture are copied off
    * the stored message here, not passed in, so a forward cannot say something
    * the original did not.
+   *
+   * **A forward names where the original is.** Forwarding is sending somebody
+   * else's message *somewhere else*, so the source is usually not a message in the
+   * room being posted to — a bare `Id` is the one-room case (the original is in this
+   * room), and `{roomId, messageId}` says so when it is not. Anything else would
+   * make the toolbar's forward button a copy of the message into the room it is
+   * already in.
    */
-  forwardOf?: Id;
+  forwardOf?: Id | ForwardedSource;
   /** The message this one answers, when it answers one. */
   rootId?: Id;
   /** Which agent of the sending bot wrote it. */
@@ -108,7 +126,13 @@ export function deliver(store: SeekStore, input: PostMessageInput): Delivery {
     ? messageIn(store, input.roomId, input.quoteOf)
     : undefined;
   const forwarding = input.forwardOf
-    ? messageIn(store, input.roomId, input.forwardOf)
+    ? typeof input.forwardOf === 'string'
+      ? messageIn(store, input.roomId, input.forwardOf)
+      : messageIn(
+          store,
+          input.forwardOf.roomId,
+          input.forwardOf.messageId,
+        )
     : undefined;
   if (
     forwarding &&

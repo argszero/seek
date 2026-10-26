@@ -3,6 +3,7 @@ import { test } from 'node:test';
 
 import { deliver, toggleReaction } from './delivery.ts';
 import { makeDirectWorld, makeWorld } from './fixtures.ts';
+import { newId } from './store.ts';
 
 test('mentionsMe is derived at delivery and never written onto the message', () => {
   const world = makeWorld();
@@ -385,6 +386,87 @@ test('naming a message that is not in this room is refused, not ignored', () => 
     /unknown message in/,
   );
   assert.equal(world.store.messagesOf(world.room).length, 0);
+});
+
+/**
+ * A forward names where the original is.
+ *
+ * Forwarding is sending somebody else's message *somewhere else*, so the source is
+ * normally **not** a message in the room being posted to. A bare id stays the one-room
+ * form the tests above use, and the pair is the one the window's forward button sends:
+ * the room the message was drawn in, and the message.
+ */
+test('a forward reads its original out of the room it names, which need not be this one', () => {
+  const world = makeWorld();
+  const at = '2026-10-26T02:00:00.000Z';
+  const elsewhere = newId('oc');
+  world.store.data.rooms[elsewhere] = {
+    id: elsewhere,
+    name: 'elsewhere',
+    chat_mode: 'group',
+    created_at: at,
+  };
+  for (const principal of [world.me, world.botA]) {
+    const id = newId('mb');
+    world.store.data.memberships[id] = {
+      id,
+      room_id: elsewhere,
+      principal_id: principal,
+      joined_at: at,
+      role: principal === world.me ? 'owner' : 'member',
+    };
+  }
+
+  const original = deliver(world.store, {
+    roomId: world.room,
+    senderId: world.me,
+    text: 'said over there',
+  });
+  const forward = deliver(world.store, {
+    roomId: elsewhere,
+    senderId: world.botA,
+    forwardOf: { roomId: world.room, messageId: original.message.id },
+  });
+
+  assert.equal(forward.message.room_id, elsewhere, 'the forward lands where it was posted');
+  assert.equal(forward.message.text, 'said over there');
+  assert.deepEqual(forward.message.forwarded_from, {
+    message_id: original.message.id,
+    name: 'me',
+  });
+  // The original is untouched: a forward adds a message, it does not move one.
+  assert.equal(world.store.messagesOf(world.room).length, 1);
+  assert.equal(world.store.messagesOf(elsewhere).length, 1);
+});
+
+test('a forward naming a room this store does not hold is refused by name', () => {
+  const world = makeWorld();
+  const original = deliver(world.store, {
+    roomId: world.room,
+    senderId: world.me,
+    text: 'the original',
+  });
+  assert.throws(
+    () =>
+      deliver(world.store, {
+        roomId: world.room,
+        senderId: world.me,
+        forwardOf: { roomId: 'oc_not_here', messageId: original.message.id },
+      }),
+    /unknown message in oc_not_here/,
+  );
+  // And a real room with the wrong message in it is the same refusal, naming that room:
+  // the pair is read as one address, so half of it being right is not a partial success.
+  assert.throws(
+    () =>
+      deliver(world.store, {
+        roomId: world.room,
+        senderId: world.me,
+        forwardOf: { roomId: world.room, messageId: 'om_not_here' },
+      }),
+    /unknown message in/,
+  );
+  assert.equal(world.store.messagesOf(world.room).length, 1, 'a refusal writes nothing');
 });
 
 test('a message nobody reacted to, quoted or forwarded carries none of the three', () => {

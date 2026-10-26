@@ -3,9 +3,9 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
 /**
- * The renderer's whole vocabulary, and every write it has is here. There are three — a
- * message, a room, and one more member — because a renderer that could reach the store
- * directly would be a second writer, and the kernel has one.
+ * The renderer's whole vocabulary, and every write it has is here. There are four — a
+ * message, a room, one more member and a reaction — because a renderer that could reach the
+ * store directly would be a second writer, and the kernel has one.
  *
  * `attach` and `media` are the picture pair. They are two
  * calls rather than one because they answer different questions at different moments:
@@ -25,6 +25,17 @@ contextBridge.exposeInMainWorld('seekHost', {
   snapshot: () => ipcRenderer.invoke('seek:snapshot'),
   dataPath: () => ipcRenderer.invoke('seek:data-path'),
   post: (input) => ipcRenderer.invoke('seek:post', input),
+  /**
+   * The hover toolbar's emoji square: one person's reaction on one message.
+   *
+   * `input` is `{roomId, messageId, emojiType}` and the principal is the person the store
+   * speaks as — the renderer never names who is reacting, for the same reason it never names
+   * who is sending. **One call both ways**: a second press on the same emoji is the undo, so
+   * there is no `unreact` beside this (`toggleReaction()` in `src/delivery.ts`).
+   */
+  react: (input) => ipcRenderer.invoke('seek:react', input),
+  /** The *more* menu's one item: a message's words, onto the platform clipboard. */
+  copy: (text) => ipcRenderer.invoke('seek:copy', text),
   createRoom: (input) => ipcRenderer.invoke('seek:create-room', input),
   addMember: (input) => ipcRenderer.invoke('seek:add-member', input),
   // The fourth write: a bot, with the four things a person fills in when adding one
