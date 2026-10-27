@@ -203,15 +203,26 @@ function everyoneOf(store) {
 }
 
 /**
- * Who may be put in a room: everyone the store holds except a bot that has been deleted.
+ * Who may be put in a room: this organization's reader, and its bots.
  *
- * The list must not *offer* such a bot — nothing may be sent to it and it may not be added —
+ * **Not "everyone the store knows".** An organization holds exactly one person — the one the
+ * window speaks as (`meOf`) — and bots; nobody here is ever made, invited or deleted. So the
+ * only roster a room's member list should offer is that person and the bots, and a human the
+ * store happens to hold is not on it.
+ *
+ * A store can hold one anyway: the first seed wrote a second person called `someone else`, to
+ * make the room they landed in a group. Offering them here put a row in every member picker
+ * that no screen could take out again — measured on the create-a-chat card, 2026-10-27, after
+ * the bots list had already stopped showing them.
+ *
+ * A deleted bot is not offered either — nothing may be sent to it and it may not be added —
  * while the history it left may still *name* it. That is the whole difference between this
  * answer and `namedOf` below, and both read `everyoneOf`.
  */
 function peopleOf(store) {
   const { people, stamped } = everyoneOf(store)
-  return people.filter((one) => !stamped.has(one.id))
+  const me = meOf(store)
+  return people.filter((one) => !stamped.has(one.id) && (one.bot || one.id === me))
 }
 
 /**

@@ -393,20 +393,27 @@ test('a text message says it carries no picture rather than leaving the field of
 })
 
 /**
- * Who a room that does not exist yet could be given.
+ * Who a room that does not exist yet could be given: the reader, and the bots.
  *
  * `rooms[].members` answers "who is in this room", and until this field existed that was
  * the only roster the window ever saw — so the people it could offer a new room were
  * exactly the people already in one, and a combination nobody had made yet was
- * unreachable. The case that proves the two questions differ is a principal in no room at
- * all: absent from every `members` list, and required here.
+ * unreachable. The case that proves the two questions differ is a bot in no room at all:
+ * absent from every `members` list, and required here.
+ *
+ * **The reader and the bots, and no other person.** An organization holds one person and
+ * its bots — nobody is made or invited here — so a second human in `principals` is a leftover
+ * of an older seed rather than somebody to offer. Offering them put a row in three member
+ * pickers that no screen could take out (the create-a-chat card, 2026-10-27), which is why
+ * `pr_later` below is asserted **absent** rather than merely unmentioned.
  *
  * The order is the store's own (`principals`, then `bots`, as written), because a list that
  * reorders itself between two snapshots moves under the cursor of somebody choosing.
  */
-test('everyone the store knows is offered to a room that does not exist yet', () => {
+test('a room is offered the reader and the bots, and no other person', () => {
   const store = seeded()
-  // Two principals no room holds: a person and a bot. The picker's whole reason.
+  // A human no room holds, and a bot no room holds. The bot is the picker's reason; the human
+  // is the row the picker must not have.
   store.data.principals['pr_later'] = { id: 'pr_later', kind: 'human', name: 'later' }
   store.data.bots['bo_work'] = { id: 'bo_work', name: 'work-bot' }
 
@@ -414,8 +421,8 @@ test('everyone the store knows is offered to a room that does not exist yet', ()
 
   assert.deepEqual(
     snapshot.people.map((person) => person.id),
-    ['pr_me', 'pr_later', 'bo_watch', 'bo_work'],
-    "every principal and every bot, people first because that is the order they were written",
+    ['pr_me', 'bo_watch', 'bo_work'],
+    'the reader and the bots — the other person is not offered to anything',
   )
   assert.deepEqual(
     snapshot.rooms[0].members.map((member) => member.id),
@@ -426,6 +433,13 @@ test('everyone the store knows is offered to a room that does not exist yet', ()
     snapshot.people.filter((person) => person.bot).map((person) => person.id),
     ['bo_watch', 'bo_work'],
     'a bot is marked as a bot, in the roster as in a room',
+  )
+  // The leftover is still *named*, because a message it wrote has to keep its signature. The
+  // two answers differ on purpose and this is the line between them.
+  assert.equal(
+    snapshot.named['pr_later']?.name,
+    'later',
+    'a person the store holds is still someone a message may be signed by',
   )
 })
 
