@@ -270,6 +270,12 @@ export const fakeHost = {
       // (`src/rooms.ts`), and the interface reads this field rather than counting.
       kind: members.length + 1 === 2 ? 'p2p' : 'group',
       spend: { turns: 0, input_tokens: 0, output_tokens: 0, bots: [] },
+      // A room made in the demo has nothing said about it yet, which the panel draws as an
+      // invitation — the same `null` the store gives a room nobody has written about.
+      description: null,
+      announcement: null,
+      tag: null,
+      createdAt: new Date().toISOString(),
       members: [
         { id: data.meId, name: data.me, bot: false },
         ...members.map((principalId) => ({
@@ -296,6 +302,62 @@ export const fakeHost = {
     })
     emit()
     return written()
+  },
+
+  /**
+   * The window's first edit: what a room says about itself.
+   *
+   * The same rule the kernel's `updateRoom()` keeps — a field that did not arrive is a field
+   * nobody touched, `''` is a person having cleared a text, a blank name is refused — written
+   * here in eight lines because a demo that answered differently from the kernel would be
+   * teaching the window a shape the real store does not have.
+   */
+  updateRoom: async (input) => {
+    const room = roomOf(input?.roomId)
+    if (!room) return refused('there is no room with that id in the demo')
+    if (typeof input?.name === 'string') {
+      const name = input.name.trim()
+      if (name === '') return refused('a room needs a name')
+      room.name = name
+    }
+    for (const field of ['description', 'announcement', 'tag']) {
+      if (typeof input?.[field] !== 'string') continue
+      const text = input[field].trim()
+      room[field] = text === '' ? null : text
+    }
+    emit()
+    return written()
+  },
+
+  /** One principal out of one room — the same refusal the kernel makes for the last one. */
+  removeMember: async (input) => {
+    const room = roomOf(input?.roomId)
+    if (!room) return refused('there is no room with that id in the demo')
+    const at = room.members.findIndex((one) => one.id === input?.principalId)
+    if (at < 0) return refused('that principal is not in the room')
+    if (room.members.length === 1) return refused('the last member of a room may not leave')
+    room.members.splice(at, 1)
+    emit()
+    return written()
+  },
+
+  /** A bot out of the organization: gone from the people list, kept in the messages it wrote. */
+  removeBot: async (input) => {
+    const id = String(input?.botId ?? '')
+    const at = data.people.findIndex((one) => one.id === id && one.bot)
+    if (at < 0) return refused('there is no bot with that id in the demo')
+    const rooms = data.rooms.filter((room) => room.members.some((one) => one.id === id))
+    if (rooms.some((room) => room.members.length === 1)) {
+      return refused('that bot is the only member of a room, so it cannot be taken out')
+    }
+    data.people.splice(at, 1)
+    for (const room of rooms) {
+      room.members = room.members.filter((one) => one.id !== id)
+    }
+    emit()
+    // `rooms` rides back because which rooms it was in is not derivable from the snapshot that
+    // follows — it has already left them.
+    return { ok: true, snapshot: snapshot(), botId: id, rooms: rooms.map((room) => room.id) }
   },
 
   addBot: async (input) => {

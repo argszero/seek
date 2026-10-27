@@ -25,5 +25,13 @@
  * `undefined` the chat half would then treat as a room it could not find.
  */
 export function roomToOpen(current, rooms) {
-  return current ?? rooms[0]?.id ?? null
+  // **A room that is no longer in the list is not a room to stay in.** `current ??` alone held
+  // any id it was given, so the one case it could not answer was the id going away: leaving a
+  // room through its own panel (2026-10-27, the first way out of one) kept the id selected while
+  // the store stopped listing it, and the chat half would draw an empty column beside a list
+  // that was right. A reader's room is still never taken from them — this only drops an id the
+  // answer does not contain, which is exactly the id there is nothing left to draw.
+  const stillListed = rooms.some((room) => room.id === current)
+  if (current !== null && current !== undefined && stillListed) return current
+  return rooms[0]?.id ?? null
 }

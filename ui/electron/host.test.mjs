@@ -450,14 +450,17 @@ test('a person added through the interface is in the room, in it as a member, an
   const w = await world()
   try {
     // A room that does not hold the third person yet, so the add is what puts them there.
-    const made = await createRoom(w.host, { name: 'not everyone', members: [w.scene.bot] })
+    // The reader is in it, because the snapshot hands over the rooms they are in — a room of
+    // the bot's alone would be a room this window could not see, which is the point of the
+    // filter in `snapshotOf()`.
+    const made = await createRoom(w.host, { name: 'not everyone', members: [w.scene.me, w.scene.bot] })
     const joined = await addMember(w.host, { roomId: made.roomId, principalId: w.scene.other })
 
     const room = joined.rooms.find((one) => one.id === made.roomId)
     assert.deepEqual(
       room.members.map((member) => member.id),
-      [w.scene.bot, w.scene.other],
-      'the bot it was made with, and the person who just joined',
+      [w.scene.me, w.scene.bot, w.scene.other],
+      'the reader, the bot it was made with, and the person who just joined',
     )
 
     // On disk before the snapshot was handed back, as a message and a room are. A membership
@@ -473,13 +476,19 @@ test('a person added through the interface is in the room, in it as a member, an
       'the kernel default, because the interface asks for no role',
     )
 
-    // The person the window speaks as was not in this room and is not its owner now: joining a
-    // room somebody else made is not making it, which is why `createRoom`'s me-is-owner rule
-    // does not reach here.
+    // **A room made with the reader in it, and adding somebody does not touch that row.** The
+    // person who joined gets `member`; the row that was already there keeps the role it was
+    // made with, because an add is one membership written and nothing reworded.
+    const mine = room.members.filter((member) => member.id === w.scene.me)
+    assert.equal(mine.length, 1, 'the reader is in the room once, not twice')
+    const rows = reloaded.membershipsOf(made.roomId)
+    assert.equal(rows.length, 3, 'two rows were made with the room, and this adds exactly one')
+    // A role is the kernel's, not the snapshot's: `members` carries who is in the room, and the
+    // row itself is where the role is written.
     assert.equal(
-      room.members.filter((member) => member.id === w.scene.me).length,
-      0,
-      'and nobody else joined',
+      rows.find((membership) => membership.principal_id === w.scene.me).role,
+      'owner',
+      'the row that was already there keeps the role it was made with',
     )
   } finally {
     await w.done()

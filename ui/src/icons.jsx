@@ -39,6 +39,14 @@ const ICONS = {
     <path d="M4.5 4.8h15a1 1 0 0 1 1 1v9.2a1 1 0 0 1-1 1H12l-3.6 3v-3H4.5a1 1 0 0 1-1-1V5.8a1 1 0 0 1 1-1Z" />,
     <path d="M7.6 8.4h8.8M7.6 11.8h5.6" />,
   ],
+  // The chat header's 会话信息 mark, transcribed from `icons.js` `info` — the prototype puts
+  // it on the last of the three marks in the header (`renderChat()`, `data-role="chat-info"`).
+  // An `i` in a ring rather than a bare letter, which is why it is a shape and not text.
+  info: [
+    <circle cx="12" cy="12" r="8.4" />,
+    <path d="M12 11v5.4" />,
+    <circle cx="12" cy="7.9" r=".95" fill="currentColor" stroke="none" />,
+  ],
   sun: [
     <circle cx="12" cy="12" r="4" />,
     <path d="M12 2.8v2.4M12 18.8v2.4M4.5 12H2.1M21.9 12h-2.4M6.7 6.7 5 5M19 19l-1.7-1.7M6.7 17.3 5 19M19 5l-1.7 1.7" />,

@@ -51,7 +51,9 @@ export const PANES = {
     // this compared the pane against the whole window, so a drag took the room to 124px and one
     // word per line while the list sat comfortably at 448 (measured in the prototype window,
     // 2026-10-27). A bound that does not look at the column it is protecting protects nothing.
-    keep: 280,
+    // 380 is the room's own floor (see `--room-min`): the width at which its name and its
+    // messages stop wrapping a word to a line, swept in the window with the panel open.
+    keep: 380,
   },
   /** The thread panel, which only exists while a thread is open. */
   side: {
@@ -60,7 +62,8 @@ export const PANES = {
     dir: -1,
     min: 300,
     max: 640,
-    keep: 280,
+    // The column this seam protects is the room as well, so it is the same floor.
+    keep: 380,
   },
 }
 

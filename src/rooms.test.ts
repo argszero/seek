@@ -3,7 +3,7 @@ import { test } from 'node:test';
 
 import { deliver } from './delivery.ts';
 import { makeWorld } from './fixtures.ts';
-import { addMember, createRoom } from './rooms.ts';
+import { addMember, createRoom, removeMember, updateRoom } from './rooms.ts';
 
 const AT = '2026-10-26T00:00:00.000Z';
 
@@ -241,4 +241,181 @@ test('the clock is injectable: no member row is stamped with wall time the calle
   // Without a clock the kernel still stamps one — the field is never absent.
   const later = addMember(world.store, { roomId: room.id, principalId: world.botA });
   assert.match(later.joined_at, /^\d{4}-\d{2}-\d{2}T/);
+});
+
+// ---- what a room says about itself, and who is out of it (2026-10-27) ----
+
+test('a room may be told what it is about, and the fields nobody touched stay as they were', () => {
+  const world = makeWorld();
+  const { room } = createRoom(world.store, {
+    name: 'before',
+    members: [{ principalId: world.me }, { principalId: world.botA }],
+    now: AT,
+  });
+
+  const changed = updateRoom(world.store, {
+    roomId: room.id,
+    name: '  after  ',
+    description: 'what this room is for',
+    announcement: 'read me',
+    tag: '外部群',
+  });
+  // Trimmed, as the kernel trims a bot's name: the box a person typed into is a box,
+  // and the spaces around a name are the box's, not the name's.
+  assert.equal(changed.name, 'after');
+  assert.equal(changed.description, 'what this room is for');
+  assert.equal(changed.announcement, 'read me');
+  assert.equal(changed.tag, '外部群');
+
+  // A second call that names one field changes one field: no other text is cleared
+  // by an edit that did not mention it.
+  updateRoom(world.store, { roomId: room.id, announcement: 'a new notice' });
+  assert.equal(room.name, 'after');
+  assert.equal(room.description, 'what this room is for');
+  assert.equal(room.announcement, 'a new notice');
+  assert.equal(room.tag, '外部群');
+
+  // `''` is a person having deleted a text, which is different from not mentioning it.
+  updateRoom(world.store, { roomId: room.id, description: '', tag: '   ' });
+  assert.equal('description' in room, false);
+  assert.equal('tag' in room, false);
+});
+
+test('a blank name is refused, and a refused edit changes nothing at all', () => {
+  const world = makeWorld();
+  const { room } = createRoom(world.store, {
+    name: 'kept',
+    members: [{ principalId: world.me }, { principalId: world.botA }],
+    now: AT,
+  });
+
+  assert.throws(
+    () => updateRoom(world.store, { roomId: room.id, name: '   ', description: 'said' }),
+    /a room with no name/,
+  );
+  // The description was given in the same call and was not applied: an edit is one
+  // step, and half of a refused one is worse than none of it.
+  assert.equal(room.name, 'kept');
+  assert.equal('description' in room, false);
+
+  assert.throws(() => updateRoom(world.store, { roomId: 'oc_nowhere' }), /unknown room/);
+});
+
+test('renaming a room rewrites no message: what was said still says where it was said', () => {
+  const world = makeWorld();
+  const { room } = createRoom(world.store, {
+    name: 'the old name',
+    members: [{ principalId: world.me }, { principalId: world.botA }],
+    now: AT,
+  });
+  const { message } = deliver(world.store, {
+    roomId: room.id,
+    senderId: world.me,
+    text: 'morning',
+    now: AT,
+  });
+  updateRoom(world.store, { roomId: room.id, name: 'the new name' });
+
+  const [stored] = world.store.messagesOf(room.id);
+  assert.equal(stored.id, message.id);
+  assert.equal(stored.text, 'morning');
+  assert.equal(stored.room_id, room.id);
+  // Nothing in the log copied the name, so there is nothing to disagree with.
+  assert.equal(JSON.stringify(stored).includes('the old name'), false);
+  assert.equal(room.name, 'the new name');
+});
+
+test('one person may leave a room, and the room still names what they said in it', () => {
+  const world = makeWorld();
+  const { room } = createRoom(world.store, {
+    name: 'the room',
+    members: [{ principalId: world.me }, { principalId: world.botA }],
+    now: AT,
+  });
+  deliver(world.store, { roomId: room.id, senderId: world.botA, text: 'I was here', now: AT });
+
+  const gone = removeMember(world.store, { roomId: room.id, principalId: world.botA });
+  assert.equal(gone.principal_id, world.botA);
+  assert.equal(world.store.isMember(room.id, world.botA), false);
+  assert.deepEqual(
+    world.store.membershipsOf(room.id).map((row) => row.principal_id),
+    [world.me],
+  );
+  // The message is still there and still names the bot: being in a room is what went
+  // away, not having been in it.
+  assert.equal(world.store.messagesOf(room.id)[0].sender_id, world.botA);
+  // And it is no longer woken by it, because delivery is written for members only.
+  const again = deliver(world.store, { roomId: room.id, senderId: world.me, text: 'hello', now: AT });
+  assert.deepEqual(again.observations, []);
+});
+
+test('a refusal names the person and the room, because an id is what a person reads', () => {
+  // **The window draws the kernel's sentence unrewritten** (`docs/design/i18n.md` §2), so an id
+  // in the sentence is an id on the screen. 退出 in a room of one answered
+  // `ou_74bd0305f28645c5 is the last member of oc_0d2105bd11af4229` in the running window
+  // (measured 2026-10-27) — two rows, and nobody. Wording it is the kernel's job, and this is
+  // the wording: the store's name where there is one, the id where there is not.
+  const world = makeWorld();
+  const { room } = createRoom(world.store, {
+    name: 'a room of one',
+    members: [{ principalId: world.me }],
+    now: AT,
+  });
+  assert.throws(
+    () => removeMember(world.store, { roomId: room.id, principalId: world.me }),
+    (error: Error) => {
+      assert.match(error.message, /^me is the last member of "a room of one": /);
+      assert.ok(!error.message.includes(world.me), 'the sentence still names the person by id');
+      assert.ok(!error.message.includes(room.id), 'the sentence still names the room by id');
+      return true;
+    },
+  );
+
+  // A row with no name falls back to its id rather than to nothing: the sentence has to point
+  // at something a reader can act on, and `the room` says which of the two ids it is.
+  const nameless = createRoom(world.store, {
+    members: [{ principalId: world.botA }],
+    now: AT,
+  });
+  assert.throws(
+    () => removeMember(world.store, { roomId: nameless.room.id, principalId: world.botA }),
+    new RegExp(`A is the last member of the room ${nameless.room.id}: a room nobody`),
+  );
+
+  // The other sentence of the pair, which a person reaches by pressing the x beside a row.
+  const two = createRoom(world.store, {
+    name: 'two of us',
+    members: [{ principalId: world.me }, { principalId: world.botA }],
+    now: AT,
+  });
+  assert.throws(
+    () => removeMember(world.store, { roomId: two.room.id, principalId: world.botB }),
+    /B is not a member of "two of us": there is no membership/,
+  );
+});
+
+test('the last member may not leave, and a member who is not there may not be removed', () => {
+  const world = makeWorld();
+  const { room } = createRoom(world.store, {
+    members: [{ principalId: world.me }, { principalId: world.botA }],
+    now: AT,
+  });
+
+  assert.throws(
+    () => removeMember(world.store, { roomId: room.id, principalId: world.botB }),
+    /is not a member of/,
+  );
+  assert.throws(
+    () => removeMember(world.store, { roomId: 'oc_nowhere', principalId: world.me }),
+    /unknown room/,
+  );
+
+  removeMember(world.store, { roomId: room.id, principalId: world.me });
+  assert.equal(world.store.membershipsOf(room.id).length, 1);
+  assert.throws(
+    () => removeMember(world.store, { roomId: room.id, principalId: world.botA }),
+    /is the last member of/,
+  );
+  // Refused before anything was written, so the room is exactly as it was.
+  assert.equal(world.store.membershipsOf(room.id).length, 1);
 });

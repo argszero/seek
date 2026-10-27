@@ -55,9 +55,17 @@ body {
 .app.with-thread {
   /* A seam on each side of the room, so both of the columns beside it can be widened: the list
      to its left, the thread panel to its right. Without the second gutter the panel's column
-     started immediately at the room's edge and there was nothing for a pointer to grab. */
-  grid-template-columns: var(--rail-w) var(--gutter-w) var(--list-w) var(--gutter-w) minmax(0, 1fr)
-    var(--gutter-w) var(--side-w);
+     started immediately at the room's edge and there was nothing for a pointer to grab.
+     
+     **Three floors, because the room is what pays when a panel opens.** The list and the panel
+     are fixed widths and the room used to be `minmax(0, 1fr)`, so opening a 380px panel on a
+     1180px window left the room 178px — its own name on three lines and one word per message
+     (measured 2026-10-27). Each track now states the floor `resize.mjs` already enforces on a
+     drag, so the columns that give way when space is short are the list and the panel, not the
+     words. `--room-min` is that same 280: `the same 280 `resize.mjs` keeps for the room. */
+  grid-template-columns: var(--rail-w) var(--gutter-w) minmax(var(--list-min), var(--list-w))
+    var(--gutter-w) minmax(var(--room-min), 1fr) var(--gutter-w)
+    minmax(var(--side-min), var(--side-w));
 }
 
 /* The settings page is not a room, so it takes the whole width beside the rail: the list
@@ -1638,3 +1646,119 @@ textarea.dialog-input {
   white-space: pre-wrap;
   opacity: 0.85;
 }
+
+/* --- what a room is to itself (2026-10-27) --------------------------------- */
+
+/**
+ * The header's 会话信息 mark, beside the member count.
+ *
+ * Sized and coloured like the count it stands next to rather than like the rail's glyphs: it is
+ * a third reading of the same header, and a 32px control in a 68px bar with a 16px title in it
+ * would be the loudest thing on the line. The number-of-members button and this one are the two
+ * ways into the same room, from two directions — who is in it, and what it is.
+ */
+.room-info-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  margin-left: 4px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--N500);
+  cursor: pointer;
+}
+
+.room-info-mark:hover { background: var(--fill-hover); }
+.room-info-mark[aria-pressed='true'] { color: var(--primary-fill-default); }
+
+/**
+ * The room's panel — `.thread-col`'s twin, in the same column.
+ *
+ * It reuses the thread's frame (same width token, same gutter, same head) because it *is* the
+ * same column; what differs is the body, which scrolls. A panel taller than the window without
+ * a scroll is a 退出 button below the fold, which is the one thing in it a person must be able
+ * to reach.
+ */
+.room-col .room-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+.room-name { margin: 0; font-size: 16px; font-weight: 600; color: var(--N900); }
+
+.room-sub { margin: 4px 0 0; font-size: 12px; color: var(--N500); }
+
+.room-col .card { margin-top: 12px; }
+
+/* The members, as facts: who is in the room and which of them is this window. A list rather
+   than the count alone, because the count is already in the header and repeating it says
+   nothing the person did not just read. */
+.room-members { margin: 6px 0 0; padding: 0; list-style: none; }
+
+.room-member {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  font-size: var(--fs-body);
+  color: var(--N900);
+}
+
+.room-member-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.room-member-me { margin-left: auto; color: var(--N500); font-size: 12px; }
+
+.room-manage {
+  margin-top: 8px;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--line-border-component);
+  border-radius: var(--radius-sm);
+  background: var(--bg-base);
+  color: var(--N700);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.room-manage:hover { background: var(--N100); }
+
+.room-tag { margin: 12px 0 0; font-size: 12px; color: var(--N500); }
+
+/* The two answers. 编辑 first because it is the one that keeps the room; 退出 last and in the
+   danger colour, where the prototype puts it (`data-role="leave-chat"`, `.btn danger`). */
+.room-actions { display: flex; gap: 8px; margin-top: 16px; }
+
+.room-actions .btn { flex: 1; }
+
+.btn.danger {
+  border-color: transparent;
+  background: var(--R100);
+  color: var(--R500);
+}
+
+.btn.danger:hover:not(:disabled) { background: var(--R50); }
+
+/* A member's way out, where the "in this room" label used to be. Same shape as `.people-add`
+   and the other colour: one row can be joined or left, and only one of those is reversible by
+   pressing the other. */
+.people-remove {
+  margin-left: auto;
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--line-border-component);
+  border-radius: var(--radius-sm);
+  background: var(--bg-base);
+  color: var(--R500);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.people-remove:hover:not(:disabled) { background: var(--R50); }
+.people-remove:disabled { opacity: 0.5; cursor: default; }

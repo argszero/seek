@@ -76,6 +76,11 @@ const SAMPLES = {
   // And the reason a whole sentence is placed inside one: the frame around it says what to do
   // next, and what it wraps is either ours or a host's own words.
   why: 'the weights were not fetched',
+  // The room panel's two. `when` is an instant already written in the language's form —
+  // `when()` in `catalogue.mjs` is what writes it, exactly as `size()` writes `got`/`all` — and
+  // `tag` is the label a person typed on the room, which is theirs and stays as they wrote it.
+  when: 'Oct 20',
+  tag: 'Design',
 }
 
 function paramsFor(template) {
@@ -578,7 +583,11 @@ test('the chat page says nothing a catalogue did not say', () => {
   assert.deepEqual(interpolated, [], 'a text node writes its own words around a value')
 
   // Anti-vacuity: three empty lists are exactly what a broken scan also produces.
-  const keys = [...source.matchAll(/\bt\(\s*'(ui\.chat\.[a-zA-Z0-9.-]+)'/g)].map(
+  // **`ui.room.*` as well as `ui.chat.*`**, because the room's own panel is drawn on this page
+  // (2026-10-27): its title, its three cards and its two buttons are twenty-five more strings,
+  // and a scan that stopped at `ui.chat.` would have shipped them unread by the two language
+  // tests — the exact hole the equality below exists to close.
+  const keys = [...source.matchAll(/\bt\(\s*'(ui\.(?:chat|room)\.[a-zA-Z0-9.-]+)'/g)].map(
     (match) => match[1],
   )
   assert.ok(keys.length >= 60, `the scan found ${keys.length} lookups — the pattern is broken`)
@@ -592,7 +601,7 @@ test('the chat page says nothing a catalogue did not say', () => {
   // And every key it names is one of those lookups. A key written where the scan cannot read it
   // — `t(one ? 'ui.chat.a' : 'ui.chat.b')` — is a key the two language-wide tests never check;
   // the equality is what closes that hole.
-  const named = [...source.matchAll(/'(ui\.chat\.[a-zA-Z0-9.-]+)'/g)].map((match) => match[1])
+  const named = [...source.matchAll(/'(ui\.(?:chat|room)\.[a-zA-Z0-9.-]+)'/g)].map((match) => match[1])
   assert.deepEqual(
     [...new Set(named)].sort(),
     [...new Set(keys)].sort(),

@@ -368,6 +368,22 @@ const CLAIMS = {
     en: /`Delete` removes the row and moves its directory to the trash/,
     zh: /`Delete` ?把那一行和它的目录一起移进废纸篓/,
   },
+  // The three calls that change something already written — the window's first *edits*
+  // (2026-10-27). All three broadcast, so the derivation finds them; what a reader has to be
+  // told is not that they exist but what they refuse: a room may not be given a blank name, a
+  // room may not be emptied, and a bot that has spoken may not be erased.
+  'seek:update-room': {
+    en: /`Edit` changes the four texts through the kernel's own `updateRoom\(\)`/,
+    zh: /`Edit` ?经内核自己的 `updateRoom\(\)` ?改那四段文字/,
+  },
+  'seek:remove-member': {
+    en: /`Leave` in a room's own panel does/,
+    zh: /`Leave` ?也是它/,
+  },
+  'seek:remove-bot': {
+    en: /`Take out` stamps it and removes every membership it held/,
+    zh: /`Take out` ?给它盖上戳、把它所有的成员行删掉/,
+  },
   // The rail's theme toggle. It writes no store — the palette is a line in `settings.json`
   // beside the endpoint — so the derivation from `seek:changed` cannot see it either. It is
   // claimed because a person presses it, and because the half worth telling is that the choice
