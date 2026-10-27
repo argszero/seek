@@ -33,11 +33,14 @@
  * key as it is" rather than "remove it", because a form that erased a credential whenever
  * someone fixed a typo in the address would be a trap.
  *
- * **Testing the endpoint happens in the main process**, through `seekHost.models()`. The same
- * request made here would be a request from this page's origin, and an endpoint that does not
- * answer with CORS headers turns it into `Failed to fetch` with no status and no body —
- * measured on a real endpoint, not assumed. From there it is a plain request, so a refusal can
- * be quoted in the endpoint's own words.
+ * **This page asks the endpoint nothing.** It used to: a `List models` button beside the model
+ * field, answered from the main process because a request from this page's origin to an
+ * arbitrary endpoint comes back as `Failed to fetch` with no status and no body. The host took
+ * that button away on 2026-10-27 (不需要 list models 按钮), and with it went the whole chain
+ * behind it — the `seek:llm-models` call, its handler, and the three words the card's chip used
+ * to say. What a save cannot do is now said where it always was: the page writes the file and
+ * the main process re-opens the host around it, so a turn is the first thing to find out whether
+ * the endpoint answers.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -86,7 +89,10 @@ export default function Settings({ snapshot }) {
   const [renamingId, setRenamingId] = useState(null)
   const [renameText, setRenameText] = useState('')
   const [organizationNote, setOrganizationNote] = useState(null)
-  const [tested, setTested] = useState(null)
+  // A save that did not go through, in the main process's own words. `null` is the resting
+  // state, and it is no longer three words on a chip: with nothing left on this page to ask an
+  // endpoint, a chip saying `untested` would be a label a person can never change.
+  const [failure, setFailure] = useState(null)
   const [note, setNote] = useState(null)
 
   const load = useCallback(async () => {
@@ -117,37 +123,6 @@ export default function Settings({ snapshot }) {
     () => ({ baseUrl: baseUrl.trim(), apiKey: apiKey.trim() }),
     [baseUrl, apiKey],
   )
-
-  async function askForModels() {
-    setBusy('models')
-    setNote(null)
-    try {
-      const answer = await window.seekHost.models(candidate)
-      if (!answer.ok) {
-        setTested({ ok: false, kind: 'http', words: answer.error, body: answer.body })
-        return []
-      }
-      setNote(t('ui.settings.models.none-listed', { count: answer.models.length }))
-      if (answer.models.length > 0 && model.trim() !== '' && !answer.models.includes(model.trim())) {
-        setTested({
-          ok: false,
-          kind: 'name',
-          words: t('ui.settings.models.not-listed', { model: model.trim() }),
-        })
-      } else if (answer.models.length > 0) {
-        setTested({
-          ok: true,
-          words: t('ui.settings.models.listed-and-there', { count: answer.models.length }),
-        })
-      }
-      return answer.models
-    } catch (error) {
-      setTested({ ok: false, kind: 'offline', words: error?.message ?? String(error) })
-      return []
-    } finally {
-      setBusy(null)
-    }
-  }
 
   async function saveRename(id) {
     const answer = await window.seekHost.renameOrganization({ id, name: renameText })
@@ -188,9 +163,10 @@ export default function Settings({ snapshot }) {
     try {
       const answer = await window.seekHost.saveLlm({ ...candidate, model: model.trim() })
       if (!answer.ok) {
-        setTested({ ok: false, kind: 'save', words: answer.error })
+        setFailure({ words: answer.error })
         return
       }
+      setFailure(null)
       setReading(answer.llm)
       setApiKey('')
       setNote(t('ui.settings.models.saved'))
@@ -219,16 +195,7 @@ export default function Settings({ snapshot }) {
           {/* ---- the half that writes ------------------------------------------------ */}
           <div className="card">
             <div className="card-body">
-              <div className="card-title">
-                {t('ui.settings.models.writes')}
-                <span className={`chip${tested === null ? '' : tested.ok ? ' blue' : ' bad'}`}>
-                  {tested === null
-                    ? t('ui.settings.test.untested')
-                    : tested.ok
-                      ? t('ui.settings.test.reached')
-                      : t('ui.settings.test.not-reached')}
-                </span>
-              </div>
+              <div className="card-title">{t('ui.settings.models.writes')}</div>
               <p className="pane-desc card-sub">{t('ui.settings.models.writes-description')}</p>
               {sourceLine(reading) && <p className="card-sub source">{sourceLine(reading)}</p>}
               {reading.refusal && (
@@ -248,23 +215,13 @@ export default function Settings({ snapshot }) {
 
               <label className="field">
                 <span className="field-label">{t('ui.settings.models.model')}</span>
-                <span className="field-row">
-                  <input
-                    className="field-input"
-                    value={model}
-                    onChange={(event) => setModel(event.target.value)}
-                    placeholder={t('ui.settings.models.model-hint')}
-                    data-llm="model"
-                  />
-                  <button
-                    className="btn"
-                    onClick={askForModels}
-                    disabled={busy !== null}
-                    data-llm="models"
-                  >
-                    {busy === 'models' ? t('ui.settings.models.listing') : t('ui.settings.models.list')}
-                  </button>
-                </span>
+                <input
+                  className="field-input"
+                  value={model}
+                  onChange={(event) => setModel(event.target.value)}
+                  placeholder={t('ui.settings.models.model-hint')}
+                  data-llm="model"
+                />
               </label>
 
               <label className="field">
@@ -289,22 +246,14 @@ export default function Settings({ snapshot }) {
                 {note && <span className="card-sub" data-llm="note">{note}</span>}
               </div>
 
-              {tested && !tested.ok && (
+              {failure && (
                 <div className="llm-error" data-llm="error">
-                  <div className="llm-error-title">
-                    {tested.kind === 'name'
-                      ? t('ui.settings.models.error-name')
-                      : tested.kind === 'save'
-                        ? t('ui.settings.models.error-save')
-                        : t('ui.settings.models.error-http')}
-                  </div>
+                  <div className="llm-error-title">{t('ui.settings.models.error-save')}</div>
                   <div className="llm-error-raw">
-                    {t('ui.settings.models.error-own-words', { words: tested.words })}
+                    {t('ui.settings.models.error-own-words', { words: failure.words })}
                   </div>
-                  {tested.body && <div className="llm-error-raw">{tested.body}</div>}
                 </div>
               )}
-              {tested?.ok && <p className="card-sub" data-llm="ok">{tested.words}</p>}
             </div>
           </div>
 

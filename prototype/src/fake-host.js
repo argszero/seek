@@ -141,7 +141,6 @@ export const fakeHost = {
 
   llm: async () => structuredClone(llm),
 
-  models: async () => ({ ok: true, models: ['lfm2.5-vl-3b', 'deepseek-flash', 'deepseek-pro'] }),
 
   /**
    * A picture, read back. The fixture carries none, so this answers what a store would

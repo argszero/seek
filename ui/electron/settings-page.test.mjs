@@ -168,3 +168,65 @@ test('the organizations panel has rules of its own, one row per world', () => {
   assert.equal(nameRule.flex, '1', 'a long name takes the room the buttons do not')
   assert.equal(nameRule['text-overflow'], 'ellipsis', 'and ends in an ellipsis rather than pushing them out')
 })
+
+/**
+ * **The page has no button that asks the endpoint what it serves.**
+ *
+ * There was one until 2026-10-27: `List models`, beside the model field, answered by a
+ * `seek:llm-models` call in the main process. The host took it away (不需要 list models 按钮), and
+ * a removal is the kind of thing an editor puts back — the handler is still a well-shaped
+ * function, the catalogue still has neighbours that look like its keys, and nothing else in this
+ * repository would notice it return.
+ *
+ * Four places have to stay empty together, because a button needs all four: the call in the
+ * page, the bridge that carried it, the handler behind the bridge, and the words on its face.
+ * The one-way guard elsewhere (`documentation.test.mjs`) only asks that a channel which exists
+ * is claimed; a channel nobody claims fails there, which is why the handler cannot come back on
+ * its own — but the button can come back onto a bridge that was never removed, and a page that
+ * asks for a key no catalogue ships draws nothing where a button was. So this test reads the
+ * four surfaces rather than one.
+ */
+test('nothing asks an endpoint which models it serves', () => {
+  const preload = read('ui', 'electron', 'preload.js')
+  const main = read('ui', 'electron', 'main.js')
+  const fake = read('prototype', 'src', 'fake-host.js')
+
+  assert.doesNotMatch(PAGE, /seekHost\??\.models\b/, 'the page asks an endpoint what it serves again')
+  assert.doesNotMatch(PAGE, /data-llm="models"/, 'the button beside the model field is back')
+  assert.doesNotMatch(preload, /llm-models/, 'the bridge call is back')
+  assert.doesNotMatch(main, /llm-models/, 'the handler is back')
+  assert.doesNotMatch(fake, /^\s+models:/m, 'the demo answers a call the window no longer makes')
+
+  // And the words it said, in both languages: a key with no asker is a sentence nobody reads.
+  for (const tag of ['en', 'zh-CN']) {
+    const messages = catalogueFor(tag).messages
+    for (const key of [
+      'ui.settings.models.list',
+      'ui.settings.models.listing',
+      'ui.settings.models.none-listed',
+      'ui.settings.models.not-listed',
+      'ui.settings.models.listed-and-there',
+      'ui.settings.test.untested',
+      'ui.settings.test.reached',
+      'ui.settings.test.not-reached',
+    ]) {
+      assert.equal(messages[key], undefined, `${tag} still ships ${key}, and nothing draws it`)
+    }
+  }
+
+  // What is left of the model field: one input, no row around it, and the label above it. The
+  // `.field-row` rule went with the button, so a field that grew a wrapper would have no rule
+  // for it either — the shape this asserts is the shape the stylesheet still draws.
+  // The window runs from the field's own label, not from the input: a wrapper is written
+  // *before* the input, so a slice that started at `data-llm="model"` would begin inside the
+  // thing it is looking for and read nothing — which is exactly how this assertion first passed
+  // on a field that had been wrapped again.
+  const field = PAGE.slice(
+    PAGE.indexOf("t('ui.settings.models.model')"),
+    PAGE.indexOf('data-llm="key"'),
+  )
+  assert.ok(field.includes('data-llm="model"'), 'the slice no longer holds the model field')
+  assert.doesNotMatch(field, /field-row/, 'the model field is wrapped in a row again')
+  assert.match(field, /className="field-input"/, 'the model field is a bare input')
+  assert.doesNotMatch(SHELL, /\.field-row\s*\{/, 'the rule for a row that no longer exists is back')
+})
