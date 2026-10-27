@@ -67,13 +67,9 @@
       "one": "{count} token",
       "other": "{count} tokens"
     },
-    "ui.chat.stage1-asks": "stage 1 asks {origin}",
-    "ui.chat.stage1-asks-why": "whether it answers is the model's verdict; what it says is stage 2, below",
     "ui.chat.stage1-placeholder": "no model server",
     "ui.chat.stage1-placeholder-why": "the bot decides with the kernel's placeholder — set SEEK_SERVER and SEEK_WINDOW to ask a real model",
     "ui.chat.stage1-refused": "the model server was not used",
-    "ui.chat.stage2-asks": "stage 2 asks {origin}",
-    "ui.chat.stage2-asks-why": "the words in the room are the model's, written through its `say` call",
     "ui.chat.stage2-placeholder": "no work server",
     "ui.chat.stage2-placeholder-why": "the bot says the kernel's placeholder line — set SEEK_WORK_SERVER to let a model write the reply",
     "ui.chat.stage2-refused": "the work server was not used",

@@ -66,11 +66,25 @@ function rule(css, selector) {
   const to = css.indexOf('}', from)
   assert.notEqual(to, -1, `${opener} is never closed, so this check reads past it`)
   const declarations = {}
-  for (const line of css.slice(from + opener.length, to).split('\n')) {
+  // **Comments come out before the lines are read.** Skipping lines that *start* with `/*` or `*`
+  // is not enough: a wrapped comment's later lines start with prose, and folding those into the
+  // previous declaration put English inside a colour value.
+  const body = css.slice(from + opener.length, to).replace(/\/\*[\s\S]*?\*\//g, '')
+  for (const line of body.split('\n')) {
     const text = line.trim()
-    if (text === '' || text.startsWith('/*') || text.startsWith('*')) continue
+    if (text === '') continue
     const at = text.indexOf(':')
-    if (at === -1) continue
+    if (at === -1) {
+      // **A declaration may be wrapped.** Continuing a long value onto the next line is ordinary
+      // CSS, and this parser used to drop that line: the value read back short — every track
+      // after the break missing — and a guard built on it compared against half a value. A line
+      // with no colon is the rest of the previous declaration, so it goes there.
+      const previous = Object.keys(declarations).at(-1)
+      if (previous !== undefined) {
+        declarations[previous] = `${declarations[previous]} ${text}`.replace(/[;\s]+$/, '').trim()
+      }
+      continue
+    }
     declarations[text.slice(0, at).trim()] = text.slice(at + 1).replace(/[;\s]+$/, '').trim()
   }
   return declarations
@@ -196,13 +210,13 @@ test('the grid is three columns and a gutter, and the row is the window', () => 
   const grid = rule(SHELL, '.app')['grid-template-columns']
   assert.equal(
     grid,
-    'var(--rail-w) var(--list-w) var(--gutter-w) minmax(0, 1fr)',
+    'var(--rail-w) var(--gutter-w) var(--list-w) var(--gutter-w) minmax(0, 1fr)',
     'the rail, the list, the gutter, and the room taking what is left',
   )
   assert.equal(
     rule(SHELL, '.app.with-thread')['grid-template-columns'],
-    'var(--rail-w) var(--list-w) var(--gutter-w) minmax(0, 1fr) var(--side-w)',
-    'and the thread panel is a fifth column while it is open',
+    'var(--rail-w) var(--gutter-w) var(--list-w) var(--gutter-w) minmax(0, 1fr) var(--gutter-w) var(--side-w)',
+    'and the thread panel is a further column — behind its own seam, so it can be widened too',
   )
 
   // **The row is the window's height, not the conversation's.** A single implicit row is sized

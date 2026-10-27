@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import { t } from './catalogue.mjs'
+import Gutter from './Gutter.jsx'
 
 /**
  * The groups view: the rooms in this store that are not one person's conversation with one
@@ -280,6 +281,11 @@ export default function Groups({ rooms, people, me, onOpen, onSnapshot, ask, onA
           </div>
         )}
       </section>
+
+      {/* The seam between the list and the card beside it. The grid reserved this 6px track
+          before anything drew in it, so the list started 6px early and the edge could not be
+          grabbed — the same gap the roster and the topics list had. */}
+      <Gutter pane="list" />
 
       <section className="main-col">
         {open ? (

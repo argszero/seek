@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import { t } from './catalogue.mjs'
+import Gutter from './Gutter.jsx'
 
 /**
  * The contacts view: everyone in this organization except the person looking, and a card for
@@ -264,6 +265,9 @@ export default function Contacts({ people, me, firstLaw, refusal, onMessage, onS
           </div>
         )}
       </section>
+
+      {/* The same seam the chat view draws: this list is a column a person can widen. */}
+      <Gutter pane="list" />
 
       <section className="main-col">
         {open ? (

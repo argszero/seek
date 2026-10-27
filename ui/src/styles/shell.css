@@ -33,7 +33,7 @@ body {
      list, and the room taking what is left. They are read through the tokens rather than
      written here a second time — they were literals once, drifted to 288 and 340, and no
      test could see it. */
-  grid-template-columns: var(--rail-w) var(--list-w) var(--gutter-w) minmax(0, 1fr);
+  grid-template-columns: var(--rail-w) var(--gutter-w) var(--list-w) var(--gutter-w) minmax(0, 1fr);
   /* **The row is the window's height, never the room's.** A single implicit row is sized by
      its content, so a long conversation used to make the grid row taller than the window and
      carry the whole layout upward with it: on a short window the rail's last two rows — the
@@ -53,13 +53,18 @@ body {
 .app > * { min-height: 0; }
 
 .app.with-thread {
-  grid-template-columns: var(--rail-w) var(--list-w) var(--gutter-w) minmax(0, 1fr) var(--side-w);
+  /* A seam on each side of the room, so both of the columns beside it can be widened: the list
+     to its left, the thread panel to its right. Without the second gutter the panel's column
+     started immediately at the room's edge and there was nothing for a pointer to grab. */
+  grid-template-columns: var(--rail-w) var(--gutter-w) var(--list-w) var(--gutter-w) minmax(0, 1fr)
+    var(--gutter-w) var(--side-w);
 }
 
 /* The settings page is not a room, so it takes the whole width beside the rail: the list
    column is gone, and a grid still laid out as three columns would push the page into the
    300px slot the list used to occupy. */
-.app.with-settings { grid-template-columns: var(--rail-w) minmax(0, 1fr); }
+/* The settings page is one column beside the rail, and the rail's seam is the only one it has. */
+.app.with-settings { grid-template-columns: var(--rail-w) var(--gutter-w) minmax(0, 1fr); }
 
 /* The rail, measured from the Feishu messenger rather than from `prototype/` (2026-10-27):
    156px wide (`--rail-w`), a dark slab, its rows inset 8px from both sides, a 4px gap
@@ -95,6 +100,18 @@ body {
   cursor: col-resize;
   background: transparent;
   -webkit-app-region: no-drag;
+  /* A drag that starts here must not be read as a scroll or a text selection by anything
+     underneath it: the pointer travels over the list's text on the way past. */
+  touch-action: none;
+  /* The seam is space, so it says it can be grabbed only while the pointer is on it. The
+     colour is the hairline token this stylesheet already draws its edges with, not a
+     measurement of the client's — its own highlight has never been read off the running app. */
+  transition: background-color 120ms ease;
+}
+
+.gutter:hover,
+.gutter:active {
+  background: var(--N300);
 }
 
 /* A navigation row, in the client's own numbers: 32px tall and as wide as the column
@@ -264,8 +281,8 @@ body {
 
 /* The conversation column, in the client's numbers: 448px wide (its `--list-w`), the same
    `rgb(252, 252, 252)` as the room beside it, and one hairline where the two meet. The
-   client's own seam is a 6px gutter a person can drag; this window has no drag yet, so it
-   draws the hairline and nothing else rather than a border on both sides. */
+   client's own seam is a 6px gutter a person can drag, and so is this window's — the hairline
+   is what is left after the seam has moved away from it. */
 .list-col {
   display: flex;
   flex-direction: column;

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 
 import { t, when } from './catalogue.mjs'
+import Gutter from './Gutter.jsx'
 
 /**
  * The topics view: every thread in this store, whichever room it started in.
@@ -118,6 +119,9 @@ export default function Topics({ rooms, onOpen }) {
 
         {topics.length === 0 && <div className="empty">{t('ui.topics.none')}</div>}
       </section>
+
+      {/* The same seam the chat view draws: this list is a column a person can widen. */}
+      <Gutter pane="list" />
 
       <section className="main-col">
         {open ? (

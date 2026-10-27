@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
 import Contacts from './Contacts.jsx'
+import Gutter from './Gutter.jsx'
 import Groups from './Groups.jsx'
 import Icon from './icons.jsx'
 import Settings from './Settings.jsx'
@@ -796,6 +797,10 @@ export default function App() {
         </button>
       </nav>
 
+      {/* The rail's own seam, drawn once for every view: the rail is the one column present in
+          all of them, and a seam per view would be four copies of the same edge. */}
+      <Gutter pane="rail" />
+
       {view === 'settings' ? (
         <Settings snapshot={snap} ask={ask === 'settings'} onAsked={clearAsk} />
       ) : view === 'contacts' ? (
@@ -942,24 +947,10 @@ export default function App() {
         </ul>
       </section>
 
-      {/* The 6px gutter the client keeps between the list and the room, and the only way to
-          change how much of the window each column gets. It is drawn as an empty column
-          rather than as a border, because it is space: the two columns share one surface
-          colour and a line between them would be a seam the client does not have.
-
-          Dragging writes `--list-w` on the `.app` element, which is the same token the grid
-          reads its columns from, so there is one number and not two. The bounds are the
-          list's own: narrower than 280 and a conversation row's name has nowhere to go;
-          wider than 640 and the room stops being the widest thing in the window. No double
-          click to reset, because the client has no such gesture and inventing one would be
-          a behaviour nobody asked for. */}
-      <div
-        className="gutter"
-        role="separator"
-        aria-orientation="vertical"
-        data-gutter="list"
-        onPointerDown={startListResize}
-      />
+      {/* The seam between the list and the room. It is the same component every other
+          two-column view draws, so the roster and the topics list are resizable too — they
+          used to be pinned, with the grid still reserving a 6px track that nothing occupied. */}
+      <Gutter pane="list" />
 
       <section className="main-col">
         {/* Which half of the bot is real, above the room because it is a fact about the
@@ -1118,7 +1109,12 @@ export default function App() {
       </section>
 
       {openThread && active && (
-        <aside className="thread-col">
+        <>
+          {/* The thread panel's own seam. It sits to the panel's left, so it reads the drag
+              with the opposite sign (`dir` in `resize.mjs`): the panel grows as the pointer
+              moves toward the room. */}
+          <Gutter pane="side" />
+          <aside className="thread-col">
           <header className="thread-head">
             <h3>{t('ui.chat.thread')}</h3>
             <button className="thread-close" title={t('ui.chat.close-thread')} onClick={() => setOpenThread(null)}>
@@ -1187,7 +1183,8 @@ export default function App() {
               {t('ui.chat.reply')}
             </button>
           </form>
-        </aside>
+          </aside>
+        </>
       )}
         </>
       )}
@@ -1403,18 +1400,18 @@ function WeightsRefused({ weights }) {
 /**
  * What the bot's judgement is, in one standing line.
  *
- * Three readings, and the difference between them is the whole point of drawing it. A
- * fourth — the weights arriving — is not here: the download is one fact for both halves,
- * so it is one line (`WeightsArriving`), drawn above these two.
+ * Three readings, and only two of them are worth a line. The weights arriving are not here
+ * either: the download is one fact for both halves, so it is one line (`WeightsArriving`),
+ * drawn above these two.
  *
- * - **no server** — the state a build with no model server ships in. The bot decides with the kernel's
- *   placeholder, and the line names the two variables that would change that, because a
- *   mode nobody can switch is a mode nobody knows they are in.
- * - **bound** — stage 1 is the measured watch model at that origin. The origin is named
- *   because a verdict without the model that gave it is a number that looks like a
- * measurement, and the line also says the *answer* is still
- *   the placeholder: stage 1 is whether to act, stage 2 is what to say
- *   (`src/main.ts`, `STUB_REPLY`), and one line drawn for both would be a lie about one.
+ * - **bound — nothing is drawn.** A server answering stage 1 is the ordinary case. The strip
+ *   that used to stand here named the origin and said which half of the pipeline it answered,
+ *   and neither sentence is something a person can act on: the host read it on screen and asked
+ *   why a user is shown it at all (2026-10-27). The window said `stage 1 asks
+ *   http://127.0.0.1:8787` over a bot that was simply working. A working install says nothing.
+ * - **no server** — the state a build with no model server ships in. The bot decides with the
+ *   kernel's placeholder, and the line names the two variables that would change that, because
+ *   a mode nobody can switch is a mode nobody knows they are in.
  * - **refused** — a server was named and this build did not use it. Drawn in the error
  *   colour with the kernel's own sentence: the app still works, and the one thing it must
  *   not do is keep working in a different mode than the person asked for, silently.
@@ -1434,14 +1431,8 @@ function StageOne({ stage1 }) {
     )
   }
 
-  if (stage1.server) {
-    return (
-      <div className="stage1 bound" data-stage1="bound">
-        <strong>{t('ui.chat.stage1-asks', { origin: stage1.server })}</strong>
-        <span className="stage1-why">{t('ui.chat.stage1-asks-why')}</span>
-      </div>
-    )
-  }
+  // A server answered this stage: the ordinary case, and not news.
+  if (stage1.server) return null
 
   return (
     <div className="stage1" data-stage1="placeholder">
@@ -1456,9 +1447,10 @@ function StageOne({ stage1 }) {
  *
  * It keeps its own strip rather than sharing one: a store whose watch row is served and
  * whose work row claims another model is a real state, and one strip for both would let
- * the working half hide the refused one. `bound` means a model wrote the words, and
- * `placeholder` means `STUB_REPLY` did — a difference a reader has to be able to see,
- * because a stub line looks exactly like a bot that thought.
+ * the working half hide the refused one. `bound` — a model wrote the words — draws nothing,
+ * the same way `StageOne` draws nothing when stage 1 answers: a working half is not news.
+ * `placeholder` still speaks up, because a line from `STUB_REPLY` looks exactly like a bot
+ * that thought, and that is the one difference a reader must be able to see.
  */
 function StageTwo({ stage2 }) {
   if (!stage2) return null
@@ -1472,14 +1464,8 @@ function StageTwo({ stage2 }) {
     )
   }
 
-  if (stage2.server) {
-    return (
-      <div className="stage2 bound" data-stage2="bound">
-        <strong>{t('ui.chat.stage2-asks', { origin: stage2.server })}</strong>
-        <span className="stage2-why">{t('ui.chat.stage2-asks-why')}</span>
-      </div>
-    )
-  }
+  // A server answered this stage: the ordinary case, and not news.
+  if (stage2.server) return null
 
   return (
     <div className="stage2" data-stage2="placeholder">
@@ -1715,40 +1701,6 @@ function lastLineOf(message) {
   if (typeof message?.text === 'string' && message.text !== '') return message.text
   if (message?.kind === 'image') return t('ui.chat.said.picture')
   return t('ui.chat.said.nothing')
-}
-
-/**
- * Widening or narrowing the conversation list, the one thing the client's 6px gutter does.
- *
- * The width is written to `--list-w` on the `.app` element rather than held in React state:
- * a column being dragged redraws on every pointer move, and a state write per move would
- * re-render the whole window — every message, every room — to move one edge. The token is
- * what the grid already reads, so dragging it is the same edit a stylesheet would make.
- *
- * Listeners go on the window because the pointer leaves this 6px column almost immediately;
- * the drag has to end wherever the button is released, including outside the window, so both
- * of them are removed on `pointerup`. `preventDefault` keeps the drag from selecting the
- * conversation list's text on the way past it.
- */
-function startListResize(event) {
-  const app = event.currentTarget.parentElement
-  const list = app?.querySelector('.list-col')
-  if (!app || !list) return
-  event.preventDefault()
-  const startX = event.clientX
-  const startWidth = list.getBoundingClientRect().width
-  const move = (moving) => {
-    const next = Math.min(640, Math.max(280, startWidth + (moving.clientX - startX)))
-    app.style.setProperty('--list-w', `${Math.round(next)}px`)
-  }
-  const stop = () => {
-    window.removeEventListener('pointermove', move)
-    window.removeEventListener('pointerup', stop)
-    window.removeEventListener('pointercancel', stop)
-  }
-  window.addEventListener('pointermove', move)
-  window.addEventListener('pointerup', stop)
-  window.addEventListener('pointercancel', stop)
 }
 
 /**
