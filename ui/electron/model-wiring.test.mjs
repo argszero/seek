@@ -214,7 +214,7 @@ test('a server named with a window asks the model, and its verdict is what makes
     const messages = messagesIn(snapshot, w.world.room)
     assert.equal(messages.length, 2, 'the model said act, so the bot answers')
     assert.equal(messages[1].text, STUB_REPLY, 'and what it says is still stage 2’s placeholder')
-    assert.equal(snapshot.stage1.server, 'http://127.0.0.1:8080', 'a send keeps the strip on screen')
+    assert.equal(snapshot.stage1.server, 'http://127.0.0.1:8080', 'a send keeps the reading')
   } finally {
     closeHost(host)
     await rm(w.dir, { recursive: true, force: true })
@@ -362,7 +362,7 @@ test('a work server makes the words in the room the model’s, and the window na
     )
     const asked = await work.calls.find((call) => call.path === '/v1/chat/completions')
     assert.ok(Array.isArray(asked.body.tools) && asked.body.tools.length > 0, 'with the artifact’s tools')
-    assert.equal(snapshot.stage2.server, 'http://127.0.0.1:8081', 'a send keeps both strips on screen')
+    assert.equal(snapshot.stage2.server, 'http://127.0.0.1:8081', 'a send keeps both readings')
   } finally {
     closeHost(host)
     await rm(w.dir, { recursive: true, force: true })
@@ -371,9 +371,10 @@ test('a work server makes the words in the room the model’s, and the window na
 
 test('the work half refusing does not take the watch half with it', async () => {
   // The fixture's work row claims `big`; this server serves `other`, so stage 2 is refused
-  // and stage 1 is not. One strip for both would let the working half hide the broken one,
-  // and a bot that still answers — because `stubDecide` took over — is exactly the state a
-  // reader must be able to tell apart from a model that answered.
+  // and stage 1 is not. The two halves are read apart and reported apart, because a bot that
+  // still answers — `stubDecide` having taken over — is exactly the state that must not be
+  // mistaken for a model that answered: the window draws neither, and `main.js` writes the
+  // refusal to stderr.
   const w = await oneBotWorld()
   const watch = fakeServer({ candidates: ACTS })
   const work = fakeServer({ modelAlias: 'other', modelPath: null })
@@ -395,7 +396,7 @@ test('the work half refusing does not take the watch half with it', async () => 
     const messages = messagesIn(snapshot, w.world.room)
     assert.equal(messages.length, 2, 'the window still works: the placeholder answers')
     assert.equal(messages[1].text, STUB_REPLY, 'and that answer is visibly the kernel’s line')
-    assert.match(snapshot.stage2.refusal, /serves 'other'/, 'while the strip keeps saying why')
+    assert.match(snapshot.stage2.refusal, /serves 'other'/, 'while the snapshot keeps saying why')
     assert.equal(snapshot.stage1.server, 'http://127.0.0.1:8080', 'and stage 1 is still named')
   } finally {
     closeHost(host)
@@ -493,7 +494,7 @@ test('the words half writes through a hosted endpoint once its model is named', 
   })
   try {
     assert.equal(host.stage2.refusal, null, 'a name its own list carries is not a refusal')
-    assert.equal(host.stage2.server, 'http://127.0.0.1:8081/v1', 'the strip names it as it was given')
+    assert.equal(host.stage2.server, 'http://127.0.0.1:8081/v1', 'the snapshot names it as it was given')
 
     const snapshot = await postMessage(host, { roomId: w.world.room, text: 'the batch failed' })
 

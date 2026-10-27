@@ -74,12 +74,6 @@
       "one": "{count} token",
       "other": "{count} tokens"
     },
-    "ui.chat.stage1-placeholder": "no model server",
-    "ui.chat.stage1-placeholder-why": "the bot decides with the kernel's placeholder — set SEEK_SERVER and SEEK_WINDOW to ask a real model",
-    "ui.chat.stage1-refused": "the model server was not used",
-    "ui.chat.stage2-placeholder": "no work server",
-    "ui.chat.stage2-placeholder-why": "the bot says the kernel's placeholder line — set SEEK_WORK_SERVER to let a model write the reply",
-    "ui.chat.stage2-refused": "the work server was not used",
     "ui.chat.stop-addressing": "stop addressing {name}",
     "ui.chat.stop-quoting": "Stop quoting",
     "ui.chat.store-refused": "the store was not opened",

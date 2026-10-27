@@ -71,12 +71,6 @@
     "ui.chat.spend": {
       "other": "{count} 个 token"
     },
-    "ui.chat.stage1-placeholder": "没有判断用的模型服务",
-    "ui.chat.stage1-placeholder-why": "机器人用的是内核的占位判断——设置 SEEK_SERVER 和 SEEK_WINDOW 才会问真模型",
-    "ui.chat.stage1-refused": "判断用的模型服务没有用上",
-    "ui.chat.stage2-placeholder": "没有说话用的模型服务",
-    "ui.chat.stage2-placeholder-why": "机器人说的是内核的占位句——设置 SEEK_WORK_SERVER 才会让模型来写回复",
-    "ui.chat.stage2-refused": "说话用的模型服务没有用上",
     "ui.chat.stop-addressing": "取消点名 {name}",
     "ui.chat.stop-quoting": "取消引用",
     "ui.chat.store-refused": "存储没有打开",
