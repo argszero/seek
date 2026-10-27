@@ -240,6 +240,12 @@ A reminder reaches the bot's inbox and stops there — no `room` field on the ro
 *"A"* [asked: *"The default fetches `LFM2.5-VL-3B` from the canonical `huggingface.co`, and that host is unreachable from this machine — measurable: 40 s timeout, where `hf-mirror.com` answers `206` with the right `content-length` for both files. Which default? A: ask the mirror first and the canonical host after it — costs a person nothing and the alternative is a first run that waits out a timeout to learn nothing. B: keep the canonical host as the default and let whoever cannot reach it set a variable."* — the implementer's wording.]
 `hf-mirror.com` is asked first and `https://huggingface.co` after it. The fallback is not a second download: a `.part` file holds bytes rather than a host's promise, so a file that stopped on one host is continued on the next. An explicit `SEEK_WEIGHTS_BASE` names one host and only that one.
 
+## The window
+
+**The window does not speak to a developer.**
+*"B. Do not treat the user as a developer."* [asked: which of two things to do next — B was: take the notice each model half drew off the screen and leave the reason in the log. The implementer's wording.]
+What a person is shown is what a person can act on. An origin, a variable name, the words `stage 1`, a sentence about which server was or was not used — none of them is theirs to do anything with, so the window draws none of them, and a bot whose half fell back goes on answering. A half that refused says so on stderr, where whoever named that server is already looking. What may stand on the screen is a state about the person's own work — a store the kernel would not open, a download arriving or stopped — and it is said in the language they read.
+
 ## How to work
 
 **One question at a time.**

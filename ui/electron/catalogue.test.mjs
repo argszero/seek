@@ -58,7 +58,7 @@ const SAMPLES = {
   law: 'a bot belongs to its organization',
   // The topic list's: the room a thread started in.
   room: 'Design',
-  // The chat page's strips name the origin a half came from — a shape rather than a sentence,
+  // The kernel's report names the origin a half came from — a shape rather than a sentence,
   // which is why it is a sample here and not a key.
   origin: 'http://127.0.0.1:8080',
   // The download line's three: two sizes already written in the language's form (`size()` in
@@ -101,8 +101,8 @@ function asked() {
   for (const name of readdirSync(RENDERER)) {
     if (!name.endsWith('.jsx') && !name.endsWith('.mjs')) continue
     const source = readFileSync(join(RENDERER, name), 'utf8')
-    // The class carries `0-9` because a key may: `ui.chat.stage1-placeholder` is a lookup this
-    // scan used to walk past in silence, so ten keys were shipped, drawn and compared by nothing.
+    // The class carries `0-9` because a key may: `ui.chat.info-hint-p2p` is a lookup this scan
+    // used to walk past in silence, so keys were shipped, drawn and compared by nothing.
     for (const [, key] of source.matchAll(/\bt\(\s*'(ui\.[a-zA-Z0-9.-]+)'/g)) keys.add(key)
   }
   return [...keys].sort()
@@ -534,7 +534,7 @@ test('the chat page says nothing a catalogue did not say', () => {
   const source = readFileSync(join(RENDERER, 'App.jsx'), 'utf8')
 
   // The last renderer file that wrote its own words, and the largest: the rail, the room list,
-  // the form that makes one, the composer, the thread panel, the four standing strips and the
+  // the form that makes one, the composer, the thread panel, the two standing notices and the
   // hover toolbar. `docs/design/i18n.md` §1 is the rule, and a text node between `>` and `<` is
   // drawn as it stands.
   //
@@ -618,8 +618,6 @@ test('the chat page says nothing a catalogue did not say', () => {
     [/>this thread has nothing in it</, 'an empty thread written into the markup'],
     [/>no room in this store</, 'the empty chat column written into the markup'],
     [/>the store was not opened</, 'the store strip written into the markup'],
-    [/>no model server</, 'stage 1 placeholder title written into the markup'],
-    [/>no work server</, 'stage 2 placeholder title written into the markup'],
     [/'copied to the clipboard'/, 'the note after a copy written into the handler'],
     [/`forwarded into /, 'the note after a forward written into the handler'],
     [/`stop addressing /, 'the mention chip title written into the markup'],
@@ -769,37 +767,43 @@ test('the catalogue the window is handed is the one the kernel prints its report
   assert.ok(asked.messages['report.title'] !== undefined, 'the report keys are in the same catalogue')
 })
 
-test('a working stage is not news: nothing on the page names the server it asks', () => {
+test('the window tells nobody which model server it is on', () => {
   const source = readFileSync(join(RENDERER, 'App.jsx'), 'utf8')
 
-  // The two strips the host asked to be rid of (2026-10-27): `stage 1 asks <origin>` and
-  // `stage 2 asks <origin>`. A lookup left behind is the sentence coming back, and a catalogue
-  // entry left behind is the lookup one `t()` away from coming back.
-  assert.doesNotMatch(source, /ui\.chat\.stage[12]-asks/)
+  // Two deletions, one reason — `docs/host-rulings.md`, "The window does not speak to a
+  // developer". The strips that named an origin (`stage 1 asks <origin>`) went first; the two
+  // that spoke when a half was on the kernel's placeholder, or when a named server was
+  // refused, went after them. A lookup left behind is the sentence coming back, and a
+  // catalogue entry left behind is the lookup one `t()` away from coming back.
+  assert.doesNotMatch(source, /ui\.chat\.stage[12]-/, 'the page asks the catalogue nothing about a stage')
   for (const tag of locales()) {
-    const asks = Object.keys(catalogueFor(tag).messages).filter((key) => /stage[12]-asks/.test(key))
-    assert.deepEqual(asks, [], `${tag} still ships ${asks.join(', ')} — a working stage draws nothing`)
+    const stages = Object.keys(catalogueFor(tag).messages).filter((key) => /^ui\.chat\.stage[12]-/.test(key))
+    assert.deepEqual(
+      stages,
+      [],
+      `${tag} still ships ${stages.join(', ')} — which half is on which server is not a person's business`,
+    )
   }
 
-  // And the state those strips drew — a server answering — now draws nothing at all. Without
-  // the two lines below, the check above passes and a stage that is being answered falls through
-  // to the *placeholder* strip, telling a person there is no model server while one is answering:
-  // the deletion alone trades a sentence nobody can use for a sentence that is false.
-  assert.match(source, /if \(stage1\.server\) return null/)
-  assert.match(source, /if \(stage2\.server\) return null/)
+  // **The reason did not go with the sentence.** What a person can do nothing with is the
+  // notice, not the fact: an install whose watch or work half fell back has to stay readable
+  // by whoever has to fix it, and stderr is where that reader already is.
+  const main = readFileSync(join(HERE, 'main.js'), 'utf8')
+  assert.match(main, /the watch server was not used/, 'a stage 1 that refused says so on stderr')
+  assert.match(main, /the work server was not used/, 'and so does a stage 2')
 
-  // Anti-vacuity: the two readings that do still speak are still on the page and still shipped,
-  // so the assertions above are about a deletion rather than about a component that draws nothing.
-  for (const stage of ['stage1', 'stage2']) {
-    assert.match(source, new RegExp(`ui\\.chat\\.${stage}-refused`))
-    assert.match(source, new RegExp(`ui\\.chat\\.${stage}-placeholder`))
+  // Anti-vacuity: the notices a person *can* act on are still drawn and still shipped, so the
+  // check above is a deletion rather than a notice area that emptied out — a store that would
+  // not open, and a download arriving or stopped.
+  for (const [drawn, key] of [
+    ['<StoreRefused', 'ui.chat.store-refused'],
+    ['<WeightsArriving', 'ui.chat.weights-arriving'],
+    ['<WeightsRefused', 'ui.chat.weights-refused'],
+  ]) {
+    assert.ok(source.includes(drawn), `the page still draws ${drawn}>, rather than leaving the slot empty`)
+    assert.ok(source.includes(key), `and its words are the catalogue's (${key})`)
     for (const tag of locales()) {
-      for (const tail of ['refused', 'placeholder']) {
-        assert.ok(
-          catalogueFor(tag).messages[`ui.chat.${stage}-${tail}`] !== undefined,
-          `${tag} lost ui.chat.${stage}-${tail}, which the page still draws`,
-        )
-      }
+      assert.ok(catalogueFor(tag).messages[key] !== undefined, `${tag} lost ${key}, which the page still draws`)
     }
   }
 })

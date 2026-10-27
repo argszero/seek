@@ -83,8 +83,8 @@ const FLOOR_DECLARATIONS = 700
  * The window's surfaces, each with the class whose rules make it look like itself.
  *
  * Read off the sheet, one line per region the window actually draws — the frame, the rail, the
- * conversation list, the room and its messages, the composer, the store and its two stages,
- * the thread panel, and the settings page.
+ * conversation list, the room and its messages, the composer, the store and the weights, the
+ * thread panel, and the settings page.
  */
 const SURFACES = [
   ['the window frame', '.app'],
@@ -95,8 +95,6 @@ const SURFACES = [
   ['the messages', '.messages'],
   ['the composer', '.composer'],
   ['the store panel', '.store'],
-  ['the store, first stage', '.stage1'],
-  ['the store, second stage', '.stage2'],
   ['the weights', '.weights'],
   ['the thread list', '.thread-list'],
   ['the settings pane', '.pane'],

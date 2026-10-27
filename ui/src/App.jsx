@@ -224,8 +224,11 @@ function FileRow({ file }) {
  * is stage 1, and **what it says** is stage 2; each half is a real model when the app was
  * started with the server that carries it (`ui/electron/host.js`), and each is the
  * kernel's own placeholder when it was not (`stubJudge`, `stubDecide` in `src/main.ts`).
- * `StageOne` and `StageTwo` below are where the window says which of those two it is
- * looking at, one strip each because either half can be refused alone.
+ * **Which of those two it is looking at is not drawn.** It used to be, in a strip per half,
+ * and a person was shown an origin, a variable name and the words `stage 1` over a bot that
+ * was simply working — `docs/host-rulings.md`, "The window does not speak to a developer".
+ * A half that fell back or was refused says so on stderr (`ui/electron/main.js`), which is
+ * where the one reader who can change it is already looking, and the window stays silent.
  *
  * **What the thread panel is.** A thread is not a second conversation this file keeps:
  * the kernel already records it. A message that answers another carries `root_id`, the
@@ -1361,27 +1364,22 @@ export default function App() {
       <Gutter pane="list" />
 
       <section className="main-col">
-        {/* Which half of the bot is real, above the room because it is a fact about the
-            app rather than about this conversation. Two strips, because the two halves
-            are two servers and either can refuse alone. */}
+        {/* The one notice here that is about this person's own data: a store the kernel
+            would not open is why every list under it is empty, and the kernel's own
+            paragraph is the only place the way out of it is written down. */}
         <StoreRefused refusal={snap.storeRefusal} />
-        {/* A first run fetching its weights is one fact about the process, not one per
-            server: `half()` in `ui/electron/main.js` hands both halves the same `pending`
-            while the download runs, so drawing each half's strip printed the same sentence
-            twice, one line under the other. It is drawn once here, and the two strips come
-            back when the download ends. They stay two because a *refusal* is per half —
-            only the download is shared, and the same is true of the download that stopped
-            (`weights`), which is the same directory failing for both halves. */}
+        {/* A first run fetching its weights is a download, and it is drawn while it runs and
+            if it stops. It is one line rather than one per half, because `half()` in
+            `ui/electron/main.js` hands both halves the same reading and a shared fact drawn
+            twice reads as two problems. **Which half is on which model server is not drawn
+            at all** — `docs/host-rulings.md`, "The window does not speak to a developer" —
+            since a person can do nothing with an origin, a variable name or the phrase
+            `stage 1`; a half that refused says so on stderr instead. */}
         {snap.stage1?.pending ? (
           <WeightsArriving facts={snap.stage1.pending} />
         ) : snap.stage1?.weights ? (
           <WeightsRefused weights={snap.stage1.weights} />
-        ) : (
-          <>
-            <StageOne stage1={snap.stage1} />
-            <StageTwo stage2={snap.stage2} />
-          </>
-        )}
+        ) : null}
         {active ? (
           <>
             <header className="main-head">
@@ -2183,84 +2181,6 @@ function WeightsRefused({ weights }) {
     <div className="weights refused" data-weights="refused">
       <strong>{t('ui.chat.weights-refused')}</strong>
       <span className="weights-why">{t('ui.weights.refused-and-resumes', { why: weightsReason(weights) })}</span>
-    </div>
-  )
-}
-
-/**
- * What the bot's judgement is, in one standing line.
- *
- * Three readings, and only two of them are worth a line. The weights arriving are not here
- * either: the download is one fact for both halves, so it is one line (`WeightsArriving`),
- * drawn above these two.
- *
- * - **bound — nothing is drawn.** A server answering stage 1 is the ordinary case. The strip
- *   that used to stand here named the origin and said which half of the pipeline it answered,
- *   and neither sentence is something a person can act on: the host read it on screen and asked
- *   why a user is shown it at all (2026-10-27). The window said `stage 1 asks
- *   http://127.0.0.1:8787` over a bot that was simply working. A working install says nothing.
- * - **no server** — the state a build with no model server ships in. The bot decides with the
- *   kernel's placeholder, and the line names the two variables that would change that, because
- *   a mode nobody can switch is a mode nobody knows they are in.
- * - **refused** — a server was named and this build did not use it. Drawn in the error
- *   colour with the kernel's own sentence: the app still works, and the one thing it must
- *   not do is keep working in a different mode than the person asked for, silently.
- *
- * A strip rather than a toast: it is a fact about the process, so it stays until the fact
- * changes, and it is never something the person has to catch before it disappears.
- */
-function StageOne({ stage1 }) {
-  if (!stage1) return null
-
-  if (stage1.refusal) {
-    return (
-      <div className="stage1 refused" data-stage1="refused">
-        <strong>{t('ui.chat.stage1-refused')}</strong>
-        <span className="stage1-why">{stage1.refusal}</span>
-      </div>
-    )
-  }
-
-  // A server answered this stage: the ordinary case, and not news.
-  if (stage1.server) return null
-
-  return (
-    <div className="stage1" data-stage1="placeholder">
-      <strong>{t('ui.chat.stage1-placeholder')}</strong>
-      <span className="stage1-why">{t('ui.chat.stage1-placeholder-why')}</span>
-    </div>
-  )
-}
-
-/**
- * Stage 2 — what the bot says, which is a different server from stage 1's.
- *
- * It keeps its own strip rather than sharing one: a store whose watch row is served and
- * whose work row claims another model is a real state, and one strip for both would let
- * the working half hide the refused one. `bound` — a model wrote the words — draws nothing,
- * the same way `StageOne` draws nothing when stage 1 answers: a working half is not news.
- * `placeholder` still speaks up, because a line from `STUB_REPLY` looks exactly like a bot
- * that thought, and that is the one difference a reader must be able to see.
- */
-function StageTwo({ stage2 }) {
-  if (!stage2) return null
-
-  if (stage2.refusal) {
-    return (
-      <div className="stage2 refused" data-stage2="refused">
-        <strong>{t('ui.chat.stage2-refused')}</strong>
-        <span className="stage2-why">{stage2.refusal}</span>
-      </div>
-    )
-  }
-
-  // A server answered this stage: the ordinary case, and not news.
-  if (stage2.server) return null
-
-  return (
-    <div className="stage2" data-stage2="placeholder">
-      <strong>{t('ui.chat.stage2-placeholder')}</strong>
-      <span className="stage2-why">{t('ui.chat.stage2-placeholder-why')}</span>
     </div>
   )
 }

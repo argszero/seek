@@ -199,9 +199,9 @@ test('a store that is not open yet says so instead of throwing', () => {
   assert.deepEqual(snapshot.rooms, [])
   assert.match(snapshot.error, /not open yet/)
   // Both halves are read out of the same absent host, so a window that opened before the
-  // store carries two placeholder readings rather than two missing fields — a strip whose
-  // fact is `undefined` is drawn by whatever the renderer does with `undefined`, which is
-  // how a fallback starts looking like a configuration.
+  // store carries two placeholder readings rather than two missing fields — a reading whose
+  // fact is `undefined` is left to whatever the renderer does with `undefined`, which is how a
+  // fallback starts looking like a configuration.
   assert.deepEqual(snapshot.stage1, { server: null, refusal: null, pending: null, weights: null })
   assert.deepEqual(snapshot.stage2, { server: null, refusal: null, pending: null, weights: null })
 })
@@ -263,13 +263,13 @@ test('how far the download has got travels as facts, and a sentence is refused',
   )
   assert.deepEqual(carried.stage2.pending, carried.stage1.pending, 'and stage 2 reads them the same way')
 
-  // The file is what the strip names beside the numbers, not what makes them a reading: a
+  // The file is what the weights line names beside the numbers, not what makes them a reading: a
   // reading with no name is still how far the download has got.
   const bare = snapshotOf(seeded(), '/tmp/seek.json', { pending: { received: 1, total: 2 } })
   assert.deepEqual(bare.stage1.pending, { received: 1, total: 2, file: null })
 
   // The old shape, refused: this is what the main process handed over before the line became
-  // the window's to write, and passing it on would put English back on the strip.
+  // the window's to write, and passing it on would put English back on the line.
   const sentence = snapshotOf(seeded(), '/tmp/seek.json', { pending: '0.2 GB of 2.2 GB — a.gguf' })
   assert.equal(sentence.stage1.pending, null, 'a finished sentence is not a reading')
 
@@ -300,7 +300,7 @@ test('why the weights did not arrive travels as facts too, in a field of its own
   assert.deepEqual(snapshotOf(seeded(), '/tmp/seek.json', { weights: refused }).stage1.weights, refused)
 
   // A sentence where the facts go, refused: this is the shape `weights-fetch.js` produced while
-  // the main process wrote the line, and passing it on would put English back on the strip.
+  // the main process wrote the line, and passing it on would put English back on the line.
   const sentence = snapshotOf(
     seeded(),
     '/tmp/seek.json',
