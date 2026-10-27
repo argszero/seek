@@ -320,6 +320,21 @@ function snapshotOf(store, storeFile, stage1 = null, stage2 = null, storeRefusal
       // kind says `image` and whose bytes nothing can find is a claim, not a fact.
       kind: message.kind,
       media: message.media ? { key: message.media.key, mime: message.media.mime } : null,
+      // **The attachment, in the four facts a row draws.** `kind: 'file'` names one
+      // `MessageFile` (`src/types.ts`): a key, the person's own name for the file, its size
+      // and its mime. The key is opaque, so the name is the only thing that can say *which*
+      // file a row is about; the size is what lets the row say how big it is without opening
+      // it; the mime is what the main process needs to hand it to the right application.
+      // `null` and never `undefined`, for the reason `media` is `null` — a renderer facing
+      // two kinds of nothing draws whatever `undefined` does.
+      file: message.file
+        ? {
+            key: message.file.key,
+            name: message.file.name,
+            size: message.file.size,
+            mime: message.file.mime,
+          }
+        : null,
       // The kernel's field is `created_at`; `at` is this snapshot's own name for it.
       at: message.created_at,
       // Who this message addresses, in the kernel's own pairs: `mentions` is the field,

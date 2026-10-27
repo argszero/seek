@@ -90,6 +90,17 @@ contextBridge.exposeInMainWorld('seekHost', {
    */
   catalogue: () => ipcRenderer.invoke('seek:catalogue'),
   attach: () => ipcRenderer.invoke('seek:attach'),
+  /**
+   * A file of any kind, beside the picture call and deliberately not the same one.
+   *
+   * `attach` answers `{media}`, a `{key, mime}` pair the kernel draws as a picture; this
+   * answers `{file}`, a `{key, name, size, mime}` the kernel draws as a row with a name and a
+   * size. Two carriers because they are two kinds (`src/types.ts`): a picture is shown to the
+   * judgement and a file is opened by a person.
+   */
+  attachFile: () => ipcRenderer.invoke('seek:attach-file'),
+  /** Open an attachment with whatever application this machine uses for it. */
+  openFile: (reference) => ipcRenderer.invoke('seek:open-file', reference),
   media: (reference) => ipcRenderer.invoke('seek:media', reference),
   /**
    * Told when the kernel changed the store by itself — a bot answering a message, or a

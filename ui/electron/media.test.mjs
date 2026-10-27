@@ -23,11 +23,13 @@ import { test } from 'node:test'
 
 import {
   MEDIA_DIR_NAME,
+  attachmentMimeFor,
   isSupportedImage,
   mediaDirFor,
   mimeForPath,
   pathForKey,
   readMedia,
+  saveAttachment,
   saveMedia,
 } from './media.js'
 
@@ -136,5 +138,59 @@ test('a file written by an older version is still readable by its reference', ()
     writeFileSync(join(dir, 'om-legacy-abc.png'), PNG)
     const back = readMedia(storeFile, { key: 'om-legacy-abc.png', mime: 'image/png' })
     assert.ok(back.dataUrl.startsWith('data:image/png;base64,'), 'a plain name in media/ is the whole contract')
+  })
+})
+
+test('an attachment of any type is written beside the store, under a key it can be opened by', () => {
+  withStore((storeFile) => {
+    const bytes = Uint8Array.from(Buffer.from('%PDF-1.4 a real header, and nothing else'))
+    const saved = saveAttachment(storeFile, { bytes, name: 'design-notes.pdf' })
+
+    // Four facts, and each is one the row needs: which file, what it was called, how big, and
+    // what it is. The size is measured here rather than believed from a caller, because a
+    // wrong number in a row is worse than no row.
+    assert.equal(saved.name, 'design-notes.pdf', 'the person’s own name travels with the message')
+    assert.equal(saved.size, bytes.length, 'the size is the bytes that were written')
+    assert.equal(saved.mime, 'application/pdf', 'and the type is the one the extension names')
+    // The key keeps the extension — it is the only thing that survives the trip back to the
+    // person's machine — and nothing else of the name, for the reason `saveMedia` gives.
+    assert.match(saved.key, /^om-[\da-z]+-[\da-z]+\.pdf$/)
+    assert.ok(!saved.key.includes('design'), 'the key is not built from the name')
+
+    // It is on disk, under that key, and the bytes are the bytes.
+    assert.deepEqual(
+      Uint8Array.from(Buffer.from(readMedia(storeFile, { key: saved.key, mime: 'image/png' })
+        .dataUrl.replace(/^data:[^;]+;base64,/, ''), 'base64')),
+      bytes,
+      'what `openAttachment` copies out is what went in',
+    )
+  })
+})
+
+test('a type no one has heard of is “ask the person” rather than a guess', () => {
+  // A picture keeps its own type when it has one, so attaching a PNG through the paperclip
+  // still says `image/png` — a reader choosing an application does better with the truth.
+  assert.equal(attachmentMimeFor('shot.png'), 'image/png')
+  assert.equal(attachmentMimeFor('notes.txt'), 'text/plain')
+  assert.equal(attachmentMimeFor('rows.CSV'), 'text/csv', 'the extension is read in any case')
+  assert.equal(
+    attachmentMimeFor('deck.pptx'),
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  )
+  assert.equal(attachmentMimeFor('thing.qqq'), 'application/octet-stream')
+  assert.equal(attachmentMimeFor('no-extension'), 'application/octet-stream')
+})
+
+test('an empty attachment is refused, and a name nobody gave is still a file', () => {
+  withStore((storeFile) => {
+    assert.throws(
+      () => saveAttachment(storeFile, { bytes: new Uint8Array(0), name: 'empty.txt' }),
+      /an empty file is not an attachment/,
+    )
+    // A dialog always hands back a name, so this is the caller that had none: the row then
+    // says `attachment` rather than drawing a file with no name at all.
+    const saved = saveAttachment(storeFile, { bytes: PNG, name: '   ' })
+    assert.equal(saved.name, 'attachment')
+    assert.match(saved.key, /^om-[\da-z]+-[\da-z]+$/, 'a name with no extension gets a key with none')
   })
 })

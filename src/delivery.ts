@@ -24,6 +24,7 @@ import type {
   Mention,
   Message,
   MessageKind,
+  MessageFile,
   MessageMedia,
   Observation,
   ObservationHints,
@@ -52,6 +53,11 @@ export interface PostMessageInput {
    * other kind — see `mediaFor` for why the pair is an invariant.
    */
   media?: MessageMedia;
+  /**
+   * The attachment this message is. Required by `kind: 'file'`, refused on every
+   * other kind — the pair is an invariant here for the reason `media` is.
+   */
+  file?: MessageFile;
   /** The principals this message @-mentions, the open platform's `{id, name}` pairs. */
   mentions?: Mention[];
   /**
@@ -138,6 +144,7 @@ export function deliver(store: SeekStore, input: PostMessageInput): Delivery {
     forwarding &&
     (input.kind !== undefined ||
       input.media !== undefined ||
+      input.file !== undefined ||
       (input.text ?? '').trim() !== '')
   ) {
     throw new Error(
@@ -152,6 +159,9 @@ export function deliver(store: SeekStore, input: PostMessageInput): Delivery {
   const media = forwarding
     ? copyOf(forwarding.media)
     : mediaFor(kind, input.media);
+  const file = forwarding
+    ? copyOfFile(forwarding.file)
+    : fileFor(kind, input.file);
   const message: Message = {
     id: newId('om'),
     room_id: input.roomId,
@@ -170,6 +180,7 @@ export function deliver(store: SeekStore, input: PostMessageInput): Delivery {
   // and stays clean, and a caller still holding the reference could otherwise
   // rename a picture under a message already delivered.
   if (media) message.media = media;
+  if (file) message.file = file;
   if (quoting) message.quoted = quotedFrom(store, quoting);
   if (forwarding) message.forwarded_from = forwardedFrom(store, forwarding);
   if (parent) {
@@ -396,6 +407,64 @@ function mediaFor(
     );
   }
   return { key: media.key, mime: media.mime };
+}
+
+/**
+ * The attachment rule, stated once.
+ *
+ * `kind` and the carrier are one invariant in both directions, exactly as `media` is: a
+ * `file` message carrying no attachment is a row that draws a paperclip over nothing, and
+ * an attachment on any other kind is bytes every reader drops in silence — which is the
+ * failure `src/README.md` line 25 names for a picture read from its text alone.
+ *
+ * **A copy is returned, not the caller's object.** A message is written once; a caller
+ * still holding the reference could otherwise rename a file under a message already sent.
+ */
+function fileFor(
+  kind: MessageKind,
+  file: MessageFile | undefined,
+): MessageFile | undefined {
+  if (kind !== 'file') {
+    if (file !== undefined) {
+      throw new Error(
+        `an attachment on a ${JSON.stringify(kind)} message: only 'file' carries one, and a ` +
+          'kind that disowns its own bytes is one every reader drops in silence',
+      );
+    }
+    return undefined;
+  }
+  if (!file || typeof file.key !== 'string' || file.key.trim() === '') {
+    throw new Error(
+      "a file message with no file: the row would draw an attachment over nothing, and " +
+        'the person would have no way to tell it from one whose bytes were lost',
+    );
+  }
+  if (typeof file.name !== 'string' || file.name.trim() === '') {
+    throw new Error(
+      'a file message whose attachment has no name: the name is the only thing that says ' +
+        'which file this is, since the key is opaque by design',
+    );
+  }
+  if (typeof file.size !== 'number' || !Number.isFinite(file.size) || file.size < 0) {
+    throw new Error(
+      `a file message whose size is ${JSON.stringify(file.size)}: a size is how the row ` +
+        'says how big it is without opening it, so an unusable one is worse than none',
+    );
+  }
+  if (typeof file.mime !== 'string' || file.mime.trim() === '') {
+    throw new Error(
+      'a file message whose attachment has no mime: a reader that cannot name what the ' +
+        'bytes are cannot choose an application to open them with',
+    );
+  }
+  return { key: file.key, name: file.name, size: file.size, mime: file.mime };
+}
+
+/** A copy of a stored attachment reference, for the reason `copyOf` returns one. */
+function copyOfFile(file: MessageFile | undefined): MessageFile | undefined {
+  return file
+    ? { key: file.key, name: file.name, size: file.size, mime: file.mime }
+    : undefined;
 }
 
 /**

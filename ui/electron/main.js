@@ -15,8 +15,10 @@
  */
 
 const { app, BrowserWindow, clipboard, dialog, ipcMain, nativeTheme, shell } = require('electron')
-const { readFile } = require('node:fs/promises')
+const { readFile, stat: statOf } = require('node:fs/promises')
 const { basename, join } = require('node:path')
+const { mkdtempSync, readFileSync, writeFileSync } = require('node:fs')
+const { tmpdir } = require('node:os')
 const { randomUUID } = require('node:crypto')
 
 const {
@@ -29,7 +31,18 @@ const {
   postMessage,
   reactToMessage,
 } = require('./host.js')
-const { BY_MIME, mimeForPath, readMedia, saveMedia } = require('./media.js')
+const { BY_MIME, mimeForPath, pathForKey, readMedia, saveAttachment, saveMedia } = require('./media.js')
+
+/**
+ * The largest attachment this app keeps beside a store: 25 MB.
+ *
+ * A picture has four types and no limit worth stating (a screenshot is small); an attachment
+ * may be anything, and the bytes go in `media/` beside `seek.json`, which a person copies
+ * around and which is backed up with their machine. 25 MB is a number chosen to be said out
+ * loud rather than discovered: above it the window quotes the size and this limit, which is a
+ * refusal a person can act on.
+ */
+const ATTACHMENT_LIMIT = 25 * 1024 * 1024
 const { defaultConfigPath, readConfiguredEndpoint, wordsHalfFrom } = require('./llm-config.js')
 const { defaultSettingsPath, llmOf, readSettings, writeSettings } = require('./settings.js')
 const {
@@ -643,6 +656,80 @@ ipcMain.handle('seek:attach', async () => {
     const media = saveMedia(STORE_FILE, { bytes, mime, name: basename(filePath) })
     return { ok: true, media }
   } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+  }
+})
+
+/**
+ * Choose a file of any kind and keep its bytes beside the store.
+ *
+ * **The sibling of `seek:attach`, and the difference is the closed set.** A picture has to be
+ * one of four types because the window draws it and the kernel refuses a `media.mime` that is
+ * not `image/*`; an attachment is opened by whatever application the machine has, so nothing
+ * here is refused for its type — only for being too large to keep beside a store that a
+ * person may copy around, which is a size this app states rather than a type it guesses.
+ *
+ * A cancelled dialog is not a failure: it answers `cancelled`, and the window draws nothing.
+ */
+ipcMain.handle('seek:attach-file', async () => {
+  try {
+    if (!win || win.isDestroyed()) throw new Error('there is no window to ask in')
+    const picked = await dialog.showOpenDialog(win, {
+      title: 'Attach a file',
+      properties: ['openFile'],
+    })
+    if (picked.canceled || picked.filePaths.length === 0) return { ok: false, cancelled: true }
+
+    const filePath = picked.filePaths[0]
+    const stat = await statOf(filePath)
+    if (stat.size > ATTACHMENT_LIMIT) {
+      return {
+        ok: false,
+        error:
+          `${basename(filePath)} is ${stat.size} bytes and this app keeps attachments up to ` +
+          `${ATTACHMENT_LIMIT}: the bytes go beside the store, so a store a person copies ` +
+          'around carries them, and there has to be a size at which that stops',
+      }
+    }
+    const bytes = await readFile(filePath)
+    const file = saveAttachment(STORE_FILE, { bytes, name: basename(filePath) })
+    return { ok: true, file }
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+  }
+})
+
+/**
+ * Open an attachment with whatever application this machine uses for it.
+ *
+ * **A copy under the name the person gave it**, not the blob itself. The bytes live beside
+ * the store under a key this app made up (`om-…​.pdf`), and handing that path to the system
+ * would open a file called `om-lq3k2-8f1a.pdf` — the person's own name is the one thing that
+ * survives the trip, so it is what the copy is called. The copy goes in the temporary
+ * directory rather than back into the store: nothing this app opens should be editable and
+ * then silently differ from the bytes the message points at.
+ */
+ipcMain.handle('seek:open-file', async (_event, reference) => {
+  try {
+    const key = typeof reference?.key === 'string' ? reference.key : ''
+    const name = typeof reference?.name === 'string' && reference.name !== '' ? reference.name : key
+    const source = pathForKey(STORE_FILE, key)
+    const dir = mkdtempSync(join(tmpdir(), 'seek-attachment-'))
+    const target = join(dir, basename(name))
+    writeFileSync(target, readFileSync(source))
+    const refusal = await shell.openPath(target)
+    if (refusal !== '') return { ok: false, error: refusal }
+    return { ok: true }
+  } catch (error) {
+    if (error && error.code === 'ENOENT') {
+      return {
+        ok: false,
+        error:
+          'the file is not beside this store any more: the message is the store\'s and the ' +
+          'bytes are the client\'s, so a store moved without its media/ directory keeps the ' +
+          'row and loses the file',
+      }
+    }
     return { ok: false, error: error instanceof Error ? error.message : String(error) }
   }
 })

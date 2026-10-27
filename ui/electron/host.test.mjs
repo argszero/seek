@@ -139,6 +139,60 @@ test('a picture sent on a text message is refused by the kernel, not dropped in 
 })
 
 /**
+ * An attachment, all the way through: the main process hands the kernel four facts, the store
+ * keeps them on the message, and the snapshot the window draws from carries them back.
+ *
+ * This is the half the demo cannot prove. `prototype/src/fake-host.js` invents an attachment so
+ * the row can be looked at; the question here is whether the real host, the real store and the
+ * real snapshot agree — so the file is posted into a store on disk, read back off the disk, and
+ * the snapshot is asked what the window would be given.
+ */
+test('an attached file goes into the store and comes back out of the snapshot', async () => {
+  const w = await world()
+  try {
+    const file = {
+      key: 'om-lq3k2-8f1a.pdf',
+      name: 'design-notes.pdf',
+      size: 18_432,
+      mime: 'application/pdf',
+    }
+    const snapshot = await postMessage(w.host, { roomId: w.scene.room, text: '', kind: 'file', file })
+    const room = snapshot.rooms.find((one) => one.id === w.scene.room)
+    const sent = room.messages[0]
+
+    // A file with no words is still a message: the caption is optional, exactly as it is for a
+    // picture, and `postMessage` refuses an empty one only when there is nothing at all.
+    assert.equal(sent.kind, 'file')
+    assert.equal(sent.text, '')
+    assert.deepEqual(sent.file, file, 'the four facts the row draws came back unchanged')
+
+    // The same facts read off the disk, because a message that is only in memory is one a
+    // restart loses — and because a store is a file a person edits by hand.
+    assert.equal(w.host.store.messagesOf(w.scene.room)[0].file.name, 'design-notes.pdf')
+  } finally {
+    await w.done()
+  }
+})
+
+test('an attachment on a text message is refused by the kernel, not dropped in silence', async () => {
+  const w = await world()
+  try {
+    await assert.rejects(
+      () =>
+        postMessage(w.host, {
+          roomId: w.scene.room,
+          text: 'here it is',
+          file: { key: 'om-a.pdf', name: 'a.pdf', size: 1, mime: 'application/pdf' },
+        }),
+      /only 'file' carries one/,
+    )
+    assert.equal(w.host.store.messagesOf(w.scene.room).length, 0, 'the store is untouched')
+  } finally {
+    await w.done()
+  }
+})
+
+/**
  * The thread panel's whole claim: answering a message in it is the same write, with the
  * parent named — and the kernel turns that one fact into the rest of the thread
  * (`root_id`, `chain`, one hop more `depth`). Measured on the file, because a thread that

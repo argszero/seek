@@ -26,6 +26,7 @@
     },
     "ui.chat.add": "Add",
     "ui.chat.addressing": "addressing",
+    "ui.chat.attach-file": "Attach a file",
     "ui.chat.attach": "Attach a picture",
     "ui.chat.bot": "bot",
     "ui.chat.cancel": "Cancel",
@@ -60,7 +61,11 @@
     "ui.chat.room-name-hint": "optional",
     "ui.chat.room-name": "Room name",
     "ui.chat.room-members": "Who is in it",
+    "ui.chat.emoji-hint": "Put an emoji into the message",
+    "ui.chat.file-open": "Open this file",
+    "ui.chat.file-opening": "Opening…",
     "ui.chat.said.nothing": "no words",
+    "ui.chat.said.file": "a file: {name}",
     "ui.chat.said.picture": "a picture",
     "ui.chat.send": "Send",
     "ui.chat.spend": {
@@ -228,6 +233,7 @@
       "other": "{room} · {count} replies"
     },
     "ui.topics.said.nothing": "no words",
+    "ui.topics.said.file": "a file: {name}",
     "ui.topics.said.picture": "a picture",
     "ui.topics.section": "All topics",
     "ui.topics.started-by": "{name} started this in {room}",

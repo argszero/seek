@@ -9,9 +9,11 @@
  *
  * Every number below was measured off the client's own composer on that day — its DOM, not a
  * screenshot — and is checked against `ui/src` rather than against another copy of the window.
- * The shapes that are **not** here are as deliberate as the ones that are: the client's `Aa`,
- * `☺`, `⊕` and `⤢` are four things this product cannot do, and a mark that does nothing is
- * worse than a mark that is missing.
+ * The shapes that are **not** here are as deliberate as the ones that are: the client's `Aa`
+ * and `⤢` are two of them, and a mark that does nothing is worse than a mark that is
+ * missing: `☺` and `⊕` were the other two until this window could put an emoji into a sentence
+ * and attach a file, and they are drawn now because they do something
+ * (`electron/attachment.test.mjs`).
  */
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -84,15 +86,17 @@ test('the marks are pictures at the client’s size, not words in boxes', () => 
   assert.equal(tool.color, 'var(--N600)', 'drawn in the client’s grey')
   assert.equal(rule(SHELL, '.composer-tools').gap, '4px', '4px between one mark and the next')
 
-  // One number for all three, because a send arrow at a different size from the two beside it
+  // One number for all five, because a send arrow at a different size from the four beside it
   // is the one that looks wrong.
   assert.match(APP, /const COMPOSER_ICON = 18/, 'the marks are 18px, named once')
   assert.equal(count(APP, '<Icon name="mention" size={COMPOSER_ICON} />'), 2, 'a mention mark in both composers')
   assert.equal(count(APP, '<Icon name="picture" size={COMPOSER_ICON} />'), 2, 'a picture mark in both')
+  assert.equal(count(APP, '<Icon name="emoji" size={COMPOSER_ICON} />'), 2, 'a smiley in both')
+  assert.equal(count(APP, '<Icon name="file" size={COMPOSER_ICON} />'), 2, 'an attach mark in both')
   assert.equal(count(APP, '<Icon name="send" size={COMPOSER_ICON} />'), 2, 'and the arrow in both')
 
   // The glyphs are the client's own paths, filled, in its 24×24 frame.
-  for (const name of ['mention', 'picture', 'send']) {
+  for (const name of ['mention', 'picture', 'emoji', 'file', 'send']) {
     assert.match(ICONS, new RegExp(`\\b${name}: \\[`), `icons.jsx carries a ${name} glyph`)
   }
 

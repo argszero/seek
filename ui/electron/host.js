@@ -530,6 +530,25 @@ function mediaOf(media) {
 }
 
 /**
+ * The attachment reference a caller passed, in the four fields the kernel reads.
+ *
+ * The same shape of copy as `mediaOf`, and for the same reason: no lookup, no check, no
+ * default. `fileFor` (`src/delivery.ts`) is where "a file message with no file" and "an
+ * attachment on a `text` message" are decided, and it says both in sentences the composer
+ * draws — a check here would be a second opinion that can disagree with the kernel's.
+ *
+ * `undefined` for anything that is not four usable facts, so a `file` posted without one
+ * reaches `fileFor`'s own refusal rather than a TypeError from this file.
+ */
+function fileOf(file) {
+  if (!file || typeof file !== 'object') return undefined
+  const { key, name, size, mime } = file
+  if (typeof key !== 'string' || typeof name !== 'string') return undefined
+  if (typeof mime !== 'string' || typeof size !== 'number') return undefined
+  return { key, name, size, mime }
+}
+
+/**
  * Who a message addresses, in the kernel's own pair.
  *
  * A copy of the `{id, name}` pairs the caller passed, and nothing else — `deliver()` stores
@@ -611,12 +630,15 @@ async function postMessage(host, input) {
   // `deliver()` accepts an `image` with an empty text as long as `media` names the blob
   // A text message with no words is still not a message.
   const isPicture = input?.kind === 'image'
+  // An attachment is the third case of a message whose words may be nothing: a person
+  // attaches a file and sends it, and a caption is optional exactly as it is for a picture.
+  const isFile = input?.kind === 'file'
   // **A forward has no words of its own**, and that is the whole of what it is: its text,
   // kind and picture are copied off the stored original inside `deliver()`. So it is the
   // second case where an empty box is not an empty message — and the one where passing
   // anything beside `forwardOf` is refused by the kernel as a second copy of a fact.
   const forwarding = forwardAddressOf(input?.forwardOf)
-  if (text.trim() === '' && !isPicture && !forwarding) {
+  if (text.trim() === '' && !isPicture && !isFile && !forwarding) {
     throw new Error('an empty message is not a message, so nothing was sent')
   }
 
@@ -645,8 +667,11 @@ async function postMessage(host, input) {
     // A forward's kind and picture are the original's, read out of the store by the kernel —
     // so passing anything here would be the "carrying content of its own" refusal, and would
     // be this file inventing a second copy of a fact the store already holds.
-    kind: forwarding ? undefined : isPicture ? 'image' : 'text',
+    kind: forwarding ? undefined : isPicture ? 'image' : isFile ? 'file' : 'text',
     media: forwarding ? undefined : mediaOf(input?.media),
+    // The attachment, copied and not judged — `fileFor` in `src/delivery.ts` owns both
+    // halves of the invariant, and its sentences are the ones the composer shows.
+    file: forwarding ? undefined : fileOf(input?.file),
     // Who the message addresses. The kernel stores the pairs and derives its own answer from
     // them per receiving bot (`mentionsMe`), so a message that names a bot is the one case
     // stage 0 settles without asking the watch model — and until this line existed the window

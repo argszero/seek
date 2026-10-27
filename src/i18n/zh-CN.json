@@ -24,6 +24,7 @@
     },
     "ui.chat.add": "添加",
     "ui.chat.addressing": "点名",
+    "ui.chat.attach-file": "添加附件",
     "ui.chat.attach": "添加图片",
     "ui.chat.bot": "机器人",
     "ui.chat.cancel": "取消",
@@ -58,7 +59,11 @@
     "ui.chat.room-name-hint": "可留空",
     "ui.chat.room-name": "会话名称",
     "ui.chat.room-members": "参与者",
+    "ui.chat.emoji-hint": "插入表情",
+    "ui.chat.file-open": "打开这个文件",
+    "ui.chat.file-opening": "正在打开…",
     "ui.chat.said.nothing": "没有文字",
+    "ui.chat.said.file": "发来文件：{name}",
     "ui.chat.said.picture": "一张图片",
     "ui.chat.send": "发送",
     "ui.chat.spend": {
@@ -220,6 +225,7 @@
       "other": "{room} · {count} 条回复"
     },
     "ui.topics.said.nothing": "没有文字",
+    "ui.topics.said.file": "发来文件：{name}",
     "ui.topics.said.picture": "一张图片",
     "ui.topics.section": "全部话题",
     "ui.topics.started-by": "{name} 在{room}里起的头",

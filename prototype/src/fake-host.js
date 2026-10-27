@@ -156,6 +156,28 @@ export const fakeHost = {
   /** Attaching opens a real file dialog, which a demo has no business doing. */
   attach: async () => null,
 
+  /**
+   * The same refusal for a file, and one invented attachment so the row can be seen.
+   *
+   * A demo cannot show a file dialog either. What it *can* do is hand back one attachment of
+   * its own, so the screen a person looks at has a file in it — the bytes are named by a key
+   * nothing can open, which is the honest state of a fixture: the row is drawn, and pressing
+   * it answers that the demo has no file, exactly as `media` does above.
+   */
+  attachFile: async () => ({
+    ok: true,
+    file: {
+      key: 'om-demo.pdf',
+      name: 'design-notes.pdf',
+      size: 18_432,
+      mime: 'application/pdf',
+    },
+  }),
+  openFile: async (reference) => ({
+    ok: false,
+    error: `the prototype keeps no file for ${reference?.name ?? 'that attachment'}`,
+  }),
+
   // ---- writes -----------------------------------------------------------
   saveTheme: async (next) => {
     theme = next === 'dark' ? 'dark' : 'light'
@@ -168,7 +190,12 @@ export const fakeHost = {
     if (!room) return refused('there is no room with that id in the demo')
     const text = typeof input?.text === 'string' ? input.text.trim() : ''
     const media = input?.media ?? null
-    if (text === '' && media === null) return refused('a message needs words or a picture')
+    // The other kind of bytes, and the demo's own reason to carry one: a message whose words
+    // are empty is a file somebody sent, exactly as it is a picture somebody sent.
+    const file = input?.file ?? null
+    if (text === '' && media === null && file === null) {
+      return refused('a message needs words, a picture or a file')
+    }
     // A thread is the kernel's own three facts: what this answers, which run it belongs to,
     // and how far from that run's root it sits. Replying to a reply stays in the first
     // reply's chain, which is the rule the room above already follows.
@@ -179,8 +206,9 @@ export const fakeHost = {
       id,
       sender: data.meId,
       text,
-      kind: media ? 'image' : 'text',
+      kind: media ? 'image' : file ? 'file' : 'text',
       media,
+      file,
       at: new Date().toISOString(),
       mentions: Array.isArray(input?.mentions) ? input.mentions.map((one) => ({ ...one })) : [],
       reactions: [],
