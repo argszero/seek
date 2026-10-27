@@ -90,36 +90,82 @@ function textOf(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-export interface RemoveBotInput {
+export interface DeleteBotInput {
   botId: string;
   /** An injectable clock, so a test does not depend on wall time. */
   now?: string;
 }
 
 /** A bot as it now stands, and the memberships that went with it. */
-export interface RemovedBot {
+export interface DeletedBot {
   bot: Bot;
-  /** The rooms it was taken out of, so a caller can say what changed. */
+  /** The rooms it was in, so a caller can say what changed. */
   rooms: string[];
 }
 
 /**
- * Take a bot out of the organization — the prototype's 移出这个组织.
+ * When this bot was deleted, or `undefined` while it stands.
  *
- * **Two writes, and the second is the one that matters.** The bot is stamped
- * `removed_at`, and every membership it held is deleted: being in a room is what
- * wakes a bot (`botsIn`), so a stamped bot still holding memberships would keep
- * answering in rooms nobody meant it to be in any more.
+ * **One question, and a store written by an earlier version spells the answer differently.**
+ * The field is `deleted_at`, the name `Message` and `Room` write, because it is the same act:
+ * it was `removed_at` while the window said 移出这个组织, and rows written then still say that.
+ * Every reader asks here rather than testing a field by name, so an old row is deleted in every
+ * sense except its own spelling — and `deleteBot` below rewrites it to the new one the first
+ * time it is written again.
+ */
+export function deletedAtOf(bot: Bot): string | undefined {
+  if (bot.deleted_at !== undefined) return bot.deleted_at;
+  const legacy = (bot as { removed_at?: unknown }).removed_at;
+  return typeof legacy === 'string' ? legacy : undefined;
+}
+
+/**
+ * Move a store's old `removed_at` rows onto `deleted_at`.
  *
- * **The row stays.** Deleting it would leave every message it wrote naming a
- * principal the store has never heard of — `Message.sender_id` is a reference, not a
- * snapshot, and the room would draw its own history with a blank where a name was.
- * A stamp is enough to keep it out of the lists of who may be added (`snapshot.js`
- * filters it) while history stays readable. This is the same trade `Message` makes
- * when it says what it says once: the past is not rewritten, only the present.
+ * **The one write a field rename needs**, and it is called by `openHost` on every open rather
+ * than by a version number: the store keeps unknown keys, so a row written by an earlier
+ * version arrives intact and would otherwise be a deleted bot that no reader recognises — it
+ * would be offered in room member lists again and its messages would lose their author. Nothing
+ * is saved here; the next write of the store carries the new name, and until then the row is
+ * already correct in memory.
+ *
+ * Returns how many rows moved, which is the only thing a caller could want to know.
+ */
+export function adoptBotDeletions(store: SeekStore): number {
+  let moved = 0;
+  for (const bot of Object.values(store.data.bots)) {
+    const legacy = (bot as { removed_at?: unknown }).removed_at;
+    if (typeof legacy !== 'string') continue;
+    if (bot.deleted_at === undefined) bot.deleted_at = legacy;
+    delete (bot as { removed_at?: unknown }).removed_at;
+    moved += 1;
+  }
+  return moved;
+}
+
+/**
+ * Delete a bot from the organization.
+ *
+ * **There is nothing to take it out of, and that is why the verb is delete.** An organization
+ * is one store in one directory, so a bot row lives in exactly one of them; the host ruled on
+ * 2026-10-27 that it is not a thing that exists across organizations (机器人并不是跨组织存在的，
+ * 不需要移除组织这种操作), and a window offering 移出 would be promising a elsewhere that does
+ * not exist.
+ *
+ * **Two writes, and the second is the one that matters.** The bot is stamped `deleted_at`, and
+ * every membership it held is deleted: being in a room is what wakes a bot (`botsIn`), so a
+ * stamped bot still holding memberships would keep answering in rooms nobody meant it to be in
+ * any more.
+ *
+ * **The row stays.** Erasing it would leave every message it wrote naming a principal the store
+ * has never heard of — `Message.sender_id` is a reference, not a snapshot, and the room would
+ * draw its own history with a blank where a name was. A stamp is enough to keep it out of the
+ * lists of who the organization has (`snapshot.js` filters it) while history stays readable.
+ * This is the same trade `Message` makes when it says what it says once: the past is not
+ * rewritten, only the present.
  *
  * **A room may not be emptied by this.** If the bot is the only member of some room,
- * removing it would leave a room nobody can speak in — the state `removeMember`
+ * deleting it would leave a room nobody can speak in — the state `removeMember`
  * refuses from the leaving side — so that is refused here too, in a sentence that
  * names the room. A bot alone in a room is rare (a room the roster made for it), and
  * refusing loudly is better than a room that silently stops working.
@@ -128,15 +174,16 @@ export interface RemovedBot {
  * never written it. The bot's agents stay there and are inert — an agent with no
  * membership in a room is delivered nothing.
  */
-export function removeBot(store: SeekStore, input: RemoveBotInput): RemovedBot {
+export function deleteBot(store: SeekStore, input: DeleteBotInput): DeletedBot {
   const botId = typeof input?.botId === 'string' ? input.botId : '';
   const bot = store.data.bots[botId];
   if (!bot) {
     throw new Error(`unknown bot: ${botId}`);
   }
-  if (bot.removed_at !== undefined) {
+  const already = deletedAtOf(bot);
+  if (already !== undefined) {
     throw new Error(
-      `${bot.name} was already taken out of this organization on ${bot.removed_at}: ` +
+      `${bot.name} was already deleted on ${already}: ` +
         'a second stamp would move the moment it happened',
     );
   }
@@ -147,7 +194,7 @@ export function removeBot(store: SeekStore, input: RemoveBotInput): RemovedBot {
   for (const membership of held) {
     if (store.membershipsOf(membership.room_id).length === 1) {
       throw new Error(
-        `${bot.name} is the only member of ${membership.room_id}, so taking it out would ` +
+        `${bot.name} is the only member of ${membership.room_id}, so deleting it would ` +
           'leave a room nobody can speak in: put somebody else in that room first, or ' +
           'leave it alone',
       );
@@ -155,7 +202,10 @@ export function removeBot(store: SeekStore, input: RemoveBotInput): RemovedBot {
   }
 
   const now = input.now ?? new Date().toISOString();
-  bot.removed_at = now;
+  bot.deleted_at = now;
+  // The old spelling goes with the same write, so the row carries one fact under one
+  // name from here on — `deletedAtOf` reads it either way, and nothing needs to.
+  delete (bot as { removed_at?: unknown }).removed_at;
   for (const membership of held) {
     delete store.data.memberships[membership.id];
   }

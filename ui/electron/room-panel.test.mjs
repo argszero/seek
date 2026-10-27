@@ -79,15 +79,16 @@ test('a room may carry three texts, and the bot that leaves keeps the row its me
     assert.ok(room.includes(field), `Room is missing ${field}, so the panel has nothing to draw`)
   }
 
-  // A bot is stamped, not deleted: the refusal that could delete it is unwritten, and the
-  // reason is in the type — every message it wrote names it.
+  // A bot is stamped, not erased: the row has to stay because every message it wrote names
+  // it. The stamp is `deleted_at`, the same name a message and a room use — a bot lives in one
+  // organization, so there is nothing to take it out of (host, 2026-10-27).
   const bot = slice(TYPES, 'export interface Bot {', '\n}')
-  assert.match(bot, /removed_at\?: string/)
+  assert.match(bot, /deleted_at\?: string/)
 
   // The three writes, each by name, in the file that owns it.
   assert.match(ROOMS, /export function updateRoom\(/)
   assert.match(ROOMS, /export function removeMember\(/)
-  assert.match(BOTS, /export function removeBot\(/)
+  assert.match(BOTS, /export function deleteBot\(/)
 })
 
 test('every field the form can clear travels as a string, and one nobody touched does not travel', () => {
@@ -106,7 +107,7 @@ test('every field the form can clear travels as a string, and one nobody touched
   )
 
   // And the two removals each save once as well, for the same reason.
-  for (const name of ['removeMember', 'removeBot']) {
+  for (const name of ['removeMember', 'deleteBot']) {
     const call = slice(HOST, `async function ${name}(`, '\n}\n')
     assert.match(call, /store\.save\(\)/)
   }
@@ -117,12 +118,12 @@ test('the three calls exist on all four surfaces a person reaches them through',
   assert.match(APP, /window\.seekHost\.updateRoom\(\{/)
   assert.match(APP, /window\.seekHost\.removeMember\(\{ roomId: active\.id, principalId \}\)/)
   assert.match(APP, /window\.seekHost\.removeMember\(\{ roomId: active\.id, principalId: me \}\)/)
-  assert.match(CONTACTS, /window\.seekHost\.removeBot\(\{ botId: person\.id \}\)/)
+  assert.match(CONTACTS, /window\.seekHost\.deleteBot\(\{ botId: person\.id \}\)/)
   // … the bridge …
   for (const [name, channel] of [
     ['updateRoom', 'seek:update-room'],
     ['removeMember', 'seek:remove-member'],
-    ['removeBot', 'seek:remove-bot'],
+    ['deleteBot', 'seek:delete-bot'],
   ]) {
     assert.match(
       PRELOAD,
@@ -136,7 +137,7 @@ test('the three calls exist on all four surfaces a person reaches them through',
   }
   // Every one of the three tells the other windows, so a second window is not left showing a
   // room under a name that changed.
-  for (const channel of ['seek:update-room', 'seek:remove-member', 'seek:remove-bot']) {
+  for (const channel of ['seek:update-room', 'seek:remove-member', 'seek:delete-bot']) {
     const handler = slice(MAIN, `ipcMain.handle('${channel}'`, '\n})\n')
     assert.match(handler, /win\.webContents\.send\('seek:changed'/, `${channel} does not broadcast`)
   }
@@ -153,7 +154,7 @@ test('the panel draws the room’s own facts, and a removed bot is in no list of
   // **One place reads the stamp, and two answers come out of it**: the list that may offer a
   // bot, and the map that still names one. Filtered on the stamp and never on a flag beside it.
   assert.match(SNAPSHOT, /const stamped = new Set\(/)
-  assert.match(SNAPSHOT, /\.filter\(\(bot\) => bot\.removed_at !== undefined\)/)
+  assert.match(SNAPSHOT, /\.filter\(\(bot\) => bot\.deleted_at !== undefined\)/)
   assert.match(SNAPSHOT, /return people\.filter\(\(one\) => !stamped\.has\(one\.id\)\)/)
   assert.match(SNAPSHOT, /function namedOf\(store\)/)
   assert.match(SNAPSHOT, /named: namedOf\(store\)/)
@@ -185,11 +186,11 @@ test('the panel draws the room’s own facts, and a removed bot is in no list of
   }
 
   // The two ways out, each on the surface that can see who it is about: a member out of the
-  // room from the people list, a bot out of the organization from its own card.
+  // room from the people list, a bot deleted from its own card.
   assert.match(APP, /data-people-remove=\{person\.id\}/)
-  assert.match(CONTACTS, /data-contact-remove=\{person\.id\}/)
-  // The bot's button is a bot's: a person is the one this organization is, and taking them out
-  // is not something this product offers.
+  assert.match(CONTACTS, /data-contact-delete=\{person\.id\}/)
+  // The bot's button is a bot's: a person is the one this organization is, and deleting them is
+  // not something this product offers.
   assert.match(CONTACTS, /\{person\.bot && \(\s*<button/)
 })
 

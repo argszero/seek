@@ -58,20 +58,20 @@ contextBridge.exposeInMainWorld('seekHost', {
    * The three writes that change something already written.
    *
    * `updateRoom` is the first edit this window has ever made — a room's name, its description,
-   * its announcement, its tag — and `removeMember` and `removeBot` are the first two that take
+   * its announcement, its tag — and `removeMember` and `deleteBot` are the first two that take
    * something away. They are three calls and not a store handle or a generic "patch" for the
    * reason every write above is a call: the kernel's own functions decide what may change and
    * refuse in their own sentences (`src/rooms.ts`, `src/bots.ts`), and a renderer that could
    * write the store directly would be a second author of it.
    *
-   * **Taking a bot out of the organization is not taking a person out of a room**, which is why
-   * they are two calls rather than one with a flag: the first stamps a bot and removes every
-   * membership it held, the second removes one membership. A window that offered one button for
-   * both would be asking the kernel a question with two answers.
+   * **Deleting a bot is not taking a person out of a room**, which is why they are two calls
+   * rather than one with a flag: the first stamps a bot and removes every membership it held,
+   * the second removes one membership. A window that offered one button for both would be
+   * asking the kernel a question with two answers.
    */
   updateRoom: (input) => ipcRenderer.invoke('seek:update-room', input),
   removeMember: (input) => ipcRenderer.invoke('seek:remove-member', input),
-  removeBot: (input) => ipcRenderer.invoke('seek:remove-bot', input),
+  deleteBot: (input) => ipcRenderer.invoke('seek:delete-bot', input),
   /**
    * The three that take something back: a message, a thread (the window calls it a topic), and
    * a room.

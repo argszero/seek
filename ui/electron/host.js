@@ -425,6 +425,11 @@ async function openHost(storeFile, options = {}) {
   const mods = await kernelModules()
 
   const store = await mods.store.SeekStore.load(storeFile)
+  // A store written while a deleted bot was spelled `removed_at` carries that name, and the
+  // store keeps unknown keys on purpose (`src/store.ts`): without this the bot would come back
+  // as somebody the organization still has — offered for rooms, and its messages unsigned.
+  // Adopted in memory here, saved with the next write (`src/bots.ts`).
+  mods.bots.adoptBotDeletions(store)
 
   // Agents are rebuilt from the roster beside the store every time the kernel opens it
   // `undefined` means no file was found, and
@@ -939,7 +944,7 @@ module.exports = {
   openHostOrRefuse,
   postMessage,
   reactToMessage,
-  removeBot,
+  deleteBot,
   removeMember,
   updateRoom,
 }
@@ -1055,22 +1060,22 @@ async function deleteRoom(host, input) {
 }
 
 /**
- * Take a bot out of the organization.
+ * Delete a bot from the organization.
  *
- * **One store write and no file write.** `removeBot()` (`src/bots.ts`) stamps the bot and deletes
+ * **One store write and no file write.** `deleteBot()` (`src/bots.ts`) stamps the bot and deletes
  * its memberships; the roster beside the store is a person's file and this bridge has never
  * written it — the bot's agent rows simply stop waking anything, because an agent with no
  * membership in a room is delivered nothing.
  */
-async function removeBot(host, input) {
+async function deleteBot(host, input) {
   const mods = await kernelModules()
-  const gone = mods.bots.removeBot(host.store, { botId: input?.botId })
+  const gone = mods.bots.deleteBot(host.store, { botId: input?.botId })
   await host.store.save()
 
   return {
     botId: gone.bot.id,
-    // The rooms it was taken out of, so the window can say what changed rather than leaving a
-    // person to notice it in a list.
+    // The rooms it was in, so the window can say what changed rather than leaving a person to
+    // notice it in a list.
     rooms: gone.rooms,
     snapshot: snapshotOf(host.store, host.storeFile, host.stage1, host.stage2),
   }

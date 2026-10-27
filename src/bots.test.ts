@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { createBot, removeBot } from './bots.ts';
+import { adoptBotDeletions, createBot, deleteBot, deletedAtOf } from './bots.ts';
 import { deliver } from './delivery.ts';
 import { makeWorld } from './fixtures.ts';
 import { createRoom } from './rooms.ts';
@@ -97,11 +97,11 @@ test('two bots may carry the same name: a name is a label, and the id tells them
   assert.equal(world.store.data.bots[second.id].name, '周敏');
 });
 
-// ---- taking a bot out of the organization (2026-10-27) ----
+// ---- deleting a bot from the organization (2026-10-27) ----
 
 const AT = '2026-10-27T00:00:00.000Z';
 
-test('a bot taken out is stamped, loses its rooms, and keeps the messages it wrote', () => {
+test('a deleted bot is stamped, loses its rooms, and keeps the messages it wrote', () => {
   const world = makeWorld();
   const { room } = createRoom(world.store, {
     name: 'the room',
@@ -110,11 +110,11 @@ test('a bot taken out is stamped, loses its rooms, and keeps the messages it wro
   });
   deliver(world.store, { roomId: room.id, senderId: world.botA, text: 'I was here', now: AT });
 
-  const gone = removeBot(world.store, { botId: world.botA, now: AT });
+  const gone = deleteBot(world.store, { botId: world.botA, now: AT });
   // It held two memberships in this world — the fixture's room and the one made here —
-  // and taking it out of the organization takes it out of both.
+  // and deleting it from the organization takes it out of both.
   assert.deepEqual(gone.rooms.slice().sort(), [world.room, room.id].sort());
-  assert.equal(gone.bot.removed_at, AT);
+  assert.equal(gone.bot.deleted_at, AT);
   assert.equal(world.store.isMember(world.room, world.botA), false);
 
   // Out of every room, and out of the one that mattered: `botsIn` is what delivery
@@ -132,7 +132,7 @@ test('a bot taken out is stamped, loses its rooms, and keeps the messages it wro
   assert.equal(world.store.principal(world.botA)?.name, 'A');
 });
 
-test('a bot that is the only member of a room may not be taken out', () => {
+test('a bot that is the only member of a room may not be deleted', () => {
   const world = makeWorld();
   const { room } = createRoom(world.store, {
     members: [{ principalId: world.botB }],
@@ -141,7 +141,7 @@ test('a bot that is the only member of a room may not be taken out', () => {
 
   const refusal = (() => {
     try {
-      removeBot(world.store, { botId: world.botB, now: AT });
+      deleteBot(world.store, { botId: world.botB, now: AT });
       return null;
     } catch (error) {
       return (error as Error).message;
@@ -151,26 +151,49 @@ test('a bot that is the only member of a room may not be taken out', () => {
   // Refused in its sentence, naming the room — and nothing written before it threw.
   assert.equal(String(refusal).includes(room.id), true);
   assert.equal(world.store.membershipsOf(room.id).length, 1);
-  assert.equal(world.store.data.bots[world.botB].removed_at, undefined);
+  assert.equal(world.store.data.bots[world.botB].deleted_at, undefined);
 });
 
-test('taking out an unknown bot, or the same bot twice, is refused in the kernel\'s words', () => {
+test('deleting an unknown bot, or the same bot twice, is refused in the kernel\'s words', () => {
   const world = makeWorld();
   createRoom(world.store, {
     members: [{ principalId: world.me }, { principalId: world.botA }],
     now: AT,
   });
 
-  assert.throws(() => removeBot(world.store, { botId: 'ou_nowhere' }), /unknown bot/);
+  assert.throws(() => deleteBot(world.store, { botId: 'ou_nowhere' }), /unknown bot/);
   // A person is not a bot: the shard it reads is `bots`, so the human in this world is
-  // not found rather than silently taken out.
-  assert.throws(() => removeBot(world.store, { botId: world.me }), /unknown bot/);
+  // not found rather than silently deleted.
+  assert.throws(() => deleteBot(world.store, { botId: world.me }), /unknown bot/);
 
-  removeBot(world.store, { botId: world.botA, now: AT });
+  deleteBot(world.store, { botId: world.botA, now: AT });
   assert.throws(
-    () => removeBot(world.store, { botId: world.botA, now: '2026-10-28T00:00:00.000Z' }),
-    /already taken out/,
+    () => deleteBot(world.store, { botId: world.botA, now: '2026-10-28T00:00:00.000Z' }),
+    /already deleted/,
   );
   // A second stamp would move the moment it happened, so the first one stands.
-  assert.equal(world.store.data.bots[world.botA].removed_at, AT);
+  assert.equal(world.store.data.bots[world.botA].deleted_at, AT);
+});
+
+// ---- the spelling a store written before the rename carries (2026-10-27) ----
+
+test('a bot row spelled `removed_at` is a deleted bot, and the next write renames it', () => {
+  const world = makeWorld();
+  // A store written while the window said 移出这个组织: the stamp is the same fact under the
+  // old name. Written straight onto the row because nothing in this version produces it.
+  delete (world.store.data.bots[world.botA] as { deleted_at?: string }).deleted_at;
+  (world.store.data.bots[world.botA] as { removed_at?: string }).removed_at = AT;
+
+  // Read through the one function that knows both spellings...
+  assert.equal(deletedAtOf(world.store.data.bots[world.botA]), AT);
+  // ...and a second deletion is refused rather than stamped again, which is the reading that
+  // would be lost if only the new name were ever tested for.
+  assert.throws(() => deleteBot(world.store, { botId: world.botA, now: AT }), /already deleted/);
+
+  // Opening a store moves the old spelling onto the new one, so every other reader — the
+  // snapshot's list of who this organization has, above all — needs only one name.
+  assert.equal(adoptBotDeletions(world.store), 1);
+  assert.equal(world.store.data.bots[world.botA].deleted_at, AT);
+  assert.equal((world.store.data.bots[world.botA] as { removed_at?: string }).removed_at, undefined);
+  assert.equal(adoptBotDeletions(world.store), 0);
 });

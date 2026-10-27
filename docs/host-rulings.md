@@ -200,6 +200,10 @@ The message keeps Feishu's own array; `mentionsMe` is **derived** at delivery, p
 *"messsage, group, 机器人，话题，都应该支持删除"*
 All four are things the product lets a person take away — not messages alone.
 
+**A bot is deleted, never taken out of one organization and into another.**
+*"Why out of the organization rather than delete? A bot does not exist across organizations, so 移出组织 is not an operation it needs."*
+One organization is one store in one directory, so a bot row lives in exactly one of them and there is no elsewhere to be moved to. The verb on every surface is **delete** — the word on the card, the kernel's function, the store's field — and it is the same verb a message, a topic and a group already use. What a deletion leaves behind is the same for all four: the row, so everything that names it still resolves; never the content, so nothing a person asked to be rid of stays on disk.
+
 ---
 
 ## Agent to agent

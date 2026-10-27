@@ -10,7 +10,7 @@
  * the interface yet, and a test that pretended otherwise would be the one lie here.
  */
 import assert from 'node:assert/strict'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -18,7 +18,7 @@ import { test } from 'node:test'
 import { applyRoster } from '../../src/roster.ts'
 import { seedOneRoom, STUB_REPLY } from '../../src/main.ts'
 import { emptyData, SeekStore } from '../../src/store.ts'
-import { addMember, closeHost, createRoom, openHost, postMessage } from './host.js'
+import { addMember, closeHost, createRoom, deleteBot, openHost, postMessage } from './host.js'
 
 /**
  * A store with the kernel's own seeded world beside a roster that gives its bot a work
@@ -650,5 +650,67 @@ test('a mention that names nobody is stored as no mention rather than as a broke
     assert.deepEqual(first.mentions, [], 'the message carries an empty list, not four broken ones')
   } finally {
     await w.done()
+  }
+})
+
+/**
+ * A deleted bot stays deleted when the store was written under the older spelling of the stamp.
+ *
+ * The window used to say 移出这个组织 — take this bot out of the organization — and the row it wrote
+ * says `removed_at`. A bot is not somebody who exists in several organizations, so the action is a
+ * deletion and the stamp is `deleted_at`; but rows written under the old name are on people's disks
+ * right now, and a store keeps keys it does not know on purpose (`src/store.ts`). Opening one must
+ * therefore read both spellings, or a bot somebody deleted comes back as somebody the organization
+ * still has — offered for a room, and its messages unsigned.
+ */
+test('a bot the store stamped with the older spelling is still deleted when the store is opened', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'seek-ui-host-'))
+  const storeFile = join(dir, 'seek.json')
+  const store = new SeekStore(emptyData(), storeFile)
+  const scene = seedOneRoom(store)
+  applyRoster(store, [
+    { bot: 'Echo', role: 'watch', tools: [] },
+    { bot: 'Echo', role: 'work', tools: ['say'] },
+  ])
+  await store.save()
+
+  const first = await openHost(storeFile)
+  const gone = await deleteBot(first, { botId: scene.bot })
+  assert.equal(
+    gone.snapshot.people.some((one) => one.id === scene.bot),
+    false,
+    'a deleted bot is not offered as somebody this organization has',
+  )
+  closeHost(first)
+
+  // Put the row back the way the build that said 移出这个组织 wrote it: one fact, the other name.
+  const written = JSON.parse(await readFile(storeFile, 'utf8'))
+  written.bots[scene.bot].removed_at = written.bots[scene.bot].deleted_at
+  delete written.bots[scene.bot].deleted_at
+  await writeFile(storeFile, JSON.stringify(written))
+
+  const second = await openHost(storeFile)
+  try {
+    const snapshot = await postMessage(second, { roomId: scene.room, text: 'is anybody there' })
+    assert.equal(
+      snapshot.people.some((one) => one.id === scene.bot),
+      false,
+      'the older spelling of the stamp keeps it out of the people list too',
+    )
+
+    const settled = JSON.parse(await readFile(storeFile, 'utf8'))
+    assert.equal(
+      typeof settled.bots[scene.bot].deleted_at,
+      'string',
+      'and the next write moves the row onto the name this build uses',
+    )
+    assert.equal(
+      'removed_at' in settled.bots[scene.bot],
+      false,
+      'the old name does not stay beside it, so the row carries one fact under one name',
+    )
+  } finally {
+    closeHost(second)
+    await rm(dir, { recursive: true, force: true })
   }
 })

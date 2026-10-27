@@ -341,14 +341,14 @@ export const fakeHost = {
     return written()
   },
 
-  /** A bot out of the organization: gone from the people list, kept in the messages it wrote. */
-  removeBot: async (input) => {
+  /** A bot deleted from the organization: gone from the people list, kept in the messages it wrote. */
+  deleteBot: async (input) => {
     const id = String(input?.botId ?? '')
     const at = data.people.findIndex((one) => one.id === id && one.bot)
     if (at < 0) return refused('there is no bot with that id in the demo')
     const rooms = data.rooms.filter((room) => room.members.some((one) => one.id === id))
     if (rooms.some((room) => room.members.length === 1)) {
-      return refused('that bot is the only member of a room, so it cannot be taken out')
+      return refused('that bot is the only member of a room, so it cannot be deleted')
     }
     data.people.splice(at, 1)
     for (const room of rooms) {
