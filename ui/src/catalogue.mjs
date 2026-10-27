@@ -326,7 +326,26 @@ export function joinList(items) {
  */
 export function weightsReason(weights) {
   if (weights.kind === 'no-host') return t('ui.weights.no-host', { repo: weights.repo })
-  if (weights.kind === 'refused') return weights.words
-  const each = weights.hosts.map((one) => t('ui.weights.host-said', { host: one.host, words: one.words }))
-  return t('ui.weights.from-no-host', { hosts: joinList(each) })
+  // Which places were tried, and nothing about what each of them said: that is a diagnostic, and
+  // `docs/host-rulings.md` — "The window does not speak to a developer" — keeps it in the log.
+  // The sentence is composed from the names alone, so a field the page never receives cannot
+  // quote itself onto the screen even if one arrived.
+  if (weights.hosts.length === 0) return t('ui.weights.stopped')
+  return t('ui.weights.stopped-hosts', { hosts: joinList(weights.hosts) })
+}
+
+/**
+ * The whole line under `the weights did not arrive`, tail included.
+ *
+ * **The tail is drawn only where it is true.** A download that stopped is continued by the next
+ * launch — `model-weights.js` resumes from the `.part` bytes — while a build with no address
+ * configured fetches nothing however often it is launched, and a sentence promising otherwise
+ * would cost a person an evening. That is why this is a function here rather than a conditional
+ * inside the component: what the window says about a failure is arithmetic over the reading, and
+ * arithmetic belongs where it can be run without a browser.
+ */
+export function weightsSentence(weights) {
+  const why = weightsReason(weights)
+  if (weights.kind === 'no-host') return why
+  return t('ui.weights.refused-and-resumes', { why })
 }

@@ -31,6 +31,7 @@ import {
   size,
   t,
   weightsReason,
+  weightsSentence,
 } from '../src/catalogue.mjs'
 
 const HERE = import.meta.dirname
@@ -72,7 +73,7 @@ const SAMPLES = {
   // and the placeholder receives the phrase rather than the array.
   repo: 'LiquidAI/LFM2.5-VL-3B-GGUF',
   host: 'hf-mirror.com',
-  hosts: 'hf-mirror.com — the request did not leave this machine and huggingface.co — 404',
+  hosts: 'hf-mirror.com and huggingface.co',
   // And the reason a whole sentence is placed inside one: the frame around it says what to do
   // next, and what it wraps is either ours or a host's own words.
   why: 'the weights were not fetched',
@@ -252,46 +253,88 @@ test('a list is the language’s to join, and the two layers agree on every one'
 })
 
 test('why the weights did not arrive is the window’s to write, in the language it runs in', () => {
-  // The reading this closes: a first run with no host, or with two hosts that refused, drew a
-  // sentence composed in `ui/electron/weights-fetch.js` — English in every language. The facts
-  // travel now, and this is the whole sentence a person reads, frame and joining included.
-  const twoHosts = {
-    kind: 'hosts',
-    hosts: [
-      { host: 'hf-mirror.com', words: 'the request did not leave this machine (getaddrinfo ENOTFOUND)' },
-      { host: 'huggingface.co', words: 'the server answered 404 for model.gguf' },
-    ],
-  }
+  // Two readings closed here, and the second one is the newer ruling.
+  //
+  // A first run with two hosts that refused used to draw a sentence composed in
+  // `ui/electron/weights-fetch.js` — English in every language — so the facts travel and the
+  // window writes the sentence. Then `docs/host-rulings.md` ("The window does not speak to a
+  // developer") took the diagnosis off the screen as well: what a host said is `fetch failed` or
+  // a status code, and a person can act on neither. So the reading carries the names of the
+  // places tried and no words at all, and this test is the sentence a person reads, frame and
+  // joining included, with nothing from a host in it.
+  const twoHosts = { kind: 'stopped', hosts: ['hf-mirror.com', 'huggingface.co'] }
 
   bindCatalogue(catalogueFor('en'))
   assert.equal(
     weightsReason(twoHosts),
-    'from no host: hf-mirror.com — the request did not leave this machine (getaddrinfo ENOTFOUND) ' +
-      'and huggingface.co — the server answered 404 for model.gguf',
-    'the English sentence names both hosts, joined the way English joins a list',
+    'the weights were not fetched from hf-mirror.com and huggingface.co',
+    'the English sentence names both places, joined the way English joins a list',
   )
 
   const noHost = { kind: 'no-host', repo: 'LiquidAI/LFM2.5-VL-3B-GGUF' }
-  assert.match(weightsReason(noHost), /SEEK_WEIGHTS_BASE/, 'and it names the setting that fixes it')
-  assert.match(weightsReason(noHost), /LiquidAI\/LFM2\.5-VL-3B-GGUF/, 'and the download it is about')
+  const noHostSaid = weightsReason(noHost)
+  assert.match(noHostSaid, /cannot fetch the model/, 'and it says what is wrong in words a person reads')
+  assert.doesNotMatch(noHostSaid, /SEEK_WEIGHTS_BASE/, 'and names no variable, which is not his to set')
+  assert.doesNotMatch(noHostSaid, /README/, 'nor points him at a file for developers')
 
-  // One host is its own answer, and it is not ours: §2 forbids rewriting what a sender said, so
-  // the sentence is drawn exactly as it arrived — in whatever language it arrived in.
-  const oneHost = { kind: 'refused', words: 'the server answered 404 for model.gguf' }
-  assert.equal(weightsReason(oneHost), 'the server answered 404 for model.gguf', 'a host is quoted, not framed')
+  // One place, and none at all: each is still something to say.
+  assert.equal(
+    weightsReason({ kind: 'stopped', hosts: ['hf-mirror.com'] }),
+    'the weights were not fetched from hf-mirror.com',
+  )
+  assert.equal(weightsReason({ kind: 'stopped', hosts: [] }), 'the weights were not fetched')
 
   bindCatalogue(catalogueFor('zh-CN'))
   const chinese = weightsReason(twoHosts)
-  assert.doesNotMatch(chinese, /^from no host/, 'the frame is not English')
+  assert.doesNotMatch(chinese, /^the weights/, 'the frame is not English in Chinese')
   // Measured, not assumed: `Intl.ListFormat` joins two Chinese items with 和 and three with 、,
   // and English with ` and `. A slash separates neither, so the assertion is the conjunction.
-  assert.ok(chinese.includes('和'), 'and the hosts are separated the way Chinese separates a list')
+  assert.ok(chinese.includes('和'), 'and the places are separated the way Chinese separates a list')
   assert.ok(!chinese.includes(' and '), 'and not by the English conjunction, which Chinese does not use')
-  assert.ok(
-    chinese.includes('the server answered 404 for model.gguf'),
-    'the host’s own words come through unchanged — this change frames refusals, it does not translate them',
+  assert.ok(chinese.includes('hf-mirror.com'), 'and a host keeps its identifier, which no language translates')
+  assert.doesNotMatch(weightsReason({ kind: 'no-host', repo: 'x' }), /SEEK_WEIGHTS_BASE/, 'nor in Chinese')
+
+  // A field that is not in the reading cannot quote itself onto the screen. The page is handed
+  // names and no words (see `snapshot.js`, `weightsOf`), and the sentence is composed from the
+  // names alone — so even a `words` that sneaked into the shape is not something it can say.
+  bindCatalogue(catalogueFor('en'))
+  assert.equal(
+    weightsReason({ kind: 'stopped', hosts: ['hf-mirror.com'], words: 'fetch failed' }),
+    'the weights were not fetched from hf-mirror.com',
+    'the sentence is ours even when a diagnosis is sitting in the reading',
   )
-  assert.ok(chinese.includes('hf-mirror.com'), 'and the host keeps its identifier')
+
+  // **The whole line, tail included, and the tail only where it is true.** A download that
+  // stopped is continued by the next launch; a build with no address fetches nothing however
+  // often it is launched.
+  assert.equal(
+    weightsSentence(twoHosts),
+    'the weights were not fetched from hf-mirror.com and huggingface.co; ' +
+      'launching Seek again continues where it stopped',
+    'a stopped download is told that a second launch continues it',
+  )
+  const buildFault = weightsSentence(noHost)
+  assert.equal(buildFault, noHostSaid, 'a build with no address is not promised a resume it cannot have')
+  assert.doesNotMatch(buildFault, /launching Seek again/, 'so the clause is absent rather than wrong')
+  bindCatalogue(catalogueFor('zh-CN'))
+  assert.doesNotMatch(
+    weightsSentence({ kind: 'no-host', repo: 'x' }),
+    /再次启动/,
+    'and it is absent in Chinese too, rather than translated and left standing',
+  )
+  assert.match(weightsSentence(twoHosts), /再次启动 Seek/, 'while a stopped download keeps its promise')
+
+  bindCatalogue(catalogueFor('en'))
+  assert.match(weightsSentence(twoHosts), /launching Seek again/, 'and English gets its own clause back')
+
+  // **And no key exists that could put a host's words back on the line.** A frame is one `t()`
+  // away from drawing them again, so the two frames that took a `{words}` sample are gone.
+  for (const tag of locales()) {
+    const keys = Object.keys(catalogueFor(tag).messages)
+    for (const gone of ['ui.weights.host-said', 'ui.weights.from-no-host']) {
+      assert.equal(keys.includes(gone), false, `${tag} still ships ${gone}, which frames a host's own words`)
+    }
+  }
 })
 
 test('the count labels the window used to write itself are gone, and stay gone', () => {

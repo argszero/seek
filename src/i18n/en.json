@@ -260,9 +260,9 @@
     "ui.topics.title": "Topics",
     "ui.weights.arriving-amount": "{got} of {all} — {file}",
     "ui.weights.arriving-amount-no-file": "{got} of {all}",
-    "ui.weights.from-no-host": "from no host: {hosts}",
-    "ui.weights.host-said": "{host} — {words}",
-    "ui.weights.no-host": "no address is configured for the weights: this build has no host to fetch {repo} from, so set SEEK_WEIGHTS_BASE to one (see README)",
+    "ui.weights.no-host": "this build cannot fetch the model: no address is configured for one",
+    "ui.weights.stopped": "the weights were not fetched",
+    "ui.weights.stopped-hosts": "the weights were not fetched from {hosts}",
     "ui.weights.refused-and-resumes": "{why}; launching Seek again continues where it stopped"
   }
 }

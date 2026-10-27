@@ -192,9 +192,14 @@ async function ensureWeights(options = {}) {
   //
   // Neither the frame nor the joining is decided here. `"A, B and C"` is the language's
   // (§4), so the window composes from its own catalogue and joins with its own list formatter.
+  //
+  // **`words` never leaves this process.** What a host said, and what Node's `fetch` said, is a
+  // diagnostic rather than something a person can act on, so the window is handed the names and
+  // says the rest in its own language (`docs/host-rulings.md`, "The window does not speak to a
+  // developer"); `describe()` below is where the sentences go, and `main.js` writes it to stderr.
   const why =
     tried.length === 1
-      ? { kind: 'refused', words: tried[0].refusal }
+      ? { kind: 'refused', host: hostName(tried[0].root), words: tried[0].refusal }
       : { kind: 'hosts', hosts: tried.map((one) => ({ host: hostName(one.root), words: one.refusal })) }
   return { ok: false, why, files: last.files, bytes: last.bytes, tried: tried.map((one) => one.root) }
 }

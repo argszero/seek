@@ -118,6 +118,32 @@ test('a run with no host says so, instead of blaming the network', async () => {
   }
 })
 
+test('one host that fails is named, and what it said stays in the log', async () => {
+  const room = await area()
+  try {
+    // One named host is the whole list: `SEEK_WEIGHTS_BASE` says there is no second try. What
+    // crosses to the window is the name, because a person who named a host learns that their
+    // host is the one that did not answer — and `fetch failed`, which is what Node says, stays
+    // in `describe()`, where the kernel's reading and stderr read it
+    // (`docs/host-rulings.md`, "The window does not speak to a developer").
+    const result = await ensureWeights({
+      dir: room.dir,
+      base: 'https://example.test/',
+      files: FILES,
+      fetchImpl: () => Promise.reject(new TypeError('fetch failed')),
+    })
+
+    assert.equal(result.ok, false, 'the download did not happen')
+    assert.equal(result.why.kind, 'refused', 'one host is its own shape rather than a list of one')
+    assert.equal(result.why.host, 'example.test', 'the host is named as a person writes it, with no scheme')
+    assert.match(result.why.words, /could not be reached for/, 'the sentence is still here for the log')
+    assert.match(result.why.words, /fetch failed/, 'and it still carries what the runtime said')
+    assert.match(describe(result.why), /example\.test|fetch failed/, 'the log keeps the whole story')
+  } finally {
+    await room.done()
+  }
+})
+
 test('a run that was told nothing asks the mirror first, then the canonical host', async () => {
   const room = await area()
   const asked = []

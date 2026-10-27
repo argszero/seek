@@ -246,6 +246,10 @@ A reminder reaches the bot's inbox and stops there — no `room` field on the ro
 *"B. Do not treat the user as a developer."* [asked: which of two things to do next — B was: take the notice each model half drew off the screen and leave the reason in the log. The implementer's wording.]
 What a person is shown is what a person can act on. An origin, a variable name, the words `stage 1`, a sentence about which server was or was not used — none of them is theirs to do anything with, so the window draws none of them, and a bot whose half fell back goes on answering. A half that refused says so on stderr, where whoever named that server is already looking. What may stand on the screen is a state about the person's own work — a store the kernel would not open, a download arriving or stopped — and it is said in the language they read.
 
+**A failure is worded by the window, and the diagnosis stays in the log.**
+*"A."* [asked: *"The line about the weights that did not arrive still carries `fetch failed`, which is the runtime's own wording. A: the window words the failure and the original goes to the log, at the cost of narrowing §2 to 'what people say is never rewritten, a process failure is never copied'. B: keep it as it is and translate only the frame, at the cost of that wording staying on the screen."* — the implementer's wording.]
+A process's failure is drawn in the application's words, in the language the window runs in: what a person sees is that the thing did not work and what a second attempt does. What a host answered, what a runtime said — a status code, `fetch failed` — is a diagnostic and goes to the log, where whoever built or configured the install reads it. **What somebody typed is untouched**: §2's rule that content is never rewritten stands, and this is the line between the two — a person's words are content, a process's words are a diagnosis.
+
 ## How to work
 
 **One question at a time.**
