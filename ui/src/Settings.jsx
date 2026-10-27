@@ -42,7 +42,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
-import { t } from './catalogue.mjs'
+import { size, t } from './catalogue.mjs'
 
 const EMPTY = {
   live: { baseUrl: null, model: null, from: null, hasKey: false, keyTail: '', keyLen: 0 },
@@ -338,7 +338,20 @@ export default function Settings({ snapshot, ask, onAsked }) {
                 <div className="card-row">
                   <span className="k">{t('ui.settings.decides.weights')}</span>
                   <span className="v mono">
-                    {snapshot?.stage1?.pending ?? t('ui.settings.decides.downloaded')}
+                    {/* **Three facts, not one sentence and not the object itself.** `pending`
+                        became `{received, total, file}` when the download line stopped being
+                        composed in the main process (`docs/design/i18n.md` §1: its language was
+                        fixed before the window had one). This row kept interpolating the value
+                        whole, so on a machine with no weights it drew an object as a React child
+                        — error #31, and the throw took the whole page with it: a fresh install
+                        opened on an empty `#root`, measured on the `v0.1.8` download. The bytes
+                        go through `size()` because §4 keeps a size in the formatting layer. */}
+                    {snapshot?.stage1?.pending
+                      ? t('ui.settings.decides.downloading', {
+                          got: size(snapshot.stage1.pending.received),
+                          all: size(snapshot.stage1.pending.total),
+                        })
+                      : t('ui.settings.decides.downloaded')}
                   </span>
                 </div>
                 {snapshot?.stage1?.refusal && (

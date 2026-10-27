@@ -89,3 +89,45 @@ test('the section is a heading a person reads, in both languages', () => {
   assert.match(en[key], /machine/i, 'and it says whose the section is, in words')
   assert.match(zh[key], /机器/, 'in both languages')
 })
+
+/**
+ * **The weights row draws sizes, never the facts object it is handed.**
+ *
+ * `stage1.pending` is `{received, total, file}` — three facts, because the sentence that used to
+ * be composed in the main process had its language fixed before the window had one. This page
+ * kept interpolating the whole value, which is legal React right up until the value exists: with
+ * no weights on the machine the object reached the renderer as a child, React threw #31, and the
+ * throw took the page with it. Measured on the shipped `v0.1.8` download: `#root` empty, a fresh
+ * install opening on nothing. No suite caught it because nothing renders this component.
+ */
+test('the weights row draws a size, not the object the kernel hands over', () => {
+  // The old shape, both ways it was written: `?? <words>` falling back, and a bare interpolation
+  // of the object. Either one puts an object where a child belongs the moment weights are pending.
+  assert.equal(
+    /stage1\?\.pending \?\?/.test(PAGE),
+    false,
+    'the row must not fall back from the whole object — that is the shape that blanked the window',
+  )
+  assert.equal(
+    PAGE.includes('{snapshot?.stage1?.pending}'),
+    false,
+    'and it must not interpolate the object directly either',
+  )
+
+  // What it does instead: both numbers through the formatting layer, which is where §4 puts a
+  // size. Reading the two field names is what makes this a check on the fix rather than on intent.
+  assert.match(PAGE, /size\(snapshot\??\.stage1\??\.pending\.received\)/, 'the bytes received go through size()')
+  assert.match(PAGE, /size\(snapshot\??\.stage1\??\.pending\.total\)/, 'and so do the bytes expected')
+
+  // The words are the catalogue's, and both placeholders survive — a translation that dropped one
+  // would read as a sentence with a hole in it.
+  const zh = catalogueFor('zh-CN').messages
+  const en = catalogueFor('en').messages
+  const key = 'ui.settings.decides.downloading'
+  for (const [name, messages] of [['en', en], ['zh-CN', zh]]) {
+    assert.equal(typeof messages[key], 'string', `the ${name} catalogue answers the row`)
+    assert.match(messages[key], /\{got\}/, `the ${name} row says how much arrived`)
+    assert.match(messages[key], /\{all\}/, `and how much is expected`)
+  }
+  assert.notEqual(en[key], zh[key], 'translated, not copied')
+})

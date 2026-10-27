@@ -169,6 +169,7 @@
     "ui.settings.create": "Create",
     "ui.settings.decides.description": "Local · the model the app carries. It reads token probabilities to answer one question — answer or stay quiet — and never writes a word into a room.",
     "ui.settings.decides.downloaded": "downloaded",
+    "ui.settings.decides.downloading": "{got} of {all}",
     "ui.settings.decides.not-in-use": "not in use",
     "ui.settings.decides.not-started": "not started",
     "ui.settings.decides.nothing-to-configure": "There is nothing to configure here: a hosted endpoint reports text, and this question is answered by probabilities. That is why the two halves are two cards.",
