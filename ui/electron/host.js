@@ -136,11 +136,11 @@ function holdsNothing(store) {
 }
 
 /**
- * The world a first run lands in: one room, two people and a bot (`seedOneRoom`), and the
+ * The world a first run lands in: one room, one person and one bot (`seedOneRoom`), and the
  * roster beside it, so the bot has an agent that can speak.
  *
  * Both pieces already exist in the kernel and are composed here rather than re-stated:
- * `seedOneRoom` writes the people, the bot, the room and the memberships, and the roster is
+ * `seedOneRoom` writes the person, the bot, the room and the memberships, and the roster is
  * the same two rows the shipped `seek-data/agents.yml` holds. `src/` is untouched, exactly
  * as in the three slices before this one.
  *

@@ -258,6 +258,10 @@ What a person is shown is what a person can act on. An origin, a variable name, 
 *"A."* [asked: *"The line about the weights that did not arrive still carries `fetch failed`, which is the runtime's own wording. A: the window words the failure and the original goes to the log, at the cost of narrowing §2 to 'what people say is never rewritten, a process failure is never copied'. B: keep it as it is and translate only the frame, at the cost of that wording staying on the screen."* — the implementer's wording.]
 A process's failure is drawn in the application's words, in the language the window runs in: what a person sees is that the thing did not work and what a second attempt does. What a host answered, what a runtime said — a status code, `fetch failed` — is a diagnostic and goes to the log, where whoever built or configured the install reads it. **What somebody typed is untouched**: §2's rule that content is never rewritten stands, and this is the line between the two — a person's words are content, a process's words are a diagnosis.
 
+**The bots list is the bots, and a first run puts nobody else in the world.**
+*"In Bots, why is there still a `someone else` that cannot be deleted? … A first launch does not need to create a person called `someone else`."* — the implementer's wording, quoting the host.
+The screen the rail calls 机器人 lists this organization's bots and nothing else, so a person is never a row there: there is no third thing to do with one, since a person is not made, messaged into a direct one-to-one by mistake or deleted. The world a first launch makes is one person, one bot and the room they talk in — two members, which is a direct message, and a direct message is the one room where the bot answers without a model having to decide whether the line was meant for it. A stranger in that room was the harness's requirement, not the product's, and the harness makes its own.
+
 ## How to work
 
 **One question at a time.**

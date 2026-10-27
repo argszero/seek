@@ -21,6 +21,17 @@ import { emptyData, SeekStore } from '../../src/store.ts'
 import { addMember, closeHost, createRoom, deleteBot, openHost, postMessage } from './host.js'
 
 /**
+ * A second person, for the tests about a room that holds somebody besides the reader and the
+ * bot.
+ *
+ * **The seed does not write one.** A first launch is one person, one bot and the room they
+ * talk in — a direct message, which is what a room of two members is (`src/main.ts`) — so a
+ * test that needs a stranger writes one: a principal with no membership, which is exactly
+ * what the interface holds when it asks to add somebody to a room.
+ */
+const OTHER = 'ou_a_second_person'
+
+/**
  * A store with the kernel's own seeded world beside a roster that gives its bot a work
  * agent able to speak — the same two pieces `runFirstMilestone` composes.
  */
@@ -29,6 +40,7 @@ async function world() {
   const storeFile = join(dir, 'seek.json')
   const store = new SeekStore(emptyData(), storeFile)
   const scene = seedOneRoom(store)
+  store.data.principals[OTHER] = { id: OTHER, kind: 'human', name: 'a second person' }
   applyRoster(store, [
     { bot: 'Echo', role: 'watch', tools: [] },
     { bot: 'Echo', role: 'work', tools: ['say'] },
@@ -39,6 +51,7 @@ async function world() {
   return {
     host,
     scene,
+    other: OTHER,
     storeFile,
     async done() {
       closeHost(host)
@@ -282,7 +295,7 @@ test('a room made through the interface is in the snapshot, in the store, and ev
       // Padded on purpose: a person who types a trailing space asked for the name, not
       // for the spaces, and `Room.name` is a display string the window draws verbatim.
       name: '  the second room  ',
-      members: [w.scene.me, w.scene.other, w.scene.bot],
+      members: [w.scene.me, w.other, w.scene.bot],
     })
 
     assert.equal(typeof made.roomId, 'string')
@@ -291,7 +304,7 @@ test('a room made through the interface is in the snapshot, in the store, and ev
     assert.equal(room.name, 'the second room')
     assert.deepEqual(
       room.members.map((member) => member.id),
-      [w.scene.me, w.scene.other, w.scene.bot],
+      [w.scene.me, w.other, w.scene.bot],
       'in the order they were chosen, which is the order the kernel wrote them',
     )
     assert.deepEqual(room.messages, [], 'and a new room has said nothing yet')
@@ -302,7 +315,7 @@ test('a room made through the interface is in the snapshot, in the store, and ev
     const rows = reloaded.membershipsOf(made.roomId)
     assert.deepEqual(
       rows.map((row) => row.principal_id),
-      [w.scene.me, w.scene.other, w.scene.bot],
+      [w.scene.me, w.other, w.scene.bot],
     )
     assert.equal(
       rows.find((row) => row.principal_id === w.scene.me).role,
@@ -454,12 +467,12 @@ test('a person added through the interface is in the room, in it as a member, an
     // the bot's alone would be a room this window could not see, which is the point of the
     // filter in `snapshotOf()`.
     const made = await createRoom(w.host, { name: 'not everyone', members: [w.scene.me, w.scene.bot] })
-    const joined = await addMember(w.host, { roomId: made.roomId, principalId: w.scene.other })
+    const joined = await addMember(w.host, { roomId: made.roomId, principalId: w.other })
 
     const room = joined.rooms.find((one) => one.id === made.roomId)
     assert.deepEqual(
       room.members.map((member) => member.id),
-      [w.scene.me, w.scene.bot, w.scene.other],
+      [w.scene.me, w.scene.bot, w.other],
       'the reader, the bot it was made with, and the person who just joined',
     )
 
@@ -468,7 +481,7 @@ test('a person added through the interface is in the room, in it as a member, an
     const reloaded = await SeekStore.load(w.storeFile)
     const row = reloaded
       .membershipsOf(made.roomId)
-      .find((membership) => membership.principal_id === w.scene.other)
+      .find((membership) => membership.principal_id === w.other)
     assert.ok(row, 'the row is in the store, not only in the snapshot')
     assert.equal(
       row.role,
@@ -581,14 +594,18 @@ test('adding somebody this store has never heard of is refused by name', async (
 /**
  * The refusal that protects the one number two other rules read: two rows for one principal is
  * one person counted twice, and `direct` in `deriveHints` **is** that count — so a duplicated
- * member would turn a three-person room into a direct message to the gate.
+ * member would turn a two-member room, which is a direct message, into a group the gate then
+ * asks a model about.
+ *
+ * The bot is used because it is in the seeded room: the seed writes nobody else, so the second
+ * person the other tests hold is not a member of anything.
  */
 test('adding somebody who is already in the room is refused, because a second row is a wrong count', async () => {
   const w = await world()
   try {
     await memberRefused(
       w,
-      { roomId: w.scene.room, principalId: w.scene.other },
+      { roomId: w.scene.room, principalId: w.scene.bot },
       /already a member of/,
     )
   } finally {

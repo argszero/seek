@@ -5,23 +5,23 @@ import Dialog from './Dialog.jsx'
 import Gutter from './Gutter.jsx'
 
 /**
- * The contacts view: everyone in this organization except the person looking, and a card for
- * whichever of them is chosen.
+ * The contacts view: the bots in this organization, and a card for whichever one is chosen.
  *
  * **The prototype is the spec** (`prototype/src/js/app.js`): the rail row it labels 机器人, the
  * list `renderList()` draws for `view === 'contacts'`, and the card `renderContactPane()`
  * draws. What differs here is what this store forces, not a choice of this file:
  *
- * - **The list is everyone but me, each row saying which kind.** The prototype's `friends()`
- *   excludes `is_self` and chips each row 机器人 or 人, and this store's `people` arrives with
- *   a `bot` flag beside a `kind` (`ui/electron/snapshot.js`), so the chip is a fact rather
- *   than a guess.
+ * - **The list is the bots, and only the bots.** The prototype's `friends()` shows everyone
+ *   but the reader and chips each row 机器人 or 人; this screen is the one the rail calls
+ *   机器人, so a person drawn here would be a row that cannot be deleted on a screen named
+ *   after the thing it is not (host, 2026-10-27, asking why a `someone else` sat in it). A
+ *   person is not a member of this list — this organization has exactly one, the reader, and
+ *   they are not in it either.
  * - **The card draws what the kernel holds.** The prototype's person card carries English
  *   name, department, city, e-mail, mobile and employee number; `Principal` in `src/types.ts`
  *   is `id`, `kind`, `name`, `avatar`, `description`, and a bot adds the four fields the host
  *   asked for (`Bot`). A row for a field nothing stores would be a promise nothing keeps, so
- *   a person's card shows the kind, the description and the id, and a bot's adds the three
- *   it may carry.
+ *   a card shows the three it may carry, the description and the id.
  * - **The list is not sorted.** `peopleOf()` reads them in the order the store wrote them and
  *   says why — a list that reorders itself between two snapshots moves under a person's
  *   cursor while they are choosing. `docs/design/i18n.md` asks for locale-aware sorting *or*
@@ -37,7 +37,7 @@ import Gutter from './Gutter.jsx'
  * the rail all move with it; a bot is made from the list that holds bots, so that call is
  * here, beside its form.
  */
-export default function Contacts({ people, me, firstLaw, refusal, onMessage, onSnapshot, ask, onAsked }) {
+export default function Contacts({ people, firstLaw, refusal, onMessage, onSnapshot, ask, onAsked }) {
   const [query, setQuery] = useState('')
   const [openId, setOpenId] = useState(null)
 
@@ -66,11 +66,13 @@ export default function Contacts({ people, me, firstLaw, refusal, onMessage, onS
   const [removing, setRemoving] = useState(false)
   const [removal, setRemoval] = useState(null)
 
-  const others = people.filter((person) => person.id !== me)
+  // The bots, and nothing else. `people` is everyone this organization has ever named; the
+  // reader is a person and so is nobody else here, so the `bot` flag is the whole filter.
+  const bots = people.filter((person) => person.bot)
   const wanted = query.trim().toLowerCase()
   const listed =
-    wanted === '' ? others : others.filter((person) => person.name.toLowerCase().includes(wanted))
-  const open = others.find((person) => person.id === openId) ?? null
+    wanted === '' ? bots : bots.filter((person) => person.name.toLowerCase().includes(wanted))
+  const open = bots.find((person) => person.id === openId) ?? null
 
   /**
    * Close the form, and forget what was typed in it.
@@ -325,12 +327,7 @@ export default function Contacts({ people, me, firstLaw, refusal, onMessage, onS
                 >
                   <span className="conv-av">{person.name.slice(0, 1).toUpperCase()}</span>
                   <span className="conv-body">
-                    <span className="conv-name">
-                      {person.name}
-                      <span className={`chip${person.bot ? '' : ' blue'}`}>
-                        {t(person.bot ? 'ui.contacts.kind.bot' : 'ui.contacts.kind.human')}
-                      </span>
-                    </span>
+                    <span className="conv-name">{person.name}</span>
                     {/* The prototype's line under the name — absent where there is nothing to
                         put in it, rather than a row padded to keep a shape. */}
                     {under !== null && <span className="conv-last">{under}</span>}
@@ -377,14 +374,13 @@ const GENDERS = [
   { value: '其他', key: 'ui.contacts.gender.other' },
 ]
 
-/** What a row says under a name: what it does, else what it is for, else nothing. */
+/** What a row says under a name: what it does, else what it is for, else what it is. */
 function lineUnder(person) {
   const said = person.position ?? person.description
   if (said !== null && said !== undefined && said !== '') return said
   // The prototype's `botLine() || '机器人'`: a bot made before those fields existed still gets
-  // a line, and the line is what it is. A person gets none — the chip beside the name already
-  // says 人, and a line repeating it is a row saying what the row above it just said.
-  return person.bot ? t('ui.contacts.kind.bot') : null
+  // a line, and the line is what it is.
+  return t('ui.contacts.kind.bot')
 }
 
 /** One person's card: what the store holds about them, and the way into a conversation. */
@@ -392,20 +388,15 @@ function ContactCard({ person, firstLaw, onMessage, onRemove }) {
   return (
     <div className="pane" data-contact-card={person.id}>
       <h2 className="pane-title">{person.name}</h2>
-      <p className="pane-desc">
-        {t(person.bot ? 'ui.contacts.kind.bot-long' : 'ui.contacts.kind.human-long')}
-      </p>
+      <p className="pane-desc">{t('ui.contacts.kind.bot-long')}</p>
 
+      {/* No "kind" row: the line above it already says what this is, and a card repeating the
+          title of the screen it is on is a row that costs a person's reading for nothing. */}
       <div className="card">
         <div className="card-body">
           <div className="card-rows">
-            <Row label={t('ui.contacts.card.kind')} value={t(person.bot ? 'ui.contacts.kind.bot' : 'ui.contacts.kind.human')} />
-            {person.bot && (
-              <Row label={t('ui.contacts.card.gender')} value={genderWord(person.gender)} />
-            )}
-            {person.bot && (
-              <Row label={t('ui.contacts.card.position')} value={said(person.position)} />
-            )}
+            <Row label={t('ui.contacts.card.gender')} value={genderWord(person.gender)} />
+            <Row label={t('ui.contacts.card.position')} value={said(person.position)} />
             <Row label={t('ui.contacts.card.description')} value={said(person.description)} />
             <Row label={t('ui.contacts.card.id')} value={person.id} mono />
           </div>
@@ -414,27 +405,23 @@ function ContactCard({ person, firstLaw, onMessage, onRemove }) {
 
       {/* A personality is several lines, so it is its own block rather than a row aligned
           against a label column that would fold it. */}
-      {person.bot && (
-        <div className="card">
-          <div className="card-body">
-            <div className="card-title">{t('ui.contacts.card.personality')}</div>
-            <p className="pane-desc" data-contact-field="personality">
-              {person.personality ?? t('ui.contacts.card.nothing-said')}
-            </p>
-          </div>
+      <div className="card">
+        <div className="card-body">
+          <div className="card-title">{t('ui.contacts.card.personality')}</div>
+          <p className="pane-desc" data-contact-field="personality">
+            {person.personality ?? t('ui.contacts.card.nothing-said')}
+          </p>
         </div>
-      )}
+      </div>
 
-      {person.bot && (
-        <div className="card">
-          <div className="card-body">
-            <div className="card-title">{t('ui.contacts.card.law')}</div>
-            <p className="pane-desc" data-contact-field="law">
-              {firstLaw}
-            </p>
-          </div>
+      <div className="card">
+        <div className="card-body">
+          <div className="card-title">{t('ui.contacts.card.law')}</div>
+          <p className="pane-desc" data-contact-field="law">
+            {firstLaw}
+          </p>
         </div>
-      )}
+      </div>
 
       <div className="field-actions">
         <button
@@ -444,17 +431,14 @@ function ContactCard({ person, firstLaw, onMessage, onRemove }) {
         >
           {t('ui.contacts.message')}
         </button>
-        {/* **Delete this bot**, and only on a bot's card: a person is the one this organization
-            *is*, and deleting them is not a thing this product offers. **The verb is delete and
-            not 移出**: a bot lives in exactly one organization — one store, one directory — so
-            there is no elsewhere to take it out to (host, 2026-10-27: 机器人并不是跨组织存在的).
-            It is a second button rather than a menu item because it is the one other thing a
-            card is for, and it is on the danger side of the pair. */}
-        {person.bot && (
-          <button className="btn danger" data-contact-delete={person.id} onClick={() => onRemove(person)}>
-            {t('ui.contacts.delete')}
-          </button>
-        )}
+        {/* **Delete this bot.** **The verb is delete and not 移出**: a bot lives in exactly one
+            organization — one store, one directory — so there is no elsewhere to take it out to
+            (host, 2026-10-27: 机器人并不是跨组织存在的). It is a second button rather than a
+            menu item because it is the one other thing a card is for, and it is on the danger
+            side of the pair. */}
+        <button className="btn danger" data-contact-delete={person.id} onClick={() => onRemove(person)}>
+          {t('ui.contacts.delete')}
+        </button>
       </div>
     </div>
   )

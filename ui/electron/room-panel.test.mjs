@@ -189,9 +189,9 @@ test('the panel draws the room’s own facts, and a removed bot is in no list of
   // room from the people list, a bot deleted from its own card.
   assert.match(APP, /data-people-remove=\{person\.id\}/)
   assert.match(CONTACTS, /data-contact-delete=\{person\.id\}/)
-  // The bot's button is a bot's: a person is the one this organization is, and deleting them is
-  // not something this product offers.
-  assert.match(CONTACTS, /\{person\.bot && \(\s*<button/)
+  // And that screen is the bots': it lists the bots of this organization and nobody else, so a
+  // person — the one this organization *is* — is never a row there to be deleted from.
+  assert.match(CONTACTS, /people\.filter\(\(person\) => person\.bot\)/)
 })
 
 test('one column holds one panel at a time, and the room’s panel does not outlive the thread', () => {

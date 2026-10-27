@@ -69,9 +69,12 @@ test('a directory with nothing in it opens on a room whose bot answers', async (
     assert.equal(Object.keys(host.store.data.rooms).length, 1, 'one room, seeded')
     assert.equal(host.store.data.rooms[roomId].name, 'the first room')
     assert.equal(Object.keys(host.store.data.bots).length, 1, 'and one bot in it')
-    assert.equal(people.length, 2, 'two people: the one who speaks, and one who does not')
+    // One person and nobody else. A first launch used to seed a second one — a stranger called
+    // `someone else` whose only purpose was to make the room a group — and a stranger in
+    // somebody's organization is not a thing the window should hand them (host, 2026-10-27).
+    assert.equal(people.length, 1, 'the person who speaks, and no one else')
     // The interface speaks as the first person in the store (`meOf`), so that must be the
-    // human the seed put first and not the bot.
+    // human and not the bot.
     assert.equal(host.store.data.principals[people[0]].name, 'me')
     assert.equal(host.store.data.bots[people[0]], undefined, 'and it is not a bot')
 
