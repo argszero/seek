@@ -152,8 +152,8 @@ test('a store that is not open yet says so instead of throwing', () => {
   // store carries two placeholder readings rather than two missing fields — a strip whose
   // fact is `undefined` is drawn by whatever the renderer does with `undefined`, which is
   // how a fallback starts looking like a configuration.
-  assert.deepEqual(snapshot.stage1, { server: null, refusal: null, pending: null })
-  assert.deepEqual(snapshot.stage2, { server: null, refusal: null, pending: null })
+  assert.deepEqual(snapshot.stage1, { server: null, refusal: null, pending: null, weights: null })
+  assert.deepEqual(snapshot.stage2, { server: null, refusal: null, pending: null, weights: null })
 })
 
 /**
@@ -166,13 +166,27 @@ test('a store that is not open yet says so instead of throwing', () => {
  */
 test('the snapshot says which stage 1 it is, and a refusal is not the same reading as silence', () => {
   const off = snapshotOf(seeded(), '/tmp/seek.json')
-  assert.deepEqual(off.stage1, { server: null, refusal: null, pending: null }, 'nothing named, nothing refused')
+  assert.deepEqual(
+    off.stage1,
+    { server: null, refusal: null, pending: null, weights: null },
+    'nothing named, nothing refused',
+  )
 
   const bound = snapshotOf(seeded(), '/tmp/seek.json', { server: 'http://127.0.0.1:8080' })
-  assert.deepEqual(bound.stage1, { server: 'http://127.0.0.1:8080', refusal: null, pending: null })
+  assert.deepEqual(bound.stage1, {
+    server: 'http://127.0.0.1:8080',
+    refusal: null,
+    pending: null,
+    weights: null,
+  })
 
   const refused = snapshotOf(seeded(), '/tmp/seek.json', { refusal: 'it serves another model' })
-  assert.deepEqual(refused.stage1, { server: null, refusal: 'it serves another model', pending: null })
+  assert.deepEqual(refused.stage1, {
+    server: null,
+    refusal: 'it serves another model',
+    pending: null,
+    weights: null,
+  })
 
   const shut = snapshotOf(null, null, { refusal: 'why not' })
   assert.equal(shut.stage1.refusal, 'why not', 'a store that is not open still says why')
@@ -212,6 +226,54 @@ test('how far the download has got travels as facts, and a sentence is refused',
   // And numbers that are not numbers, refused here rather than reaching `Intl` as a NaN.
   const broken = snapshotOf(seeded(), '/tmp/seek.json', { pending: { received: 'x', total: 2 } })
   assert.equal(broken.stage1.pending, null, 'a reading without two numbers is no reading')
+})
+
+test('why the weights did not arrive travels as facts too, in a field of its own', () => {
+  // `half()` in `ui/electron/main.js` hands both halves the same reading, so both are read by
+  // the same function here — and a missing weights directory starves both halves, which is why
+  // stage 2 reads this at all.
+  const hosts = {
+    kind: 'hosts',
+    hosts: [
+      { host: 'hf-mirror.com', words: 'the request did not leave this machine' },
+      { host: 'huggingface.co', words: 'the server answered 404 for model.gguf' },
+    ],
+  }
+  const carried = snapshotOf(seeded(), '/tmp/seek.json', { weights: hosts }, { weights: hosts })
+  assert.deepEqual(carried.stage1.weights, hosts, 'the reasons arrive as they were measured')
+  assert.deepEqual(carried.stage2.weights, carried.stage1.weights, 'and stage 2 reads them the same way')
+
+  // The other two shapes, each its own thing to say: ours to word, and one host's own words.
+  const noHost = { kind: 'no-host', repo: 'LiquidAI/LFM2.5-VL-3B-GGUF' }
+  assert.deepEqual(snapshotOf(seeded(), '/tmp/seek.json', { weights: noHost }).stage1.weights, noHost)
+  const refused = { kind: 'refused', words: 'the server answered 404 for model.gguf' }
+  assert.deepEqual(snapshotOf(seeded(), '/tmp/seek.json', { weights: refused }).stage1.weights, refused)
+
+  // A sentence where the facts go, refused: this is the shape `weights-fetch.js` produced while
+  // the main process wrote the line, and passing it on would put English back on the strip.
+  const sentence = snapshotOf(
+    seeded(),
+    '/tmp/seek.json',
+    { weights: 'from no host: hf-mirror.com — down; huggingface.co — 404' },
+    { weights: 'from no host: hf-mirror.com — down; huggingface.co — 404' },
+  )
+  assert.equal(sentence.stage1.weights, null, 'a finished sentence is not a reading')
+  assert.equal(sentence.stage2.weights, null, 'and neither half is handed one')
+
+  // A list of hosts is only a reading when every one of them names both halves of a host.
+  const noWords = snapshotOf(seeded(), '/tmp/seek.json', { weights: { kind: 'hosts', hosts: [{ host: 'a' }] } })
+  assert.equal(noWords.stage1.weights, null, 'a host with no words is no reason')
+  const empty = snapshotOf(seeded(), '/tmp/seek.json', { weights: { kind: 'hosts', hosts: [] } })
+  assert.equal(empty.stage1.weights, null, 'and no hosts is not a list of them')
+  const unknown = snapshotOf(seeded(), '/tmp/seek.json', { weights: { kind: 'weather' } })
+  assert.equal(unknown.stage1.weights, null, 'a shape this window cannot word is not passed on to be guessed at')
+
+  // And each of the three is only a reading when the words it carries are words: a host that
+  // says nothing, and a configuration that names no download, are shapes without content.
+  const noRepo = snapshotOf(seeded(), '/tmp/seek.json', { weights: { kind: 'no-host' } })
+  assert.equal(noRepo.stage1.weights, null, 'a configuration mistake with no download named says nothing')
+  const emptyWords = snapshotOf(seeded(), '/tmp/seek.json', { weights: { kind: 'refused', words: '' } })
+  assert.equal(emptyWords.stage1.weights, null, 'and an empty quotation is not something a host said')
 })
 
 /**

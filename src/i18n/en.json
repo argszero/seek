@@ -57,6 +57,7 @@
     "ui.chat.stop-addressing": "stop addressing {name}",
     "ui.chat.store-refused": "the store was not opened",
     "ui.chat.weights-arriving": "the weights are arriving",
+    "ui.chat.weights-refused": "the weights did not arrive",
     "ui.chat.stage1-refused": "the model server was not used",
     "ui.chat.stage1-asks": "stage 1 asks {origin}",
     "ui.chat.stage1-asks-why": "whether it answers is the model's verdict; what it says is stage 2, below",
@@ -244,6 +245,10 @@
     "ui.topics.said.picture": "a picture",
     "ui.weights.arriving-amount": "{got} of {all} — {file}",
     "ui.weights.arriving-amount-no-file": "{got} of {all}",
+    "ui.weights.no-host": "no address is configured for the weights: this build has no host to fetch {repo} from, so set SEEK_WEIGHTS_BASE to one (see README)",
+    "ui.weights.from-no-host": "from no host: {hosts}",
+    "ui.weights.host-said": "{host} — {words}",
+    "ui.weights.refused-and-resumes": "{why}; launching Seek again continues where it stopped",
     "ui.topics.said.nothing": "no words"
   }
 }

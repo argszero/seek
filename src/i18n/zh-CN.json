@@ -55,6 +55,7 @@
     "ui.chat.stop-addressing": "取消点名 {name}",
     "ui.chat.store-refused": "存储没有打开",
     "ui.chat.weights-arriving": "权重正在下载",
+    "ui.chat.weights-refused": "权重没有下载下来",
     "ui.chat.stage1-refused": "判断用的模型服务没有用上",
     "ui.chat.stage1-asks": "判断（第一步）问的是 {origin}",
     "ui.chat.stage1-asks-why": "要不要接话由模型判断；说什么由下面的第二步决定",
@@ -235,6 +236,10 @@
     "ui.topics.said.picture": "一张图片",
     "ui.weights.arriving-amount": "{all} 中的 {got} — {file}",
     "ui.weights.arriving-amount-no-file": "{all} 中的 {got}",
+    "ui.weights.no-host": "没有配置权重地址：这个版本没有可以从它取回 {repo} 的主机，请用 SEEK_WEIGHTS_BASE 指定一个（见 README）",
+    "ui.weights.from-no-host": "没有一台主机给得出：{hosts}",
+    "ui.weights.host-said": "{host}：{words}",
+    "ui.weights.refused-and-resumes": "{why}；再次启动 Seek 会从这里接着下载",
     "ui.topics.said.nothing": "没有文字"
   }
 }

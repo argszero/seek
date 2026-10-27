@@ -22,7 +22,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
-import { ensureWeights, urlForAt, WEIGHTS_BASE, WEIGHTS_BASES, WEIGHTS_REPO } from './weights-fetch.js'
+import { describe, ensureWeights, urlForAt, WEIGHTS_BASE, WEIGHTS_BASES, WEIGHTS_REPO } from './weights-fetch.js'
 
 /** Two files with the shape the real pair has, in kilobytes. */
 const FILES = [
@@ -105,9 +105,13 @@ test('a run with no host says so, instead of blaming the network', async () => {
         fetchImpl: () => assert.fail('nothing should be fetched without a host'),
       })
       assert.equal(result.ok, false)
-      assert.match(result.refusal, /no address is configured for the weights/)
-      assert.match(result.refusal, /SEEK_WEIGHTS_BASE/, 'and names the setting that fixes it')
-      assert.doesNotMatch(result.refusal, /could not be reached/, 'a configuration mistake is not an outage')
+      // The fact, not a sentence: the window words this one itself (`ui.weights.no-host`),
+      // and the repository is the only thing it needs to say which download is missing.
+      assert.deepEqual(result.why, { kind: 'no-host', repo: WEIGHTS_REPO })
+      // The English the kernel and the log get is still readable, and still says which
+      // setting fixes it rather than blaming an outage.
+      assert.match(describe(result.why), /SEEK_WEIGHTS_BASE|no host is configured/)
+      assert.doesNotMatch(describe(result.why), /could not be reached/, 'a configuration mistake is not an outage')
     }
   } finally {
     await room.done()
@@ -139,8 +143,25 @@ test('a run that was told nothing asks the mirror first, then the canonical host
       WEIGHTS_BASES.map((root) => `${root}/${WEIGHTS_REPO}/resolve/main/${FILES[0].name}`),
       'the mirror first, the canonical host second',
     )
-    assert.match(result.refusal, /hf-mirror\.com/, 'and the refusal names the host that failed first')
-    assert.match(result.refusal, /huggingface\.co/, 'and the one tried after it')
+    // Both hosts are named, in the order they were tried, and each keeps its own words —
+    // which is what a person needs to tell their network from this build.
+    assert.deepEqual(
+      result.why,
+      {
+        kind: 'hosts',
+        hosts: WEIGHTS_BASES.map((root) => ({
+          host: String(root).replace(/^https?:\/\//, ''),
+          words: result.why.hosts[0].words,
+        })),
+      },
+      'both hosts are named, mirror first',
+    )
+    assert.match(result.why.hosts[0].host, /hf-mirror\.com/, 'the mirror is the first one tried')
+    assert.match(result.why.hosts[1].host, /huggingface\.co/, 'and the canonical host the second')
+    assert.ok(
+      result.why.hosts.every((one) => one.words !== ''),
+      'every host is paired with what it said, which is the whole reason the list exists',
+    )
   } finally {
     await room.done()
   }
@@ -213,7 +234,7 @@ test('a first run fetches both files, and the progress it reports is the whole d
       onProgress: (reading) => seen.push(reading),
     })
 
-    assert.equal(result.ok, true, `it fetched: ${result.refusal ?? ''}`)
+    assert.equal(result.ok, true, `it fetched: ${result.why ? describe(result.why) : ''}`)
     assert.equal(result.fetched, true, 'it says it fetched rather than found')
     assert.equal(result.bytes, FILES[0].bytes + FILES[1].bytes)
     assert.deepEqual(await readdir(room.dir).then((names) => names.sort()), ['mmproj.gguf', 'model.gguf'])
@@ -282,8 +303,11 @@ test('offline is a sentence, not an exception, and it names the file', async () 
     })
 
     assert.equal(result.ok, false)
-    assert.match(result.refusal, /the weights were not fetched/)
-    assert.match(result.refusal, /model\.gguf/, 'the sentence says which file it was about')
+    // One host is the ordinary case and does not get a frame: what it said is the whole answer,
+    // and it is the host's own sentence rather than one of ours (`docs/design/i18n.md` §2).
+    assert.equal(result.why.kind, 'refused')
+    assert.match(result.why.words, /the weights were not fetched/)
+    assert.match(result.why.words, /model\.gguf/, 'the sentence says which file it was about')
     assert.equal(result.bytes, 0)
   } finally {
     await room.done()

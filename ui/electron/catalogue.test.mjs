@@ -16,8 +16,15 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import test from 'node:test'
 
-import { DEFAULT_LOCALE, catalogueFor, locales, translator } from '../../src/i18n.ts'
-import { bindCatalogue, catalogueBound, size, t } from '../src/catalogue.mjs'
+import { DEFAULT_LOCALE, catalogueFor, joinList as kernelJoinList, locales, translator } from '../../src/i18n.ts'
+import {
+  bindCatalogue,
+  catalogueBound,
+  joinList as rendererJoinList,
+  size,
+  t,
+  weightsReason,
+} from '../src/catalogue.mjs'
 
 const HERE = import.meta.dirname
 const RENDERER = join(HERE, '..', 'src')
@@ -52,6 +59,16 @@ const SAMPLES = {
   got: '0.2 GB',
   all: '2.2 GB',
   file: 'LFM2.5-VL-3B-Q4_0.gguf',
+  // The weights refusal's. `repo` is the download a build with no host cannot make; `host` is
+  // one host as a person names it (no scheme — that part they did not choose) and `hosts` is
+  // the same several of them already joined by `joinList()`, because a list is this layer's shape
+  // and the placeholder receives the phrase rather than the array.
+  repo: 'LiquidAI/LFM2.5-VL-3B-GGUF',
+  host: 'hf-mirror.com',
+  hosts: 'hf-mirror.com — the request did not leave this machine and huggingface.co — 404',
+  // And the reason a whole sentence is placed inside one: the frame around it says what to do
+  // next, and what it wraps is either ours or a host's own words.
+  why: 'the weights were not fetched',
 }
 
 function paramsFor(template) {
@@ -164,6 +181,78 @@ test('a count of one is singular only where the language has a singular', () => 
   bindCatalogue(catalogueFor('zh-CN'))
   assert.equal(t('ui.members', { count: 1 }), t('ui.members', { count: 2 }).replace('2', '1'))
   assert.equal(t('ui.members', { count: 1 }), '1 位成员')
+})
+
+test('a list is the language’s to join, and the two layers agree on every one', () => {
+  // `docs/design/i18n.md` §4: the conjunction differs, so `"A, B and C"` is a formatting
+  // decision rather than a string one. The kernel has had it since `joinList`; the window had
+  // no equivalent, which is why the weights sentence joined its hosts with `; ` — a separator
+  // that is nobody's language. Two implementations, one answer, per shipped language.
+  const items = ['hf-mirror.com', 'huggingface.co', 'a third host']
+
+  for (const tag of locales()) {
+    bindCatalogue(catalogueFor(tag))
+    assert.equal(
+      rendererJoinList(items),
+      kernelJoinList(tag, items),
+      `${tag}: the renderer and the kernel join lists differently`,
+    )
+  }
+
+  // Anti-vacuity, and it is the reading that matters: the claim above would also hold for two
+  // copies of `items.join('; ')`. So the form itself is asserted — a conjunction, and not the
+  // separator the sentence used to carry.
+  bindCatalogue(catalogueFor('en'))
+  assert.match(rendererJoinList(items), / and /, 'English joins its last two with a conjunction')
+  assert.doesNotMatch(rendererJoinList(items), /;/, 'a semicolon is not a list formatter')
+
+  bindCatalogue(catalogueFor('zh-CN'))
+  const chinese = rendererJoinList(items)
+  assert.notEqual(chinese, kernelJoinList('en', items), 'the list is not the English one in Chinese')
+  assert.match(chinese, /、/, 'Chinese separates its items with an enumeration comma')
+})
+
+test('why the weights did not arrive is the window’s to write, in the language it runs in', () => {
+  // The reading this closes: a first run with no host, or with two hosts that refused, drew a
+  // sentence composed in `ui/electron/weights-fetch.js` — English in every language. The facts
+  // travel now, and this is the whole sentence a person reads, frame and joining included.
+  const twoHosts = {
+    kind: 'hosts',
+    hosts: [
+      { host: 'hf-mirror.com', words: 'the request did not leave this machine (getaddrinfo ENOTFOUND)' },
+      { host: 'huggingface.co', words: 'the server answered 404 for model.gguf' },
+    ],
+  }
+
+  bindCatalogue(catalogueFor('en'))
+  assert.equal(
+    weightsReason(twoHosts),
+    'from no host: hf-mirror.com — the request did not leave this machine (getaddrinfo ENOTFOUND) ' +
+      'and huggingface.co — the server answered 404 for model.gguf',
+    'the English sentence names both hosts, joined the way English joins a list',
+  )
+
+  const noHost = { kind: 'no-host', repo: 'LiquidAI/LFM2.5-VL-3B-GGUF' }
+  assert.match(weightsReason(noHost), /SEEK_WEIGHTS_BASE/, 'and it names the setting that fixes it')
+  assert.match(weightsReason(noHost), /LiquidAI\/LFM2\.5-VL-3B-GGUF/, 'and the download it is about')
+
+  // One host is its own answer, and it is not ours: §2 forbids rewriting what a sender said, so
+  // the sentence is drawn exactly as it arrived — in whatever language it arrived in.
+  const oneHost = { kind: 'refused', words: 'the server answered 404 for model.gguf' }
+  assert.equal(weightsReason(oneHost), 'the server answered 404 for model.gguf', 'a host is quoted, not framed')
+
+  bindCatalogue(catalogueFor('zh-CN'))
+  const chinese = weightsReason(twoHosts)
+  assert.doesNotMatch(chinese, /^from no host/, 'the frame is not English')
+  // Measured, not assumed: `Intl.ListFormat` joins two Chinese items with 和 and three with 、,
+  // and English with ` and `. A slash separates neither, so the assertion is the conjunction.
+  assert.ok(chinese.includes('和'), 'and the hosts are separated the way Chinese separates a list')
+  assert.ok(!chinese.includes(' and '), 'and not by the English conjunction, which Chinese does not use')
+  assert.ok(
+    chinese.includes('the server answered 404 for model.gguf'),
+    'the host’s own words come through unchanged — this change frames refusals, it does not translate them',
+  )
+  assert.ok(chinese.includes('hf-mirror.com'), 'and the host keeps its identifier')
 })
 
 test('the count labels the window used to write itself are gone, and stay gone', () => {

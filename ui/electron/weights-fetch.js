@@ -127,14 +127,11 @@ async function ensureWeights(options = {}) {
     // Not a network failure and not a missing file: the build or the environment named no
     // host, and saying "the server could not be reached" about that would send a person to
     // check their wifi over a configuration mistake.
-    return {
-      ok: false,
-      refusal:
-        'no address is configured for the weights: this build has no host to fetch ' +
-        `${WEIGHTS_REPO} from, so set SEEK_WEIGHTS_BASE to one (see README)`,
-      files: [],
-      bytes: 0,
-    }
+    //
+    // The reason travels as the facts rather than as a sentence: `docs/design/i18n.md` §1 puts
+    // every word a person reads in the catalogue, and a sentence composed here is English in
+    // every language the app can run in. The window writes this one out of `repo`.
+    return { ok: false, why: { kind: 'no-host', repo: WEIGHTS_REPO }, files: [], bytes: 0 }
   }
 
   const total = files.reduce((sum, file) => sum + file.bytes, 0)
@@ -182,15 +179,38 @@ async function ensureWeights(options = {}) {
   }
 
   const last = tried[tried.length - 1]
-  // One host is the ordinary case and keeps its sentence verbatim — it is already written for
-  // this. Several are joined by naming each, because a person deciding what to do next needs
-  // to know whether both hosts were down (their network) or both said the file is not there
-  // (this build).
-  const refusal =
+  // The reasons as facts, because the words around them are the language's.
+  //
+  // One host is the ordinary case, and what it said is the whole answer: those are the host's
+  // own words, written where the failure happened, and `docs/design/i18n.md` §2 forbids
+  // rewriting somebody else's sentence — so they travel as data and the window draws them as
+  // they came.
+  //
+  // Several hosts are a list a person has to be able to act on: which hosts were tried, and
+  // what each one said. "The weights did not arrive" over two hosts that failed differently
+  // does not say whether their network is down or this build is wrong.
+  //
+  // Neither the frame nor the joining is decided here. `"A, B and C"` is the language's
+  // (§4), so the window composes from its own catalogue and joins with its own list formatter.
+  const why =
     tried.length === 1
-      ? tried[0].refusal
-      : `from no host: ${tried.map((one) => `${hostName(one.root)} — ${one.refusal}`).join('; ')}`
-  return { ok: false, refusal, files: last.files, bytes: last.bytes, tried: tried.map((one) => one.root) }
+      ? { kind: 'refused', words: tried[0].refusal }
+      : { kind: 'hosts', hosts: tried.map((one) => ({ host: hostName(one.root), words: one.refusal })) }
+  return { ok: false, why, files: last.files, bytes: last.bytes, tried: tried.map((one) => one.root) }
+}
+
+/**
+ * The same reasons as one English phrase, for the kernel's own reading and for the log.
+ *
+ * Not the sentence a person reads. `docs/design/i18n.md` §7 keeps log lines English, and the
+ * kernel's `serverRefusal` is the kernel's own statement about a half it cannot use — the window
+ * draws `why` itself, in the language it is running in, so nothing here may move into a
+ * component and no catalogue entry may be spelled from here.
+ */
+function describe(why) {
+  if (why.kind === 'no-host') return `no host is configured for the weights (${why.repo})`
+  if (why.kind === 'refused') return why.words
+  return why.hosts.map((one) => `${one.host} — ${one.words}`).join('; ')
 }
 
 /** A host as a person names it: no scheme, which is the part they did not choose. */
@@ -202,6 +222,7 @@ module.exports = {
   WEIGHTS_BASE,
   WEIGHTS_BASES,
   WEIGHTS_REPO,
+  describe,
   ensureWeights,
   urlForAt,
 }

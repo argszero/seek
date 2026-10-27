@@ -56,6 +56,48 @@ function pendingOf(value) {
 }
 
 /**
+ * Why the weights are not here, as the facts the window words itself.
+ *
+ * Three shapes, because there are three things to say and they are not the same sentence:
+ * `{kind: 'no-host', repo}` is a configuration mistake and entirely ours; `{kind: 'refused',
+ * words}` is one host's own sentence, and `docs/design/i18n.md` §2 forbids rewriting what a
+ * sender said — a host that answered is a sender; `{kind: 'hosts', hosts: [{host, words}]}` is
+ * the list of them, whose frame and whose joining are the language's (§4).
+ *
+ * **A field of its own rather than a shape of `refusal`.** `refusal` is `modelServerRefusal` and
+ * the store's refusal, both of them the kernel's own sentences and both of them strings. An
+ * object for one producer and a string for another is the polymorphism this file refuses
+ * everywhere else, and it is what stops the window from ever being able to word one of them.
+ *
+ * Like `pendingOf`, this validates rather than trusts: a reading whose shape is wrong is no
+ * reading, and the renderer is handed plain data — no Error, no stack, nothing it has to
+ * interrogate.
+ */
+function weightsOf(value) {
+  if (value === null || typeof value !== 'object') return null
+  if (value.kind === 'no-host') {
+    const repo = textOrNull(value.repo)
+    return repo === null ? null : { kind: 'no-host', repo }
+  }
+  if (value.kind === 'refused') {
+    const words = textOrNull(value.words)
+    return words === null ? null : { kind: 'refused', words }
+  }
+  if (value.kind === 'hosts') {
+    if (!Array.isArray(value.hosts) || value.hosts.length === 0) return null
+    const hosts = []
+    for (const one of value.hosts) {
+      const host = textOrNull(one?.host)
+      const words = textOrNull(one?.words)
+      if (host === null || words === null) return null
+      hosts.push({ host, words })
+    }
+    return { kind: 'hosts', hosts }
+  }
+  return null
+}
+
+/**
  * Which stage 1 the window is looking at, in the two facts the interface may show.
  *
  * `server` is the origin the bot's judgement is bound to, or `null` when the run is the
@@ -79,6 +121,9 @@ function stageOneOf(stage1) {
     // the app as broken for the first ten minutes of its life. Facts rather than a sentence —
     // `pendingOf` says why.
     pending: pendingOf(stage1?.pending),
+    // And the fourth: why the weights never arrived. Facts like `pending`, and unlike `refusal`
+    // — see `weightsOf` for why the two must not be one field.
+    weights: weightsOf(stage1?.weights),
   }
 }
 
@@ -95,6 +140,10 @@ function stageTwoOf(stage2) {
     server: typeof stage2?.server === 'string' && stage2.server !== '' ? stage2.server : null,
     refusal: typeof stage2?.refusal === 'string' && stage2.refusal !== '' ? stage2.refusal : null,
     pending: pendingOf(stage2?.pending),
+    // A missing weights directory starves both halves, so stage 2 reads them the same way stage
+    // 1 does — the words half survives when somebody named one, and it still has to say why the
+    // model itself is not there.
+    weights: weightsOf(stage2?.weights),
   }
 }
 
