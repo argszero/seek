@@ -230,7 +230,11 @@ function createWindow() {
   win = new BrowserWindow({
     width: 1180,
     height: 780,
-    minWidth: 900,
+    // The three columns have floors (`--list-min`, `--room-min`, `--side-min` in tokens.css) and
+    // with a side panel open their sum is 1134: rail 156 + three seams + list 280 + room 380 +
+    // panel 300. A window narrower than that cannot draw them — the last track is painted past
+    // the frame, which is how the panel used to end up 6px wide — so the window stops here.
+    minWidth: 1134,
     minHeight: 600,
     titleBarStyle: 'hiddenInset',
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#1f2329' : '#f5f6f7',

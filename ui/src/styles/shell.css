@@ -55,9 +55,17 @@ body {
 .app.with-thread {
   /* A seam on each side of the room, so both of the columns beside it can be widened: the list
      to its left, the thread panel to its right. Without the second gutter the panel's column
-     started immediately at the room's edge and there was nothing for a pointer to grab. */
-  grid-template-columns: var(--rail-w) var(--gutter-w) var(--list-w) var(--gutter-w) minmax(0, 1fr)
-    var(--gutter-w) var(--side-w);
+     started immediately at the room's edge and there was nothing for a pointer to grab.
+     
+     **Three floors, because the room is what pays when a panel opens.** The list and the panel
+     are fixed widths and the room used to be `minmax(0, 1fr)`, so opening a 380px panel on a
+     1180px window left the room 178px — its own name on three lines and one word per message
+     (measured 2026-10-27). Each track now states the floor `resize.mjs` already enforces on a
+     drag, so the columns that give way when space is short are the list and the panel, not the
+     words. `--room-min` is that same 280: `the same 280 `resize.mjs` keeps for the room. */
+  grid-template-columns: var(--rail-w) var(--gutter-w) minmax(var(--list-min), var(--list-w))
+    var(--gutter-w) minmax(var(--room-min), 1fr) var(--gutter-w)
+    minmax(var(--side-min), var(--side-w));
 }
 
 /* The settings page is not a room, so it takes the whole width beside the rail: the list

@@ -297,5 +297,5 @@ test('the side column is laid out wherever the panel is drawn, not only in the c
   const found = tracks(value)
   assert.equal(found.length, 7, `.app.with-thread declares ${found.length} tracks: ${found.join(' | ')}`)
   assert.equal(found[5], 'var(--gutter-w)', 'the panel has no seam beside it')
-  assert.equal(found[6], 'var(--side-w)', 'the last track is not the side panel')
+  assert.equal(found[6], 'minmax(var(--side-min), var(--side-w))', 'the last track is not the side panel')
 })

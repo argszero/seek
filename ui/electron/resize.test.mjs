@@ -64,11 +64,12 @@ test('a column stops at its own bounds, and the column beside it keeps its floor
   assert.equal(clampWidth(100, list, room(900, 448)), list.min, 'narrower than the minimum is the minimum')
   assert.equal(clampWidth(10_000, list, room(900, 448)), list.max, 'and wider than the maximum is the maximum')
 
-  // The floor is the neighbour's, and it bites before the pane's own maximum: a room of 320px has
-  // 40px of slack above a 280px floor, so a 448px list stops at 488 however far the pointer goes.
+  // The floor is the neighbour's, and it bites before the pane's own maximum: a room 100px above
+  // its floor gives the list those 100px, so a 448px list stops at 548 however far the pointer
+  // goes.
   assert.equal(
-    clampWidth(10_000, list, room(320, 448)),
-    448 + (320 - list.keep),
+    clampWidth(10_000, list, room(list.keep + 100, 448)),
+    448 + 100,
     'the drag spends the room\'s slack and no more',
   )
 

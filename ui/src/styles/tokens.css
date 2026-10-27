@@ -261,6 +261,19 @@
   --rail-w: 156px;
   --list-w: 448px;
   --side-w: 380px;
+  /* **What each column may shrink to when a side panel is open.** The two columns beside the
+     room are fixed widths and the room takes what is left, so on the window this app opens
+     (1180×780) the panel's 380 left the room **178px**: its own name wrapped onto two lines and
+     every message read one word per line (measured in the window, panel open).
+
+     The room's floor is 380 because that is the first width at which it reads: swept 280 → 520
+     in the running window with the panel open, and the name is one line from 340 on while the
+     message text stops wrapping a word to a line only at 380 (`the toolbar is a hover away`
+     is 3 lines at 340, 1 line at 380 — measured 2026-10-27). The list and the panel then take
+     the rest between their own floors. */
+  --list-min: 280px;
+  --room-min: 380px;
+  --side-min: 300px;
   /* The 6px the client leaves empty between its conversation list and its room, measured at
      the same time and by the same reading as the three above. It is its own column in the
      grid rather than a margin on either neighbour, because it is what a pointer grabs to

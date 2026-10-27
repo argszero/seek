@@ -214,9 +214,15 @@ test('the grid is three columns and a gutter, and the row is the window', () => 
     'var(--rail-w) var(--gutter-w) var(--list-w) var(--gutter-w) minmax(0, 1fr)',
     'the rail, the list, the gutter, and the room taking what is left',
   )
+  // The same seven columns in the same order, but each of the three beside the room now states
+  // the floor it may not go under: the list and the panel give way when the window is short,
+  // rather than the words (measured 2026-10-27: at 1180px with the panel open the room was
+  // 178px). That the floors are the numbers a drag enforces — and not three numbers of their own
+  // — is `resize.test.mjs`'s reading, next to the `PANES` table they come from. This one is
+  // about the order of the tracks and which of them carry a seam.
   assert.equal(
     rule(SHELL, '.app.with-thread')['grid-template-columns'],
-    'var(--rail-w) var(--gutter-w) var(--list-w) var(--gutter-w) minmax(0, 1fr) var(--gutter-w) var(--side-w)',
+    'var(--rail-w) var(--gutter-w) minmax(var(--list-min), var(--list-w)) var(--gutter-w) minmax(var(--room-min), 1fr) var(--gutter-w) minmax(var(--side-min), var(--side-w))',
     'and the thread panel is a further column — behind its own seam, so it can be widened too',
   )
 
