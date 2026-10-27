@@ -582,3 +582,113 @@ test('a reaction needs a real principal who is in the room, and an emoji', () =>
 
   assert.equal('reactions' in sent.message, false, 'no refusal wrote anything');
 });
+
+test('a file message carries one attachment, and only a file message does', () => {
+  const world = makeWorld();
+  const attachment = { key: 'om-abc.pdf', name: 'plan.pdf', size: 4_096, mime: 'application/pdf' };
+
+  const sent = deliver(world.store, {
+    roomId: world.room,
+    senderId: world.me,
+    text: '',
+    kind: 'file',
+    file: attachment,
+    now: '2026-10-27T06:00:00.000Z',
+  });
+  assert.deepEqual(sent.message.file, attachment, 'the row keeps the four facts a row draws');
+
+  // **A copy, not the caller's object.** A message is written once, so a caller still
+  // holding the reference must not be able to rename a sent file.
+  attachment.name = 'renamed-after-sending.pdf';
+  assert.equal(sent.message.file?.name, 'plan.pdf');
+
+  // Both halves of the invariant, refused rather than trusted.
+  assert.throws(
+    () => deliver(world.store, { roomId: world.room, senderId: world.me, text: 'look', kind: 'file' }),
+    /a file message with no file/,
+  );
+  assert.throws(
+    () =>
+      deliver(world.store, {
+        roomId: world.room,
+        senderId: world.me,
+        text: 'look',
+        file: attachment,
+      }),
+    /an attachment on a "text" message/,
+  );
+  assert.throws(
+    () =>
+      deliver(world.store, {
+        roomId: world.room,
+        senderId: world.me,
+        text: '',
+        kind: 'file',
+        file: { ...attachment, name: '   ' },
+      }),
+    /no name/,
+  );
+  assert.throws(
+    () =>
+      deliver(world.store, {
+        roomId: world.room,
+        senderId: world.me,
+        text: '',
+        kind: 'file',
+        file: { ...attachment, size: -1 },
+      }),
+    /whose size is/,
+  );
+  assert.throws(
+    () =>
+      deliver(world.store, {
+        roomId: world.room,
+        senderId: world.me,
+        text: '',
+        kind: 'file',
+        file: { ...attachment, mime: '' },
+      }),
+    /no mime/,
+  );
+
+  // Five refusals, and the store holds the one message that was delivered.
+  assert.equal(world.store.messagesOf(world.room).length, 1);
+});
+
+test('a forward carries the attachment, and cannot carry a second copy of it', () => {
+  const world = makeWorld();
+  const sent = deliver(world.store, {
+    roomId: world.room,
+    senderId: world.me,
+    text: '',
+    kind: 'file',
+    file: { key: 'om-f.zip', name: 'bundle.zip', size: 10, mime: 'application/zip' },
+  });
+
+  const forwarded = deliver(world.store, {
+    roomId: world.room,
+    senderId: world.me,
+    text: '',
+    forwardOf: sent.message.id,
+  });
+  assert.equal(forwarded.message.kind, 'file', 'the kind travels with the forward');
+  assert.deepEqual(
+    forwarded.message.file,
+    { key: 'om-f.zip', name: 'bundle.zip', size: 10, mime: 'application/zip' },
+    'and so does the attachment',
+  );
+  assert.notEqual(forwarded.message.file, sent.message.file, 'as a copy, not the same object');
+
+  assert.throws(
+    () =>
+      deliver(world.store, {
+        roomId: world.room,
+        senderId: world.me,
+        text: '',
+        forwardOf: sent.message.id,
+        file: { key: 'om-other.zip', name: 'other.zip', size: 1, mime: 'application/zip' },
+      }),
+    /carrying content of its own/,
+    'a forward with a second attachment is two copies of one fact',
+  );
+});

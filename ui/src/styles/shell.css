@@ -798,6 +798,10 @@ body {
  * and a 2px ring would push the text 1px off where the placeholder was.
  */
 .composer-box {
+  /* Positioned, because the emoji picker is anchored to the field and opens above it. Measured
+     in a real window: anchored to the marks' row instead, the grid's bottom edge landed 32px
+     inside the field and covered the words being written. */
+  position: relative;
   flex: 1 1 100%;
   display: flex;
   align-items: flex-end;
@@ -839,6 +843,44 @@ body {
   margin-bottom: 10px;
 }
 
+/* The emoji grid, above the marks and to their right. Six across at 28px plus the padding is
+   184px wide, which fits inside a narrow thread column as well as the room's field. It is
+   drawn in the same floating card as the hover toolbar's three surfaces — one popover in this
+   window, not two that look slightly different. */
+.emoji-pop {
+  position: absolute;
+  /* Clear of the field's top edge by 8px, so the box a person is typing in stays readable
+     while the grid is open. */
+  bottom: calc(100% + 8px);
+  right: 0;
+  z-index: 4;
+  display: grid;
+  grid-template-columns: repeat(8, 28px);
+  gap: 2px;
+  padding: 6px;
+  border-radius: var(--radius-md);
+  background: var(--bg-float);
+  border: 1px solid var(--line-border-card);
+  box-shadow: var(--shadow-popup);
+}
+
+.emoji-pick {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.emoji-pick:hover { background: var(--fill-hover); }
+
 /* 26×26 holding an 18px glyph, rounded 6, and grey until it is hovered: the client's mark is a
    picture, so it carries no border and no fill of its own. */
 .composer-tool {
@@ -876,7 +918,7 @@ body {
 /* The arrow: blue and filled when there is something to send, grey when there is not — the
    client's own two states, measured. The button is 35 wide with the glyph 13px in and 4px from
    its right end, and it stops 8px short of the field's edge: that is how the client's arrow
-   lands 15px inside a field it shares with a rule and two other marks. */
+   lands 15px inside a field it shares with a rule and four other marks. */
 .composer-send {
   position: relative;
   display: inline-flex;
@@ -989,6 +1031,72 @@ body {
   border: 1px solid var(--line-divider-default);
   border-radius: var(--radius-md);
   object-fit: contain;
+}
+
+/* An attachment message: the name, the size, and a mark that says which of the two kinds of
+   bytes this is. A row rather than a card, because a file is a line in a conversation and not
+   an object on show. The width is capped so a long name truncates instead of pushing the
+   column wider, which is what the message column already forbids. */
+.msg-file {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  margin: 4px 0;
+  max-width: 320px;
+}
+
+.msg-file-open {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line-divider-default);
+  border-radius: var(--radius-md);
+  background: var(--N00);
+  color: var(--N900);
+  cursor: pointer;
+}
+
+.msg-file-open:hover { background: var(--fill-hover); }
+
+.msg-file-mark {
+  display: flex;
+  flex: none;
+  align-items: center;
+  color: var(--B600);
+}
+
+/* The name is the only thing that says which file this is, so it is the thing that gets the
+   room: one line, truncated from the end, and the size keeps its own space beside it. */
+.msg-file-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.msg-file-size {
+  flex: none;
+  color: var(--N600);
+  font-size: 12px;
+}
+
+/* What the row says when it is not ready or not opening: the read is in flight, or the main
+   process said why it could not open the file. Both are sentences, not icons. */
+.msg-file-state {
+  color: var(--N500);
+  font-size: 12px;
+}
+
+.msg-file[data-file='refused'] .msg-file-state {
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--R50);
+  color: var(--R600);
 }
 
 /* The two states that are not a picture, said in words. A broken frame would read as a

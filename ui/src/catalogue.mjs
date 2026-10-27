@@ -29,6 +29,15 @@ let stamps = null
 /** The size formatter, bound by the same call. `null` until a catalogue arrives. */
 let sizes = null
 
+/**
+ * The attachment-size formatters, one per unit, bound by the same call.
+ *
+ * A file row says `18 kB` or `3.4 MB`, and which unit is the magnitude's decision while how
+ * the unit is written is the language's — so this is a table of `Intl` formatters keyed by
+ * unit rather than four catalogue keys beside each other. `null` until a catalogue arrives.
+ */
+let fileSizes = null
+
 /** The list formatter, bound by the same call. `null` until a catalogue arrives. */
 let lists = null
 
@@ -70,6 +79,22 @@ export function bindCatalogue(catalogue) {
     minimumFractionDigits: 1,
     maximumFractionDigits: 1,
   })
+  // An attachment is any size at all, so its unit is not chosen in advance: the magnitude
+  // picks between bytes, kilobytes, megabytes and gigabytes, and `Intl` still writes the
+  // number and the unit. `narrow` rather than `short` because a file row is a line of
+  // secondary text under a name: English `short` writes `512 byte` where `narrow` writes
+  // `512B`, and the row has no room for the difference.
+  fileSizes = new Map(
+    ['byte', 'kilobyte', 'megabyte', 'gigabyte'].map((unit) => [
+      unit,
+      new Intl.NumberFormat(catalogue.locale, {
+        style: 'unit',
+        unit,
+        unitDisplay: 'narrow',
+        maximumFractionDigits: 1,
+      }),
+    ]),
+  )
   // A date is the same kind of fact as a count: the shape of it is the locale's, not this
   // file's. Asking for a month, a day and a time is all this window has to say so far — a
   // relative "3 minutes ago" would need plural forms and translated words
@@ -227,6 +252,35 @@ export function size(bytes) {
     )
   }
   return sizes.format(Math.max(0, Number(bytes) || 0) / 1e9)
+}
+
+/**
+ * An attachment's size, in the unit its magnitude asks for.
+ *
+ * **Not `size()` above.** That one is a model's weight — always gigabytes, always one
+ * decimal — and a file row ranges from a 300-byte note to a 24 MB spreadsheet. Which unit
+ * applies is arithmetic; how the unit is written is the locale's, and `Intl` does both, so
+ * the units cost no catalogue keys and a language added by writing a file needs nothing
+ * from this function.
+ *
+ * The unit is the largest one the number is at least 1 of, so a size reads `18 kB` rather
+ * than `0 MB`; a size below a kilobyte is bytes, which is the one case where the count is
+ * exact.
+ */
+export function fileSize(bytes) {
+  if (fileSizes === null) {
+    throw new Error(
+      'no catalogue is bound yet, so an attachment has no size to show — the window draws ' +
+        'nothing until seek:catalogue has answered',
+    )
+  }
+  const count = Math.max(0, Number(bytes) || 0)
+  const units = ['gigabyte', 'megabyte', 'kilobyte']
+  const powers = { gigabyte: 1e9, megabyte: 1e6, kilobyte: 1e3 }
+  for (const unit of units) {
+    if (count >= powers[unit]) return fileSizes.get(unit).format(count / powers[unit])
+  }
+  return fileSizes.get('byte').format(count)
 }
 
 /**

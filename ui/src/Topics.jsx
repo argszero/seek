@@ -188,6 +188,12 @@ function said(message) {
   // is a key `catalogue.test.mjs` cannot see, and a view holding one word the languages do
   // not ship is the whole failure that file exists to catch.
   if (message.kind === 'image') return t('ui.topics.said.picture')
+  // An attachment is named rather than described: the row in the message column says the
+  // file's name, and a topic card that said "a file" would make two surfaces disagree about
+  // one message that is the same fact in both.
+  if (message.kind === 'file' && message.file) {
+    return t('ui.topics.said.file', { name: message.file.name })
+  }
   return t('ui.topics.said.nothing')
 }
 

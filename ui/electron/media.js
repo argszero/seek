@@ -166,14 +166,97 @@ function mimeForPath(filePath) {
   return BY_EXT.get(match[1].toLowerCase()) ?? null
 }
 
+/**
+ * The mime of a file the person attached, which may be anything at all.
+ *
+ * **Not the same question as `mimeForPath`.** A picture has to be one of four types, because
+ * the window draws it and the kernel refuses a `media.mime` that is not `image/*`. An
+ * attachment is opened by whichever application the person's machine has for it, so the set
+ * is not ours to close: this answers a good name for the common cases and
+ * `application/octet-stream` for everything else, which is the answer every system already
+ * understands as "ask the person".
+ */
+const ATTACHMENT_TYPES = new Map([
+  ['pdf', 'application/pdf'],
+  ['txt', 'text/plain'],
+  ['md', 'text/markdown'],
+  ['csv', 'text/csv'],
+  ['json', 'application/json'],
+  ['zip', 'application/zip'],
+  ['gz', 'application/gzip'],
+  ['tar', 'application/x-tar'],
+  ['doc', 'application/msword'],
+  ['docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+  ['xls', 'application/vnd.ms-excel'],
+  ['xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+  ['ppt', 'application/vnd.ms-powerpoint'],
+  ['pptx', 'application/vnd.openxmlformats-officedocument.presentationml.presentation'],
+])
+
+/** The extension of a path or a name, lowercased, or `''`. */
+function extensionOf(name) {
+  const match = /\.([A-Za-z0-9]+)$/.exec(String(name))
+  return match ? match[1].toLowerCase() : ''
+}
+
+/**
+ * What an attachment's bytes are, off its name.
+ *
+ * A picture keeps its own mime when it has one, so attaching a PNG through the paperclip
+ * says `image/png` rather than `application/octet-stream`: the bytes are the same bytes, and
+ * a reader that has to choose an application does better with the truth.
+ */
+function attachmentMimeFor(name) {
+  const ext = extensionOf(name)
+  if (BY_EXT.has(ext)) return BY_EXT.get(ext)
+  return ATTACHMENT_TYPES.get(ext) ?? 'application/octet-stream'
+}
+
+/**
+ * A key for an attachment: a stamp, a salt, and the extension the person's file had.
+ *
+ * The extension is kept because it is the only thing that survives a round trip to the
+ * person's own machine: opening an attachment copies the blob back out under the name they
+ * gave it (`openAttachment`), and a name this app invented with no extension is a file
+ * their system cannot open. The rest of the name is **not** used, for the reason
+ * `saveMedia` gives: a key built from a name is sometimes a path.
+ */
+function attachmentKeyFor(name) {
+  const ext = extensionOf(name)
+  const stamp = Date.now().toString(36)
+  const salt = Math.random().toString(36).slice(2, 10)
+  return ext === '' ? `om-${stamp}-${salt}` : `om-${stamp}-${salt}.${ext}`
+}
+
+/**
+ * Write an attachment's bytes beside the store and hand back the four facts the kernel keeps.
+ *
+ * The size is measured here rather than believed from a caller: it is what the row says
+ * about the file, and a wrong number in a row is worse than no row.
+ */
+function saveAttachment(storeFile, { bytes, name }) {
+  if (!(bytes instanceof Uint8Array) || bytes.length === 0) {
+    throw new Error('an empty file is not an attachment, so nothing was attached')
+  }
+  const wanted = typeof name === 'string' && name.trim() !== '' ? name : 'attachment'
+  const key = attachmentKeyFor(wanted)
+  const dir = mediaDirFor(storeFile)
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, key), bytes)
+  return { key, name: wanted, size: bytes.length, mime: attachmentMimeFor(wanted) }
+}
+
 /** Whether a mime is one this app can both send and draw. */
 function isSupportedImage(mime) {
   return BY_MIME.has(mime)
 }
 
 module.exports = {
+  ATTACHMENT_TYPES,
   BY_EXT,
   BY_MIME,
+  attachmentMimeFor,
+  saveAttachment,
   MEDIA_DIR_NAME,
   isSupportedImage,
   mediaDirFor,

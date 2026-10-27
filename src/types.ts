@@ -142,6 +142,37 @@ export interface MessageMedia {
   mime: string;
 }
 
+/**
+ * A message's attachment, as a reference plus the three facts a person needs to
+ * recognise it: what it was called, how big it is, and what it is.
+ *
+ * **A file, not a picture, and a carrier of its own.** `MessageMedia` is one
+ * `{key, mime}` pair and it is the picture the judgement is shown (`box.ts`,
+ * `BoxMedia`); this is the other half of what a composer's paperclip attaches —
+ * a PDF, a spreadsheet, a zip — which nothing reads but a person. Folding the two
+ * into one field would mean either handing the judgement a mime it cannot read or
+ * leaving a file with no name to draw, so they stay two carriers with two kinds.
+ *
+ * **`name` is the person's, `key` is the client's.** A name may repeat
+ * (`report.pdf` twice is two files) and may contain anything at all, which is why
+ * the key is built from a stamp rather than from the name — the same split
+ * `MessageMedia.key` takes, and for the same reason: a key built from a name is a
+ * key that is sometimes a path.
+ *
+ * **Present exactly when `kind` is `file`**, which `deliver()` enforces rather
+ * than trusting a caller — see `fileFor`.
+ */
+export interface MessageFile {
+  /** Which blob, in whatever scheme the client keeps its files under. */
+  key: string;
+  /** The name the person's file had, drawn as it stands and never used as a path. */
+  name: string;
+  /** How many bytes, so a row can say `12 KB` without opening it. */
+  size: number;
+  /** What the bytes are — `application/pdf`, `text/csv`, or the fallback. */
+  mime: string;
+}
+
 /** One entry of `Message.mentions` — the open platform's `{id, name}` pair. */
 export interface Mention {
   id: Id;
@@ -224,6 +255,13 @@ export interface Message {
    * has, and a verdict reached on it is the guess §2 warns about.
    */
   media?: MessageMedia;
+  /**
+   * The attachment this message is, when its `kind` says `file`.
+   *
+   * Absent on every other kind, refused on the two halves of that the way `media`
+   * is: a `file` carrying nothing, and an attachment on a kind that disowns it.
+   */
+  file?: MessageFile;
   mentions: Mention[];
   /**
    * Who reacted to this message, with what — absent until somebody does.

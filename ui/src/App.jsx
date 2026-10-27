@@ -7,7 +7,7 @@ import Groups from './Groups.jsx'
 import Icon from './icons.jsx'
 import Settings from './Settings.jsx'
 import Topics from './Topics.jsx'
-import { size, t, weightsReason, whenShort } from './catalogue.mjs'
+import { fileSize, size, t, weightsReason, whenShort } from './catalogue.mjs'
 import {
   ADD_MENU,
   ADD_TITLE,
@@ -91,6 +91,24 @@ function emojiGlyph(type) {
 }
 
 /**
+ * The emoji a person may put *into their words*, which is a different list from the six above.
+ *
+ * The two are not the same kind of fact and the kernel says so (`src/types.ts`): a reaction
+ * is an `emoji_type`, a *name* the open platform defined (`THUMBSUP`), because a reaction row
+ * is a count over names; an emoji typed into a sentence is part of the text and is whatever
+ * character the person chose. So this list is the prototype's own
+ * (`prototype/src/js/app.js`, five rows of eight) and nothing here reaches the store as
+ * anything but the words of a message.
+ */
+const DRAFT_EMOJI = [
+  '😀', '😄', '😁', '😆', '😅', '😂', '🙂', '😉',
+  '😊', '😍', '😘', '😜', '🤪', '🤔', '🤨', '😐',
+  '😴', '😭', '😤', '😡', '👍', '👎', '👌', '✌️',
+  '🙏', '👏', '💪', '👀', '🎉', '🎊', '❤️', '💔',
+  '🔥', '✨', '⭐', '✅', '❌', '⚠️', '💡', '📌',
+]
+
+/**
  * One of the toolbar's four glyphs.
  *
  * Filled, and `aria-hidden` because the button that holds it carries the title: a screen
@@ -101,6 +119,93 @@ function ActionGlyph({ name }) {
     <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true">
       {ACTION_GLYPHS[name]}
     </svg>
+  )
+}
+
+/**
+ * The emoji a composer's smiley offers, in place above the marks rather than as a card.
+ *
+ * A picker that opened a modal would be a second window for a keystroke-sized choice, and the
+ * client does not do that either: the grid belongs to the field it writes into. It stays open
+ * across several picks — choosing three in a row is one thought — and closes when the mark is
+ * pressed again, which is why the mark carries `aria-expanded`.
+ *
+ * The glyphs are text, so the button is the character and nothing else: no key, no name, no
+ * lookup. See `DRAFT_EMOJI` for why this is not the reaction table.
+ */
+function EmojiPop({ onPick }) {
+  return (
+    <span className="emoji-pop" data-emoji="picked">
+      {DRAFT_EMOJI.map((glyph) => (
+        <button
+          key={glyph}
+          type="button"
+          className="emoji-pick"
+          data-emoji-now={glyph}
+          onClick={() => onPick(glyph)}
+        >
+          {glyph}
+        </button>
+      ))}
+    </span>
+  )
+}
+
+/**
+ * One attachment, drawn as a row a person can open.
+ *
+ * **Four facts, three of them on screen.** The name says *which* file — the key is opaque by
+ * design, so it is the only thing that can. The size says how big without opening it. The mime
+ * is not drawn: it is what the main process needs to hand the bytes to the right application,
+ * and a person reading a row that says `application/vnd.openxmlformats-…` has been told
+ * something they did not ask. The fourth is the key, and it is on the row as a hook rather than
+ * as words.
+ *
+ * **The states are the ones `Picture` has, minus the drawing.** `ready` is the file sitting
+ * beside the store; `opening` is the copy in flight; a refusal is the main process's sentence —
+ * which is what a store moved without its `media/` directory answers, and what a machine with
+ * no application for the type answers. Nothing here decides any of those; it shows them.
+ */
+function FileRow({ file }) {
+  const [state, setState] = useState('ready')
+  const [refusal, setRefusal] = useState(null)
+
+  async function open() {
+    if (state === 'opening') return
+    setState('opening')
+    const result = await window.seekHost.openFile(file)
+    // A file that opened draws nothing further: the application is on screen and this row is
+    // not the place to report it. A file that did not open says why, in the words it was told.
+    if (result.ok) {
+      setState('opened')
+    } else {
+      setRefusal(result.error)
+      setState('refused')
+    }
+  }
+
+  return (
+    <span className="msg-file" data-file={state}>
+      <button
+        className="msg-file-open"
+        type="button"
+        data-file-open={file.key}
+        title={t('ui.chat.file-open')}
+        onClick={open}
+      >
+        <span className="msg-file-mark">
+          <Icon name="file" size={20} />
+        </span>
+        <span className="msg-file-name">{file.name}</span>
+        <span className="msg-file-size">{fileSize(file.size)}</span>
+      </button>
+      {state === 'opening' && <span className="msg-file-state">{t('ui.chat.file-opening')}</span>}
+      {state === 'refused' && (
+        <span className="msg-file-state" data-file-refused={file.key}>
+          {refusal}
+        </span>
+      )}
+    </span>
   )
 }
 
@@ -266,6 +371,16 @@ export default function App() {
   // the other. See `useMentions` below for what one of these is.
   const roomMention = useMentions()
   const threadMention = useMentions()
+  // Which composer's emoji picker is open, if either. Two instances on screen at once while a
+  // thread is open, so this is `'room'`, `'thread'` or `null` rather than a flag — the same
+  // reason the two mention sets are two.
+  const [emojiOn, setEmojiOn] = useState(null)
+  // Where the caret was when an emoji was pressed. A press is a click away from the field, so
+  // the caret is read before the click and put back after React has written the new value —
+  // `useEffect` below, which is the only place a selection survives a re-render.
+  const roomInput = useRef(null)
+  const threadInput = useRef(null)
+  const pendingCaret = useRef(null)
   const messagesEnd = useRef(null)
   const threadEnd = useRef(null)
 
@@ -310,11 +425,31 @@ export default function App() {
     if (threadEnd.current) threadEnd.current.scrollIntoView({ block: 'end' })
   }, [thread.length, openThread])
 
-  async function send(text, rootId, media, mention) {
+  /**
+   * Put the caret back where the emoji went in.
+   *
+   * A `textarea`'s value is React's, so writing an emoji into it re-renders the field and the
+   * browser puts the caret at the end — which is right only for somebody who was typing at the
+   * end. `insertEmoji()` therefore records the position it wrote at, and this effect (no
+   * dependency list, so it runs after every render) restores it and clears the record. It runs
+   * with nothing pending on almost every render and costs one comparison.
+   */
+  useEffect(() => {
+    const pending = pendingCaret.current
+    if (pending === null) return
+    pendingCaret.current = null
+    if (!pending.field) return
+    pending.field.focus()
+    pending.field.setSelectionRange(pending.at, pending.at)
+  })
+
+  async function send(text, rootId, media, mention, file) {
     const body = typeof text === 'string' ? text.trim() : ''
     // A picture may go with no words at all — the caption is optional (`media` names the
     // bytes, and `deliver()` accepts an image with an empty text); a text message may not.
-    if (!active || sending || (body === '' && !media)) return
+    // An attachment is the same case for the same reason: a file with no caption is still a
+    // file somebody sent, which is the whole of what the row then says.
+    if (!active || sending || (body === '' && !media && !file)) return
     setSending(true)
     setError(null)
     setNote(null)
@@ -327,6 +462,16 @@ export default function App() {
         text: body,
         rootId,
         ...(media ? { kind: 'image', media: { key: media.key, mime: media.mime } } : {}),
+        // An attachment is the third kind, and it carries four facts rather than two because a
+        // reader needs them: the name to say which file, the size to say how big without
+        // opening it, the mime to choose an application. `fileFor()` (`src/delivery.ts`) owns
+        // both halves of the invariant; this line only hands the facts over.
+        ...(file
+          ? {
+              kind: 'file',
+              file: { key: file.key, name: file.name, size: file.size, mime: file.mime },
+            }
+          : {}),
         // Who this message names. Sent as the pairs the person picked, and the kernel stores
         // them on the message verbatim (`mentionsOf` in `ui/electron/host.js` copies them and
         // decides nothing); an empty list is a message that addresses the room.
@@ -378,6 +523,51 @@ export default function App() {
     } finally {
       setSending(false)
     }
+  }
+
+  /**
+   * Choose a file of any kind and send it, with whatever is in the box as its caption.
+   *
+   * The sibling of `attachInto` and deliberately not the same call: a picture is one of four
+   * types the window can draw and the judgement can read (`seek:attach`), while an attachment
+   * is anything the person's machine can open (`seek:attach-file`). Both write the bytes
+   * before answering, so the message that names them cannot point at nothing.
+   */
+  async function attachFileInto(rootId, mention) {
+    if (!active || sending) return
+    setSending(true)
+    setError(null)
+    try {
+      const picked = await window.seekHost.attachFile()
+      if (!picked.ok) {
+        if (!picked.cancelled) setError({ where: rootId ? 'thread' : 'room', message: picked.error })
+        return
+      }
+      await send(rootId ? threadDraft : draft, rootId, undefined, mention, picked.file)
+    } finally {
+      setSending(false)
+    }
+  }
+
+  /**
+   * Put one emoji into the words being written, where the caret is.
+   *
+   * **Into the text, never into the store as a reaction.** The two look alike on screen and are
+   * different facts: a reaction is `emoji_type`, a name the kernel counts operators under
+   * (`toggleReaction()` in `src/delivery.ts`), and this is a character in a sentence that
+   * happens to be an emoji. Which is why this function has no call to `seekHost` in it.
+   */
+  function insertEmoji(where, glyph) {
+    const current = where === 'room' ? draft : threadDraft
+    const field = where === 'room' ? roomInput.current : threadInput.current
+    // The caret, and the selection it may be the start of: typing over a selection replaces
+    // it, which is what every field on this machine does.
+    const at = field && typeof field.selectionStart === 'number' ? field.selectionStart : current.length
+    const end = field && typeof field.selectionEnd === 'number' ? field.selectionEnd : at
+    const next = current.slice(0, at) + glyph + current.slice(Math.max(at, end))
+    if (where === 'room') setDraft(next)
+    else setThreadDraft(next)
+    pendingCaret.current = { field, at: at + glyph.length }
   }
 
   function keyDown(event, text, rootId, mention) {
@@ -1143,11 +1333,13 @@ export default function App() {
                   then the send arrow. Ours used to be four bordered boxes side by side with the
                   words "@", "Picture" and "Send" in them, which is not the client's shape and,
                   for the last two, not even a shape a picture can be drawn in.
-                  The marks are the two the message can carry before it has words — a name it
-                  addresses and a picture it attaches — and nothing else: the client's `Aa`,
-                  `☺`, `⊕` and `⤢` are four things this product does not do yet. */}
+                  The marks are the four the message can carry before it has words — an emoji
+                  in them, a name it addresses, a picture and a file — and of the client's five
+                  slots the two that stay undrawn are `Aa`, a font picker this product has no
+                  fonts for, and `⤢`, a window state it does not keep. */}
               <div className="composer-box">
                 <textarea
+                  ref={roomInput}
                   className="composer-input"
                   rows={1}
                   value={draft}
@@ -1156,6 +1348,23 @@ export default function App() {
                   onKeyDown={(event) => keyDown(event, draft, undefined, roomMention)}
                 />
                 <div className="composer-tools">
+                  {/* The client's five marks, of which four are drawn: the smiley, the @, the
+                      picture and the plus. `Aa` (typography) and `⤢` (expand) are not — the
+                      first is a font picker this product does not have and the second is a
+                      window state it does not keep. The four that are drawn each do their
+                      job: an emoji goes into the words, a name goes onto the message, a
+                      picture is one kind of bytes and a file is the other. */}
+                  <button
+                    className="composer-tool"
+                    type="button"
+                    data-emoji="open"
+                    title={t('ui.chat.emoji-hint')}
+                    aria-expanded={emojiOn === 'room'}
+                    onClick={() => setEmojiOn((open) => (open === 'room' ? null : 'room'))}
+                    disabled={sending}
+                  >
+                    <Icon name="emoji" size={COMPOSER_ICON} />
+                  </button>
                   {/* The @ sits beside the picture for the same reason the picture does: it is
                       a choice about the message, made before the words, and it survives an
                       empty box — "hey" typed after naming Echo still addresses Echo. */}
@@ -1175,11 +1384,25 @@ export default function App() {
                   <button
                     className="composer-tool"
                     type="button"
+                    data-attach="open"
                     title={t('ui.chat.attach')}
                     onClick={() => attachInto(undefined, roomMention)}
                     disabled={sending}
                   >
                     <Icon name="picture" size={COMPOSER_ICON} />
+                  </button>
+                  {/* The other kind of bytes. A file is not a picture with a different name:
+                      it is opened by an application rather than drawn in the column, and the
+                      kernel keeps the two apart (`MessageMedia` and `MessageFile`). */}
+                  <button
+                    className="composer-tool"
+                    type="button"
+                    data-file="open"
+                    title={t('ui.chat.attach-file')}
+                    onClick={() => attachFileInto(undefined, roomMention)}
+                    disabled={sending}
+                  >
+                    <Icon name="file" size={COMPOSER_ICON} />
                   </button>
                   <button
                     className="composer-send"
@@ -1191,6 +1414,9 @@ export default function App() {
                     <Icon name="send" size={COMPOSER_ICON} />
                   </button>
                 </div>
+                {emojiOn === 'room' && (
+                  <EmojiPop onPick={(glyph) => insertEmoji('room', glyph)} />
+                )}
               </div>
             </form>
           </>
@@ -1244,6 +1470,7 @@ export default function App() {
                 narrower, not a different control. */}
             <div className="composer-box">
               <textarea
+                ref={threadInput}
                 className="composer-input"
                 rows={1}
                 value={threadDraft}
@@ -1252,6 +1479,19 @@ export default function App() {
                 onKeyDown={(event) => keyDown(event, threadDraft, openThread, threadMention)}
               />
               <div className="composer-tools">
+                {/* The same four marks as the room's, in the same order, because this is the
+                    same kind of box — a thread is narrower, not a different control. */}
+                <button
+                  className="composer-tool"
+                  type="button"
+                  data-emoji="open-thread"
+                  title={t('ui.chat.emoji-hint')}
+                  aria-expanded={emojiOn === 'thread'}
+                  onClick={() => setEmojiOn((open) => (open === 'thread' ? null : 'thread'))}
+                  disabled={sending}
+                >
+                  <Icon name="emoji" size={COMPOSER_ICON} />
+                </button>
                 {/* A reply may name somebody too, and needs it more than a room message does:
                     the bot that wrote the message being answered is woken by the reply itself
                     (`repliesToMe`), but anybody else in the room has to be named to hear it. */}
@@ -1269,11 +1509,22 @@ export default function App() {
                 <button
                   className="composer-tool"
                   type="button"
+                  data-attach="open-thread"
                   title={t('ui.chat.attach')}
                   onClick={() => attachInto(openThread, threadMention)}
                   disabled={sending}
                 >
                   <Icon name="picture" size={COMPOSER_ICON} />
+                </button>
+                <button
+                  className="composer-tool"
+                  type="button"
+                  data-file="open-thread"
+                  title={t('ui.chat.attach-file')}
+                  onClick={() => attachFileInto(openThread, threadMention)}
+                  disabled={sending}
+                >
+                  <Icon name="file" size={COMPOSER_ICON} />
                 </button>
                 <button
                   className="composer-send"
@@ -1285,6 +1536,9 @@ export default function App() {
                   <Icon name="send" size={COMPOSER_ICON} />
                 </button>
               </div>
+              {emojiOn === 'thread' && (
+                <EmojiPop onPick={(glyph) => insertEmoji('thread', glyph)} />
+              )}
             </div>
           </form>
           </aside>
@@ -1678,6 +1932,11 @@ function Line({ message, sender, replies, inThread, onOpen, chip = false, me = n
   // never because the text looks like one: a message whose kind disowns its bytes is one
   // every reader drops in silence, and guessing from the text is the same drop, later.
   const picture = message.kind === 'image' && message.media ? message.media : null
+  // An attachment is drawn on the same rule: the kernel's `kind` says so and the four facts are
+  // in the message. A `file` whose `file` is missing is a message nobody can draw, and
+  // `fileFor()` in `src/delivery.ts` refuses to write one — so this reads as a row or not at
+  // all, never as a row of blanks.
+  const attachment = message.kind === 'file' && message.file ? message.file : null
   // The reactions the store holds, and nothing this file counted: `operators[]` is the fact
   // (`src/types.ts`), so the number drawn beside a glyph is that array's length and "mine"
   // is whether the person this window speaks as is in it. A reaction nobody has reacted with
@@ -1711,6 +1970,7 @@ function Line({ message, sender, replies, inThread, onOpen, chip = false, me = n
           </span>
         )}
         {picture && <Picture media={picture} />}
+        {attachment && <FileRow file={attachment} />}
         {/* Who the message named, drawn from the pairs the message carries and never from the
             roster: `@Echo` said last week keeps the name it was said with, because a message
             is an immutable shared fact (`docs/design/data-model.md`, rule 15). Drawn above the
@@ -1853,6 +2113,11 @@ function Line({ message, sender, replies, inThread, onOpen, chip = false, me = n
 function lastLineOf(message) {
   if (typeof message?.text === 'string' && message.text !== '') return message.text
   if (message?.kind === 'image') return t('ui.chat.said.picture')
+  // A file's row is its name, so the conversation list says the same thing the row does rather
+  // than "nothing" — which is what a room whose last message was a spreadsheet would read as.
+  if (message?.kind === 'file' && message.file) {
+    return t('ui.chat.said.file', { name: message.file.name })
+  }
   return t('ui.chat.said.nothing')
 }
 

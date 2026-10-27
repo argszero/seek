@@ -93,6 +93,41 @@ const ICONS = {
       stroke="none"
     />,
   ],
+  /**
+   * The client's smiley, for the slot that puts an emoji into the words being written.
+   *
+   * **Solid rather than outlined, because the three marks beside it are.** Feishu draws this
+   * one as a 1.6px outline (`tmp/feishu-toolbar.png`, read 2026-10-27), and a row of one
+   * outline beside three filled shapes reads as two icon sets accidentally placed together.
+   * So the same face — a round head, two eyes, a smile — is drawn here as a disc with its
+   * features cut out, which is the weight `mention`, `picture` and `send` already carry at
+   * 18px. The features are inside the disc and rely on `fillRule="evenodd"` to become holes;
+   * the frame on the `<path>` says so per shape, the way `add` does in `rail.mjs`.
+   */
+  emoji: [
+    <path
+      fillRule="evenodd"
+      d="M12 2.4a9.6 9.6 0 1 1 0 19.2 9.6 9.6 0 0 1 0-19.2Zm-3.4 6.4a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Zm6.8 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Zm-8.05 5.55a4.9 4.9 0 0 0 9.3 0 .95.95 0 0 1 1.76.7 6.75 6.75 0 0 1-12.82 0 .95.95 0 0 1 1.76-.7Z"
+      fill="currentColor"
+      stroke="none"
+    />,
+  ],
+  /**
+   * The client's plus-in-a-circle, for the slot that attaches a file.
+   *
+   * The same shape and the same reason as the smiley above: a disc with a plus cut out of it,
+   * rather than Feishu's outline. It means *add something to this message*, which is what the
+   * slot does — a paperclip would say the narrower thing this build happens to do, and the
+   * client's own mark for the slot says the wider one.
+   */
+  file: [
+    <path
+      fillRule="evenodd"
+      d="M12 2.4a9.6 9.6 0 1 1 0 19.2 9.6 9.6 0 0 1 0-19.2Zm.05 4.6a1.05 1.05 0 0 1 1.05 1.05v2.9h2.9a1.05 1.05 0 1 1 0 2.1h-2.9v2.9a1.05 1.05 0 1 1-2.1 0v-2.9h-2.9a1.05 1.05 0 1 1 0-2.1h2.9v-2.9A1.05 1.05 0 0 1 12.05 7Z"
+      fill="currentColor"
+      stroke="none"
+    />,
+  ],
 }
 
 /**

@@ -335,6 +335,19 @@ const CLAIMS = {
   // that is the half a reader has to be told.
   'seek:attach': { en: /`?Picture`? button/, zh: /`?Picture`? ?按钮/ },
   'seek:media': { en: /draws it back from that\s+reference alone/, zh: /只凭那个引用把图画回来/ },
+  // The attachment pair, and the same reason: `attach-file` writes bytes beside the store and
+  // `open-file` copies them back out and hands them to the system, so neither broadcasts. They
+  // are claimed because a person presses `⊕`, a row appears, and pressing the row opens the
+  // file — and the second half is the half a store moved without its `media/` directory makes
+  // visible.
+  'seek:attach-file': {
+    en: /`⊕` opens a dialog for\s+any file at all/,
+    zh: /`⊕` ?打开一个收任何文件的对话框/,
+  },
+  'seek:open-file': {
+    en: /copies the file back out under the name it came with/,
+    zh: /把文件按原来的名字复制出来/,
+  },
   // The endpoint pair, and neither broadcasts: `saveLlm` writes `settings.json` and re-opens
   // the host rather than writing the store, so the derivation from `seek:changed` cannot see
   // it. Claimed because a person changes the model in the window and expects turns to follow.
