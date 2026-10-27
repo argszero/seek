@@ -36,10 +36,23 @@ const data = makeFixture()
 /** Who is listening for a change, which is what `onChanged` registers. */
 const listeners = new Set()
 
+/**
+ * Tell everyone listening that the store moved.
+ *
+ * **What a listener is handed is a snapshot, not a nudge.** The window takes the argument as
+ * its new state (`ui/src/App.jsx`: `onChanged(adopt)`, and `adopt` reads `next.rooms`), which
+ * is what the real bridge gives it (`ui/electron/preload.js`: `listener(snapshot)`). This
+ * function used to call `listener(undefined)` and got away with it only while the window
+ * re-read the store itself and ignored the argument; once every snapshot went through one
+ * `adopt` (2026-10-27, PR #122), that made *every write in the demo* a crash — the window
+ * unmounted on the first change. Found by making an organization here: pressing Create blanked
+ * the screen with `Cannot read properties of undefined (reading 'rooms')`.
+ */
 function emit() {
+  const next = snapshot()
   for (const listener of [...listeners]) {
     try {
-      listener(undefined)
+      listener(next)
     } catch (error) {
       console.error('[seek prototype] a listener failed', error)
     }
