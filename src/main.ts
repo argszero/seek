@@ -96,7 +96,7 @@ import { Kernel, type KernelFailure } from './kernel.ts';
 import type { Fetcher, LlamaServer } from './llama.ts';
 import { loadPromptArtifact } from './prompts.ts';
 import { applyRoster, readRosterFor, rosterPath, type AgentRow } from './roster.ts';
-import { createRoom } from './rooms.ts';
+import { addMember, createRoom } from './rooms.ts';
 import { newId, SeekStore } from './store.ts';
 import type { Decide } from './turn.ts';
 import type { Id } from './types.ts';
@@ -145,20 +145,10 @@ export const stubDecide: Decide = (context) => {
   context.say(context.roomId, STUB_REPLY);
 };
 
-/** The people, the bot and the room — everything a run needs that is not an agent. */
+/** The person, the bot and the room — everything a run needs that is not an agent. */
 export interface SeedWorld {
   /** The person who speaks. */
   me: Id;
-  /**
-   * A second person, who says nothing.
-   *
-   * Not decoration: `direct` is a headcount and not a type, so a room of exactly
-   * two members is a direct message — and a direct message takes the gate's fast
-   * path without stage 1 ever being consulted. A third member is what makes this
-   * an ordinary group room, which is the only kind whose chatter reaches the
-   * ambiguous remainder the milestone is about.
-   */
-  other: Id;
   bot: Id;
   room: Id;
 }
@@ -263,21 +253,28 @@ export interface MilestoneOptions {
 }
 
 /**
- * Seed one room: two people, one bot, and a group to talk in.
+ * Seed one room: a person, a bot, and somewhere to talk to it.
  *
  * Everything written here is an entity `data-model.md` already fixes — a
- * `Principal` per person, a `Bot`, and a `Membership` per principal — so this
+ * `Principal` for the person, a `Bot`, and a `Membership` per principal — so this
  * seeds a world rather than stating a rule. **The bot's agents are not here.**
  * They are the roster's (`src/roster.ts`), and a seed that also wrote them would
  * be a second place agents come from — disagreeing with `agents.yml` the first
  * time someone edited the file. The bot is created first and the roster applied
  * after it, because a row names the bot it serves.
+ *
+ * **Two members, and nobody else.** `direct` is a headcount and not a type, so
+ * this room is a direct message — which is what a first run should be: a person
+ * and the one bot they were given. It also settles the gate (row 2, `gate.ts`):
+ * everything said here addresses the bot, so it answers without stage 1 having to
+ * be asked. A seeded third member would make it a group, and the only reason one
+ * ever existed here was the milestone's need for an unaddressed line — which is
+ * the milestone's business, and it makes its own (`seedMilestoneWorld` below).
+ * The host's ruling: a first run puts no stranger in anybody's organization.
  */
 export function seedOneRoom(store: SeekStore): SeedWorld {
   const me = newId('ou');
   store.data.principals[me] = { id: me, kind: 'human', name: 'me' };
-  const other = newId('ou');
-  store.data.principals[other] = { id: other, kind: 'human', name: 'someone else' };
 
   const bot = newId('ou');
   store.data.bots[bot] = {
@@ -301,15 +298,32 @@ export function seedOneRoom(store: SeekStore): SeedWorld {
   const { room } = createRoom(store, {
     name: 'the first room',
     chatMode: 'group',
-    members: [
-      { principalId: me, role: 'owner' },
-      { principalId: other },
-      { principalId: bot },
-    ],
+    members: [{ principalId: me, role: 'owner' }, { principalId: bot }],
     now: SEED_AT,
   });
 
-  return { me, other, bot, room: room.id };
+  return { me, bot, room: room.id };
+}
+
+/**
+ * The world the milestone runs in: the first run's room, plus somebody who says nothing.
+ *
+ * **The extra member is the harness's requirement, not the product's.** The seeded room is a
+ * direct message, and a direct message takes the gate's fast path (row 2) — stage 1 is never
+ * consulted, and stage 1 is the only row this milestone is about: a group talking near a bot
+ * without naming it. One more member makes the room an ordinary group, which is the only kind
+ * whose chatter reaches that ambiguous remainder.
+ *
+ * It is added here rather than seeded there because a person is not something a first launch
+ * should put into somebody's organization. The name is the harness's own and appears nowhere
+ * the product draws.
+ */
+function seedMilestoneWorld(store: SeekStore): SeedWorld {
+  const world = seedOneRoom(store);
+  const other = newId('ou');
+  store.data.principals[other] = { id: other, kind: 'human', name: 'the second person' };
+  addMember(store, { roomId: world.room, principalId: other, now: SEED_AT });
+  return world;
 }
 
 /**
@@ -320,7 +334,7 @@ export function seedOneRoom(store: SeekStore): SeedWorld {
  * product's own thesis — the data stays local and outlives the process — and a
  * harness that grew a room per run would contradict it.
  *
- * The first room, the first bot in it, and the two people. **The agents are not
+ * The first room, the first bot in it, and the person who owns it. **The agents are not
  * part of this**: they are read from the roster, and a world that is complete
  * without them is what lets a roster be applied after the bot exists.
  */
@@ -334,7 +348,7 @@ export function worldOf(store: SeekStore): SeedWorld | undefined {
   if (!membership) return undefined;
   const bot = membership.principal_id;
 
-  // The owner, not merely the first person: a group room holds more than one,
+  // The owner, not merely the first person: a group room may hold more than one,
   // and "whichever came first" would make the scene depend on insertion order.
   const human = Object.values(store.data.memberships).find(
     (row) =>
@@ -344,16 +358,8 @@ export function worldOf(store: SeekStore): SeedWorld | undefined {
   );
   if (!human) return undefined;
 
-  const others = Object.values(store.data.memberships).find(
-    (row) =>
-      row.room_id === room.id &&
-      row.principal_id !== human.principal_id &&
-      store.data.principals[row.principal_id],
-  );
-
   return {
     me: human.principal_id,
-    other: others?.principal_id ?? human.principal_id,
     bot,
     room: room.id,
   };
@@ -444,7 +450,7 @@ export async function runFirstMilestone(
 ): Promise<MilestoneRun> {
   // The bot has to exist before a row can name it, so the world is seeded first
   // and only when there is none; the roster then says what the bot's agents are.
-  if (!worldOf(store)) seedOneRoom(store);
+  if (!worldOf(store)) seedMilestoneWorld(store);
   const rows = options.roster ?? (await readRosterFor(store));
   if (rows !== undefined) applyRoster(store, rows);
 

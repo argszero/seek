@@ -270,13 +270,16 @@ test('the roster supplies the agents, the seed supplies the world', async () => 
     assert.equal(work.model, 'unset');
     assert.equal(watch.home.startsWith('/'), true, 'an agent has a home');
 
-    // Two people and a bot: three memberships, so the room is a group and not a
-    // direct message — the fast path would otherwise skip stage 1 entirely.
+    // The person and the bot: two memberships, and that is what a first run is. Two members
+    // is a direct message — `direct` is a headcount — so everything said in the room the
+    // person lands in addresses the bot and it answers without stage 1 being asked. Nobody
+    // else is in it: a first launch puts no stranger in anybody's organization (host,
+    // 2026-10-27).
     const members = Object.values(store.data.memberships).filter(
       (row) => row.room_id === scene.room,
     );
-    assert.equal(members.length, 3);
-    assert.notEqual(scene.other, scene.me);
+    assert.equal(members.length, 2);
+    assert.equal(store.data.principals[scene.me]?.kind, 'human');
     assert.equal(
       members.find((row) => row.principal_id === scene.me)?.role,
       'owner',
