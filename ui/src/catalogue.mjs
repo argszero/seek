@@ -33,6 +33,18 @@ let sizes = null
 let lists = null
 
 /**
+ * The two halves of a *narrow* instant: a clock for something that happened today, and a day
+ * for anything older. Bound by the same call; `null` until a catalogue arrives.
+ *
+ * The client's conversation list writes today's conversations as `10:23` and older ones as a
+ * date, and neither form is a word: `Intl` writes both, so a language added by writing a file
+ * needs nothing here. That is also why "yesterday" is not one of the shapes — it is a
+ * translated word with plural forms behind it (§4), and no catalogue entry for it exists.
+ */
+let clocks = null
+let days = null
+
+/**
  * Bind this window to one catalogue.
  *
  * Called once, with what `seek:catalogue` answered. The words are the same for every render
@@ -68,6 +80,10 @@ export function bindCatalogue(catalogue) {
     hour: '2-digit',
     minute: '2-digit',
   })
+  // The narrow forms, for a list of conversations rather than for one message's own header:
+  // the client writes a time for today and a date for anything older, and never both.
+  clocks = new Intl.DateTimeFormat(catalogue.locale, { hour: '2-digit', minute: '2-digit' })
+  days = new Intl.DateTimeFormat(catalogue.locale, { month: 'short', day: 'numeric' })
   // A list is the same kind of fact as a count, and §4 names the shape it takes when it is not:
   // `"A, B and C"` — the conjunction differs, so a `; ` or a `.join(', ')` at a call site is this
   // file's subject in the form that reads correctly in English and nowhere else. The kernel has
@@ -162,6 +178,33 @@ export function when(iso) {
   const at = new Date(iso)
   if (Number.isNaN(at.getTime())) return ''
   return stamps.format(at)
+}
+
+/**
+ * The same instant as `when()`, in the narrow form a list of conversations uses: a clock when
+ * it happened on the day the window is being read, a date when it did not.
+ *
+ * "Today" is decided by the local calendar, which is why it is compared field by field rather
+ * than by subtracting hours: a conversation at 00:30 and one at 23:30 belong to different days
+ * and the same 24 hours. A stamp that cannot be read draws nothing, for the reason `when()`
+ * gives — an unreadable instant is not a time to invent.
+ */
+export function whenShort(iso) {
+  if (clocks === null || days === null) {
+    throw new Error(
+      'no catalogue is bound yet, so an instant has no form — the window draws nothing ' +
+        'until seek:catalogue has answered',
+    )
+  }
+  if (typeof iso !== 'string' || iso === '') return ''
+  const at = new Date(iso)
+  if (Number.isNaN(at.getTime())) return ''
+  const now = new Date()
+  const sameDay =
+    at.getFullYear() === now.getFullYear() &&
+    at.getMonth() === now.getMonth() &&
+    at.getDate() === now.getDate()
+  return sameDay ? clocks.format(at) : days.format(at)
 }
 
 /**

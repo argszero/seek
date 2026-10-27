@@ -37,11 +37,37 @@ export const RAIL = [
 export const RAIL_TAIL = { view: 'settings', icon: 'settings', label: 'ui.settings.title' }
 
 /**
- * The two sizes `renderRail()` draws at: `icon(item.icon, 22)` for the four, `icon(…, 20)`
- * for the theme toggle and `icon('settings', 20)` for the last one.
+ * **16px, measured off the client itself** (2026-10-27), not the prototype's 22 and 20: the
+ * reference draws every rail glyph at 16, 11px in from the row's left edge, with the word
+ * starting 8px after it — which is why the row reads as a line of text with a mark beside it
+ * rather than as an icon strip with a caption.
  */
-export const NAV_ICON = 22
-export const TAIL_ICON = 20
+export const NAV_ICON = 16
+export const TAIL_ICON = 16
+
+/**
+ * What the add mark over the navigation offers: the three things this product can make, and
+ * **nothing else**.
+ *
+ * The client's own menu is longer — 创建群组, 添加企业成员, 添加外部联系人, 创建文档, 加入会议
+ * (measured 2026-10-27) — and the host cut it to the three this product actually has: what we
+ * cannot make is not a row. Each row names the view that makes the thing, so pressing it both
+ * *goes* there and opens that view's form; the icon is the glyph of the row you land on
+ * (`users` for groups, `contacts` for the bots list, `settings` for the organization panel),
+ * which is why no new picture was drawn for this menu.
+ *
+ * The client draws this panel in two groups with a line between them. These three are one kind
+ * of thing — make a room, make a bot, make a world — so there is no line: a divider here would
+ * be a boundary the rows do not have.
+ */
+export const ADD_MENU = [
+  { view: 'groups', icon: 'users', label: 'ui.rail.add-group' },
+  { view: 'contacts', icon: 'contacts', label: 'ui.rail.add-bot' },
+  { view: 'settings', icon: 'settings', label: 'ui.rail.add-organization' },
+]
+
+/** What the add mark itself says, for the hover title. */
+export const ADD_TITLE = 'ui.rail.add'
 
 /**
  * The two words the theme toggle wears, and they name the action rather than the state:

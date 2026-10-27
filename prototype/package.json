@@ -1,14 +1,20 @@
 {
-  "name": "seek",
+  "name": "seek-prototype",
   "productName": "Seek",
   "version": "0.1.0",
-  "description": "Seek — a local-only desktop messenger. No server, no account, no network.",
+  "description": "The demo harness: the same window the app ships, over invented data.",
   "main": "main.js",
   "private": true,
   "scripts": {
-    "start": "electron ."
+    "dev": "vite",
+    "build": "vite build",
+    "start": "npm run build && electron ."
   },
   "devDependencies": {
-    "electron": "^45.0.0"
+    "@vitejs/plugin-react": "^6.1.2",
+    "electron": "^45.0.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "vite": "^8.3.5"
   }
 }

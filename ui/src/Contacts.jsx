@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import { t } from './catalogue.mjs'
 
@@ -35,13 +35,21 @@ import { t } from './catalogue.mjs'
  * the rail all move with it; a bot is made from the list that holds bots, so that call is
  * here, beside its form.
  */
-export default function Contacts({ people, me, firstLaw, refusal, onMessage, onSnapshot }) {
+export default function Contacts({ people, me, firstLaw, refusal, onMessage, onSnapshot, ask, onAsked }) {
   const [query, setQuery] = useState('')
   const [openId, setOpenId] = useState(null)
 
   // The form's own state, because nothing outside this view draws it. `sending` is here too:
   // two presses on Add are one bot, and the second press is the one that makes a duplicate.
   const [making, setMaking] = useState(false)
+  // The rail's add mark can ask this view to open its form. The ask is cleared as it is taken,
+  // so it is one press for one form rather than a form that reopens every time somebody comes
+  // back to this view.
+  useEffect(() => {
+    if (!ask) return
+    setMaking(true)
+    onAsked()
+  }, [ask, onAsked])
   const [name, setName] = useState('')
   const [gender, setGender] = useState('')
   const [position, setPosition] = useState('')
