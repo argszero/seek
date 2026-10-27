@@ -26,6 +26,16 @@ import { roomToOpen } from './room-to-open.mjs'
 const TOKENS = new Intl.NumberFormat()
 
 /**
+ * The composer's marks, at the client's size.
+ *
+ * Measured off Feishu's own composer on 2026-10-27: every mark in the field's right-hand row is
+ * an **18px glyph inside a 26×26 hit area**, 4px apart, drawn in `--N600`. It is a constant
+ * rather than a literal per button because the three must agree — a send arrow at 20 beside two
+ * at 18 looks like the one that matters and is instead the one drawn wrong.
+ */
+const COMPOSER_ICON = 18
+
+/**
  * The hover toolbar's four glyphs, and the emoji its square picks from.
  *
  * The paths are not drawn here and not adapted from an icon set: each one is the pixel mask
@@ -157,6 +167,19 @@ export default function App() {
   const [addOpen, setAddOpen] = useState(false)
   const [ask, setAsk] = useState(null)
   const clearAsk = () => setAsk(null)
+
+  /**
+   * The organization being made, over whatever is on screen.
+   *
+   * `null` when there is nothing to make; an object once the form is open, carrying either the
+   * refusal the main process gave or the line that says the world now exists. It is not a view:
+   * the host's ruling on 2026-10-27 is that making an organization must not take the window
+   * anywhere (创建组织，不要跳转到 settings … 在当前窗口实现就行), which is why this is a form over
+   * the current view rather than a field at the foot of the settings page.
+   */
+  const [orgForm, setOrgForm] = useState(null)
+  const [orgName, setOrgName] = useState('')
+  const [orgBusy, setOrgBusy] = useState(false)
 
   // A menu nobody can dismiss is a trap, so the two ways out are wired while it is open: a
   // press anywhere outside it, and Escape. Both listeners live on `window` because the press
@@ -512,6 +535,38 @@ export default function App() {
     setAddOpen(false)
   }
 
+  /**
+   * One row of the add menu, whichever kind it is.
+   *
+   * A row that names a view goes there and asks that view for the form; the organization's row
+   * names no view, so it opens the form here. Splitting the two at the row rather than inside
+   * `addTo` keeps `addTo`'s promise — every row that calls it really does end up in a view with
+   * a form open — and keeps this file from special-casing one menu row by its destination.
+   */
+  function addRow(item) {
+    setAddOpen(false)
+    if (item.view) return addTo(item.view)
+    setOrgName('')
+    setOrgForm({})
+  }
+
+  /**
+   * Make the organization, and leave the window where it was.
+   *
+   * The new world is not opened: the host's rule for an organization that has just been made is
+   * that it is made, not entered (宿主：made — open it when you want to work in it), so the answer
+   * is a line saying so. Switching is on the settings page, where the list of worlds is.
+   */
+  async function createOrg() {
+    if (orgBusy) return
+    setOrgBusy(true)
+    const answer = await window.seekHost.createOrganization(orgName)
+    setOrgBusy(false)
+    if (!answer.ok) return setOrgForm({ error: answer.error })
+    setOrgName('')
+    setOrgForm({ note: t('ui.settings.organizations.made') })
+  }
+
   function startMaking() {
     setNewName('')
     setPicked((snap?.people ?? []).map((person) => person.id))
@@ -745,12 +800,12 @@ export default function App() {
           {addOpen && (
             <ul className="rail-menu" role="menu" data-menu="add">
               {ADD_MENU.map((item) => (
-                <li key={item.view}>
+                <li key={item.view ?? item.makes}>
                   <button
                     type="button"
                     role="menuitem"
-                    onClick={() => addTo(item.view)}
-                    data-add={item.view}
+                    onClick={() => addRow(item)}
+                    data-add={item.view ?? item.makes}
                   >
                     <Icon name={item.icon} size={16} />
                     <span>{t(item.label)}</span>
@@ -802,7 +857,7 @@ export default function App() {
       <Gutter pane="rail" />
 
       {view === 'settings' ? (
-        <Settings snapshot={snap} ask={ask === 'settings'} onAsked={clearAsk} />
+        <Settings snapshot={snap} />
       ) : view === 'contacts' ? (
         <Contacts
           people={snap.people ?? []}
@@ -1065,42 +1120,61 @@ export default function App() {
               }}
             >
               <Mentions members={active.members} mention={roomMention} />
-              <textarea
-                className="composer-input"
-                rows={1}
-                value={draft}
-                placeholder={t('ui.chat.message-hint', { room: active.name })}
-                onChange={(event) => setDraft(event.target.value)}
-                onKeyDown={(event) => keyDown(event, draft, undefined, roomMention)}
-              />
-              {/* The @ sits beside the picture for the same reason the picture does: it is a
-                  choice about the message, made before the words, and it survives an empty box
-                  — "hey" typed after naming Echo still addresses Echo. */}
-              <button
-                className="composer-mention"
-                type="button"
-                data-mention="open"
-                title={t('ui.chat.mention-hint')}
-                onClick={roomMention.toggleOpen}
-                disabled={sending}
-              >
-                @
-              </button>
-              {/* Beside the box rather than inside it: a picture is a separate choice
-                  from a caption, and the button works with the box empty — which is the
-                  whole point of sending a picture. */}
-              <button
-                className="composer-attach"
-                type="button"
-                title={t('ui.chat.attach')}
-                onClick={() => attachInto(undefined, roomMention)}
-                disabled={sending}
-              >
-                {t('ui.chat.picture')}
-              </button>
-              <button className="composer-send" type="submit" disabled={sending || draft.trim() === ''}>
-                {t('ui.chat.send')}
-              </button>
+              {/* **One box, and the three choices inside it.** Measured off the client on
+                  2026-10-27: a 48px rounded field with the editor on the left and the marks on
+                  the right — five 26×26 hit areas holding 18px glyphs, 4px apart, a 1px rule,
+                  then the send arrow. Ours used to be four bordered boxes side by side with the
+                  words "@", "Picture" and "Send" in them, which is not the client's shape and,
+                  for the last two, not even a shape a picture can be drawn in.
+                  The marks are the two the message can carry before it has words — a name it
+                  addresses and a picture it attaches — and nothing else: the client's `Aa`,
+                  `☺`, `⊕` and `⤢` are four things this product does not do yet. */}
+              <div className="composer-box">
+                <textarea
+                  className="composer-input"
+                  rows={1}
+                  value={draft}
+                  placeholder={t('ui.chat.message-hint', { room: active.name })}
+                  onChange={(event) => setDraft(event.target.value)}
+                  onKeyDown={(event) => keyDown(event, draft, undefined, roomMention)}
+                />
+                <div className="composer-tools">
+                  {/* The @ sits beside the picture for the same reason the picture does: it is
+                      a choice about the message, made before the words, and it survives an
+                      empty box — "hey" typed after naming Echo still addresses Echo. */}
+                  <button
+                    className="composer-tool"
+                    type="button"
+                    data-mention="open"
+                    title={t('ui.chat.mention-hint')}
+                    aria-expanded={roomMention.open}
+                    onClick={roomMention.toggleOpen}
+                    disabled={sending}
+                  >
+                    <Icon name="mention" size={COMPOSER_ICON} />
+                  </button>
+                  {/* A picture is a separate choice from a caption, and the button works with
+                      the box empty — which is the whole point of sending a picture. */}
+                  <button
+                    className="composer-tool"
+                    type="button"
+                    title={t('ui.chat.attach')}
+                    onClick={() => attachInto(undefined, roomMention)}
+                    disabled={sending}
+                  >
+                    <Icon name="picture" size={COMPOSER_ICON} />
+                  </button>
+                  <button
+                    className="composer-send"
+                    type="submit"
+                    title={t('ui.chat.send')}
+                    aria-label={t('ui.chat.send')}
+                    disabled={sending || draft.trim() === ''}
+                  >
+                    <Icon name="send" size={COMPOSER_ICON} />
+                  </button>
+                </div>
+              </div>
             </form>
           </>
         ) : (
@@ -1149,44 +1223,106 @@ export default function App() {
             }}
           >
             <Mentions members={active.members} mention={threadMention} />
-            <textarea
-              className="thread-composer-input"
-              rows={1}
-              value={threadDraft}
-              placeholder={t('ui.chat.reply-hint')}
-              onChange={(event) => setThreadDraft(event.target.value)}
-              onKeyDown={(event) => keyDown(event, threadDraft, openThread, threadMention)}
-            />
-            {/* A reply may name somebody too, and needs it more than a room message does: the
-                bot that wrote the message being answered is woken by the reply itself
-                (`repliesToMe`), but anybody else in the room has to be named to hear it. */}
-            <button
-              className="thread-mention"
-              type="button"
-              data-mention="open-thread"
-              title={t('ui.chat.reply-mention-hint')}
-              onClick={threadMention.toggleOpen}
-              disabled={sending}
-            >
-              @
-            </button>
-            <button
-              className="thread-attach"
-              type="button"
-              title={t('ui.chat.attach')}
-              onClick={() => attachInto(openThread, threadMention)}
-              disabled={sending}
-            >
-              {t('ui.chat.picture')}
-            </button>
-            <button className="thread-send" type="submit" disabled={sending || threadDraft.trim() === ''}>
-              {t('ui.chat.reply')}
-            </button>
+            {/* The same box as the room's, because it is the same kind of box: the thread is
+                narrower, not a different control. */}
+            <div className="composer-box">
+              <textarea
+                className="composer-input"
+                rows={1}
+                value={threadDraft}
+                placeholder={t('ui.chat.reply-hint')}
+                onChange={(event) => setThreadDraft(event.target.value)}
+                onKeyDown={(event) => keyDown(event, threadDraft, openThread, threadMention)}
+              />
+              <div className="composer-tools">
+                {/* A reply may name somebody too, and needs it more than a room message does:
+                    the bot that wrote the message being answered is woken by the reply itself
+                    (`repliesToMe`), but anybody else in the room has to be named to hear it. */}
+                <button
+                  className="composer-tool"
+                  type="button"
+                  data-mention="open-thread"
+                  title={t('ui.chat.reply-mention-hint')}
+                  aria-expanded={threadMention.open}
+                  onClick={threadMention.toggleOpen}
+                  disabled={sending}
+                >
+                  <Icon name="mention" size={COMPOSER_ICON} />
+                </button>
+                <button
+                  className="composer-tool"
+                  type="button"
+                  title={t('ui.chat.attach')}
+                  onClick={() => attachInto(openThread, threadMention)}
+                  disabled={sending}
+                >
+                  <Icon name="picture" size={COMPOSER_ICON} />
+                </button>
+                <button
+                  className="composer-send"
+                  type="submit"
+                  title={t('ui.chat.reply')}
+                  aria-label={t('ui.chat.reply')}
+                  disabled={sending || threadDraft.trim() === ''}
+                >
+                  <Icon name="send" size={COMPOSER_ICON} />
+                </button>
+              </div>
+            </div>
           </form>
           </aside>
         </>
       )}
         </>
+      )}
+
+      {/* **Making an organization, over the window rather than instead of it.**
+          One field and two buttons, because that is all an organization is: a name and a
+          directory of its own. It opens from the rail's add mark, which is in every view, so it
+          works from wherever the person is reading — and it leaves them there, which is the
+          whole point of it not being a page. A press outside or Escape closes it. */}
+      {orgForm && (
+        <div
+          className="dialog-mask"
+          data-org-form
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setOrgForm(null)
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') setOrgForm(null)
+          }}
+        >
+          <form
+            className="dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label={t('ui.rail.add-organization')}
+            onSubmit={(event) => {
+              event.preventDefault()
+              createOrg()
+            }}
+          >
+            <h3 className="dialog-title">{t('ui.rail.add-organization')}</h3>
+            <input
+              className="dialog-input"
+              value={orgName}
+              autoFocus
+              placeholder={t('ui.settings.organizations.name-hint')}
+              onChange={(event) => setOrgName(event.target.value)}
+              data-org-name
+            />
+            {orgForm.error && <p className="dialog-err" data-org-refused>{orgForm.error}</p>}
+            {orgForm.note && <p className="dialog-note" data-org-made>{orgForm.note}</p>}
+            <div className="dialog-actions">
+              <button className="btn" type="button" onClick={() => setOrgForm(null)}>
+                {t('ui.settings.cancel')}
+              </button>
+              <button className="btn primary" type="submit" disabled={orgBusy} data-org-save>
+                {t('ui.settings.create')}
+              </button>
+            </div>
+          </form>
+        </div>
       )}
     </div>
   )

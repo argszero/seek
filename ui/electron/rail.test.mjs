@@ -38,6 +38,7 @@ const ROOT = join(HERE, '..', '..')
 const read = (...parts) => readFileSync(join(ROOT, ...parts), 'utf8')
 
 const APP = read('ui', 'src', 'App.jsx')
+const SETTINGS = read('ui', 'src', 'Settings.jsx')
 const ICONS = read('ui', 'src', 'icons.jsx')
 const SHELL = read('ui', 'src', 'styles', 'shell.css')
 const TOKENS = read('ui', 'src', 'styles', 'tokens.css')
@@ -265,10 +266,18 @@ test('the add button offers the three things this product can make', () => {
   // are the three things the window can actually make, and nothing else.
   assert.equal(ADD_MENU.length, 3, 'three rows, because there are three things to make')
   assert.deepEqual(
-    ADD_MENU.map((one) => one.view),
-    ['groups', 'contacts', 'settings'],
-    'a group, a bot, an organization — each in the view that makes it',
+    ADD_MENU.map((one) => one.view ?? one.makes),
+    ['groups', 'contacts', 'organization'],
+    'a group, a bot, an organization',
   )
+  // **The organization's row does not name a view.** Two rows make their thing in a view and go
+  // there; the third makes a world and stays put (宿主, 2026-10-27: 创建组织，不要跳转到 settings，
+  // 和创建机器人一样，在当前窗口实现就行). A `view` on that row would put the settings page back in
+  // front of a person who only wanted to name a world.
+  assert.equal(ADD_MENU[0].view, 'groups', 'a group is made in the groups view')
+  assert.equal(ADD_MENU[1].view, 'contacts', 'a bot in the bots view')
+  assert.equal(ADD_MENU[2].view, undefined, 'and an organization is made where the person already is')
+  assert.equal(ADD_MENU[2].makes, 'organization', 'the row says what it makes instead of where it goes')
   assert.equal(new Set(ADD_MENU.map((one) => one.icon)).size, 3, 'no two rows draw the same glyph')
 
   const zhWords = catalogueFor('zh-CN').messages
@@ -294,6 +303,16 @@ test('the add button offers the three things this product can make', () => {
     /function addTo\(next\) \{\s*setView\(next\)\s*setAsk\(next\)\s*setAddOpen\(false\)/,
     'a row opens the form it promised, and closes the menu',
   )
+  // And the third row's half: a row with no view opens the form over the window instead, and
+  // that form is in `App.jsx` rather than in the settings page.
+  assert.match(
+    APP,
+    /function addRow\(item\) \{\s*setAddOpen\(false\)\s*if \(item\.view\) return addTo\(item\.view\)/,
+    'a row without a view opens the form where the person is, and closes the menu',
+  )
+  assert.match(APP, /window\.seekHost\.createOrganization\(/, 'and that form is the one that makes it')
+  assert.doesNotMatch(SETTINGS, /createOrganization/, 'the settings page no longer makes one')
+  assert.doesNotMatch(SETTINGS, /makingOrganization|data-organization-new/, 'nor draws the field for it')
   // A menu nobody can dismiss is a trap: a press outside it, and Escape.
   assert.match(
     APP,

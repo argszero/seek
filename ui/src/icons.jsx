@@ -61,6 +61,38 @@ const ICONS = {
       stroke="none"
     />,
   ],
+  /**
+   * The composer's three marks, transcribed out of the client's own toolbar on 2026-10-27 at
+   * 18px: the `@` it draws for a mention, the framed mountains it draws for a picture, and the
+   * solid arrow it sends with. Each is one `path`, filled for the same reason `add` is — these
+   * are the client's filled glyphs, not strokes this file invented, and an outline redrawn
+   * beside a filled original is a different picture.
+   *
+   * The arrow is the client's send button to the pixel (`21.696 13.354 …`), which is why it is
+   * not a paper plane of our own: before this the box had the word "Send" in it, and a word is
+   * the one thing the client's composer does not put there.
+   */
+  mention: [
+    <path
+      d="M18.75 16a3.622 3.622 0 0 1-2.637-1.156A5 5 0 1 1 17 12c0 1.105.784 2 1.75 2 1.512 0 1.776-2 1.776-2 .08-.548.138-.903.138-1.568C20.664 6.997 17.164 3 12 3s-8.98 3.836-8.98 9 3.816 9.01 8.98 9.01c1.807 0 3.487-.634 4.916-1.544a.823.823 0 0 1 .853-.028l.041.024.903.519a.41.41 0 0 1 .067.682A10.953 10.953 0 0 1 12 23C5.925 23 1 18.075 1 12S5.925 1 12 1s10.657 4.265 10.657 9.432c0 .256.014.522-.136 1.794C22.296 14.326 20.75 16 18.75 16ZM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"
+      fill="currentColor"
+      stroke="none"
+    />,
+  ],
+  picture: [
+    <path
+      d="m10.141 17.988-4.275-.01a.3.3 0 0 1-.212-.512l4.133-4.133a.4.4 0 0 1 .566 0l1.907 1.907 5.057-5.057a.4.4 0 0 1 .683.283V17.7a.3.3 0 0 1-.3.3h-7.476a.301.301 0 0 1-.083-.012ZM4 22c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h16c1.1 0 2 .9 2 2v16c0 1.1-.9 2-2 2H4Zm0-2h16V4H4v16ZM6 6h3v3H6V6Z"
+      fill="currentColor"
+      stroke="none"
+    />,
+  ],
+  send: [
+    <path
+      d="M21.696 13.354a1.541 1.541 0 0 0 0-2.707L3.762.937a1.515 1.515 0 0 0-1.512.03c-.469.28-.75.774-.75 1.323l1.979 7.728 8.413 1.232c.482 0 .871.335.871.75s-.39.75-.871.75a1932.6 1932.6 0 0 1-8.41 1.223L1.5 21.71c0 .548.281 1.043.75 1.324.469.279 1.034.29 1.512.03l17.934-9.71Z"
+      fill="currentColor"
+      stroke="none"
+    />,
+  ],
 }
 
 /**
