@@ -1248,6 +1248,15 @@ button.members:hover { border-color: var(--line-border-component); color: var(--
   color: var(--N900);
 }
 
+/* The settings page is cut into sections, and the cut is a hairline rather than a heading:
+   a heading alone was what the page already had when the model read as a property of the
+   organization above it. The first section keeps the pane's own top padding. */
+.settings-section + .settings-section {
+  margin-top: 28px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line-border-card);
+}
+
 .pane-desc {
   margin: 0 0 16px;
   font-size: var(--fs-caption);

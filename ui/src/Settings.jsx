@@ -214,237 +214,247 @@ export default function Settings({ snapshot, ask, onAsked }) {
       </header>
 
       <div className="pane">
-        <h3 className="pane-title">{t('ui.settings.organizations.title')}</h3>
-        <p className="pane-desc">{t('ui.settings.organizations.description')}</p>
+        {/* **Two sections, and the order is the point: the machine first, the organizations
+            after it.** A model is set once for this machine and every organization answers
+            with it (the host ruled so on 2026-10-27), so it must not read as a property of
+            the list below it — which is exactly what the previous order said: organizations
+            first, models under them, one heading apart and nothing between. Said twice and
+            still read the same way, so the layout says it instead of the sentence. */}
+        <div className="settings-section">
+          <h3 className="pane-title">{t('ui.settings.machine.title')}</h3>
+          <p className="pane-desc">{t('ui.settings.models.description')}</p>
 
-        <div className="card">
-          <div className="card-body">
-            <ul className="organization-list">
-              {organizations.map((organization) => (
-                <li key={organization.id} className="organization-row">
-                  {renamingId === organization.id ? (
-                    <>
-                      <input
-                        className="field-input"
-                        value={renameText}
-                        autoFocus
-                        onChange={(event) => setRenameText(event.target.value)}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter') saveRename(organization.id)
-                          if (event.key === 'Escape') setRenamingId(null)
-                        }}
-                        data-organization-rename-input={organization.id}
-                      />
-                      <button className="btn primary" onClick={() => saveRename(organization.id)}>
-                        {t('ui.settings.save')}
-                      </button>
-                      <button className="btn" onClick={() => setRenamingId(null)}>
-                        {t('ui.settings.cancel')}
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <span className="organization-av">{organization.name.slice(0, 1).toUpperCase()}</span>
-                      <span className="organization-name">{organization.name}</span>
-                      {organization.id === currentId ? (
-                        <span className="chip blue">{t('ui.settings.organizations.open')}</span>
-                      ) : (
-                        <button className="btn" onClick={() => switchTo(organization.id)} data-organization-switch={organization.id}>
-                          {t('ui.settings.organizations.switch')}
-                        </button>
-                      )}
-                      <button
-                        className="btn link"
-                        onClick={() => {
-                          setRenamingId(organization.id)
-                          setRenameText(organization.name)
-                        }}
-                        data-organization-rename={organization.id}
-                      >
-                        {t('ui.settings.organizations.rename')}
-                      </button>
-                      {organization.id === currentId ? null : (
-                        <button
-                          className="btn link"
-                          onClick={() => removeOrganization(organization)}
-                          data-organization-remove={organization.id}
-                        >
-                          {t('ui.settings.organizations.delete')}
-                        </button>
-                      )}
-                    </>
-                  )}
-                </li>
-              ))}
-            </ul>
-
-            {makingOrganization ? (
-              <div className="field-row" style={{ marginTop: 12 }}>
-                <input
-                  className="field-input"
-                  value={newOrganizationName}
-                  autoFocus
-                  placeholder={t('ui.settings.organizations.name-hint')}
-                  onChange={(event) => setNewOrganizationName(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') makeOrganization()
-                    if (event.key === 'Escape') setMakingOrganization(false)
-                  }}
-                  data-organization-new-input
-                />
-                <button className="btn primary" onClick={makeOrganization} data-organization-new-save>
-                  {t('ui.settings.create')}
-                </button>
-                <button className="btn" onClick={() => setMakingOrganization(false)}>
-                  {t('ui.settings.cancel')}
-                </button>
-              </div>
-            ) : (
-              <div className="field-actions">
-                <button
-                  className="btn"
-                  onClick={() => {
-                    setNewOrganizationName('')
-                    setMakingOrganization(true)
-                  }}
-                  data-organization-new
-                >
-                  {t('ui.settings.organizations.new')}
-                </button>
-                {organizationNote && <span className="card-sub" data-organization-note>{organizationNote}</span>}
-              </div>
-            )}
-          </div>
-        </div>
-
-        <h3 className="pane-title">{t('ui.settings.models.title')}</h3>
-        <p className="pane-desc">{t('ui.settings.models.description')}</p>
-
-        {/* ---- the half that writes ------------------------------------------------ */}
-        <div className="card">
-          <div className="card-body">
-            <div className="card-title">
-              {t('ui.settings.models.writes')}
-              <span className={`chip${tested === null ? '' : tested.ok ? ' blue' : ' bad'}`}>
-                {tested === null
-                  ? t('ui.settings.test.untested')
-                  : tested.ok
-                    ? t('ui.settings.test.reached')
-                    : t('ui.settings.test.not-reached')}
-              </span>
-            </div>
-            <p className="pane-desc card-sub">{t('ui.settings.models.writes-description')}</p>
-            {sourceLine(reading) && <p className="card-sub source">{sourceLine(reading)}</p>}
-            {reading.refusal && (
-              <p className="card-sub bad-text">{reading.refusal}</p>
-            )}
-
-            <label className="field">
-              <span className="field-label">{t('ui.settings.models.address')}</span>
-              <input
-                className="field-input"
-                value={baseUrl}
-                onChange={(event) => setBaseUrl(event.target.value)}
-                placeholder={t('ui.settings.models.address-hint')}
-                data-llm="base-url"
-              />
-            </label>
-
-            <label className="field">
-              <span className="field-label">{t('ui.settings.models.model')}</span>
-              <span className="field-row">
-                <input
-                  className="field-input"
-                  value={model}
-                  onChange={(event) => setModel(event.target.value)}
-                  placeholder={t('ui.settings.models.model-hint')}
-                  data-llm="model"
-                />
-                <button
-                  className="btn"
-                  onClick={askForModels}
-                  disabled={busy !== null}
-                  data-llm="models"
-                >
-                  {busy === 'models' ? t('ui.settings.models.listing') : t('ui.settings.models.list')}
-                </button>
-              </span>
-            </label>
-
-            <label className="field">
-              <span className="field-label">{t('ui.settings.models.api-key')}</span>
-              <input
-                className="field-input"
-                type="password"
-                value={apiKey}
-                onChange={(event) => setApiKey(event.target.value)}
-                placeholder={keyHint}
-                data-llm="key"
-              />
-              <span className="card-sub">
-                {t('ui.settings.models.key-note', { path: reading.settingsPath ?? 'settings.json' })}
-              </span>
-            </label>
-
-            <div className="field-actions">
-              <button className="btn primary" onClick={save} disabled={busy !== null} data-llm="save">
-                {busy === 'save' ? t('ui.settings.saving') : t('ui.settings.save')}
-              </button>
-              {note && <span className="card-sub" data-llm="note">{note}</span>}
-            </div>
-
-            {tested && !tested.ok && (
-              <div className="llm-error" data-llm="error">
-                <div className="llm-error-title">
-                  {tested.kind === 'name'
-                    ? t('ui.settings.models.error-name')
-                    : tested.kind === 'save'
-                      ? t('ui.settings.models.error-save')
-                      : t('ui.settings.models.error-http')}
-                </div>
-                <div className="llm-error-raw">
-                  {t('ui.settings.models.error-own-words', { words: tested.words })}
-                </div>
-                {tested.body && <div className="llm-error-raw">{tested.body}</div>}
-              </div>
-            )}
-            {tested?.ok && <p className="card-sub" data-llm="ok">{tested.words}</p>}
-          </div>
-        </div>
-
-        {/* ---- the half that decides ---------------------------------------------- */}
-        <div className="card">
-          <div className="card-body">
-            <div className="card-title">
-              {t('ui.settings.decides.title')}
-              <span className={`chip${snapshot?.stage1?.server ? ' blue' : ''}`}>
-                {snapshot?.stage1?.server
-                  ? t('ui.settings.decides.ready')
-                  : snapshot?.stage1?.refusal
-                    ? t('ui.settings.decides.not-in-use')
-                    : t('ui.settings.decides.not-started')}
-              </span>
-            </div>
-            <p className="pane-desc card-sub">{t('ui.settings.decides.description')}</p>
-            <div className="card-rows">
-              <div className="card-row">
-                <span className="k">{t('ui.settings.decides.running-at')}</span>
-                <span className="v mono">{snapshot?.stage1?.server ?? '—'}</span>
-              </div>
-              <div className="card-row">
-                <span className="k">{t('ui.settings.decides.weights')}</span>
-                <span className="v mono">
-                  {snapshot?.stage1?.pending ?? t('ui.settings.decides.downloaded')}
+          {/* ---- the half that writes ------------------------------------------------ */}
+          <div className="card">
+            <div className="card-body">
+              <div className="card-title">
+                {t('ui.settings.models.writes')}
+                <span className={`chip${tested === null ? '' : tested.ok ? ' blue' : ' bad'}`}>
+                  {tested === null
+                    ? t('ui.settings.test.untested')
+                    : tested.ok
+                      ? t('ui.settings.test.reached')
+                      : t('ui.settings.test.not-reached')}
                 </span>
               </div>
-              {snapshot?.stage1?.refusal && (
+              <p className="pane-desc card-sub">{t('ui.settings.models.writes-description')}</p>
+              {sourceLine(reading) && <p className="card-sub source">{sourceLine(reading)}</p>}
+              {reading.refusal && (
+                <p className="card-sub bad-text">{reading.refusal}</p>
+              )}
+
+              <label className="field">
+                <span className="field-label">{t('ui.settings.models.address')}</span>
+                <input
+                  className="field-input"
+                  value={baseUrl}
+                  onChange={(event) => setBaseUrl(event.target.value)}
+                  placeholder={t('ui.settings.models.address-hint')}
+                  data-llm="base-url"
+                />
+              </label>
+
+              <label className="field">
+                <span className="field-label">{t('ui.settings.models.model')}</span>
+                <span className="field-row">
+                  <input
+                    className="field-input"
+                    value={model}
+                    onChange={(event) => setModel(event.target.value)}
+                    placeholder={t('ui.settings.models.model-hint')}
+                    data-llm="model"
+                  />
+                  <button
+                    className="btn"
+                    onClick={askForModels}
+                    disabled={busy !== null}
+                    data-llm="models"
+                  >
+                    {busy === 'models' ? t('ui.settings.models.listing') : t('ui.settings.models.list')}
+                  </button>
+                </span>
+              </label>
+
+              <label className="field">
+                <span className="field-label">{t('ui.settings.models.api-key')}</span>
+                <input
+                  className="field-input"
+                  type="password"
+                  value={apiKey}
+                  onChange={(event) => setApiKey(event.target.value)}
+                  placeholder={keyHint}
+                  data-llm="key"
+                />
+                <span className="card-sub">
+                  {t('ui.settings.models.key-note', { path: reading.settingsPath ?? 'settings.json' })}
+                </span>
+              </label>
+
+              <div className="field-actions">
+                <button className="btn primary" onClick={save} disabled={busy !== null} data-llm="save">
+                  {busy === 'save' ? t('ui.settings.saving') : t('ui.settings.save')}
+                </button>
+                {note && <span className="card-sub" data-llm="note">{note}</span>}
+              </div>
+
+              {tested && !tested.ok && (
+                <div className="llm-error" data-llm="error">
+                  <div className="llm-error-title">
+                    {tested.kind === 'name'
+                      ? t('ui.settings.models.error-name')
+                      : tested.kind === 'save'
+                        ? t('ui.settings.models.error-save')
+                        : t('ui.settings.models.error-http')}
+                  </div>
+                  <div className="llm-error-raw">
+                    {t('ui.settings.models.error-own-words', { words: tested.words })}
+                  </div>
+                  {tested.body && <div className="llm-error-raw">{tested.body}</div>}
+                </div>
+              )}
+              {tested?.ok && <p className="card-sub" data-llm="ok">{tested.words}</p>}
+            </div>
+          </div>
+
+          {/* ---- the half that decides ---------------------------------------------- */}
+          <div className="card">
+            <div className="card-body">
+              <div className="card-title">
+                {t('ui.settings.decides.title')}
+                <span className={`chip${snapshot?.stage1?.server ? ' blue' : ''}`}>
+                  {snapshot?.stage1?.server
+                    ? t('ui.settings.decides.ready')
+                    : snapshot?.stage1?.refusal
+                      ? t('ui.settings.decides.not-in-use')
+                      : t('ui.settings.decides.not-started')}
+                </span>
+              </div>
+              <p className="pane-desc card-sub">{t('ui.settings.decides.description')}</p>
+              <div className="card-rows">
                 <div className="card-row">
-                  <span className="k">{t('ui.settings.decides.refused')}</span>
-                  <span className="v bad-text">{snapshot.stage1.refusal}</span>
+                  <span className="k">{t('ui.settings.decides.running-at')}</span>
+                  <span className="v mono">{snapshot?.stage1?.server ?? '—'}</span>
+                </div>
+                <div className="card-row">
+                  <span className="k">{t('ui.settings.decides.weights')}</span>
+                  <span className="v mono">
+                    {snapshot?.stage1?.pending ?? t('ui.settings.decides.downloaded')}
+                  </span>
+                </div>
+                {snapshot?.stage1?.refusal && (
+                  <div className="card-row">
+                    <span className="k">{t('ui.settings.decides.refused')}</span>
+                    <span className="v bad-text">{snapshot.stage1.refusal}</span>
+                  </div>
+                )}
+              </div>
+              <p className="card-sub">{t('ui.settings.decides.nothing-to-configure')}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="settings-section">
+          <h3 className="pane-title">{t('ui.settings.organizations.title')}</h3>
+          <p className="pane-desc">{t('ui.settings.organizations.description')}</p>
+
+          <div className="card">
+            <div className="card-body">
+              <ul className="organization-list">
+                {organizations.map((organization) => (
+                  <li key={organization.id} className="organization-row">
+                    {renamingId === organization.id ? (
+                      <>
+                        <input
+                          className="field-input"
+                          value={renameText}
+                          autoFocus
+                          onChange={(event) => setRenameText(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') saveRename(organization.id)
+                            if (event.key === 'Escape') setRenamingId(null)
+                          }}
+                          data-organization-rename-input={organization.id}
+                        />
+                        <button className="btn primary" onClick={() => saveRename(organization.id)}>
+                          {t('ui.settings.save')}
+                        </button>
+                        <button className="btn" onClick={() => setRenamingId(null)}>
+                          {t('ui.settings.cancel')}
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <span className="organization-av">{organization.name.slice(0, 1).toUpperCase()}</span>
+                        <span className="organization-name">{organization.name}</span>
+                        {organization.id === currentId ? (
+                          <span className="chip blue">{t('ui.settings.organizations.open')}</span>
+                        ) : (
+                          <button className="btn" onClick={() => switchTo(organization.id)} data-organization-switch={organization.id}>
+                            {t('ui.settings.organizations.switch')}
+                          </button>
+                        )}
+                        <button
+                          className="btn link"
+                          onClick={() => {
+                            setRenamingId(organization.id)
+                            setRenameText(organization.name)
+                          }}
+                          data-organization-rename={organization.id}
+                        >
+                          {t('ui.settings.organizations.rename')}
+                        </button>
+                        {organization.id === currentId ? null : (
+                          <button
+                            className="btn link"
+                            onClick={() => removeOrganization(organization)}
+                            data-organization-remove={organization.id}
+                          >
+                            {t('ui.settings.organizations.delete')}
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </li>
+                ))}
+              </ul>
+
+              {makingOrganization ? (
+                <div className="field-row" style={{ marginTop: 12 }}>
+                  <input
+                    className="field-input"
+                    value={newOrganizationName}
+                    autoFocus
+                    placeholder={t('ui.settings.organizations.name-hint')}
+                    onChange={(event) => setNewOrganizationName(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') makeOrganization()
+                      if (event.key === 'Escape') setMakingOrganization(false)
+                    }}
+                    data-organization-new-input
+                  />
+                  <button className="btn primary" onClick={makeOrganization} data-organization-new-save>
+                    {t('ui.settings.create')}
+                  </button>
+                  <button className="btn" onClick={() => setMakingOrganization(false)}>
+                    {t('ui.settings.cancel')}
+                  </button>
+                </div>
+              ) : (
+                <div className="field-actions">
+                  <button
+                    className="btn"
+                    onClick={() => {
+                      setNewOrganizationName('')
+                      setMakingOrganization(true)
+                    }}
+                    data-organization-new
+                  >
+                    {t('ui.settings.organizations.new')}
+                  </button>
+                  {organizationNote && <span className="card-sub" data-organization-note>{organizationNote}</span>}
                 </div>
               )}
             </div>
-            <p className="card-sub">{t('ui.settings.decides.nothing-to-configure')}</p>
           </div>
         </div>
       </div>
