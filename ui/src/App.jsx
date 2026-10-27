@@ -18,6 +18,7 @@ import {
   THEME_TO_DARK,
   THEME_TO_LIGHT,
 } from './rail.mjs'
+import { peopleInRoom } from './people-in-room.mjs'
 import { roomToOpen } from './room-to-open.mjs'
 /**
  * Tokens are counts, so they are drawn by `Intl.NumberFormat` rather than by string
@@ -443,6 +444,11 @@ export default function App() {
 
   const active = snap?.rooms.find((room) => room.id === activeId) ?? null
   const messages = active?.messages ?? []
+
+  // Who the room's people panel lists: its own members, then whoever else the store offers to
+  // be put in it (`people-in-room.mjs` — the two are different lists, and a member the store
+  // no longer offers still needs a row to be taken out by).
+  const roomPeople = peopleInRoom(active, snap?.people ?? [])
 
   // The thread, as the kernel groups it: every message whose chain is that root, the
   // root among them, in the order the store wrote them. A message whose `chain` is its
@@ -1480,7 +1486,7 @@ export default function App() {
                   </div>
                 )}
                 <ul className="people-list">
-                  {(snap.people ?? []).map((person) => {
+                  {roomPeople.map((person) => {
                     // `inside` compares two facts the snapshot carries — who this room holds,
                     // and who the store knows. It decides what to draw, never who may join:
                     // the Add button goes to the kernel, which refuses in its own sentence.

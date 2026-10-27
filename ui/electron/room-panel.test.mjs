@@ -155,7 +155,11 @@ test('the panel draws the room’s own facts, and a removed bot is in no list of
   // bot, and the map that still names one. Filtered on the stamp and never on a flag beside it.
   assert.match(SNAPSHOT, /const stamped = new Set\(/)
   assert.match(SNAPSHOT, /\.filter\(\(bot\) => bot\.deleted_at !== undefined\)/)
-  assert.match(SNAPSHOT, /return people\.filter\(\(one\) => !stamped\.has\(one\.id\)\)/)
+  assert.match(
+    SNAPSHOT,
+    /return people\.filter\(\(one\) => !stamped\.has\(one\.id\) && \(one\.bot \|\| one\.id === me\)\)/,
+    'a deleted bot is not offered, and neither is a person this organization does not have',
+  )
   assert.match(SNAPSHOT, /function namedOf\(store\)/)
   assert.match(SNAPSHOT, /named: namedOf\(store\)/)
   // And the window looks a line's sender up there, with the room's own row layered over it —
