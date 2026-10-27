@@ -52,20 +52,26 @@ export interface Bot {
   position?: string;
   personality?: string;
   /**
-   * When this bot was taken out of the organization, or absent while it is in it.
+   * When this bot was deleted, or absent while it stands.
    *
    * **A stamp, not a deletion**, and the difference is the whole point: a bot that
    * has spoken is named by every message it wrote (`Message.sender_id`), so erasing
    * the row would leave a room full of messages by somebody the store cannot name.
-   * Taking it out therefore removes its **memberships** — it is in no room, wakes
-   * nobody, and appears in no list of who could be added — and leaves the row here
-   * to keep the history readable.
+   * Deleting it therefore removes its **memberships** — it is in no room, wakes
+   * nobody, and appears in no list of who the organization has — and leaves the row
+   * here to keep the history readable.
    *
-   * It is one moment in time and not a `removed: true` flag for the reason every
+   * The name is `deleted_at` and not a word of its own, because a bot lives in one
+   * organization (one store, one directory) and so there is no elsewhere to be taken
+   * out to: the host ruled that on 2026-10-27 (机器人并不是跨组织存在的). Rows written
+   * while the window said 移出 carry `removed_at` instead, and `deletedAtOf()`
+   * (`src/bots.ts`) is the one place that reads both.
+   *
+   * It is one moment in time and not a `deleted: true` flag for the reason every
    * other stamp in this file is: "when" answers both "is it gone" and "since when"
    * with one fact, and a boolean plus a stamp is two facts that can disagree.
    */
-  removed_at?: string;
+  deleted_at?: string;
 }
 
 /**
@@ -352,7 +358,7 @@ export interface Message {
    *
    * A stamp and not a hole in the room's log, for the reason the record's own
    * docstring gives: everything that names this id keeps resolving. A stamp and
-   * not a `deleted: true` flag, for the reason `Bot.removed_at` is a stamp —
+   * not a `deleted: true` flag, for the reason `Bot.deleted_at` is a stamp —
    * "when" answers both "is it gone" and "since when" with one fact, and a
    * boolean beside a stamp is two facts that can disagree.
    *

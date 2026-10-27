@@ -380,9 +380,9 @@ const CLAIMS = {
     en: /`Leave` in a room's own panel does/,
     zh: /`Leave` ?也是它/,
   },
-  'seek:remove-bot': {
-    en: /`Take out` stamps it and removes every membership it held/,
-    zh: /`Take out` ?给它盖上戳、把它所有的成员行删掉/,
+  'seek:delete-bot': {
+    en: /`Delete this bot` stamps it and removes every membership it held/,
+    zh: /`删除这个机器人` ?给它盖上戳、把它所有的成员行删掉/,
   },
   // The rail's theme toggle. It writes no store — the palette is a line in `settings.json`
   // beside the endpoint — so the derivation from `seek:changed` cannot see it either. It is

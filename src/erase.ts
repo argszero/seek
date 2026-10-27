@@ -3,7 +3,7 @@
  *
  * The host asked for all four of the window's things to be deletable — a message, a group, a
  * bot, a topic (2026-10-27, 消息、群、机器人、话题都应该支持删除). A bot already had its verb
- * (`removeBot`, `src/bots.ts`); this file is the other three.
+ * (`deleteBot`, `src/bots.ts`); this file is the other three.
  *
  * **What a deletion is: a stamp, and the words gone.** The row stays and the content does not,
  * and the two halves answer two different questions:
@@ -12,7 +12,7 @@
  *   `message_id` it delivers, a reply carries `root_id` and `chain`, a `Turn` names the message
  *   that woke it, and a `quoted` snapshot names the message it answers. Erasing the row would
  *   leave every one of those pointing at an id the store has never heard of — the state
- *   `Bot.removed_at` refuses from the other end ("deleting it would leave every message it wrote
+ *   `Bot.deleted_at` refuses from the other end ("deleting it would leave every message it wrote
  *   naming a principal the store has never heard of"). A stamped row keeps every reference
  *   resolvable and every list shippable.
  * - **The content goes because that is what the person asked for.** A delete that leaves the
@@ -138,7 +138,7 @@ export interface DeleteMessageInput {
 /**
  * Delete one message: its words go, its row stays, its deliveries stop.
  *
- * A message deleted twice is refused rather than re-stamped, for the reason `removeBot` gives —
+ * A message deleted twice is refused rather than re-stamped, for the reason `deleteBot` gives —
  * a second stamp would move the moment it happened, and the moment is the whole fact.
  */
 export function deleteMessage(store: SeekStore, input: DeleteMessageInput): Erased {

@@ -59,8 +59,10 @@ export default function Contacts({ people, me, firstLaw, refusal, onMessage, onS
   const [sending, setSending] = useState(false)
   const [stopped, setStopped] = useState(null)
   const [note, setNote] = useState(null)
-  // Taking a bot out of the organization: one call in flight, and the kernel's own sentence
-  // when it refuses (the one refusal a person can hit is a bot alone in a room).
+  // Deleting a bot: the card is the question, `removing` is one call in flight, and `removal`
+  // is the kernel's own sentence when it refuses (the one refusal a person can hit is a bot
+  // alone in a room).
+  const [asking, setAsking] = useState(null)
   const [removing, setRemoving] = useState(false)
   const [removal, setRemoval] = useState(null)
 
@@ -87,25 +89,32 @@ export default function Contacts({ people, me, firstLaw, refusal, onMessage, onS
   }
 
   /**
-   * Take one bot out of this organization.
+   * Delete one bot from this organization.
    *
-   * **The prototype's 移出这个组织, and it is the bot's own write** — `removeBot()` stamps the bot
-   * and removes every membership it held (`src/bots.ts`), and the row stays so the messages it
-   * wrote still name somebody. Nothing here re-checks any of that; the card closes because the
-   * bot it was about is no longer in the list it came from.
+   * **It asks first, like the three deletions in the chat view.** The rule those three follow is
+   * that nothing in this window can undo a deletion, so it is asked for in a card rather than
+   * written on one press; a bot was the one that did not ask, and it is the one whose row stays
+   * out of reach afterwards. The ask is `setAsking`, and this function is the answer.
+   *
+   * **`deleteBot()` is the bot's own write** — it stamps the bot and removes every membership it
+   * held (`src/bots.ts`), and the row stays so the messages it wrote still name somebody.
+   * Nothing here re-checks any of that; the card closes because the bot it was about is no
+   * longer in the list it came from, `people` being who the organization has.
    */
-  async function takeOut(person) {
-    if (removing) return
+  async function deleteNow() {
+    if (!asking || removing) return
+    const person = asking
     setRemoving(true)
     setRemoval(null)
     setNote(null)
     try {
-      const outcome = await window.seekHost.removeBot({ botId: person.id })
+      const outcome = await window.seekHost.deleteBot({ botId: person.id })
       if (!outcome.ok) {
         setRemoval(outcome.error)
         return
       }
       onSnapshot(outcome.snapshot)
+      setAsking(null)
       setOpenId(null)
     } catch (failure) {
       setRemoval(failure instanceof Error ? failure.message : String(failure))
@@ -183,14 +192,6 @@ export default function Contacts({ people, me, firstLaw, refusal, onMessage, onS
         {refusal && (
           <div className="composer-err" data-contacts="refused">
             {refusal}
-          </div>
-        )}
-        {/* A bot that may not be taken out is a refusal about the card on the right, and the
-            card has just closed — so it is drawn here, beside the list the bot came from, in
-            the kernel's own sentence. */}
-        {removal && (
-          <div className="composer-err" data-contacts="removal-refused">
-            {removal}
           </div>
         )}
         {making && (
@@ -288,6 +289,30 @@ export default function Contacts({ people, me, firstLaw, refusal, onMessage, onS
           </Dialog>
         )}
 
+        {/* **The one question this screen's deletion asks.** The title is the button that opened
+            it, so the card says what it is about to do rather than "are you sure", and the line
+            under it says what goes with it: the memberships, and nothing else — the messages it
+            wrote stay as they are, still naming it. The kernel's own sentence lands here too. */}
+        {asking && (
+          <Dialog
+            name="delete"
+            title={t('ui.contacts.delete')}
+            submit={t('ui.contacts.delete')}
+            cancel={t('ui.chat.cancel')}
+            busy={removing}
+            onSubmit={deleteNow}
+            onClose={() => {
+              setAsking(null)
+              setRemoval(null)
+            }}
+          >
+            <p className="dialog-note">
+              {t('ui.contacts.delete-ask', { name: asking.name })}
+            </p>
+            {removal && <p className="dialog-err">{removal}</p>}
+          </Dialog>
+        )}
+
         <ul className="conv-list">
           {listed.map((person) => {
             const under = lineUnder(person)
@@ -334,7 +359,7 @@ export default function Contacts({ people, me, firstLaw, refusal, onMessage, onS
             person={open}
             firstLaw={firstLaw}
             onMessage={onMessage}
-            onRemove={takeOut}
+            onRemove={setAsking}
             removing={removing}
           />
         ) : (
@@ -363,7 +388,7 @@ function lineUnder(person) {
 }
 
 /** One person's card: what the store holds about them, and the way into a conversation. */
-function ContactCard({ person, firstLaw, onMessage, onRemove, removing }) {
+function ContactCard({ person, firstLaw, onMessage, onRemove }) {
   return (
     <div className="pane" data-contact-card={person.id}>
       <h2 className="pane-title">{person.name}</h2>
@@ -419,18 +444,15 @@ function ContactCard({ person, firstLaw, onMessage, onRemove, removing }) {
         >
           {t('ui.contacts.message')}
         </button>
-        {/* **The prototype's 移出这个组织**, and only on a bot's card: a person is the one this
-            organization *is*, and taking them out is not a thing this product offers. It is a
-            second button rather than a menu item because it is the one other thing a card is
-            for, and it is on the danger side of the pair where the prototype puts it. */}
+        {/* **Delete this bot**, and only on a bot's card: a person is the one this organization
+            *is*, and deleting them is not a thing this product offers. **The verb is delete and
+            not 移出**: a bot lives in exactly one organization — one store, one directory — so
+            there is no elsewhere to take it out to (host, 2026-10-27: 机器人并不是跨组织存在的).
+            It is a second button rather than a menu item because it is the one other thing a
+            card is for, and it is on the danger side of the pair. */}
         {person.bot && (
-          <button
-            className="btn danger"
-            data-contact-remove={person.id}
-            disabled={removing}
-            onClick={() => onRemove(person)}
-          >
-            {t('ui.contacts.take-out')}
+          <button className="btn danger" data-contact-delete={person.id} onClick={() => onRemove(person)}>
+            {t('ui.contacts.delete')}
           </button>
         )}
       </div>

@@ -170,14 +170,15 @@ function stageTwoOf(stage2) {
  * person's cursor while they are choosing.
  */
 function everyoneOf(store) {
-  // **A bot taken out of the organization is still someone this store named.** Its row stays
-  // because every message it wrote points at it (`Bot.removed_at`), so the two answers below
-  // read one list and differ in the one place that matters: who may be *offered*, and who may
-  // still be *named*. Filtered on the stamp and not on a flag beside it, for the reason
-  // `removed_at` is a stamp.
+  // **A bot deleted from the organization is still someone this store named.** Its row stays
+  // because every message it wrote points at it (`Bot.deleted_at`), so the two answers below
+  // read one list and differ in the one place that matters: who this organization *has*, and
+  // who may still be *named*. Filtered on the stamp and not on a flag beside it, for the reason
+  // `deleted_at` is a stamp. One name is read here rather than two because `openHost` adopts
+  // the earlier spelling of it when the store is opened (`adoptBotDeletions`, `src/bots.ts`).
   const stamped = new Set(
     Object.values(store.data.bots)
-      .filter((bot) => bot.removed_at !== undefined)
+      .filter((bot) => bot.deleted_at !== undefined)
       .map((bot) => bot.id),
   )
   const people = [...Object.values(store.data.principals), ...Object.values(store.data.bots)].map((who) => {
@@ -202,7 +203,7 @@ function everyoneOf(store) {
 }
 
 /**
- * Who may be put in a room: everyone the store holds except a bot that has been taken out.
+ * Who may be put in a room: everyone the store holds except a bot that has been deleted.
  *
  * The list must not *offer* such a bot — nothing may be sent to it and it may not be added —
  * while the history it left may still *name* it. That is the whole difference between this
@@ -214,7 +215,7 @@ function peopleOf(store) {
 }
 
 /**
- * Everyone the store has ever named, by id — the stamped bots included.
+ * Everyone the store has ever named, by id — the deleted bots included.
  *
  * **This is what a message's author is looked up in.** A line whose sender has left the room or
  * the organization is still a line somebody wrote, and the window used to fall back to the raw

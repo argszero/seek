@@ -33,7 +33,7 @@ const {
   openHostOrRefuse,
   postMessage,
   reactToMessage,
-  removeBot,
+  deleteBot,
   removeMember,
   updateRoom,
 } = require('./host.js')
@@ -643,14 +643,14 @@ ipcMain.handle('seek:remove-member', async (_event, input) => {
 })
 
 /**
- * Take a bot out of the organization.
+ * Delete a bot from the organization.
  *
  * `rooms` rides back for the same reason `botId` does on the way in: which rooms a bot was in
  * is not derivable from the snapshot that follows — it has already left them.
  */
-ipcMain.handle('seek:remove-bot', async (_event, input) => {
+ipcMain.handle('seek:delete-bot', async (_event, input) => {
   try {
-    const gone = await removeBot(host, input ?? {})
+    const gone = await deleteBot(host, input ?? {})
     if (win && !win.isDestroyed()) win.webContents.send('seek:changed', gone.snapshot)
     return { ok: true, snapshot: gone.snapshot, botId: gone.botId, rooms: gone.rooms }
   } catch (error) {
