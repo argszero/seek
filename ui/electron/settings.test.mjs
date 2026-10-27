@@ -20,16 +20,28 @@
  * rather than after, and the write goes through a temporary file, because a launch that reads
  * mid-save must see one whole version of the file and never half of either.
  *
+ * **The file belongs to the machine, not to an organization.** The host ruled it
+ * (2026-10-27): a model is set once, and every organization answers with it — so
+ * `settings.json` sits at the app-data root, beside `seek-data/` rather than inside one of its
+ * directories, and nothing here may take an organization as an argument. The last test below is
+ * that rule: it holds the one path against the many an organization has, and reads `main.js` to
+ * see that switching reassigns the store path and never the settings one.
+ *
  * Every fixture is a directory this test makes, so nothing here reads the machine it runs on —
  * the real file belongs to whoever is sitting at it.
  */
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
+import { layoutOf } from './organizations.js'
 import { defaultSettingsPath, llmOf, readSettings, writeSettings } from './settings.js'
+
+const HERE = import.meta.dirname
+const MAIN = await readFile(join(HERE, 'main.js'), 'utf8')
 
 /** A directory to hold this test's file, removed by the caller. */
 async function scratch() {
@@ -179,5 +191,55 @@ test('a first save makes the directory it needs', async () => {
     assert.equal(written.llm.model, 'm')
   } finally {
     await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('the model belongs to the machine, and an organization cannot have its own', async () => {
+  // The host's ruling, 2026-10-27: *the model is global — there is no need to set one per
+  // organization.* Written down as a test because the opposite is one plausible refactor away:
+  // an organization is already a directory, so putting `settings.json` inside it would look
+  // tidy and would silently make every organization speak with a different endpoint.
+  const userData = '/Users/someone/Library/Application Support/Seek'
+  const settings = defaultSettingsPath(userData)
+
+  // One file for the app, and it is not under the directory that holds one world per
+  // organization: `seek-data/` is the collections, `settings.json` sits beside it.
+  assert.equal(settings, join(userData, 'settings.json'), 'the settings file is one, at the app-data root')
+  assert.equal(settings.startsWith(join(userData, 'seek-data') + '/'), false, 'and not inside seek-data')
+
+  // Two organizations, two stores, and the same one settings file — the asymmetry the ruling
+  // asks for, measured rather than asserted about the prose.
+  const layout = layoutOf(join(userData, 'seek-data'))
+  const first = layout.storePath('org-one')
+  const second = layout.storePath('org-two')
+  assert.notEqual(first, second, 'each organization keeps its own store')
+  assert.notEqual(first, settings, 'and the store is not the settings file')
+  assert.notEqual(second, settings, 'for either of them')
+
+  // Why a file is the wrong home for an organization's preferences: `defaultSettingsPath` takes
+  // the app-data directory and nothing else. A per-organization model would have to be a
+  // function of the organization, so the signature is the claim.
+  assert.equal(defaultSettingsPath.length, 1, 'the path is a function of the app-data directory alone')
+  for (const absent of ['organization', 'Organization']) {
+    assert.equal(readFileSync(join(HERE, 'settings.js'), 'utf8').includes(absent), false,
+      `settings.js knows nothing of an ${absent} — no per-organization entry, no per-organization path`)
+  }
+
+  // And the main process keeps the two apart: the settings path is decided once at start-up and
+  // never moved, while the store path is a `let` that opening an organization reassigns.
+  assert.match(MAIN, /const SETTINGS_FILE = [^\n]*defaultSettingsPath\(app\.getPath\('userData'\)\)/,
+    'the settings path is a constant, computed once from the app-data directory')
+  assert.equal((MAIN.match(/SETTINGS_FILE =/g) ?? []).length, 1,
+    'and never reassigned — a second assignment would be a per-organization model')
+  assert.match(MAIN, /let STORE_FILE = null/, 'the store path is not a constant')
+  assert.match(MAIN, /STORE_FILE = layoutOf\(DATA_DIR\)\.storePath\(id\)/,
+    'because opening an organization moves it, and only it')
+
+  // Every read and write of that file in the main process goes through the one path: a handler
+  // that built its own would be an organization's model by another name.
+  const paths = [...MAIN.matchAll(/(readSettings|writeSettings)\(([^)]*)/g)].map(([, , args]) => args.split(',')[0].trim())
+  assert.ok(paths.length >= 4, 'the main process reads and writes settings in several places')
+  for (const path of paths) {
+    assert.equal(path, 'SETTINGS_FILE', `every read and write names the one file, not ${path}`)
   }
 })
