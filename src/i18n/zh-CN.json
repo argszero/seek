@@ -172,7 +172,7 @@
     "ui.settings.organizations.deleted": "已移到废纸篓",
     "ui.settings.organizations.delete-question": "删除“{name}”连同它的目录？房间、消息、图片与名册都会一起走。",
     "ui.settings.models.title": "模型",
-    "ui.settings.models.description": "Seek 问两个模型两个不同的问题。一个判断一条消息值不值得回，另一个把回答写出来。前一个是应用自带的，不可配置；后一个是你的。",
+    "ui.settings.models.description": "Seek 问两个模型两个不同的问题。一个判断一条消息值不值得回，另一个把回答写出来。前一个是应用自带的，不可配置；后一个是你的。 它在这台机器上只设一次：每个组织都用同一个。",
     "ui.settings.models.writes": "写出字的那半",
     "ui.settings.models.writes-description": "远程 · 一个 OpenAI 兼容的端点。在下面保存，这半从下一个回合起就用它。",
     "ui.settings.models.address": "地址",
