@@ -89,8 +89,8 @@ function asked() {
   for (const name of readdirSync(RENDERER)) {
     if (!name.endsWith('.jsx') && !name.endsWith('.mjs')) continue
     const source = readFileSync(join(RENDERER, name), 'utf8')
-    // The class carries `0-9` because a key may: `ui.chat.stage1-asks` is a lookup this scan
-    // used to walk past in silence, so ten keys were shipped, drawn and compared by nothing.
+    // The class carries `0-9` because a key may: `ui.chat.stage1-placeholder` is a lookup this
+    // scan used to walk past in silence, so ten keys were shipped, drawn and compared by nothing.
     for (const [, key] of source.matchAll(/\bt\(\s*'(ui\.[a-zA-Z0-9.-]+)'/g)) keys.add(key)
   }
   return [...keys].sort()
@@ -528,6 +528,11 @@ test('the chat page says nothing a catalogue did not say', () => {
   // page made entirely of those would pass the two assertions with English still on screen. This
   // is the third shape, and it is here because it was measured on the page that had it rather
   // than imagined (issue #123).
+  //
+  // The third of those three is gone as of 2026-10-27 — the host asked why a user is shown
+  // `stage 1 asks <origin>` at all, and a working stage now draws nothing. The shape stays even
+  // though all three are now lookups, because it was measured here and the next one would land
+  // the same way.
   const WORDS = /^[A-Za-z0-9][A-Za-z0-9\s'’,.:;&-]*$/
   const interpolated = [...source.matchAll(/>([^<>{}]*)\{/g)]
     .map((match) => match[1])
@@ -710,4 +715,39 @@ test('the catalogue the window is handed is the one the kernel prints its report
   )
   // The kernel's own report keys travel with it: one file, two surfaces.
   assert.ok(asked.messages['report.title'] !== undefined, 'the report keys are in the same catalogue')
+})
+
+test('a working stage is not news: nothing on the page names the server it asks', () => {
+  const source = readFileSync(join(RENDERER, 'App.jsx'), 'utf8')
+
+  // The two strips the host asked to be rid of (2026-10-27): `stage 1 asks <origin>` and
+  // `stage 2 asks <origin>`. A lookup left behind is the sentence coming back, and a catalogue
+  // entry left behind is the lookup one `t()` away from coming back.
+  assert.doesNotMatch(source, /ui\.chat\.stage[12]-asks/)
+  for (const tag of locales()) {
+    const asks = Object.keys(catalogueFor(tag).messages).filter((key) => /stage[12]-asks/.test(key))
+    assert.deepEqual(asks, [], `${tag} still ships ${asks.join(', ')} — a working stage draws nothing`)
+  }
+
+  // And the state those strips drew — a server answering — now draws nothing at all. Without
+  // the two lines below, the check above passes and a stage that is being answered falls through
+  // to the *placeholder* strip, telling a person there is no model server while one is answering:
+  // the deletion alone trades a sentence nobody can use for a sentence that is false.
+  assert.match(source, /if \(stage1\.server\) return null/)
+  assert.match(source, /if \(stage2\.server\) return null/)
+
+  // Anti-vacuity: the two readings that do still speak are still on the page and still shipped,
+  // so the assertions above are about a deletion rather than about a component that draws nothing.
+  for (const stage of ['stage1', 'stage2']) {
+    assert.match(source, new RegExp(`ui\\.chat\\.${stage}-refused`))
+    assert.match(source, new RegExp(`ui\\.chat\\.${stage}-placeholder`))
+    for (const tag of locales()) {
+      for (const tail of ['refused', 'placeholder']) {
+        assert.ok(
+          catalogueFor(tag).messages[`ui.chat.${stage}-${tail}`] !== undefined,
+          `${tag} lost ui.chat.${stage}-${tail}, which the page still draws`,
+        )
+      }
+    }
+  }
 })
