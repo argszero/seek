@@ -2,10 +2,18 @@ import { useEffect, useRef, useState } from 'react'
 
 import Contacts from './Contacts.jsx'
 import Groups from './Groups.jsx'
+import Icon from './icons.jsx'
 import Settings from './Settings.jsx'
 import Topics from './Topics.jsx'
 import { size, t } from './catalogue.mjs'
-import { roomToOpen } from './room-to-open.mjs'
+import {
+  NAV_ICON,
+  RAIL,
+  RAIL_TAIL,
+  TAIL_ICON,
+  THEME_TO_DARK,
+  THEME_TO_LIGHT,
+} from './rail.mjs'import { roomToOpen } from './room-to-open.mjs'
 
 /**
  * Tokens are counts, so they are drawn by `Intl.NumberFormat` rather than by string
@@ -132,6 +140,34 @@ export default function App() {
   // Which column this window is showing. Two, because the settings page is not a room: it is
   // where the endpoint is chosen, and a room list beside it would suggest it belongs to one.
   const [view, setView] = useState('chat')
+  // The theme is the document's, not this component's: `main.jsx` sets `data-theme` before the
+  // first frame out of what the last launch saved, so this state starts at that answer rather
+  // than at a default that would paint the window light and then repaint it.
+  const [theme, setTheme] = useState(() =>
+    document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light',
+  )
+  const dark = theme === 'dark'
+
+  /**
+   * The rail's theme button, and what it changes.
+   *
+   * `tokens.css` already carries both palettes behind `[data-theme='light']` and
+   * `[data-theme='dark']`; the attribute on `<html>` is the whole switch, which is how the
+   * prototype does it (`app.js`: `document.documentElement.setAttribute('data-theme', …)`).
+   * The write is saved so the next launch opens in the same one.
+   *
+   * **A save that fails is not drawn.** The toggle has already changed what the person is
+   * looking at, and a strip reporting a settings write over a window that is behaving would be
+   * noise about the wrong thing; the main process logs it. What a person can see stays the
+   * truth of what the window is doing.
+   */
+  function flipTheme() {
+    const next = dark ? 'light' : 'dark'
+    setTheme(next)
+    document.documentElement.setAttribute('data-theme', next)
+    window.seekHost.saveTheme?.(next)
+  }
+
   const [draft, setDraft] = useState('')
   // The chain root of the thread on show, or null. A chain's root is the message the
   // whole run belongs to, which is exactly what the panel replies to.
@@ -626,61 +662,51 @@ export default function App() {
         view === 'settings' ? ' with-settings' : ''
       }`}
     >
+      {/* The prototype's column, in the prototype's order (`renderRail()`,
+          `prototype/src/js/app.js`): the avatar as *who this is*, four navigation rows, a
+          spacer, then the theme toggle and settings at the foot.
+
+          **Rooms are not here.** They were, one initial per room, and that was not the
+          prototype: its rail is fixed navigation, and the rooms live in the conversation list
+          column beside it (`chatRow()`). A column of rooms where the spec has five fixed rows
+          is a different window, and it left no way to reach *messages* at all.
+          The host named this column on 2026-10-27: 左侧头像／消息／机器人／话题导航、图标、
+          位置 — all of it from the prototype. */}
       <nav className="rail">
+        {/* Not a button: the prototype says so in as many words (`app.js`: 左上角头像只是个
+            「这是谁」，不是按钮), and changing organization is on the settings page. The dot is
+            its green presence mark, decoration rather than a fact this store keeps. */}
         <div className="rail-avatar" title={snap.me ?? t('ui.chat.me')}>
-          {(snap.me ?? 'me').slice(0, 1).toUpperCase()}
+          <span className="rail-avatar-face">{(snap.me ?? '?').slice(0, 1).toUpperCase()}</span>
+          <span className="presence" />
         </div>
-        {snap.rooms.map((room) => (
+        {RAIL.map((item) => (
           <button
-            key={room.id}
-            className={`rail-item${view === 'chat' && room.id === activeId ? ' on' : ''}`}
-            title={room.name}
-            onClick={() => enterRoom(room.id)}
+            key={item.view}
+            className={`rail-btn${view === item.view ? ' active' : ''}`}
+            title={t(item.label)}
+            onClick={() => setView(item.view)}
+            data-view={item.view}
           >
-            {room.name.slice(0, 1).toUpperCase()}
+            <Icon name={item.icon} size={NAV_ICON} />
           </button>
         ))}
-        {/* Everyone in this organization but me, one rail above the way to its endpoint: a
-            person is not a conversation, and the list that holds them is where a bot is added
-            and where a conversation with one starts. This is the prototype's rail row, and
-            the word on it is the prototype's too — 机器人 (`prototype/src/js/app.js`). */}
+        <div className="rail-spacer" />
         <button
-          className={`rail-item${view === 'contacts' ? ' on' : ''}`}
-          title={t('ui.contacts.title')}
-          onClick={() => setView((now) => (now === 'contacts' ? 'chat' : 'contacts'))}
-          data-view="contacts"
+          className="rail-btn"
+          title={t(dark ? THEME_TO_LIGHT : THEME_TO_DARK)}
+          onClick={flipTheme}
+          data-role="toggle-theme"
         >
-          🤖
+          <Icon name={dark ? 'sun' : 'moon'} size={TAIL_ICON} />
         </button>
-        {/* The rooms that are not one conversation between two, beside the people they are
-            made of — the prototype's rail order, where 群组 follows 机器人. */}
         <button
-          className={`rail-item${view === 'groups' ? ' on' : ''}`}
-          title={t('ui.groups.title')}
-          onClick={() => setView((now) => (now === 'groups' ? 'chat' : 'groups'))}
-          data-view="groups"
+          className={`rail-btn${view === RAIL_TAIL.view ? ' active' : ''}`}
+          title={t(RAIL_TAIL.label)}
+          onClick={() => setView(RAIL_TAIL.view)}
+          data-view={RAIL_TAIL.view}
         >
-          👥
-        </button>
-        {/* Every thread in this store, whichever room it started in — the prototype's rail
-            order after 群组. */}
-        <button
-          className={`rail-item${view === 'topics' ? ' on' : ''}`}
-          title={t('ui.topics.title')}
-          onClick={() => setView((now) => (now === 'topics' ? 'chat' : 'topics'))}
-          data-view="topics"
-        >
-          💬
-        </button>
-        {/* The way to the endpoint, at the end of the column and away from the rooms: what is
-            on the other side of it is not a conversation. */}
-        <button
-          className={`rail-item rail-tail${view === 'settings' ? ' on' : ''}`}
-          title={t('ui.settings.title')}
-          onClick={() => setView((now) => (now === 'settings' ? 'chat' : 'settings'))}
-          data-view="settings"
-        >
-          ⚙
+          <Icon name={RAIL_TAIL.icon} size={TAIL_ICON} />
         </button>
       </nav>
 

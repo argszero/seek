@@ -24,6 +24,18 @@ const { contextBridge, ipcRenderer } = require('electron')
 contextBridge.exposeInMainWorld('seekHost', {
   snapshot: () => ipcRenderer.invoke('seek:snapshot'),
   dataPath: () => ipcRenderer.invoke('seek:data-path'),
+  /**
+   * The rail's theme toggle, and the two calls behind it.
+   *
+   * `tokens.css` carries both palettes and the attribute on `<html>` is the whole switch, so
+   * the renderer can flip it alone — but it cannot say it with any permanence: a theme that
+   * lasts one launch is a button that undoes itself at the next start. The answer is saved
+   * beside the endpoint, in the same settings file, and read before the first frame.
+   *
+   * Which is why `theme` is a call rather than a constant here: the value is on disk.
+   */
+  theme: () => ipcRenderer.invoke('seek:theme'),
+  saveTheme: (theme) => ipcRenderer.invoke('seek:theme-save', theme),
   post: (input) => ipcRenderer.invoke('seek:post', input),
   /**
    * The hover toolbar's emoji square: one person's reaction on one message.

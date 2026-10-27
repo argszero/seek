@@ -14,8 +14,18 @@ import './styles/shell.css'
 // `electron/catalogue.test.mjs` so the order cannot move back.
 // The store is the slow half and still arrives later, so the booting line is still drawn —
 // under a catalogue that exists.
-window.seekHost.catalogue().then((catalogue) => {
+// **And it waits for the theme, for the same reason.** `tokens.css` carries both palettes
+// behind `[data-theme='light']` and `[data-theme='dark']`, so the attribute on `<html>` is the
+// whole switch; read after the first frame, a window saved as dark would paint light and then
+// repaint, which is the white flash the catalogue's ordering above exists to avoid. A theme
+// that cannot be read is the prototype's own default rather than an error: the window is a
+// window, and one of the two palettes has to be on.
+Promise.all([
+  window.seekHost.catalogue(),
+  window.seekHost.theme().catch(() => 'light'),
+]).then(([catalogue, theme]) => {
   bindCatalogue(catalogue)
+  document.documentElement.setAttribute('data-theme', theme === 'dark' ? 'dark' : 'light')
   createRoot(document.getElementById('root')).render(
     <React.StrictMode>
       <App />

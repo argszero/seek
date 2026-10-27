@@ -326,7 +326,13 @@ test('the groups view says nothing a catalogue did not say', () => {
   // And the way in: the rail offers it, and the main screen draws it.
   const app = readFileSync(join(RENDERER, 'App.jsx'), 'utf8')
   assert.match(app, /view === 'groups'/, 'the main screen routes to the groups view')
-  assert.match(app, /data-view="groups"/, 'the rail offers the way in')
+  // The way in: the rail is data now (`ui/src/rail.mjs`), so the row is one entry in `RAIL`
+  // and the column draws whatever that list declares. The pair is the assertion — the view is
+  // named in the rail's own list, and `App.jsx` draws `item.view` rather than a row written
+  // into the markup by hand, which is what this used to be.
+  const rail = readFileSync(join(RENDERER, 'rail.mjs'), 'utf8')
+  assert.match(rail, /\{ view: 'groups'/, 'the rail offers the way in')
+  assert.match(app, /data-view=\{item\.view\}/, 'and the column draws the view the rail names')
 })
 
 test('the topics view says nothing a catalogue did not say', () => {
@@ -384,7 +390,11 @@ test('the topics view says nothing a catalogue did not say', () => {
   // And the way in: the rail offers it, and the main screen draws it.
   const app = readFileSync(join(RENDERER, 'App.jsx'), 'utf8')
   assert.match(app, /view === 'topics'/, 'the main screen routes to the topics view')
-  assert.match(app, /data-view="topics"/, 'the rail offers the way in')
+  // And the way in, held the same way the groups view holds it: the row is one entry in the
+  // rail's own list, and the column draws `item.view` rather than a literal in the markup.
+  const rail = readFileSync(join(RENDERER, 'rail.mjs'), 'utf8')
+  assert.match(rail, /\{ view: 'topics'/, 'the rail offers the way in')
+  assert.match(app, /data-view=\{item\.view\}/, 'and the column draws the view the rail names')
   assert.match(app, /function openTopic/, 'the way into a thread is the chat screen\'s')
 })
 

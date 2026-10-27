@@ -356,6 +356,12 @@ const CLAIMS = {
     en: /`Delete` removes the row and moves its directory to the trash/,
     zh: /`Delete` ?把那一行和它的目录一起移进废纸篓/,
   },
+  // The rail's theme toggle. It writes no store — the palette is a line in `settings.json`
+  // beside the endpoint — so the derivation from `seek:changed` cannot see it either. It is
+  // claimed because a person presses it, and because the half worth telling is that the choice
+  // outlives the launch: a toggle that forgot itself at the next start would be a button that
+  // undoes its own work.
+  'seek:theme-save': { en: /saved in that same `settings\.json`/, zh: /存进同一个 `settings\.json`/ },
 }
 
 /**
@@ -375,6 +381,10 @@ const PLUMBING = {
   // a reader would be told is not a button but a rule — `docs/design/i18n.md` §1 — so the
   // claim lives in that document and the call is plumbing here.
   'seek:catalogue': 'the words every count and label is drawn from: read once, from the same catalogue the kernel prints its report from',
+  // The other half of the theme pair, and not an affordance: the window asks which palette it
+  // was left in before its first frame, so that a launch saved as dark does not paint light
+  // and repaint. What a person presses is `seek:theme-save`, and that is the claimed one.
+  'seek:theme': 'which palette to open in: read before the first frame, so the first frame is already the right one',
 }
 
 test('every call that changes the store is a call the window can reach and main answers', () => {

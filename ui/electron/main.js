@@ -270,6 +270,46 @@ ipcMain.handle('seek:data-path', () => STORE_FILE)
 ipcMain.handle('seek:settings-path', () => SETTINGS_FILE)
 
 /**
+ * The window's palette, saved beside the endpoint.
+ *
+ * `tokens.css` has carried `[data-theme='light']` and `[data-theme='dark']` since it was
+ * transcribed, and nothing ever set the attribute — so the dark palette was a file that no
+ * window could reach. The prototype's rail has the toggle (`renderRail()` in
+ * `prototype/src/js/app.js`) and persists it in its own store; the switch is the same and the
+ * store is this one, which is where the endpoint lives.
+ *
+ * **The default is the prototype's, not the operating system's**: `store.js` seeds `theme` to
+ * `'light'`, so a first launch is light on a dark desktop rather than depending on it. Any
+ * other value in the file — a hand-edited `purple`, or a number — is not a palette this window
+ * has, and it answers the default rather than being passed on to be drawn.
+ */
+ipcMain.handle('seek:theme', async () => {
+  const read = await readSettings(SETTINGS_FILE)
+  const saved = read.settings?.theme
+  return saved === 'dark' || saved === 'light' ? saved : 'light'
+})
+
+/**
+ * Save it, and the reason a refusal here is quiet.
+ *
+ * The toggle has already repainted the window by the time this is called, so a person sees the
+ * theme they asked for either way; what fails is the memory of it. `writeSettings` writes the
+ * whole object it read, so this cannot disturb the endpoint saved in the same file — and a
+ * refusal is logged and answered rather than thrown, because a strip about a settings write
+ * over a window that is behaving would report the wrong thing.
+ */
+ipcMain.handle('seek:theme-save', async (_event, theme) => {
+  if (theme !== 'dark' && theme !== 'light') return { ok: false, error: 'not a theme this window has' }
+  try {
+    await writeSettings(SETTINGS_FILE, { theme })
+  } catch (error) {
+    console.error(`seek: the theme could not be saved — ${error.message}`)
+    return { ok: false, error: error.message }
+  }
+  return { ok: true, theme }
+})
+
+/**
  * The words this window puts around what people and bots typed.
  *
  * `docs/design/i18n.md` §1 — no user-visible string is written into code — and the window is
