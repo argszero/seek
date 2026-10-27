@@ -9,7 +9,7 @@
  * variable a test is still holding.
  */
 import assert from 'node:assert/strict'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -170,4 +170,15 @@ test('the picture a deleted message carried is handed back, so its bytes can go 
   } finally {
     await w.done()
   }
+})
+
+test('a tombstone with no replies does not invite a reply', async () => {
+  // The one drawing rule this slice adds, and the renderer has no DOM harness — every assertion
+  // about what `App.jsx` draws in this suite is a read of the file (`catalogue.test.mjs` does the
+  // same for the words). What is being pinned is the *condition*, not the markup: a message that
+  // was taken back has nothing left to answer, while a thread already under it must stay
+  // reachable, because those replies are still there.
+  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8')
+  assert.match(source, /\{chip && message\.chain === message\.id && \(!deleted \|\| replies > 0\) && \(/)
+  assert.doesNotMatch(source, /\{chip && \(\n/)
 })

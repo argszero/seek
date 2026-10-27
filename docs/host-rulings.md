@@ -196,6 +196,10 @@ Derived at delivery and stored on that bot's inbox entry. No agent scans a room 
 *"A, look at `mentions` to see whether my own name is in there."*
 The message keeps Feishu's own array; `mentionsMe` is **derived** at delivery, per bot, and lives only on that bot's inbox entry. A per-reader boolean on the shared message would force a rewrite or a copy per bot and turn one array scan into stored state that can disagree with what it describes.
 
+**A message, a group, a bot and a topic can each be deleted.**
+*"messsage, group, 机器人，话题，都应该支持删除"*
+All four are things the product lets a person take away — not messages alone.
+
 ---
 
 ## Agent to agent

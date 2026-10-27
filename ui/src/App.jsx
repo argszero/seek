@@ -2431,7 +2431,12 @@ function Line({ message, sender, replies, inThread, onOpen, chip = false, me = n
             })}
           </span>
         )}
-        {chip && (
+        {/* The thread's way in belongs to the message that **roots** the chain: the count is the
+            chain's, so a chip on every reply would be one number drawn four times (Feishu draws
+            it once, on the root). **A tombstone with no replies gets neither an invitation nor a
+            count** — there is nothing left to answer — while a root taken back that still has
+            live replies keeps its count, because those replies are still there to read. */}
+        {chip && message.chain === message.id && (!deleted || replies > 0) && (
           <button className="msg-thread" data-thread-for={message.id} onClick={() => onOpen(message)}>
             {replies > 0 ? t('ui.replies', { count: replies }) : t('ui.reply-in-thread')}
           </button>
