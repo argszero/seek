@@ -7,7 +7,7 @@ import Groups from './Groups.jsx'
 import Icon from './icons.jsx'
 import Settings from './Settings.jsx'
 import Topics from './Topics.jsx'
-import { fileSize, size, t, weightsReason, when, whenShort } from './catalogue.mjs'
+import { fileSize, size, t, weightsSentence, when, whenShort } from './catalogue.mjs'
 import {
   ADD_MENU,
   ADD_TITLE,
@@ -2162,17 +2162,22 @@ function WeightsArriving({ facts }) {
  *
  * The other half of `WeightsArriving`, and drawn in the same place for the same reason: the
  * weights are one directory shared by both halves, so `half()` in `ui/electron/main.js` hands
- * both of them the same reading. A strip each printed the same sentence twice, and two identical
+ * both of them the same reading. A line each printed the same sentence twice, and two identical
  * lines read as two problems rather than as one download that stopped.
  *
- * **The words are the catalogue's, and what is not is deliberate.** `docs/design/i18n.md` §1
- * puts every string in the catalogue, §4 puts list joining in that layer — `"A, B and C"`, not a
- * `; `, because the conjunction is the language's — and §2 forbids rewriting what a sender said,
- * so a host's own refusal is carried through exactly as it came. That last one is the boundary
- * this reading draws: the frames around the hosts are translated, and the sentences inside them
- * are the hosts' words. A reader in Chinese therefore sees Chinese framing around a host's
- * English, which is honest about where each half came from and is not the same thing as a
- * translated page.
+ * **Every word here is the catalogue's, including the diagnosis.** The facts that cross from the
+ * main process carry which places were tried and never what one of them said
+ * (`snapshot.js`, `weightsOf`): `fetch failed` is Node's sentence, `the server answered 404` is
+ * this build's own, and neither is something a person can do anything with. `docs/host-rulings.md`
+ * — "The window does not speak to a developer" — sends that detail to stderr, where
+ * `describe()` in `weights-fetch.js` writes it and where whoever built or configured this install
+ * is already looking. §4 is why the joining is here and not in that layer: `"A, B and C"` is the
+ * language's, not a `; `.
+ *
+ * **The last clause is drawn only when it is true.** A download that stopped is continued by the
+ * next launch — `model-weights.js` resumes from the `.part` bytes — while a build with no address
+ * configured fetches nothing however often it is launched, and a sentence promising otherwise
+ * would be a person's wasted evening.
  */
 function WeightsRefused({ weights }) {
   if (!weights) return null
@@ -2180,7 +2185,7 @@ function WeightsRefused({ weights }) {
   return (
     <div className="weights refused" data-weights="refused">
       <strong>{t('ui.chat.weights-refused')}</strong>
-      <span className="weights-why">{t('ui.weights.refused-and-resumes', { why: weightsReason(weights) })}</span>
+      <span className="weights-why">{weightsSentence(weights)}</span>
     </div>
   )
 }

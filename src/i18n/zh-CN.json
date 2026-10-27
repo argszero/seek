@@ -252,9 +252,9 @@
     "ui.topics.title": "话题",
     "ui.weights.arriving-amount": "{all} 中的 {got} — {file}",
     "ui.weights.arriving-amount-no-file": "{all} 中的 {got}",
-    "ui.weights.from-no-host": "没有一台主机给得出：{hosts}",
-    "ui.weights.host-said": "{host}：{words}",
-    "ui.weights.no-host": "没有配置权重地址：这个版本没有可以从它取回 {repo} 的主机，请用 SEEK_WEIGHTS_BASE 指定一个（见 README）",
+    "ui.weights.no-host": "这个版本取不到模型：没有给它配地址",
+    "ui.weights.stopped": "权重没有取回来",
+    "ui.weights.stopped-hosts": "没能从 {hosts} 取回权重",
     "ui.weights.refused-and-resumes": "{why}；再次启动 Seek 会从这里接着下载"
   }
 }

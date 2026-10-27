@@ -79,20 +79,25 @@ function weightsOf(value) {
     const repo = textOrNull(value.repo)
     return repo === null ? null : { kind: 'no-host', repo }
   }
+  // **Nothing a host or the runtime said reaches the page.** `docs/host-rulings.md`, "The window
+  // does not speak to a developer": what the window draws is what a person can act on, and
+  // `fetch failed` — Node's own words — is not that. So the words are dropped here rather than
+  // left for a component to decline to draw, and what crosses is which places were tried: a
+  // person who named a host learns that their host is the one that did not answer. The sentences
+  // go to stderr, where `describe()` in `weights-fetch.js` writes them.
   if (value.kind === 'refused') {
-    const words = textOrNull(value.words)
-    return words === null ? null : { kind: 'refused', words }
+    const host = textOrNull(value.host)
+    return host === null ? { kind: 'stopped', hosts: [] } : { kind: 'stopped', hosts: [host] }
   }
   if (value.kind === 'hosts') {
     if (!Array.isArray(value.hosts) || value.hosts.length === 0) return null
     const hosts = []
     for (const one of value.hosts) {
       const host = textOrNull(one?.host)
-      const words = textOrNull(one?.words)
-      if (host === null || words === null) return null
-      hosts.push({ host, words })
+      if (host === null) return null
+      hosts.push(host)
     }
-    return { kind: 'hosts', hosts }
+    return { kind: 'stopped', hosts }
   }
   return null
 }
