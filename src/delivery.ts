@@ -103,6 +103,14 @@ export interface Delivery {
 export function deliver(store: SeekStore, input: PostMessageInput): Delivery {
   const room = store.room(input.roomId);
   if (!room) throw new Error(`unknown room: ${input.roomId}`);
+  // A deleted room is refused here, before the membership question, because "sender … is not a
+  // member" is true of it and is not the truth: nobody is in it, and nobody can be put in it.
+  if (room.deleted_at !== undefined) {
+    throw new Error(
+      `the room ${input.roomId} was deleted on ${room.deleted_at}: there is nothing left to ` +
+        'speak in, and a message written into it would be one no reader could ever reach',
+    );
+  }
   if (!store.principal(input.senderId)) {
     throw new Error(`unknown sender: ${input.senderId}`);
   }
@@ -152,6 +160,22 @@ export function deliver(store: SeekStore, input: PostMessageInput): Delivery {
         'whose words, kind and picture are carried, and anything passed beside it is a ' +
         'second copy of a fact the store already holds',
     );
+  }
+
+  // Both snapshots are taken off the message they name, and a deleted message has no content
+  // left to take: quoting one would draw an empty quotation and forwarding one would carry
+  // nothing while claiming to carry something. Refused by the message's own id, so the reason
+  // points at what was asked for rather than at the caller.
+  for (const [what, named] of [
+    ['quoting', quoting],
+    ['forwarding', forwarding],
+  ] as const) {
+    if (named && named.deleted_at !== undefined) {
+      throw new Error(
+        `the message ${named.id} was deleted on ${named.deleted_at}: there is no content left ` +
+          `in it, so ${what} it would carry nothing and say that it did`,
+      );
+    }
   }
 
   const now = input.now ?? new Date().toISOString();

@@ -384,6 +384,17 @@ export default function App() {
   const [quoting, setQuoting] = useState(null)
   const [forwarding, setForwarding] = useState(null)
   const [moreOn, setMoreOn] = useState(null)
+  /**
+   * **The one confirmation every deletion goes through.**
+   *
+   * `{kind, id}` while a card is asking, `null` otherwise: `message` and `thread` are a message
+   * id (a thread is named by its root), `room` is a room id. One piece of state rather than
+   * three, because the card is one card and the question is the same question — what is about
+   * to go — asked about three sizes of thing.
+   */
+  const [asking, setAsking] = useState(null)
+  const [removing, setRemoving] = useState(false)
+  const [removeError, setRemoveError] = useState(null)
   // The glyph the emoji square shows. Feishu's square remembers the last one used, and that
   // is a fact about this window's session rather than about the store — so it lives here and
   // starts at the same 👍 the reference screenshot shows.
@@ -925,6 +936,38 @@ export default function App() {
   }
 
   /**
+   * Take away what the card is asking about.
+   *
+   * **One function for three calls, because the three answers arrive in the same envelope** —
+   * a snapshot, or the kernel's own sentence. What differs is what the window does with the
+   * snapshot afterwards: a deleted room leaves the list on its own (its memberships went with
+   * it, and that list is the rooms this person is in), so the panel showing it closes; and a
+   * deleted thread whose panel is open closes the panel, because the panel's way in is a root
+   * whose replies are now tombstones.
+   */
+  async function confirmRemove() {
+    if (!asking || removing) return
+    setRemoving(true)
+    setRemoveError(null)
+    try {
+      const outcome =
+        asking.kind === 'message'
+          ? await window.seekHost.deleteMessage({ messageId: asking.id })
+          : asking.kind === 'thread'
+            ? await window.seekHost.deleteThread({ rootId: asking.id })
+            : await window.seekHost.deleteRoom({ roomId: asking.id })
+      if (outcome.ok) {
+        setSnap(outcome.snapshot)
+        setAsking(null)
+        if (asking.kind === 'room') setInfoOpen(false)
+        if (asking.kind === 'thread' && openThread === asking.id) setOpenThread(null)
+      } else setRemoveError(outcome.error)
+    } finally {
+      setRemoving(false)
+    }
+  }
+
+  /**
    * Open the edit form, filled with what the room says now.
    *
    * **Read off the room, not off a copy.** The four boxes start as the four stored texts, and an
@@ -1093,6 +1136,10 @@ export default function App() {
           setMoreOn((current) => (current === message.id ? null : message.id))
         },
         copy: copyMessage,
+        remove: (message) => {
+          setMoreOn(null)
+          setAsking({ kind: 'message', id: message.id })
+        },
       }
     : null
 
@@ -1249,6 +1296,9 @@ export default function App() {
           rooms={snap.rooms}
           // The way in: into the room the thread is in, with that thread open.
           onOpen={openTopic}
+          // And the way out: a thread is deleted whole, from its root, through the same
+          // confirmation card every other deletion uses.
+          onDelete={(roomId, rootId) => setAsking({ kind: 'thread', id: rootId, roomId })}
         />
       ) : (
         <>
@@ -1834,6 +1884,18 @@ export default function App() {
                 >
                   {t('ui.room.leave')}
                 </button>
+                {/* Leaving is one row; this is the room. It sits beside `Leave` rather than
+                    inside a menu because a person looking for "get rid of this room" looks
+                    here — and it asks before it writes, since nothing on this screen can be
+                    brought back afterwards. */}
+                <button
+                  className="btn danger"
+                  data-room-delete="ask"
+                  disabled={adding}
+                  onClick={() => setAsking({ kind: 'room', id: active.id })}
+                >
+                  {t('ui.room.delete')}
+                </button>
               </div>
             </div>
           </aside>
@@ -1925,6 +1987,49 @@ export default function App() {
           {/* The kernel's sentence, in the card that asked for it. The blank name is the one
               refusal a person meets here, and `updateRoom()` is where it is worded. */}
           {roomError && <p className="dialog-err" data-room-edit="refused">{roomError}</p>}
+        </Dialog>
+      )}
+
+      {/* **The one question a deletion asks.** A mask and two answers, because the three
+          deletions are one shape of thing: something is about to stop existing in this store
+          and nothing in the app can bring it back. The title is the button that opened it, so
+          the card says what it is about to do rather than "are you sure"; the line under it
+          says what goes with it — a group takes everything said in it, a topic takes its
+          replies. The kernel's own sentence lands here too, so a refusal is read in the card
+          that asked for it. */}
+      {asking && (
+        <Dialog
+          name="delete"
+          title={
+            asking.kind === 'room'
+              ? t('ui.room.delete')
+              : asking.kind === 'thread'
+                ? t('ui.topics.delete')
+                : t('ui.chat.delete')
+          }
+          submit={
+            asking.kind === 'room'
+              ? t('ui.room.delete')
+              : asking.kind === 'thread'
+                ? t('ui.topics.delete')
+                : t('ui.chat.delete')
+          }
+          cancel={t('ui.chat.cancel')}
+          busy={removing}
+          onSubmit={confirmRemove}
+          onClose={() => {
+            setAsking(null)
+            setRemoveError(null)
+          }}
+        >
+          <p className="dialog-note">
+            {asking.kind === 'room'
+              ? t('ui.room.delete-ask')
+              : asking.kind === 'thread'
+                ? t('ui.topics.delete-ask')
+                : t('ui.chat.delete-ask')}
+          </p>
+          {removeError && <p className="dialog-err">{removeError}</p>}
         </Dialog>
       )}
 
@@ -2250,6 +2355,12 @@ function Line({ message, sender, replies, inThread, onOpen, chip = false, me = n
   // is whether the person this window speaks as is in it. A reaction nobody has reacted with
   // has no entry at all — the kernel deletes a row whose last operator took it back.
   const reactions = message.reactions ?? []
+  // **A deleted message is a tombstone, not a gap.** The kernel keeps the row — an observation,
+  // a reply's `chain` and a turn all name it — and takes the content away (`src/erase.ts`), so
+  // what is left to draw is who spoke, and that it was taken back. The hover toolbar goes with
+  // the content: there is nothing to quote, forward or react to, and a menu offering `Delete`
+  // on a message already deleted would be a button with one outcome.
+  const deleted = Boolean(message.deletedAt)
   return (
     <li className={`msg${inThread ? ' on' : ''}`}>
       <span className={`msg-av${sender?.bot ? ' bot' : ''}`}>{name.slice(0, 2)}</span>
@@ -2294,6 +2405,11 @@ function Line({ message, sender, replies, inThread, onOpen, chip = false, me = n
             ))}
           </span>
         )}
+        {deleted && (
+          <span className="msg-deleted" data-msg-deleted={message.id}>
+            {t('ui.chat.deleted')}
+          </span>
+        )}
         {message.text !== '' && <span className="msg-text">{message.text}</span>}
         {reactions.length > 0 && (
           <span className="msg-reactions">
@@ -2315,7 +2431,12 @@ function Line({ message, sender, replies, inThread, onOpen, chip = false, me = n
             })}
           </span>
         )}
-        {chip && (
+        {/* The thread's way in belongs to the message that **roots** the chain: the count is the
+            chain's, so a chip on every reply would be one number drawn four times (Feishu draws
+            it once, on the root). **A tombstone with no replies gets neither an invitation nor a
+            count** — there is nothing left to answer — while a root taken back that still has
+            live replies keeps its count, because those replies are still there to read. */}
+        {chip && message.chain === message.id && (!deleted || replies > 0) && (
           <button className="msg-thread" data-thread-for={message.id} onClick={() => onOpen(message)}>
             {replies > 0 ? t('ui.replies', { count: replies }) : t('ui.reply-in-thread')}
           </button>
@@ -2328,7 +2449,7 @@ function Line({ message, sender, replies, inThread, onOpen, chip = false, me = n
             reaction, reply quotes, forward carries, the topic glyph opens the thread the store
             already records, and *more* offers the one platform action this build has. Nothing
             here is drawn for a behaviour that does not exist. */}
-        {actions && (
+        {actions && !deleted && (
           <span className="msg-actions">
             <button
               className="act-emoji"
@@ -2403,6 +2524,12 @@ function Line({ message, sender, replies, inThread, onOpen, chip = false, me = n
           <span className="more-menu">
             <button data-copy-msg={message.id} onClick={() => actions.copy(message)}>
               {t('ui.chat.copy')}
+            </button>
+            {/* The second item, and the second platform action this build has: taking the
+                message back. It opens the one confirmation card rather than writing at once,
+                because a deletion is the one thing here with no undo. */}
+            <button data-delete-msg={message.id} onClick={() => actions.remove(message)}>
+              {t('ui.chat.delete')}
             </button>
           </span>
         )}

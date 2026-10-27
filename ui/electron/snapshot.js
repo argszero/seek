@@ -399,6 +399,11 @@ function snapshotOf(store, storeFile, stage1 = null, stage2 = null, storeRefusal
         : null,
       // The kernel's field is `created_at`; `at` is this snapshot's own name for it.
       at: message.created_at,
+      // When the message was taken back, or `null` while it stands. It reaches the window
+      // because a deleted message is still in this list — its row is what every reference to
+      // it resolves to — and the window has to know to draw a tombstone rather than an empty
+      // message. `null` and never `undefined`, for the reason `media` is `null`.
+      deletedAt: message.deleted_at ?? null,
       // Who this message addresses, in the kernel's own pairs: `mentions` is the field,
       // `{id, name}` each, and rule 15 of `docs/design/data-model.md` says it is "what the
       // interface draws as blue @-text" — so a snapshot without it is a window that cannot

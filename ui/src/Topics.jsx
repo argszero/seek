@@ -2,6 +2,7 @@ import { useState } from 'react'
 
 import { t, when } from './catalogue.mjs'
 import Gutter from './Gutter.jsx'
+import { topicKeyOf as keyOf, topicsOf } from './topics-of.mjs'
 
 /**
  * The topics view: every thread in this store, whichever room it started in.
@@ -11,23 +12,10 @@ import Gutter from './Gutter.jsx'
  * what a click on a row does (`openTopic()` — into the room, with that thread open). What
  * differs here is what this store forces, not a choice of this file.
  *
- * **Which messages are topics is the kernel's answer, not a count kept beside it.** A thread
- * is three facts a message carries (`src/types.ts`, written by `deliver()`): `chain` is the
- * root of the run, `root_id` the message it answers, `depth` how many hops from the root. A
- * message that caused nothing roots its own chain — `chain === message.id` — so a topic is a
- * message that is its own chain's root **and** has something in that chain, which is the line
- * the prototype's `topics()` draws too (`!m.root_id && counts[m.message_id]`): a message
- * nobody answered is not a topic. This file therefore reads no counter and keeps none.
- *
- * **The count is the whole chain, and that is deliberately bigger than the prototype's.** Its
- * `topics()` counts the messages whose `root_id` is the root — one hop. This window's thread
- * panel groups by `chain` instead (`App.jsx`: `messages.filter((m) => m.chain === openThread)`),
- * and `ui/electron/snapshot.js` states why it may: "the interface groups by `chain` and never
- * by anything it computes itself, so 'which messages are one thread' has one answer". A row
- * saying "3 replies" beside a panel listing four messages would be that one answer given
- * twice, and the count here would be the one to lose. So N counts the whole chain — every
- * message whose `chain` is the root, the root itself excluded — and a thread with replies to
- * its replies says a larger number here than the prototype said for the same thread.
+ * **Which messages are topics, and what one is called, are `topics-of.mjs`'s answers.** The
+ * rule moved out of this file for the reason `room-to-open.mjs` did: there is no harness for the
+ * renderer, so a rule written here cannot be called by a test, and `topics-of.test.mjs` calls
+ * that one directly. What this file keeps is the drawing.
  *
  * **The pane answers the topic that was chosen.** The prototype's `renderTopicsPane()` draws
  * every topic as a card, in a pane beside a list that already holds every topic: one fact
@@ -57,7 +45,7 @@ import Gutter from './Gutter.jsx'
  * screen's, because opening a thread moves the room list, the composer, the rail and the
  * thread panel at once — the same reason the groups view's way in lives there.
  */
-export default function Topics({ rooms, onOpen }) {
+export default function Topics({ rooms, onOpen, onDelete }) {
   const [openKey, setOpenKey] = useState(null)
 
   // Newest thread first, as the prototype sorts it. The comparison is on `created_at`, whose
@@ -125,7 +113,7 @@ export default function Topics({ rooms, onOpen }) {
 
       <section className="main-col">
         {open ? (
-          <TopicPane topic={open} onOpen={onOpen} />
+          <TopicPane topic={open} onOpen={onOpen} onDelete={onDelete} />
         ) : (
           <div className="empty">{whenNone}</div>
         )}
@@ -134,46 +122,6 @@ export default function Topics({ rooms, onOpen }) {
   )
 }
 
-/**
- * Every topic in the store, newest first.
- *
- * One pass collects the chains that have something in them, and one more takes the roots
- * among them. Both read the kernel's own `chain`, so a store that groups its threads some
- * other way would need no change here — there is no other way to group them.
- */
-function topicsOf(rooms) {
-  const topics = []
-  for (const room of rooms) {
-    const messages = room.messages ?? []
-    const inChain = new Map()
-    for (const message of messages) {
-      if (message.chain === message.id) continue
-      const chain = inChain.get(message.chain)
-      if (chain) chain.push(message)
-      else inChain.set(message.chain, [message])
-    }
-    for (const message of messages) {
-      // Only a root can be a topic: a reply's chain is somebody else's id.
-      if (message.chain !== message.id) continue
-      const replies = inChain.get(message.id)
-      // A message nobody answered is not a topic — the prototype's own `topics()` rule.
-      if (!replies || replies.length === 0) continue
-      topics.push({ room, root: message, replies })
-    }
-  }
-  // Newest reply first. `created_at` is ISO, so comparing the strings is the order the store
-  // wrote them in, whatever the machine's locale or its date parsing.
-  return topics.sort((left, right) => {
-    const one = String(left.replies.at(-1).at)
-    const other = String(right.replies.at(-1).at)
-    return one === other ? 0 : one < other ? 1 : -1
-  })
-}
-
-/** A topic's identity: the room it is in and the message that roots it. */
-function keyOf(topic) {
-  return `${topic.room.id}:${topic.root.id}`
-}
 
 /**
  * What a message says, for a line that has one line to say it in.
@@ -204,7 +152,7 @@ function nameOf(room, id) {
 }
 
 /** One topic's card: what the store holds about it, and the way into the thread. */
-function TopicPane({ topic, onOpen }) {
+function TopicPane({ topic, onOpen, onDelete }) {
   const root = topic.root
   const last = topic.replies.at(-1)
   return (
@@ -238,6 +186,18 @@ function TopicPane({ topic, onOpen }) {
           onClick={() => onOpen(topic.room.id, root.id)}
         >
           {t('ui.topics.open')}
+        </button>
+        {/* **Deleting the thread is deleting the topic**, and it is asked of the card because
+            the card is the one surface here that names a single topic. The call is the kernel's
+            own `deleteThread()`: the root and every reply under it, at one instant
+            (`src/erase.ts`) — a loop of per-message deletions could stop halfway and leave
+            replies answering a root whose words are gone. */}
+        <button
+          className="btn danger"
+          data-topic-delete={keyOf(topic)}
+          onClick={() => onDelete(topic.room.id, root.id)}
+        >
+          {t('ui.topics.delete')}
         </button>
       </div>
     </div>

@@ -26,7 +26,7 @@
  * machine" has to mean to be worth saying.
  */
 
-const { mkdirSync, readFileSync, writeFileSync } = require('node:fs')
+const { mkdirSync, readFileSync, rmSync, writeFileSync } = require('node:fs')
 const { dirname, join } = require('node:path')
 
 /** Where the bytes go: one directory beside the store, whatever the store is called. */
@@ -251,7 +251,21 @@ function isSupportedImage(mime) {
   return BY_MIME.has(mime)
 }
 
+/**
+ * Take a blob out of the media directory, because the message that named it is gone.
+ *
+ * `force` rather than a check: a file that is not there is the state this call wants, so a
+ * picture somebody already removed by hand is not an error. The key goes through `pathForKey`
+ * first, which is what keeps a key that names a path from reaching anything outside `media/`.
+ */
+function dropMedia(storeFile, key) {
+  if (typeof key !== 'string' || key === '') return false
+  rmSync(pathForKey(storeFile, key), { force: true })
+  return true
+}
+
 module.exports = {
+  dropMedia,
   ATTACHMENT_TYPES,
   BY_EXT,
   BY_MIME,

@@ -546,9 +546,15 @@ test('the topics view says nothing a catalogue did not say', () => {
   // run and a message that caused nothing roots its own chain (`src/delivery.ts`), so the
   // view groups by `chain` — the same field the thread panel groups by — and never by a
   // counter, a `root_id` chain of one hop, or a room's `chat_mode`.
-  assert.match(source, /\.chain !== m?\w*\.id|chain !== message\.id/, 'a root is its own chain')
+  // The rule itself moved to `topics-of.mjs` — there is no harness for the renderer, so a rule
+  // written inside a component cannot be called by a test, and `topics-of.test.mjs` calls that
+  // one. The scan therefore reads both files: the words from the view, the chain test from the
+  // file that holds it, and `chat_mode` in neither.
+  const rule = readFileSync(join(RENDERER, 'topics-of.mjs'), 'utf8')
+  assert.match(rule, /\.chain !== message\.id/, 'a root is its own chain')
+  assert.match(source, /topicsOf\(rooms\)/, 'the view asks that rule rather than keeping one')
   assert.doesNotMatch(
-    source,
+    source + rule,
     /chat_mode\s*[=!]==/,
     'a room\'s mode is not what makes a topic: chat_mode is stored and never branched on',
   )

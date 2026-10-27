@@ -24,6 +24,15 @@ export { identityFor } from './identity.ts';
 export type { AgentIdentity, BotIdentity, SiblingAgent } from './identity.ts';
 export { addMember, createRoom } from './rooms.ts';
 export type { AddMemberInput, CreateRoomInput, CreatedRoom, NewMember } from './rooms.ts';
+export { deleteMessage, deleteRoom, deleteThread } from './erase.ts';
+export type {
+  DeleteMessageInput,
+  DeleteRoomInput,
+  DeleteThreadInput,
+  DeletedRoom,
+  DeletedThread,
+  Erased,
+} from './erase.ts';
 export { deliver, deriveHints, deriveKind } from './delivery.ts';
 export type { Delivery, PostMessageInput } from './delivery.ts';
 export { classify, gate } from './gate.ts';
