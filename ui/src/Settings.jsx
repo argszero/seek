@@ -63,7 +63,7 @@ function sourceLine(reading) {
   return t('ui.settings.source.none')
 }
 
-export default function Settings({ snapshot }) {
+export default function Settings({ snapshot, ask, onAsked }) {
   const [reading, setReading] = useState(EMPTY)
   const [baseUrl, setBaseUrl] = useState('')
   const [model, setModel] = useState('')
@@ -76,6 +76,13 @@ export default function Settings({ snapshot }) {
   const currentId = snapshot?.currentOrganizationId ?? null
   const [newOrganizationName, setNewOrganizationName] = useState('')
   const [makingOrganization, setMakingOrganization] = useState(false)
+  // The rail's add mark can ask this page to open the field that makes an organization. Cleared
+  // as it is taken, for the reason `Contacts.jsx` gives: one press, one form.
+  useEffect(() => {
+    if (!ask) return
+    setMakingOrganization(true)
+    onAsked()
+  }, [ask, onAsked])
   const [renamingId, setRenamingId] = useState(null)
   const [renameText, setRenameText] = useState('')
   const [organizationNote, setOrganizationNote] = useState(null)

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import { t } from './catalogue.mjs'
 
@@ -54,7 +54,7 @@ import { t } from './catalogue.mjs'
  * as), and `onOpen` is the chat screen's, because entering a room moves the room list, the
  * composer and the rail at once.
  */
-export default function Groups({ rooms, people, me, onOpen, onSnapshot }) {
+export default function Groups({ rooms, people, me, onOpen, onSnapshot, ask, onAsked }) {
   const [query, setQuery] = useState('')
   const [openId, setOpenId] = useState(null)
 
@@ -62,6 +62,13 @@ export default function Groups({ rooms, people, me, onOpen, onSnapshot }) {
   // two presses on Create are one group, and the second press is the one that makes a
   // duplicate.
   const [making, setMaking] = useState(false)
+  // The rail's add mark can ask this view to open its form. Cleared as it is taken, for the
+  // reason `Contacts.jsx` gives: one press, one form.
+  useEffect(() => {
+    if (!ask) return
+    setMaking(true)
+    onAsked()
+  }, [ask, onAsked])
   const [name, setName] = useState('')
   const [chosen, setChosen] = useState([])
   const [sending, setSending] = useState(false)

@@ -49,6 +49,18 @@ const ICONS = {
     <circle cx="15.6" cy="7.2" r="2.2" />,
     <circle cx="9.4" cy="16.8" r="2.2" />,
   ],
+  // The add mark over the rail's navigation: a ring with a plus through it. This one is the
+  // client's own `MoreAddOutlined` path, transcribed out of its DOM on 2026-10-27 rather than
+  // redrawn — and it is the only glyph here that is **filled**: the ring and the arms are one
+  // shape, so `fill="currentColor"` on the path overrides the frame's `fill="none"` below,
+  // and `stroke="none"` keeps the 1.6px frame from outlining it a second time.
+  add: [
+    <path
+      d="M11 11V8a1 1 0 1 1 2 0v3h3a1 1 0 1 1 0 2h-3v3a1 1 0 1 1-2 0v-3H8a1 1 0 1 1 0-2h3Zm1 10a9 9 0 1 0 0-18 9 9 0 0 0 0 18Zm0 2C5.925 23 1 18.075 1 12S5.925 1 12 1s11 4.925 11 11-4.925 11-11 11Z"
+      fill="currentColor"
+      stroke="none"
+    />,
+  ],
 }
 
 /**
@@ -58,8 +70,10 @@ const ICONS = {
  * prototype sets `title` on the button, not on the glyph): a screen reader announcing
  * "message" beside "Messages" says the same thing twice.
  *
- * Stroked, not filled — the prototype's `icon()` paints every one of these seven with
- * `fill="none" stroke="currentColor"`, which is what `1.6` refers to. A name this file does
+ * Stroked, not filled — the prototype's `icon()` paints these with
+ * `fill="none" stroke="currentColor"`, which is what `1.6` refers to. The one exception is
+ * `add`, whose ring-and-plus is a single filled shape (`fill="currentColor"` on the path
+ * itself, which wins over the frame's `fill="none"`). A name this file does
  * not carry draws nothing rather than a box, the way `icon()` returns `''` for one it has
  * never heard of.
  */

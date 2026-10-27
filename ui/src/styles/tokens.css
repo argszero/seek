@@ -68,6 +68,11 @@
   --bg-body-overlay: var(--N50);
   --bg-base: var(--N100);
   --bg-content-base: #f8f9fa;
+  /* The two columns beside the rail — the conversation list and the room — are **one
+     surface**, both measured `rgb(252, 252, 252)` on the live client. They were two here
+     (a grey list against a white room), which moved the seam every time either changed.
+     What separates them in the client is a gutter and a hairline, not a change of colour. */
+  --bg-list: #fcfcfc;
   --bg-float: var(--N00);
   --bg-float-overlay: var(--N50);
   --bg-float-push: rgba(255, 255, 255, 0.8);
@@ -114,9 +119,22 @@
   --shadow-popup: 0px 4px 16px rgba(31, 35, 41, 0.16);
 
   /* rail ---------------------------------------------------------------- */
-  --rail-bg: var(--N100);
-  --rail-icon: var(--N600);
-  --rail-icon-active: var(--B600);
+  /* Measured from the Feishu desktop messenger (2026-10-27, the host's own
+     `shenbirpa.feishu.cn/next/messenger`): the navigation column is a dark slab with
+     words in it, not a light strip of icons. The three values below are that column's
+     background and its two inks, read off the live client rather than copied from
+     `prototype/` — the prototype drew a 64px icon rail this window no longer is. */
+  --rail-bg: #465069;
+  --rail-icon: rgba(255, 255, 255, 0.9);
+  /* The add mark over the navigation is a step quieter than a row's glyph: measured at 0.8
+     alpha where the rows read 0.9, and it must not read as a seventh navigation row. */
+  --rail-icon-muted: rgba(255, 255, 255, 0.8);
+  --rail-icon-active: #ffffff;
+  /* A row under the pointer, and a row that is showing. Both are white washes on the dark
+     slab: 10% under the pointer, 20% for the current view, which is also the one that
+     carries the heavier weight. */
+  --rail-fill-hover: rgba(255, 255, 255, 0.1);
+  --rail-fill-selected: rgba(255, 255, 255, 0.2);
 
   color-scheme: light;
 }
@@ -167,6 +185,10 @@
   --bg-body-overlay: var(--N100);
   --bg-base: var(--N00);
   --bg-content-base: #121212;
+  /* The two columns are one surface in the dark palette too, and it is the palette's own
+     body surface rather than a colour of its own: the dark client was **not** measured, and
+     a value nobody read off a screen is a value that looks like a measurement. */
+  --bg-list: var(--N50);
   --bg-float: var(--N100);
   --bg-float-overlay: var(--N200);
   --bg-float-push: rgba(41, 41, 41, 0.8);
@@ -204,9 +226,10 @@
   --shadow-s4-down: 0px 12px 48px rgba(0, 0, 0, 0.24), 0px 8px 16px rgba(0, 0, 0, 0.28);
   --shadow-popup: 0px 8px 32px rgba(0, 0, 0, 0.6);
 
-  --rail-bg: var(--N00);
-  --rail-icon: var(--N600);
-  --rail-icon-active: var(--B500);
+  /* The rail is the one surface this block does not repaint. It was measured light-theme
+     only (2026-10-27); the slab is dark in both, so it keeps the measured `#465069` and its
+     white inks rather than gaining a second colour nobody measured. */
+
 
   color-scheme: dark;
 }
@@ -231,8 +254,22 @@
   --fs-caption: 12px;
   --lh-caption: 20px;
 
-  --rail-w: 64px;
-  --list-w: 300px;
+  /* The three column widths, measured the same way (`2026-10-27`, the live messenger at a
+     1912×829 window): a 156px navigation column, a 448px conversation list, and the room
+     taking what is left. They were 64/300/380 here, and 64/300 were the prototype's — which
+     drew a narrower rail and a narrower list than the client it was modelled on. */
+  --rail-w: 156px;
+  --list-w: 448px;
   --side-w: 380px;
+  /* The 6px the client leaves empty between its conversation list and its room, measured at
+     the same time and by the same reading as the three above. It is its own column in the
+     grid rather than a margin on either neighbour, because it is what a pointer grabs to
+     widen the list — and `--list-w` is rewritten in place when it does. */
+  --gutter-w: 6px;
+  /* The client's own add menu measures 152px across — but a menu panel is sized to its words, and
+     that 152 was measured on Chinese ones. The longest English row this product has ("Create an
+     organization") needs 185.7px at 14px, so 152 is the floor a panel may not go under rather
+     than the width it is pinned to; the panel is `max-content` and this token is its minimum. */
+  --rail-menu-w: 152px;
   --header-h: 60px;
 }

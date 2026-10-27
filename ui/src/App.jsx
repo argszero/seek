@@ -5,8 +5,10 @@ import Groups from './Groups.jsx'
 import Icon from './icons.jsx'
 import Settings from './Settings.jsx'
 import Topics from './Topics.jsx'
-import { size, t, weightsReason } from './catalogue.mjs'
+import { size, t, weightsReason, whenShort } from './catalogue.mjs'
 import {
+  ADD_MENU,
+  ADD_TITLE,
   NAV_ICON,
   RAIL,
   RAIL_TAIL,
@@ -147,6 +149,32 @@ export default function App() {
     document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light',
   )
   const dark = theme === 'dark'
+
+  // The add mark over the navigation and the menu it opens; `ask` is the view the menu has just
+  // been told to open a form on, and it is cleared by that view as it takes it — one press, one
+  // form, and no form reopening by itself when somebody comes back to the view later.
+  const [addOpen, setAddOpen] = useState(false)
+  const [ask, setAsk] = useState(null)
+  const clearAsk = () => setAsk(null)
+
+  // A menu nobody can dismiss is a trap, so the two ways out are wired while it is open: a
+  // press anywhere outside it, and Escape. Both listeners live on `window` because the press
+  // that dismisses the menu is, by definition, on something that is not inside it.
+  useEffect(() => {
+    if (!addOpen) return undefined
+    const away = (event) => {
+      if (!event.target.closest?.('.rail-add, .rail-menu')) setAddOpen(false)
+    }
+    const key = (event) => {
+      if (event.key === 'Escape') setAddOpen(false)
+    }
+    window.addEventListener('pointerdown', away)
+    window.addEventListener('keydown', key)
+    return () => {
+      window.removeEventListener('pointerdown', away)
+      window.removeEventListener('keydown', key)
+    }
+  }, [addOpen])
 
   /**
    * The rail's theme button, and what it changes.
@@ -471,6 +499,18 @@ export default function App() {
    * wants — the people and bots they already have — and because the kernel refuses an empty
    * room, so a form that opened with nothing ticked would open on a refusal.
    */
+  /**
+   * One row of the add menu: go where the thing is made, and open the form that makes it.
+   *
+   * Both halves, or the menu is a redirect: a row that only switched view would leave the
+   * person pressing that view's own `+` for something they had already asked for.
+   */
+  function addTo(next) {
+    setView(next)
+    setAsk(next)
+    setAddOpen(false)
+  }
+
   function startMaking() {
     setNewName('')
     setPicked((snap?.people ?? []).map((person) => person.id))
@@ -673,12 +713,51 @@ export default function App() {
           The host named this column on 2026-10-27: 左侧头像／消息／机器人／话题导航、图标、
           位置 — all of it from the prototype. */}
       <nav className="rail">
-        {/* Not a button: the prototype says so in as many words (`app.js`: 左上角头像只是个
-            「这是谁」，不是按钮), and changing organization is on the settings page. The dot is
-            its green presence mark, decoration rather than a fact this store keeps. */}
-        <div className="rail-avatar" title={snap.me ?? t('ui.chat.me')}>
-          <span className="rail-avatar-face">{(snap.me ?? '?').slice(0, 1).toUpperCase()}</span>
-          <span className="presence" />
+        {/* The top of the column: who this is, and the mark that makes things.
+            The avatar is **not** a button — the prototype says so in as many words (`app.js`:
+            左上角头像只是个「这是谁」，不是按钮), and changing organization is on the settings
+            page. The dot is its green presence mark, decoration rather than a fact this store
+            keeps.
+
+            The ring at the other end is measured off the client (2026-10-27): 24×24, rounded
+            6, a 16px glyph, 12px in from the column's right edge, and centred on the avatar's
+            own line. Its menu hangs off the ring's top edge and to the right, which is where
+            the client puts it — the panel starts 6px short of the column's edge and covers the
+            list beside it rather than fitting inside 156px. */}
+        <div className="rail-top">
+          <div className="rail-avatar" title={snap.me ?? t('ui.chat.me')}>
+            <span className="rail-avatar-face">{(snap.me ?? '?').slice(0, 1).toUpperCase()}</span>
+            <span className="presence" />
+          </div>
+          <button
+            className={`rail-add${addOpen ? ' open' : ''}`}
+            title={t(ADD_TITLE)}
+            aria-haspopup="menu"
+            aria-expanded={addOpen}
+            onClick={() => setAddOpen(!addOpen)}
+            data-role="add"
+          >
+            <Icon name="add" size={16} />
+          </button>
+          {/* The three rows are `ADD_MENU`: the client's menu cut down to what this product can
+              make. A thing we cannot make is not a row. */}
+          {addOpen && (
+            <ul className="rail-menu" role="menu" data-menu="add">
+              {ADD_MENU.map((item) => (
+                <li key={item.view}>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => addTo(item.view)}
+                    data-add={item.view}
+                  >
+                    <Icon name={item.icon} size={16} />
+                    <span>{t(item.label)}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
         {RAIL.map((item) => (
           <button
@@ -689,6 +768,7 @@ export default function App() {
             data-view={item.view}
           >
             <Icon name={item.icon} size={NAV_ICON} />
+            <span className="rail-label">{t(item.label)}</span>
           </button>
         ))}
         <div className="rail-spacer" />
@@ -699,6 +779,11 @@ export default function App() {
           data-role="toggle-theme"
         >
           <Icon name={dark ? 'sun' : 'moon'} size={TAIL_ICON} />
+          {/* The toggle wears a word like every row above it: an icon-only tile in a column
+              of labelled rows reads as a different kind of control, and this one acts on
+              the window rather than on the view. The word names the action — `切换到深色`
+              while the window is light — which is what its title already said. */}
+          <span className="rail-label">{t(dark ? THEME_TO_LIGHT : THEME_TO_DARK)}</span>
         </button>
         <button
           className={`rail-btn${view === RAIL_TAIL.view ? ' active' : ''}`}
@@ -707,11 +792,12 @@ export default function App() {
           data-view={RAIL_TAIL.view}
         >
           <Icon name={RAIL_TAIL.icon} size={TAIL_ICON} />
+          <span className="rail-label">{t(RAIL_TAIL.label)}</span>
         </button>
       </nav>
 
       {view === 'settings' ? (
-        <Settings snapshot={snap} />
+        <Settings snapshot={snap} ask={ask === 'settings'} onAsked={clearAsk} />
       ) : view === 'contacts' ? (
         <Contacts
           people={snap.people ?? []}
@@ -722,6 +808,8 @@ export default function App() {
           refusal={error?.where === 'contacts' ? error.message : null}
           onMessage={messagePerson}
           onSnapshot={setSnap}
+          ask={ask === 'contacts'}
+          onAsked={clearAsk}
         />
       ) : view === 'groups' ? (
         <Groups
@@ -732,6 +820,8 @@ export default function App() {
           // The snapshot a group answers with is the same one every other write arrives as,
           // and it is what makes the new row appear before the screen changes.
           onSnapshot={setSnap}
+          ask={ask === 'groups'}
+          onAsked={clearAsk}
         />
       ) : view === 'topics' ? (
         <Topics
@@ -829,7 +919,17 @@ export default function App() {
               >
                 <span className="conv-av">{room.name.slice(0, 1).toUpperCase()}</span>
                 <span className="conv-body">
-                  <span className="conv-name">{room.name}</span>
+                  {/* The name and, at the other end of the same line, when this room was
+                      last spoken in — the shape the client's list has, measured 2026-10-27.
+                      The time is the last message's own `at`, which the snapshot copies off
+                      the kernel's `created_at`; a room nobody has spoken in has no time and
+                      draws none, rather than the time it was made. */}
+                  <span className="conv-top">
+                    <span className="conv-name">{room.name}</span>
+                    {room.messages.length > 0 && (
+                      <span className="conv-time">{whenShort(room.messages.at(-1).at)}</span>
+                    )}
+                  </span>
                   <span className="conv-last">
                     {room.messages.length === 0
                       ? t('ui.chat.no-messages')
@@ -841,6 +941,25 @@ export default function App() {
           ))}
         </ul>
       </section>
+
+      {/* The 6px gutter the client keeps between the list and the room, and the only way to
+          change how much of the window each column gets. It is drawn as an empty column
+          rather than as a border, because it is space: the two columns share one surface
+          colour and a line between them would be a seam the client does not have.
+
+          Dragging writes `--list-w` on the `.app` element, which is the same token the grid
+          reads its columns from, so there is one number and not two. The bounds are the
+          list's own: narrower than 280 and a conversation row's name has nowhere to go;
+          wider than 640 and the room stops being the widest thing in the window. No double
+          click to reset, because the client has no such gesture and inventing one would be
+          a behaviour nobody asked for. */}
+      <div
+        className="gutter"
+        role="separator"
+        aria-orientation="vertical"
+        data-gutter="list"
+        onPointerDown={startListResize}
+      />
 
       <section className="main-col">
         {/* Which half of the bot is real, above the room because it is a fact about the
@@ -1596,6 +1715,40 @@ function lastLineOf(message) {
   if (typeof message?.text === 'string' && message.text !== '') return message.text
   if (message?.kind === 'image') return t('ui.chat.said.picture')
   return t('ui.chat.said.nothing')
+}
+
+/**
+ * Widening or narrowing the conversation list, the one thing the client's 6px gutter does.
+ *
+ * The width is written to `--list-w` on the `.app` element rather than held in React state:
+ * a column being dragged redraws on every pointer move, and a state write per move would
+ * re-render the whole window — every message, every room — to move one edge. The token is
+ * what the grid already reads, so dragging it is the same edit a stylesheet would make.
+ *
+ * Listeners go on the window because the pointer leaves this 6px column almost immediately;
+ * the drag has to end wherever the button is released, including outside the window, so both
+ * of them are removed on `pointerup`. `preventDefault` keeps the drag from selecting the
+ * conversation list's text on the way past it.
+ */
+function startListResize(event) {
+  const app = event.currentTarget.parentElement
+  const list = app?.querySelector('.list-col')
+  if (!app || !list) return
+  event.preventDefault()
+  const startX = event.clientX
+  const startWidth = list.getBoundingClientRect().width
+  const move = (moving) => {
+    const next = Math.min(640, Math.max(280, startWidth + (moving.clientX - startX)))
+    app.style.setProperty('--list-w', `${Math.round(next)}px`)
+  }
+  const stop = () => {
+    window.removeEventListener('pointermove', move)
+    window.removeEventListener('pointerup', stop)
+    window.removeEventListener('pointercancel', stop)
+  }
+  window.addEventListener('pointermove', move)
+  window.addEventListener('pointerup', stop)
+  window.addEventListener('pointercancel', stop)
 }
 
 /**
