@@ -131,3 +131,40 @@ test('the weights row draws a size, not the object the kernel hands over', () =>
   }
   assert.notEqual(en[key], zh[key], 'translated, not copied')
 })
+
+/**
+ * **The organizations panel is drawn by rules that exist** (issue #137).
+ *
+ * The page has always marked the panel up as `.organization-list`, `.organization-row`,
+ * `.organization-av` and `.organization-name`, and the stylesheet had no rule for any of the
+ * four — not lost, never written. What that draws is a browser's default `<ul>`: a bullet, a
+ * 40px indent on top of the card's own padding, and the avatar letter, the name, the "open" chip
+ * and three buttons flowing as one line of text with the buttons on top of the name. Measured
+ * on this window on 2026-10-27, which is how it was noticed at all.
+ *
+ * The fix is one of the two answers the issue holds open — rules shaped after `.people-list` /
+ * `.people-row`, markup untouched. The other answer (re-marking the panel onto `.card-rows` and
+ * deleting these four classes) would fail the last assertion here, on purpose: whoever takes it
+ * has to say so by editing this test, not by deleting the rules.
+ */
+test('the organizations panel has rules of its own, one row per world', () => {
+  for (const name of ['organization-list', 'organization-row', 'organization-av', 'organization-name']) {
+    assert.match(PAGE, new RegExp(`className="${name}"`), `.${name} is still what the page draws`)
+  }
+
+  const list = rule(SHELL, '.organization-list')
+  assert.equal(list['list-style'], 'none', 'the list is a list of rows, not a bulleted <ul>')
+  assert.equal(list.padding, '0', 'and its indent is the card’s, not the browser’s')
+
+  const row = rule(SHELL, '.organization-row')
+  assert.equal(row.display, 'flex', 'a row lays its four parts out rather than flowing them')
+  assert.equal(row['align-items'], 'center', 'with the avatar, the name and the buttons on one line')
+
+  const avatar = rule(SHELL, '.organization-av')
+  assert.equal(avatar['border-radius'], '50%', 'the initial is drawn as an avatar')
+  assert.equal(avatar.width, '24px', 'at the size the roster uses for the same thing')
+
+  const nameRule = rule(SHELL, '.organization-name')
+  assert.equal(nameRule.flex, '1', 'a long name takes the room the buttons do not')
+  assert.equal(nameRule['text-overflow'], 'ellipsis', 'and ends in an ellipsis rather than pushing them out')
+})

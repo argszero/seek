@@ -63,7 +63,16 @@ function sourceLine(reading) {
   return t('ui.settings.source.none')
 }
 
-export default function Settings({ snapshot, ask, onAsked }) {
+/**
+ * The settings page: what this machine's models are, and which worlds exist on it.
+ *
+ * **It does not make an organization.** It used to — a field at the foot of the list — and the
+ * host moved that out on 2026-10-27 (创建组织，不要跳转到 settings … 在当前窗口实现就行): the page
+ * now switches between worlds and deletes one, and the making happens in a form over whatever
+ * view is open (`App.jsx`, the rail's add mark). The page still reads the list from the same
+ * snapshot it always did.
+ */
+export default function Settings({ snapshot }) {
   const [reading, setReading] = useState(EMPTY)
   const [baseUrl, setBaseUrl] = useState('')
   const [model, setModel] = useState('')
@@ -74,15 +83,6 @@ export default function Settings({ snapshot, ask, onAsked }) {
   // rather than a move of any file.
   const organizations = snapshot?.organizations ?? []
   const currentId = snapshot?.currentOrganizationId ?? null
-  const [newOrganizationName, setNewOrganizationName] = useState('')
-  const [makingOrganization, setMakingOrganization] = useState(false)
-  // The rail's add mark can ask this page to open the field that makes an organization. Cleared
-  // as it is taken, for the reason `Contacts.jsx` gives: one press, one form.
-  useEffect(() => {
-    if (!ask) return
-    setMakingOrganization(true)
-    onAsked()
-  }, [ask, onAsked])
   const [renamingId, setRenamingId] = useState(null)
   const [renameText, setRenameText] = useState('')
   const [organizationNote, setOrganizationNote] = useState(null)
@@ -147,14 +147,6 @@ export default function Settings({ snapshot, ask, onAsked }) {
     } finally {
       setBusy(null)
     }
-  }
-
-  async function makeOrganization() {
-    const answer = await window.seekHost.createOrganization(newOrganizationName)
-    if (!answer.ok) return setOrganizationNote(answer.error)
-    setMakingOrganization(false)
-    setNewOrganizationName('')
-    setOrganizationNote(t('ui.settings.organizations.made'))
   }
 
   async function saveRename(id) {
@@ -431,41 +423,13 @@ export default function Settings({ snapshot, ask, onAsked }) {
                 ))}
               </ul>
 
-              {makingOrganization ? (
-                <div className="field-row" style={{ marginTop: 12 }}>
-                  <input
-                    className="field-input"
-                    value={newOrganizationName}
-                    autoFocus
-                    placeholder={t('ui.settings.organizations.name-hint')}
-                    onChange={(event) => setNewOrganizationName(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter') makeOrganization()
-                      if (event.key === 'Escape') setMakingOrganization(false)
-                    }}
-                    data-organization-new-input
-                  />
-                  <button className="btn primary" onClick={makeOrganization} data-organization-new-save>
-                    {t('ui.settings.create')}
-                  </button>
-                  <button className="btn" onClick={() => setMakingOrganization(false)}>
-                    {t('ui.settings.cancel')}
-                  </button>
-                </div>
-              ) : (
-                <div className="field-actions">
-                  <button
-                    className="btn"
-                    onClick={() => {
-                      setNewOrganizationName('')
-                      setMakingOrganization(true)
-                    }}
-                    data-organization-new
-                  >
-                    {t('ui.settings.organizations.new')}
-                  </button>
-                  {organizationNote && <span className="card-sub" data-organization-note>{organizationNote}</span>}
-                </div>
+              {/* The list is where a world is opened, renamed or taken away. Making one is
+                  not here: the rail's add mark does that over whatever view is open. What is
+                  left of this row is the answer to the last of those three. */}
+              {organizationNote && (
+                <p className="card-sub" data-organization-note style={{ marginTop: 12 }}>
+                  {organizationNote}
+                </p>
               )}
             </div>
           </div>

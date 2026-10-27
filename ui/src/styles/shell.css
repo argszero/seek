@@ -684,6 +684,11 @@ body {
 
 .reaction-glyph { font-size: 13px; line-height: 1; }
 
+/* The count beside the glyph. Everything it draws it inherits from `.reaction` — this rule
+   exists because it is a class in the markup, and because a count is a number that changes:
+   tabular figures keep the chip from changing width when a second person reacts. */
+.reaction-count { font-variant-numeric: tabular-nums; }
+
 .msg-forwarded {
   display: flex;
   align-items: center;
@@ -777,77 +782,118 @@ body {
   padding: 0 20px 16px;
 }
 
-.composer-input {
-  flex: 1;
+/**
+ * **One field, and everything about the message lives inside it.**
+ *
+ * Measured off the client's composer on 2026-10-27: 48px tall, radius 8, `1px solid --N400`,
+ * white, and the marks are *in* it — an editor on the left, then a row of 26×26 hit areas on the
+ * right, 4px apart, 18px glyphs, a 1px×18px rule, and the send arrow. The box's own padding is
+ * `0 2px 0 8px`, which with the editor's 5px is why the placeholder starts 13px in.
+ *
+ * Ours used to be four bordered boxes in a row — the input, an `@`, a "Picture" and a "Send" —
+ * which put three words where the client puts three pictures and left the send as a filled blue
+ * slab the client does not have. The words are now the buttons' titles, where they belong.
+ *
+ * `border-color` rather than a second border on focus: the field is the thing that is focused,
+ * and a 2px ring would push the text 1px off where the placeholder was.
+ */
+.composer-box {
+  flex: 1 1 100%;
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
   min-height: 48px;
-  max-height: 160px;
-  padding: 12px 8px;
-  border: 1px solid var(--line-divider-default);
+  padding: 0 2px 0 8px;
+  border: 1px solid var(--N400);
   border-radius: var(--radius-lg);
   background: var(--N00);
+}
+
+.composer-box:focus-within { border-color: var(--primary-fill-default); }
+
+.composer-input {
+  flex: 1;
+  min-height: 46px;
+  max-height: 152px;
+  /* 12 + 22 + 12 is the field's 46px of content: the text sits on the same 22px line the
+     client's editor does, 13px down from the field's top edge. */
+  padding: 12px 5px;
+  border: 0;
+  background: transparent;
   color: var(--N900);
   font: inherit;
+  font-size: 14px;
+  line-height: 22px;
   resize: none;
 }
 
-.composer-input:focus { outline: none; border-color: var(--primary-fill-default); }
+.composer-input:focus { outline: none; }
 .composer-input::placeholder { color: var(--text-placeholder); }
 
-.composer-send {
-  height: 40px;
-  padding: 0 16px;
+/* The marks' row. 10px up from the field's floor centres a 26px hit area in its 46px of
+   content, which is where the client draws it. */
+.composer-tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+/* 26×26 holding an 18px glyph, rounded 6, and grey until it is hovered: the client's mark is a
+   picture, so it carries no border and no fill of its own. */
+.composer-tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
   border: 0;
-  border-radius: var(--radius-md);
-  background: var(--primary-fill-default);
-  color: var(--primary-on-primary-fill);
-  font: inherit;
-  font-weight: 500;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--N600);
   cursor: pointer;
 }
 
-.composer-send:hover:not(:disabled) { background: var(--primary-fill-hover); }
-.composer-send:disabled { opacity: 0.5; cursor: default; }
+.composer-tool:hover:not(:disabled),
+.composer-send:hover:not(:disabled) { background: var(--fill-hover); }
+.composer-tool[aria-expanded='true'] { background: var(--fill-tag); }
+.composer-tool:disabled { color: var(--N400); cursor: default; }
 
-/* The picture button sits beside the box and is never disabled by an empty box: sending a
-   picture with no words is the case it exists for. Drawn as a quiet outline rather than a
-   filled button, because the filled one in this row is the send and there is one of those. */
-.composer-attach,
-.thread-attach {
-  height: 40px;
-  padding: 0 12px;
-  border: 1px solid var(--line-border-component);
-  border-radius: var(--radius-md);
-  background: var(--bg-base);
-  color: var(--N700);
-  font: inherit;
+/* What holds the send apart from the two that change the message rather than ending it: a
+   1px×18px rule at the send button's own left edge, which is where the client's sits — it is
+   the `::before` of its submit button, not an element of its own. */
+.composer-send::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 4px;
+  width: 1px;
+  height: 18px;
+  background: var(--line-divider-default);
+}
+
+/* The arrow: blue and filled when there is something to send, grey when there is not — the
+   client's own two states, measured. The button is 35 wide with the glyph 13px in and 4px from
+   its right end, and it stops 8px short of the field's edge: that is how the client's arrow
+   lands 15px inside a field it shares with a rule and two other marks. */
+.composer-send {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  width: 35px;
+  height: 26px;
+  margin-right: 8px;
+  padding: 0 4px 0 13px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--B600);
   cursor: pointer;
 }
 
-.composer-attach:hover:not(:disabled),
-.thread-attach:hover:not(:disabled) { border-color: var(--primary-fill-default); color: var(--B700); }
-.composer-attach:disabled,
-.thread-attach:disabled { opacity: 0.5; cursor: default; }
-
-/* The third choice in that row, drawn like the picture button for the same reason: it is not
-   the send, and there is one of those. */
-.composer-mention,
-.thread-mention {
-  height: 40px;
-  padding: 0 12px;
-  border: 1px solid var(--line-border-component);
-  border-radius: var(--radius-md);
-  background: var(--bg-base);
-  color: var(--N700);
-  font: inherit;
-  cursor: pointer;
-}
-
-.thread-mention { height: 36px; }
-
-.composer-mention:hover:not(:disabled),
-.thread-mention:hover:not(:disabled) { border-color: var(--primary-fill-default); color: var(--B700); }
-.composer-mention:disabled,
-.thread-mention:disabled { opacity: 0.5; cursor: default; }
+.composer-send:disabled { color: var(--N600); cursor: default; }
 
 /* Who the message addresses, while it is being typed: a label and the chips, on their own
    line of the wrapped composer. `flex-basis: 100%` is what makes that line exist. */
@@ -1035,6 +1081,9 @@ body {
 .thread-list .msg { padding: 4px 0; }
 .thread-list .msg-av { width: 26px; height: 26px; font-size: 10px; }
 
+/* The panel's own composer: the room's field at the panel's margins. It used to be a second
+   row of controls with its own border, its own 36px height and its own "Send" word — the thread
+   is narrower than the room, not a different kind of box. */
 .thread-composer {
   display: flex;
   flex-wrap: wrap;
@@ -1044,133 +1093,15 @@ body {
   border-top: 1px solid var(--line-divider-default);
 }
 
-.thread-composer-input {
-  flex: 1;
-  min-height: 36px;
-  max-height: 120px;
-  padding: 8px 10px;
-  border: 1px solid var(--line-border-component);
-  border-radius: var(--radius-md);
-  background: var(--bg-base);
-  color: var(--N900);
-  font: inherit;
-  resize: none;
-}
-
-.thread-composer-input:focus { outline: none; border-color: var(--primary-fill-default); }
-.thread-composer-input::placeholder { color: var(--text-placeholder); }
-
-.thread-send {
-  height: 36px;
-  padding: 0 14px;
-  border: 0;
-  border-radius: var(--radius-md);
-  background: var(--primary-fill-default);
-  color: var(--primary-on-primary-fill);
-  font: inherit;
-  font-weight: 500;
-  cursor: pointer;
-}
-
-.thread-send:hover:not(:disabled) { background: var(--primary-fill-hover); }
-.thread-send:disabled { opacity: 0.5; cursor: default; }
-
 /* A refusal in the panel is the same refusal as in the room, at the panel's margin. */
 .thread-col .composer-err { margin: 0 16px; }
 
-/* The room column's tools: the count, and the one button that makes the list stop being
-   a constant. Grouped so the heading and this group are the head's two ends. */
+/* The head's tools, for the one list that still has any: the topics view says how many threads
+   it gathered from every room, which is a fact no single row shows. The other three lists used
+   to carry a count and a `+` here and no longer do (宿主, 2026-10-27: 这里的加号和数字不需要了),
+   so `.list-new` is gone with the last button that drew it. */
 .list-tools { display: flex; align-items: center; gap: 10px; }
 
-.list-new {
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border: 1px solid var(--line-border-component);
-  border-radius: var(--radius-sm);
-  background: var(--bg-base);
-  color: var(--N700);
-  font: inherit;
-  font-size: 15px;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.list-new:hover { background: var(--N100); }
-
-/* Making a room: a name, who is in it, and the two buttons. It sits above the list rather
-   than in a dialog, so the rooms already there stay visible while it is filled in — the
-   answer to "did I already have this one" is the list under it. */
-.new-room {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin: 0 8px 10px;
-  padding: 10px;
-  border: 1px solid var(--line-border-component);
-  border-radius: var(--radius-md);
-  background: var(--bg-base);
-}
-
-.new-room-name {
-  padding: 7px 10px;
-  border: 1px solid var(--line-border-component);
-  border-radius: var(--radius-sm);
-  background: var(--bg-base);
-  color: var(--N900);
-  font: inherit;
-  font-size: 13px;
-}
-
-.new-room-people {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  max-height: 168px;
-  overflow-y: auto;
-}
-
-.new-room-people li { padding: 3px 0; }
-
-/* The label is the click target, so the whole row is a hit area and the name is not
-   something a person has to aim at beside a small box. */
-.new-room-people label {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 13px;
-  color: var(--N900);
-  cursor: pointer;
-}
-
-.new-room-people input { margin: 0; }
-
-.new-room-actions { display: flex; gap: 8px; }
-
-.new-room-actions button {
-  height: 30px;
-  padding: 0 12px;
-  border: 1px solid var(--line-border-component);
-  border-radius: var(--radius-sm);
-  background: var(--bg-base);
-  color: var(--N700);
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.new-room-actions button[type='submit'] {
-  border-color: transparent;
-  background: var(--primary-fill-default);
-  color: var(--primary-on-primary-fill);
-  font-weight: 500;
-}
-
-.new-room-actions button[type='submit']:hover:not(:disabled) {
-  background: var(--primary-fill-hover);
-}
-
-.new-room-actions button:disabled { opacity: 0.5; cursor: default; }
 
 /* The refusal, beside the form it belongs to rather than at the composer's margin. */
 .list-col .composer-err { margin: 0 8px 10px; }
@@ -1327,6 +1258,56 @@ button.members:hover { border-color: var(--line-border-component); color: var(--
 .card-row .v { color: var(--N900); }
 .mono { font-family: var(--font-mono); }
 
+/* The worlds this machine holds. **Four classes that had no rule at all** until this was
+   looked at on 2026-10-27 (issue #137): the panel drew a raw `<ul>` with its browser bullet and
+   40px indent, an `<li>` whose avatar letter, name and three buttons flowed as one line of
+   text, and a bare `<span>` standing in for an avatar. The shape is `.people-list` /
+   `.people-row` from one screen away rather than a fourth kind of row, because the two panels
+   are the same thing: a list of who/what is in a world, with what can be done to each. */
+.organization-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.organization-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 13px;
+}
+
+/* The initial in place of an avatar: the same 24px circle the roster uses, so a list of worlds
+   reads as a list of members and not as a paragraph of controls. */
+.organization-av {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--N500);
+  color: var(--N00);
+  font-size: 12px;
+  font-weight: 500;
+  user-select: none;
+}
+
+/* The name takes the room the controls do not, and a long one ends in an ellipsis rather than
+   pushing switch/rename/delete out of the card. */
+.organization-name {
+  flex: 1;
+  min-width: 0;
+  color: var(--N900);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .chip {
   display: inline-flex;
   align-items: center;
@@ -1402,6 +1383,137 @@ button.members:hover { border-color: var(--line-border-component); color: var(--
   background: var(--primary-fill-default);
   color: var(--primary-on-primary-fill);
 }
+
+/**
+ * A small form over the window: **the mask and the card it centres.**
+ *
+ * It exists for one thing today — making an organization without leaving the view you are
+ * reading (the host's ruling, 2026-10-27). The mask is the whole window rather than the room's
+ * column: a form that only covered part of the window would leave the rail pressable behind it,
+ * which is a second way to do what the form is already asking.
+ *
+ * **And the field had no rule at all until 2026-10-27** (宿主: 创建组织的弹窗太难看了). The card
+ * was drawn by hand and the input inside it was not: `dialog-input` was a class the stylesheet
+ * had never heard of, so it rendered as the browser's own `<input>` — measured at **153×21 with
+ * a 2px `#767676` border and 13.33px text** inside a 360px card, which cut the placeholder off
+ * mid-sentence and is the whole of what looked wrong. The numbers below put it in the same
+ * family as the bot form it is supposed to resemble (`Contacts.jsx`, `field-label` over its
+ * name field): label 12px above, a 36px field, and the two buttons 32px at the right.
+ *
+ * Nothing here is a new colour — `--bg-float`, `--shadow-popup`, `--bg-mask`,
+ * `--line-border-component`, `--primary-fill-default` and `.btn` are what the window already
+ * uses for the rail's menu, the settings cards and the bot form.
+ */
+.dialog-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* The card can never touch the window's edge: a 400px form on a narrow window would
+     otherwise run flush against it. */
+  padding: 24px;
+  background: var(--bg-mask);
+  -webkit-app-region: no-drag;
+}
+
+.dialog {
+  width: 400px;
+  max-width: 100%;
+  padding: 24px;
+  border-radius: var(--radius-lg);
+  background: var(--bg-float);
+  box-shadow: var(--shadow-popup);
+}
+
+.dialog-title {
+  margin: 0 0 20px;
+  color: var(--text-title);
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 24px;
+}
+
+/* The fields, stacked with one gap rather than each carrying its own margin: a form here is a
+   name, sometimes a select and a paragraph, and the space between them should be one decision. */
+.dialog-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* The label and its field, as one thing: 12px caption over a 36px input. The label's own
+   bottom margin is cancelled here because the gap above already spaced the pair apart. */
+.dialog-field { display: flex; flex-direction: column; gap: 6px; }
+.dialog-field > .field-label { margin-bottom: 0; }
+
+.dialog-input {
+  width: 100%;
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--line-border-component);
+  border-radius: var(--radius-md);
+  background: var(--bg-base);
+  color: var(--N900);
+  font: inherit;
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.dialog-input::placeholder { color: var(--text-placeholder); }
+.dialog-input:focus { outline: none; border-color: var(--primary-fill-default); }
+
+/* A few lines of prose, where a form asks for one: the same field, growing downwards. */
+textarea.dialog-input {
+  height: auto;
+  min-height: 84px;
+  padding: 8px 12px;
+  line-height: 20px;
+  resize: vertical;
+}
+
+/* Who could be in it, inside the card. The list scrolls rather than the card, so the two
+   buttons stay where they are however many people this store holds. */
+.dialog-people {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.dialog-people li { padding: 2px 0; }
+
+/* The label is the click target, so the whole row is a hit area and a name is not something to
+   aim at beside a small box. */
+.dialog-people label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--N900);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.dialog-people input { margin: 0; }
+
+/* One line under the field, in the caption colour: what the name is for, which is a ruling
+   rather than decoration — it labels this list and never becomes the name of the person inside
+   the world. The same 12px caption the rest of the window uses for a second sentence. */
+.dialog-hint { margin: 6px 0 0; color: var(--N500); font-size: 12px; line-height: 18px; }
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+/* Two answers, and they are the same two the settings page gives: the kernel's refusal in its
+   own words, and the line that says the world now exists. */
+.dialog-err { margin: 10px 0 0; color: var(--R600); font-size: 12px; line-height: 18px; }
+.dialog-note { margin: 10px 0 0; color: var(--N600); font-size: 12px; line-height: 18px; }
 
 /* The endpoint's own words, in the error colour and their own block: a person reading
    "Failed to fetch" alone cannot tell a wrong address from a wrong key. */

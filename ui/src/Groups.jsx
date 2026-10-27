@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import { t } from './catalogue.mjs'
+import Dialog from './Dialog.jsx'
 import Gutter from './Gutter.jsx'
 
 /**
@@ -82,10 +83,31 @@ export default function Groups({ rooms, people, me, onOpen, onSnapshot, ask, onA
     wanted === '' ? groups : groups.filter((room) => room.name.toLowerCase().includes(wanted))
   const open = groups.find((room) => room.id === openId) ?? null
 
+  /**
+   * Forget the refusal the moment the form stops being the state it described.
+   *
+   * A refusal is a sentence about what is on screen, and the two this form makes are about
+   * the name and the count. Left standing while the person types the name it asked for, it
+   * says the form is still wrong when it no longer is — measured in the window on 2026-10-27:
+   * `a group needs a name` was still under the field that now said `Reading circle`.
+   */
+  function forget() {
+    setStopped(null)
+  }
+
   function toggle(id) {
+    forget()
     setChosen((current) =>
       current.includes(id) ? current.filter((one) => one !== id) : [...current, id],
     )
+  }
+
+  /** Close the form and forget what was typed in it: one press, one group. */
+  function close() {
+    setMaking(false)
+    setStopped(null)
+    setName('')
+    setChosen([])
   }
 
   async function make() {
@@ -141,22 +163,11 @@ export default function Groups({ rooms, people, me, onOpen, onSnapshot, ask, onA
   return (
     <>
       <section className="list-col">
+        {/* No count and no `+`: the count repeated a number the list shows by being as long as
+            it is, and every thing this product makes is made from the rail's add mark
+            (宿主, 2026-10-27: 这里的加号和数字不需要了). */}
         <header className="list-head">
           <h1>{t('ui.groups.title')}</h1>
-          <span className="list-tools">
-            <span className="count">{listed.length}</span>
-            <button
-              className="list-new"
-              data-new-group="open"
-              title={t('ui.groups.add')}
-              onClick={() => {
-                setMaking(!making)
-                setStopped(null)
-              }}
-            >
-              +
-            </button>
-          </span>
         </header>
 
         <div className="list-search">
@@ -169,74 +180,63 @@ export default function Groups({ rooms, people, me, onOpen, onSnapshot, ask, onA
           />
         </div>
 
-        {stopped && (
-          <div className="composer-err" data-new-group="refused">
-            {stopped}
-          </div>
-        )}
-
         {making && (
-          <form
-            className="new-room"
-            data-new-group="form"
-            onSubmit={(event) => {
-              event.preventDefault()
-              make()
-            }}
+          <Dialog
+            name="group"
+            title={t('ui.rail.add-group')}
+            submit={t('ui.groups.form.create')}
+            cancel={t('ui.groups.form.cancel')}
+            busy={sending}
+            onSubmit={make}
+            onClose={close}
           >
-            <label className="field-label" htmlFor="group-name">
-              {t('ui.groups.form.name')}
-            </label>
-            <input
-              id="group-name"
-              className="new-room-name"
-              data-new-group="name"
-              autoFocus
-              placeholder={t('ui.groups.form.name-hint')}
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-            />
+            <div className="dialog-fields">
+              <div className="dialog-field">
+                <label className="field-label" htmlFor="group-name">
+                  {t('ui.groups.form.name')}
+                </label>
+                <input
+                  id="group-name"
+                  className="dialog-input"
+                  data-new-group="name"
+                  autoFocus
+                  placeholder={t('ui.groups.form.name-hint')}
+                  value={name}
+                  onChange={(event) => {
+                    forget()
+                    setName(event.target.value)
+                  }}
+                />
+              </div>
 
-            <div className="field-label">{t('ui.groups.form.members')}</div>
-            <ul className="new-room-people">
-              {others.map((person) => (
-                <li key={person.id}>
-                  <label>
-                    <input
-                      type="checkbox"
-                      data-new-group-member={person.id}
-                      checked={chosen.includes(person.id)}
-                      onChange={() => toggle(person.id)}
-                    />
-                    <span className="new-room-who">{person.name}</span>
-                    {/* The same word the contacts list chips a bot with: one product, one
-                        word for what a bot is. */}
-                    {person.bot && (
-                      <span className="msg-bot">{t('ui.contacts.kind.bot')}</span>
-                    )}
-                  </label>
-                </li>
-              ))}
-            </ul>
-            {/* Why the person using the window is not in the list above. */}
-            <p className="pane-desc">{t('ui.groups.form.me-in')}</p>
-
-            <div className="new-room-actions">
-              <button type="submit" data-new-group="create" disabled={sending}>
-                {t('ui.groups.form.create')}
-              </button>
-              <button
-                type="button"
-                data-new-group="cancel"
-                onClick={() => {
-                  setMaking(false)
-                  setStopped(null)
-                }}
-              >
-                {t('ui.groups.form.cancel')}
-              </button>
+              <div className="dialog-field">
+                <span className="field-label">{t('ui.groups.form.members')}</span>
+                <ul className="dialog-people">
+                  {others.map((person) => (
+                    <li key={person.id}>
+                      <label>
+                        <input
+                          type="checkbox"
+                          data-new-group-member={person.id}
+                          checked={chosen.includes(person.id)}
+                          onChange={() => toggle(person.id)}
+                        />
+                        <span>{person.name}</span>
+                        {/* The same word the contacts list chips a bot with: one product, one
+                            word for what a bot is. */}
+                        {person.bot && <span className="msg-bot">{t('ui.contacts.kind.bot')}</span>}
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+                {/* Why the person using the window is not in the list above. */}
+                <p className="dialog-hint">{t('ui.groups.form.me-in')}</p>
+              </div>
             </div>
-          </form>
+
+            {/* The kernel's refusal, in the card that asked for it. */}
+            {stopped && <p className="dialog-err" data-new-group="refused">{stopped}</p>}
+          </Dialog>
         )}
 
         {/* The prototype's heading over its own list (`renderList()`: 我加入的群 + the count):

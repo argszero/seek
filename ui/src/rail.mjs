@@ -61,9 +61,24 @@ export const TAIL_ICON = 16
  * be a boundary the rows do not have.
  */
 export const ADD_MENU = [
+  /**
+   * **A room first, because it is the thing the front screen is a list of.** It has no `+` of
+   * its own any more (宿主, 2026-10-27: 这里的加号和数字不需要了), and neither does any other
+   * list: what this product makes is made from this one mark, and each row opens a card over
+   * the window instead of a form wedged above the rows it adds to.
+   */
+  { view: 'chat', icon: 'message', label: 'ui.rail.add-room' },
   { view: 'groups', icon: 'users', label: 'ui.rail.add-group' },
   { view: 'contacts', icon: 'contacts', label: 'ui.rail.add-bot' },
-  { view: 'settings', icon: 'settings', label: 'ui.rail.add-organization' },
+  /**
+   * **The one row that does not move the window.** The other two name the view that makes the
+   * thing, so pressing them goes there and opens that view's form. An organization used to be
+   * made that way too — the row switched to the settings page and opened a field at the foot of
+   * its organization list — and the host cut that on 2026-10-27: 创建组织，不要跳转到 settings，
+   * 和创建机器人一样，在当前窗口实现就行. Making a world is not a reason to leave the room you are
+   * reading, so this row carries no `view`: it opens a form over whatever is on screen.
+   */
+  { makes: 'organization', icon: 'settings', label: 'ui.rail.add-organization' },
 ]
 
 /** What the add mark itself says, for the hover title. */

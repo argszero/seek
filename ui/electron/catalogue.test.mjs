@@ -16,7 +16,14 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import test from 'node:test'
 
-import { DEFAULT_LOCALE, catalogueFor, joinList as kernelJoinList, locales, translator } from '../../src/i18n.ts'
+import {
+  DEFAULT_LOCALE,
+  catalogueFor,
+  joinList as kernelJoinList,
+  locales,
+  shippedCataloguePath,
+  translator,
+} from '../../src/i18n.ts'
 import {
   bindCatalogue,
   catalogueBound,
@@ -95,6 +102,33 @@ function asked() {
   }
   return [...keys].sort()
 }
+
+/**
+ * **A key written twice is a key written once, and the first copy is the one nobody reads.**
+ *
+ * `JSON.parse` keeps the last of two identical keys, so a catalogue with a duplicated block
+ * looks complete to every other test in this file and ships the *older* sentence. That is not a
+ * hypothetical: on 2026-10-27 `ui.settings.organizations.*` (thirteen keys) and three
+ * `ui.settings.models.*` were each in both catalogues twice, and the duplicate of
+ * `ui.settings.models.description` was the version from *before* the machine-once ruling — so
+ * the sentence PR #140 added to the first copy reached no window at all, and nothing failed.
+ *
+ * The rule is on the file text rather than on the parsed object, because parsing is exactly what
+ * hides the problem.
+ */
+test('no catalogue writes the same key twice', () => {
+  for (const tag of locales()) {
+    const raw = readFileSync(shippedCataloguePath(tag), 'utf8')
+    // Four spaces in and dotted: a message key. `"one"` and `"other"` are the categories of a
+    // plural *inside* a message and repeat by design, six spaces in.
+    const keys = [...raw.matchAll(/^ {4}"((?:ui|kernel)\.[^"]+)":/gm)].map((match) => match[1])
+    const seen = new Set()
+    const twice = [...new Set(keys.filter((key) => (seen.has(key) ? true : (seen.add(key), false))))]
+    assert.deepEqual(twice, [], `${tag} writes ${twice.length} keys twice; JSON keeps the last one`)
+    // Anti-vacuity: the scan reads the file rather than an empty string.
+    assert.ok(keys.length > 100, `the scan found ${keys.length} keys in ${tag}`)
+  }
+})
 
 test('the window asks for keys every language ships, and asks for more than none', () => {
   const keys = asked()
@@ -544,7 +578,12 @@ test('the chat page says nothing a catalogue did not say', () => {
     (match) => match[1],
   )
   assert.ok(keys.length >= 60, `the scan found ${keys.length} lookups — the pattern is broken`)
-  assert.ok(new Set(keys).size >= 55, 'the page looks its words up rather than repeating a few')
+  // 54, and it was 55 until 2026-10-27: the picture button carried the word "Picture"
+  // (`ui.chat.picture`) and now carries the client's picture glyph with `ui.chat.attach` as its
+  // title, so that key is gone from both languages rather than shipped and unread. The number
+  // is what the page actually looks up, not a floor kept for its own sake — the anti-vacuity
+  // work is done by the lookup count above, which the change did not move.
+  assert.ok(new Set(keys).size >= 54, 'the page looks its words up rather than repeating a few')
 
   // And every key it names is one of those lookups. A key written where the scan cannot read it
   // — `t(one ? 'ui.chat.a' : 'ui.chat.b')` — is a key the two language-wide tests never check;
