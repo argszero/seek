@@ -14,7 +14,7 @@
  * token write; a test that simulated one would be testing the test.
  */
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import test from 'node:test'
 
@@ -82,18 +82,30 @@ test('each pane writes a width token the stylesheet actually reads', () => {
 })
 
 test('every view with two columns draws a seam between them', () => {
-  // The chat view: the list's seam, and the thread panel's.
-  const APP = read('ui', 'src', 'App.jsx')
-  assert.match(APP, /<Gutter pane="list" \/>/, 'the chat view separates its list from the room')
-  assert.match(APP, /<Gutter pane="side" \/>/, 'and its thread panel from the room')
+  // Read off the tree rather than listed by hand: the first version of this test named three
+  // files, and the groups view — a list beside a card, drawn exactly like the other two — was
+  // missing its seam and invisible to the assertion. A list of files is a list that goes stale
+  // the moment a fourth one is written.
+  const sources = readdirSync(join(ROOT, 'ui', 'src')).filter((name) => name.endsWith('.jsx'))
+  const split = sources.filter((name) => read('ui', 'src', name).includes('className="list-col"'))
+  assert.ok(split.length >= 4, `the scan found ${split.length} two-column views — the pattern is broken`)
 
-  // The two views that are a list beside a detail column, and had no seam at all.
-  for (const view of ['Contacts', 'Topics']) {
-    const source = read('ui', 'src', `${view}.jsx`)
-    assert.match(source, /<Gutter pane="list" \/>/, `${view} separates its list from the detail column`)
+  for (const name of split) {
+    const source = read('ui', 'src', name)
+    assert.match(
+      source,
+      /<Gutter pane="list" \/>/,
+      `${name} draws a list column but no seam beside it: the grid reserves the 6px track and ` +
+        'nothing occupies it, so the column starts 6px early and its edge cannot be grabbed',
+    )
   }
 
-  // The seam is one component rather than a copy per view: three copies of a pointerdown is three
+  // The chat view also has the thread panel, which appears beside the room rather than in the
+  // component's own tree.
+  const APP = read('ui', 'src', 'App.jsx')
+  assert.match(APP, /<Gutter pane="side" \/>/, 'and the thread panel from the room')
+
+  // The seam is one component rather than a copy per view: four copies of a pointerdown is four
   // places for the bounds to drift apart.
   const gutter = read('ui', 'src', 'Gutter.jsx')
   assert.match(gutter, /beginResize\(event, pane\)/, 'the seam is the shared one')
