@@ -1303,14 +1303,29 @@ export default function App() {
             }}
           >
             <h3 className="dialog-title">{t('ui.rail.add-organization')}</h3>
-            <input
-              className="dialog-input"
-              value={orgName}
-              autoFocus
-              placeholder={t('ui.settings.organizations.name-hint')}
-              onChange={(event) => setOrgName(event.target.value)}
-              data-org-name
-            />
+            {/* **A label above the field, not a placeholder standing in for one.** This is the
+                shape the bot form uses (`Contacts.jsx`, `field-label` over its name field) and
+                the host asked for this form to be like that one — 创建组织，和创建机器人一样. It also
+                survives typing, where a placeholder does not. */}
+            <div className="dialog-field">
+              <label className="field-label" htmlFor="organization-name">
+                {t('ui.rail.organization-name')}
+              </label>
+              <input
+                id="organization-name"
+                className="dialog-input"
+                value={orgName}
+                autoFocus
+                placeholder={t('ui.rail.organization-name-hint')}
+                onChange={(event) => setOrgName(event.target.value)}
+                data-org-name
+              />
+              {/* What the name is for, said in the catalogue's own words: it labels this list
+                  and nothing else — it never becomes the name of the person inside the world
+                  (宿主, 2026-10-27: 组织名与「我」无关). A placeholder cannot carry that, because
+                  it leaves the moment there is something to read. */}
+              <p className="dialog-hint">{t('ui.settings.organizations.name-hint')}</p>
+            </div>
             {orgForm.error && <p className="dialog-err" data-org-refused>{orgForm.error}</p>}
             {orgForm.note && <p className="dialog-note" data-org-made>{orgForm.note}</p>}
             <div className="dialog-actions">

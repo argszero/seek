@@ -148,6 +148,8 @@
     "ui.rail.add-bot": "Create a bot",
     "ui.rail.add-group": "Create a group",
     "ui.rail.add-organization": "Create an organization",
+    "ui.rail.organization-name": "Organization name",
+    "ui.rail.organization-name-hint": "for example, work",
     "ui.rail.messages": "Messages",
     "ui.rail.theme-dark": "switch to dark",
     "ui.rail.theme-light": "switch to light",

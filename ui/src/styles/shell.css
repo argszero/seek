@@ -1470,13 +1470,21 @@ button.members:hover { border-color: var(--line-border-component); color: var(--
  * A small form over the window: **the mask and the card it centres.**
  *
  * It exists for one thing today — making an organization without leaving the view you are
- * reading (the host's ruling, 2026-10-27) — and it is drawn with what the window already has:
- * `--bg-float` for the card, `--shadow-popup` for the lift, `--bg-mask` for what is behind it,
- * `.field-input` and `.btn` for the field and the two buttons. Nothing here is a new colour.
+ * reading (the host's ruling, 2026-10-27). The mask is the whole window rather than the room's
+ * column: a form that only covered part of the window would leave the rail pressable behind it,
+ * which is a second way to do what the form is already asking.
  *
- * The mask is the whole window rather than the room's column: a form that only covered part of
- * the window would leave the rail pressable behind it, which is a second way to do what the
- * form is already asking.
+ * **And the field had no rule at all until 2026-10-27** (宿主: 创建组织的弹窗太难看了). The card
+ * was drawn by hand and the input inside it was not: `dialog-input` was a class the stylesheet
+ * had never heard of, so it rendered as the browser's own `<input>` — measured at **153×21 with
+ * a 2px `#767676` border and 13.33px text** inside a 360px card, which cut the placeholder off
+ * mid-sentence and is the whole of what looked wrong. The numbers below put it in the same
+ * family as the bot form it is supposed to resemble (`Contacts.jsx`, `field-label` over its
+ * name field): label 12px above, a 36px field, and the two buttons 32px at the right.
+ *
+ * Nothing here is a new colour — `--bg-float`, `--shadow-popup`, `--bg-mask`,
+ * `--line-border-component`, `--primary-fill-default` and `.btn` are what the window already
+ * uses for the rail's menu, the settings cards and the bot form.
  */
 .dialog-mask {
   position: fixed;
@@ -1485,24 +1493,60 @@ button.members:hover { border-color: var(--line-border-component); color: var(--
   display: flex;
   align-items: center;
   justify-content: center;
+  /* The card can never touch the window's edge: a 400px form on a narrow window would
+     otherwise run flush against it. */
+  padding: 24px;
   background: var(--bg-mask);
+  -webkit-app-region: no-drag;
 }
 
 .dialog {
-  width: 360px;
-  padding: 20px;
+  width: 400px;
+  max-width: 100%;
+  padding: 24px;
   border-radius: var(--radius-lg);
   background: var(--bg-float);
   box-shadow: var(--shadow-popup);
 }
 
-.dialog-title { margin: 0 0 14px; font-size: 16px; font-weight: 500; line-height: 24px; }
+.dialog-title {
+  margin: 0 0 20px;
+  color: var(--text-title);
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 24px;
+}
+
+/* The label and its field, as one thing: 12px caption over a 36px input, which is the bot
+   form's pairing one view away rather than a second way to label a field. */
+.dialog-field { margin-bottom: 4px; }
+
+.dialog-input {
+  width: 100%;
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--line-border-component);
+  border-radius: var(--radius-md);
+  background: var(--bg-base);
+  color: var(--N900);
+  font: inherit;
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.dialog-input::placeholder { color: var(--text-placeholder); }
+.dialog-input:focus { outline: none; border-color: var(--primary-fill-default); }
+
+/* One line under the field, in the caption colour: what the name is for, which is a ruling
+   rather than decoration — it labels this list and never becomes the name of the person inside
+   the world. The same 12px caption the rest of the window uses for a second sentence. */
+.dialog-hint { margin: 6px 0 0; color: var(--N500); font-size: 12px; line-height: 18px; }
 
 .dialog-actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-  margin-top: 16px;
+  margin-top: 20px;
 }
 
 /* Two answers, and they are the same two the settings page gives: the kernel's refusal in its

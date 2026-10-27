@@ -144,6 +144,8 @@
     "ui.rail.add-bot": "创建机器人",
     "ui.rail.add-group": "创建群",
     "ui.rail.add-organization": "创建组织",
+    "ui.rail.organization-name": "组织名称",
+    "ui.rail.organization-name-hint": "例如：工作",
     "ui.rail.messages": "消息",
     "ui.rail.theme-dark": "切换到深色",
     "ui.rail.theme-light": "切换到浅色",
