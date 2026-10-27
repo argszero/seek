@@ -21,6 +21,23 @@
 
 /** Which column each seam resizes, and how far it may go. */
 export const PANES = {
+  /**
+   * The navigation rail, whose seam sits to its right.
+   *
+   * Its floor is its own measured width: 156px is where Feishu's rail sits, and shrinking past
+   * it would drop the words and leave the icons — the rail is the words, not the icons
+   * (`docs/design/i18n.md`). So this pane can only grow, which is also what a navigation column
+   * wants: nobody needs it narrower than the client's, and everybody with long labels in another
+   * language needs it wider.
+   */
+  rail: {
+    token: '--rail-w',
+    column: '.rail',
+    dir: 1,
+    min: 156,
+    max: 280,
+    keep: 280,
+  },
   /** The conversation list: rooms in the chat view, the roster in contacts, threads in topics. */
   list: {
     token: '--list-w',

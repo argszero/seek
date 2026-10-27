@@ -33,7 +33,7 @@ body {
      list, and the room taking what is left. They are read through the tokens rather than
      written here a second time — they were literals once, drifted to 288 and 340, and no
      test could see it. */
-  grid-template-columns: var(--rail-w) var(--list-w) var(--gutter-w) minmax(0, 1fr);
+  grid-template-columns: var(--rail-w) var(--gutter-w) var(--list-w) var(--gutter-w) minmax(0, 1fr);
   /* **The row is the window's height, never the room's.** A single implicit row is sized by
      its content, so a long conversation used to make the grid row taller than the window and
      carry the whole layout upward with it: on a short window the rail's last two rows — the
@@ -56,14 +56,15 @@ body {
   /* A seam on each side of the room, so both of the columns beside it can be widened: the list
      to its left, the thread panel to its right. Without the second gutter the panel's column
      started immediately at the room's edge and there was nothing for a pointer to grab. */
-  grid-template-columns: var(--rail-w) var(--list-w) var(--gutter-w) minmax(0, 1fr)
+  grid-template-columns: var(--rail-w) var(--gutter-w) var(--list-w) var(--gutter-w) minmax(0, 1fr)
     var(--gutter-w) var(--side-w);
 }
 
 /* The settings page is not a room, so it takes the whole width beside the rail: the list
    column is gone, and a grid still laid out as three columns would push the page into the
    300px slot the list used to occupy. */
-.app.with-settings { grid-template-columns: var(--rail-w) minmax(0, 1fr); }
+/* The settings page is one column beside the rail, and the rail's seam is the only one it has. */
+.app.with-settings { grid-template-columns: var(--rail-w) var(--gutter-w) minmax(0, 1fr); }
 
 /* The rail, measured from the Feishu messenger rather than from `prototype/` (2026-10-27):
    156px wide (`--rail-w`), a dark slab, its rows inset 8px from both sides, a 4px gap

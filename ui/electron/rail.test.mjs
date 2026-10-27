@@ -210,12 +210,12 @@ test('the grid is three columns and a gutter, and the row is the window', () => 
   const grid = rule(SHELL, '.app')['grid-template-columns']
   assert.equal(
     grid,
-    'var(--rail-w) var(--list-w) var(--gutter-w) minmax(0, 1fr)',
+    'var(--rail-w) var(--gutter-w) var(--list-w) var(--gutter-w) minmax(0, 1fr)',
     'the rail, the list, the gutter, and the room taking what is left',
   )
   assert.equal(
     rule(SHELL, '.app.with-thread')['grid-template-columns'],
-    'var(--rail-w) var(--list-w) var(--gutter-w) minmax(0, 1fr) var(--gutter-w) var(--side-w)',
+    'var(--rail-w) var(--gutter-w) var(--list-w) var(--gutter-w) minmax(0, 1fr) var(--gutter-w) var(--side-w)',
     'and the thread panel is a further column — behind its own seam, so it can be widened too',
   )
 

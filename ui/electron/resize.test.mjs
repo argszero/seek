@@ -27,6 +27,35 @@ const read = (...parts) => readFileSync(join(ROOT, ...parts), 'utf8')
 const SHELL = read('ui', 'src', 'styles', 'shell.css')
 const TOKENS = read('ui', 'src', 'styles', 'tokens.css')
 
+/**
+ * One rule out of a stylesheet, declarations read past comments and wrapped lines.
+ *
+ * The same reading `rail.test.mjs` uses, and for the same reason: a declaration that wraps onto
+ * a second line is ordinary CSS, and a parser that reads line by line returns half a value.
+ */
+function rule(css, selector) {
+  const opener = `${selector} {`
+  const from = css.indexOf(opener)
+  assert.notEqual(from, -1, `${opener} is gone, so this check reads nothing`)
+  const to = css.indexOf('}', from)
+  const declarations = {}
+  const body = css.slice(from + opener.length, to).replace(/\/\*[\s\S]*?\*\//g, '')
+  for (const line of body.split('\n')) {
+    const text = line.trim()
+    if (text === '') continue
+    const at = text.indexOf(':')
+    if (at === -1) {
+      const previous = Object.keys(declarations).at(-1)
+      if (previous !== undefined) {
+        declarations[previous] = `${declarations[previous]} ${text}`.replace(/[;\s]+$/, '').trim()
+      }
+      continue
+    }
+    declarations[text.slice(0, at).trim()] = text.slice(at + 1).replace(/[;\s]+$/, '').trim()
+  }
+  return declarations
+}
+
 test('a column stops at its own bounds, and the column beside it keeps its floor', () => {
   const list = PANES.list
   /** What the seam stands on: the column that gives way, and where the dragged one starts. */
@@ -105,12 +134,35 @@ test('every view with two columns draws a seam between them', () => {
   const APP = read('ui', 'src', 'App.jsx')
   assert.match(APP, /<Gutter pane="side" \/>/, 'and the thread panel from the room')
 
+  // And the rail, which is the one column every view has — drawn once, above the view branches,
+  // so the settings page (one column, no list) still has the rail's edge to grab.
+  assert.match(APP, /<Gutter pane="rail" \/>/, 'the navigation rail can be widened too')
+  const afterNav = APP.indexOf('</nav>')
+  const firstView = APP.indexOf('<Settings', afterNav)
+  assert.notEqual(firstView, -1, 'the settings view is drawn after the rail')
+  assert.match(
+    APP.slice(afterNav, firstView),
+    /<Gutter pane="rail" \/>/,
+    'the rail seam is drawn once, after the rail and before whichever view is open',
+  )
+
   // The seam is one component rather than a copy per view: four copies of a pointerdown is four
   // places for the bounds to drift apart.
   const gutter = read('ui', 'src', 'Gutter.jsx')
   assert.match(gutter, /beginResize\(event, pane\)/, 'the seam is the shared one')
   assert.match(gutter, /role="separator"/, 'and it says what it is to a screen reader')
   assert.match(gutter, /aria-orientation="vertical"/, 'a vertical split')
+})
+
+test('every layout the rail appears in reserves a track for its seam', () => {
+  // A gutter track in the template and no seam in the markup is a 6px hole; a seam and no track
+  // is a seam drawn on top of the list. All three layouts are checked, because the settings page
+  // and the thread view are the two that were written apart from the chat view.
+  for (const selector of ['.app', '.app.with-thread', '.app.with-settings']) {
+    const tracks = rule(SHELL, selector)['grid-template-columns']
+    assert.match(tracks, /^var\(--rail-w\) var\(--gutter-w\)/, `${selector} gives the rail a seam track`)
+  }
+  assert.match(rule(SHELL, '.app.with-settings')['grid-template-columns'], /var\(--gutter-w\) minmax\(0, 1fr\)$/)
 })
 
 test('a seam is grabbable and says so', () => {
@@ -127,8 +179,8 @@ test('a seam is grabbable and says so', () => {
   const tracks = threadGrid.slice(0, threadGrid.indexOf('}'))
   assert.equal(
     (tracks.match(/var\(--gutter-w\)/g) ?? []).length,
-    2,
-    'two seams: one beside the list, one beside the thread panel',
+    3,
+    'three seams: the rail, the list, and the thread panel',
   )
 })
 

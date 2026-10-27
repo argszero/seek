@@ -797,6 +797,10 @@ export default function App() {
         </button>
       </nav>
 
+      {/* The rail's own seam, drawn once for every view: the rail is the one column present in
+          all of them, and a seam per view would be four copies of the same edge. */}
+      <Gutter pane="rail" />
+
       {view === 'settings' ? (
         <Settings snapshot={snap} ask={ask === 'settings'} onAsked={clearAsk} />
       ) : view === 'contacts' ? (
