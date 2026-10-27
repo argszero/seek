@@ -31,6 +31,9 @@
     "ui.chat.close-thread": "关闭话题",
     "ui.chat.copied": "已复制到剪贴板",
     "ui.chat.copy": "复制文字",
+    "ui.chat.delete": "删除",
+    "ui.chat.deleted": "这条消息已删除",
+    "ui.chat.delete-ask": "删除这条消息？它说的话在这个房间里就都没有了，这里也没有办法恢复。",
     "ui.chat.create": "创建",
     "ui.chat.forward-hint": "转发到另一个房间",
     "ui.chat.forward-into": "转发进 {room}",
@@ -172,6 +175,8 @@
     "ui.room.kind-group": "群聊",
     "ui.room.kind-p2p": "单聊",
     "ui.room.leave": "退出这个房间",
+    "ui.room.delete": "删除这个群",
+    "ui.room.delete-ask": "删除这个群？里面说过的话也一起删掉，群里的人都会失去它。",
     "ui.room.made": "{when} 建的",
     "ui.room.manage": "谁进谁出",
     "ui.room.me": "我",
@@ -237,6 +242,8 @@
     "ui.topics.none": "还没有话题",
     "ui.topics.none-hint": "在消息上点「回复」，就能开一个话题",
     "ui.topics.open": "进入会话",
+    "ui.topics.delete": "删除话题",
+    "ui.topics.delete-ask": "删除这个话题？它的回复也一起删掉。",
     "ui.topics.pick": "从左边挑一个，看它说了什么",
     "ui.topics.reply-count": {
       "other": "{count} 条回复"

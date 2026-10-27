@@ -73,6 +73,17 @@ contextBridge.exposeInMainWorld('seekHost', {
   removeMember: (input) => ipcRenderer.invoke('seek:remove-member', input),
   removeBot: (input) => ipcRenderer.invoke('seek:remove-bot', input),
   /**
+   * The three that take something back: a message, a thread (the window calls it a topic), and
+   * a room.
+   *
+   * Three calls and not one with a flag, for the reason the three above are separate: they are
+   * three different questions. A thread is not a message — the kernel stamps a whole run at one
+   * instant — and a room is not a thread: it takes its memberships with it.
+   */
+  deleteMessage: (input) => ipcRenderer.invoke('seek:delete-message', input),
+  deleteThread: (input) => ipcRenderer.invoke('seek:delete-thread', input),
+  deleteRoom: (input) => ipcRenderer.invoke('seek:delete-room', input),
+  /**
    * The settings page, and the three calls behind it.
    *
    * `llm` reads what is in use and what is saved; `saveLlm` writes the words half and makes it

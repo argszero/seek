@@ -27,6 +27,9 @@ const {
   addMember,
   closeHost,
   createRoom,
+  deleteMessage,
+  deleteRoom,
+  deleteThread,
   openHostOrRefuse,
   postMessage,
   reactToMessage,
@@ -34,7 +37,15 @@ const {
   removeMember,
   updateRoom,
 } = require('./host.js')
-const { BY_MIME, mimeForPath, pathForKey, readMedia, saveAttachment, saveMedia } = require('./media.js')
+const {
+  BY_MIME,
+  dropMedia,
+  mimeForPath,
+  pathForKey,
+  readMedia,
+  saveAttachment,
+  saveMedia,
+} = require('./media.js')
 
 /**
  * The largest attachment this app keeps beside a store: 25 MB.
@@ -642,6 +653,74 @@ ipcMain.handle('seek:remove-bot', async (_event, input) => {
     const gone = await removeBot(host, input ?? {})
     if (win && !win.isDestroyed()) win.webContents.send('seek:changed', gone.snapshot)
     return { ok: true, snapshot: gone.snapshot, botId: gone.botId, rooms: gone.rooms }
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+  }
+})
+
+/**
+ * Take a message back, and remove the blob it named.
+ *
+ * **The store is written first and the bytes after**, in that order on purpose: a store that
+ * says the picture is gone while the file is still there is a store a person can repair by
+ * hand, and the other order would hand a message a reference to a file already deleted — the
+ * one state `readMedia` draws as "the picture is missing". The removal is `dropMedia`, which
+ * tolerates a blob somebody already removed.
+ */
+ipcMain.handle('seek:delete-message', async (_event, input) => {
+  try {
+    const gone = await deleteMessage(host, input ?? {})
+    for (const blob of [gone.media, gone.file]) {
+      if (blob) dropMedia(STORE_FILE, blob.key)
+    }
+    if (win && !win.isDestroyed()) win.webContents.send('seek:changed', gone.snapshot)
+    return {
+      ok: true,
+      snapshot: gone.snapshot,
+      messageId: gone.messageId,
+      roomId: gone.roomId,
+    }
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+  }
+})
+
+/**
+ * Take a thread back — the root and its replies, at one instant — and their blobs with it.
+ *
+ * `messageIds` rides back because the window cannot read them off the snapshot that follows: a
+ * deleted message is still in the snapshot, as a tombstone, so "which ones did this call take"
+ * is not derivable from it.
+ */
+ipcMain.handle('seek:delete-thread', async (_event, input) => {
+  try {
+    const gone = await deleteThread(host, input ?? {})
+    for (const blob of gone.blobs) dropMedia(STORE_FILE, blob.key)
+    if (win && !win.isDestroyed()) win.webContents.send('seek:changed', gone.snapshot)
+    return {
+      ok: true,
+      snapshot: gone.snapshot,
+      messageIds: gone.messageIds,
+      roomId: gone.roomId,
+    }
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+  }
+})
+
+/**
+ * Delete a room, its messages, its memberships, and the blobs they named.
+ *
+ * The room leaves the snapshot's list on its own: that list is the rooms this person is in, and
+ * this call takes the memberships away. So what rides back beside the snapshot is only what the
+ * window may want to name — which room went.
+ */
+ipcMain.handle('seek:delete-room', async (_event, input) => {
+  try {
+    const gone = await deleteRoom(host, input ?? {})
+    for (const blob of gone.blobs) dropMedia(STORE_FILE, blob.key)
+    if (win && !win.isDestroyed()) win.webContents.send('seek:changed', gone.snapshot)
+    return { ok: true, snapshot: gone.snapshot, roomId: gone.roomId, messageIds: gone.messageIds }
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) }
   }

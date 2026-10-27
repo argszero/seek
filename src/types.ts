@@ -138,6 +138,17 @@ export interface Room {
    * label and becomes a field with a meaning, and that is a decision, not an edit.
    */
   tag?: string;
+  /**
+   * When this room was deleted, or absent while it is there.
+   *
+   * `deleteRoom()` (`src/erase.ts`) writes it together with two other things: every
+   * message the room held is taken back, and every membership in it is removed — the
+   * memberships being what makes the room disappear from every list, since a room is
+   * listed for the people in it. The stamp is the part the memberships cannot say:
+   * a row with no members is a room somebody could be added to, while this is a room
+   * that no longer exists, and `deliver()` refuses it in a sentence that says so.
+   */
+  deleted_at?: string;
 }
 
 export type MembershipRole = 'owner' | 'member';
@@ -277,8 +288,16 @@ export interface ForwardedFrom {
  * What a message *says* never changes after `deliver()` writes it — its words,
  * its picture, its mentions, its cause. What other people add to it does: a
  * reaction is another principal's answer to the message, arriving after it was
- * sent, and it is the one field here that moves. `toggleReaction()` is the only
- * thing that writes it.
+ * sent, and `toggleReaction()` is the only thing that writes it.
+ *
+ * **A message can also be taken back, once, and that is a second write of a
+ * different kind.** `deleteMessage()` (`src/erase.ts`) stamps `deleted_at` and
+ * drops the content — the words, the picture, the attachment, the mentions, the
+ * reactions and the two snapshots — while the row stays, because an
+ * `Observation`, a reply's `root_id`/`chain` and a `Turn` all name this id and
+ * would otherwise point at nothing. So the words are written once and taken back
+ * once: what a reader sees after a deletion is a tombstone that says who spoke,
+ * where and when, and no longer what.
  */
 export interface Message {
   id: Id;
@@ -328,6 +347,20 @@ export interface Message {
   /** Hop count, read off the data — never a mutable counter. */
   depth: number;
   created_at: string;
+  /**
+   * When this message was taken back, or absent while it stands.
+   *
+   * A stamp and not a hole in the room's log, for the reason the record's own
+   * docstring gives: everything that names this id keeps resolving. A stamp and
+   * not a `deleted: true` flag, for the reason `Bot.removed_at` is a stamp —
+   * "when" answers both "is it gone" and "since when" with one fact, and a
+   * boolean beside a stamp is two facts that can disagree.
+   *
+   * Setting it is `deleteMessage()`'s write, and that write drops the content in
+   * the same step: a stamped message carries `text: ''`, no `media`, no `file`,
+   * no `mentions`, no `reactions` and neither snapshot.
+   */
+  deleted_at?: string;
 }
 
 /**

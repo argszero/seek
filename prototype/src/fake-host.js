@@ -360,6 +360,71 @@ export const fakeHost = {
     return { ok: true, snapshot: snapshot(), botId: id, rooms: rooms.map((room) => room.id) }
   },
 
+  deleteMessage: async (input) => {
+    const id = String(input?.messageId ?? '')
+    const found = data.rooms
+      .flatMap((room) => room.messages.map((message) => ({ room, message })))
+      .find((one) => one.message.id === id)
+    if (!found) return refused('there is no message with that id in the demo')
+    if (found.message.deletedAt) return refused('that message was already deleted')
+    // The tombstone, in the shape the store keeps: the row stays and the content goes
+    // (`src/erase.ts`), which is what the window's `deletedAt` is read for.
+    const at = new Date().toISOString()
+    found.message.deletedAt = at
+    found.message.text = ''
+    found.message.media = null
+    found.message.file = null
+    found.message.mentions = []
+    found.message.reactions = []
+    found.message.quoted = null
+    found.message.forwardedFrom = null
+    emit()
+    return { ok: true, snapshot: snapshot(), messageId: id, roomId: found.room.id }
+  },
+
+  deleteThread: async (input) => {
+    const rootId = String(input?.rootId ?? '')
+    const room = data.rooms.find((one) =>
+      one.messages.some((message) => message.id === rootId),
+    )
+    if (!room) return refused('there is no thread with that root in the demo')
+    const at = new Date().toISOString()
+    const taken = room.messages.filter(
+      (message) => message.chain === rootId || message.id === rootId,
+    )
+    for (const message of taken) {
+      message.deletedAt = at
+      message.text = ''
+      message.media = null
+      message.file = null
+      message.mentions = []
+      message.reactions = []
+      message.quoted = null
+      message.forwardedFrom = null
+    }
+    emit()
+    return {
+      ok: true,
+      snapshot: snapshot(),
+      messageIds: taken.map((message) => message.id),
+      roomId: room.id,
+    }
+  },
+
+  deleteRoom: async (input) => {
+    const id = String(input?.roomId ?? '')
+    const at = data.rooms.findIndex((room) => room.id === id)
+    if (at < 0) return refused('there is no room with that id in the demo')
+    const [gone] = data.rooms.splice(at, 1)
+    emit()
+    return {
+      ok: true,
+      snapshot: snapshot(),
+      roomId: gone.id,
+      messageIds: gone.messages.map((message) => message.id),
+    }
+  },
+
   addBot: async (input) => {
     const name = typeof input?.name === 'string' ? input.name.trim() : ''
     if (name === '') return refused('a bot needs a name')

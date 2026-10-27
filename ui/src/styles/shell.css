@@ -1762,3 +1762,12 @@ textarea.dialog-input {
 
 .people-remove:hover:not(:disabled) { background: var(--R50); }
 .people-remove:disabled { opacity: 0.5; cursor: default; }
+
+/* A deleted message: its row stays and says so, because every reference to it still resolves
+   (`src/erase.ts`). Drawn where the words were, in the caption colour, so a room reads as a
+   conversation rather than as a log with holes in it. */
+.msg-deleted { color: var(--N500); }
+
+/* The one sentence a confirmation card carries under its title: what goes with the thing that
+   is about to go. */
+.dialog-note { margin: 0; color: var(--N700); line-height: 20px; }

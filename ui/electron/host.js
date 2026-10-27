@@ -57,6 +57,10 @@ async function kernelModules() {
     // nothing else — the agents a bot works through are the roster's, and this file
     // adds those rows to the file rather than to the store.
     bots: await import('../../src/bots.ts'),
+    // Taking things back: a message, a thread, a room (`src/erase.ts`). A bot already had
+    // its verb in `bots` above, and it is the same shape — a stamp, and the rows that point
+    // at what is left stay readable.
+    erase: await import('../../src/erase.ts'),
     main: await import('../../src/main.ts'),
     roster: await import('../../src/roster.ts'),
     // Stage 1 over a server, and the artifact it is bound to. Both are the kernel's,
@@ -928,6 +932,9 @@ module.exports = {
   addMember,
   closeHost,
   createRoom,
+  deleteMessage,
+  deleteRoom,
+  deleteThread,
   openHost,
   openHostOrRefuse,
   postMessage,
@@ -984,6 +991,67 @@ async function removeMember(host, input) {
   await host.store.save()
 
   return snapshotOf(host.store, host.storeFile, host.stage1, host.stage2)
+}
+
+/**
+ * Take one message back: its words go, its row stays, its deliveries stop.
+ *
+ * **Three calls rather than one with a flag**, for the reason the writes above are separate
+ * calls: they answer three different questions. `deleteThread` is not a loop of this one — the
+ * kernel stamps a whole run at one instant, so a caller that looped could stop halfway and
+ * leave replies answering a root whose words are gone. `deleteRoom` is not a thread either: it
+ * takes the memberships with it, and that is what makes the room leave every list.
+ *
+ * **What the store cannot say afterwards rides back.** A picture and an attachment are files in
+ * `media/` beside the store, and the kernel keeps references rather than bytes — so each erased
+ * message hands its two references back, and the main process removes them (`main.js` is the
+ * only place that knows where `media/` is; this file has never written a file).
+ */
+async function deleteMessage(host, input) {
+  const mods = await kernelModules()
+  const gone = mods.erase.deleteMessage(host.store, { messageId: input?.messageId })
+  await host.store.save()
+
+  return {
+    messageId: gone.message.id,
+    roomId: gone.message.room_id,
+    media: gone.media ? { key: gone.media.key } : null,
+    file: gone.file ? { key: gone.file.key } : null,
+    snapshot: snapshotOf(host.store, host.storeFile, host.stage1, host.stage2),
+  }
+}
+
+/** Take a whole thread back — the root and every reply it holds, at one instant. */
+async function deleteThread(host, input) {
+  const mods = await kernelModules()
+  const gone = mods.erase.deleteThread(host.store, { rootId: input?.rootId })
+  await host.store.save()
+
+  return {
+    rootId: input?.rootId,
+    roomId: gone.roomId,
+    messageIds: gone.erased.map((one) => one.message.id),
+    blobs: gone.erased
+      .flatMap((one) => [one.media && { key: one.media.key }, one.file && { key: one.file.key }])
+      .filter(Boolean),
+    snapshot: snapshotOf(host.store, host.storeFile, host.stage1, host.stage2),
+  }
+}
+
+/** Delete a room: its messages, its memberships, and the room itself. */
+async function deleteRoom(host, input) {
+  const mods = await kernelModules()
+  const gone = mods.erase.deleteRoom(host.store, { roomId: input?.roomId })
+  await host.store.save()
+
+  return {
+    roomId: gone.room.id,
+    messageIds: gone.erased.map((one) => one.message.id),
+    blobs: gone.erased
+      .flatMap((one) => [one.media && { key: one.media.key }, one.file && { key: one.file.key }])
+      .filter(Boolean),
+    snapshot: snapshotOf(host.store, host.storeFile, host.stage1, host.stage2),
+  }
 }
 
 /**

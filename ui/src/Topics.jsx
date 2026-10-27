@@ -57,7 +57,7 @@ import Gutter from './Gutter.jsx'
  * screen's, because opening a thread moves the room list, the composer, the rail and the
  * thread panel at once — the same reason the groups view's way in lives there.
  */
-export default function Topics({ rooms, onOpen }) {
+export default function Topics({ rooms, onOpen, onDelete }) {
   const [openKey, setOpenKey] = useState(null)
 
   // Newest thread first, as the prototype sorts it. The comparison is on `created_at`, whose
@@ -125,7 +125,7 @@ export default function Topics({ rooms, onOpen }) {
 
       <section className="main-col">
         {open ? (
-          <TopicPane topic={open} onOpen={onOpen} />
+          <TopicPane topic={open} onOpen={onOpen} onDelete={onDelete} />
         ) : (
           <div className="empty">{whenNone}</div>
         )}
@@ -204,7 +204,7 @@ function nameOf(room, id) {
 }
 
 /** One topic's card: what the store holds about it, and the way into the thread. */
-function TopicPane({ topic, onOpen }) {
+function TopicPane({ topic, onOpen, onDelete }) {
   const root = topic.root
   const last = topic.replies.at(-1)
   return (
@@ -238,6 +238,18 @@ function TopicPane({ topic, onOpen }) {
           onClick={() => onOpen(topic.room.id, root.id)}
         >
           {t('ui.topics.open')}
+        </button>
+        {/* **Deleting the thread is deleting the topic**, and it is asked of the card because
+            the card is the one surface here that names a single topic. The call is the kernel's
+            own `deleteThread()`: the root and every reply under it, at one instant
+            (`src/erase.ts`) — a loop of per-message deletions could stop halfway and leave
+            replies answering a root whose words are gone. */}
+        <button
+          className="btn danger"
+          data-topic-delete={keyOf(topic)}
+          onClick={() => onDelete(topic.room.id, root.id)}
+        >
+          {t('ui.topics.delete')}
         </button>
       </div>
     </div>

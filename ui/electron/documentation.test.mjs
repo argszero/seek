@@ -390,6 +390,22 @@ const CLAIMS = {
   // outlives the launch: a toggle that forgot itself at the next start would be a button that
   // undoes its own work.
   'seek:theme-save': { en: /saved in that same `settings\.json`/, zh: /存进同一个 `settings\.json`/ },
+  // The three deletions (2026-10-27). All three broadcast, so the derivation finds them; what a
+  // reader has to be told is not that the buttons exist but what they take with them — the words
+  // themselves, the replies of a topic, the messages of a group — and that the row of a deleted
+  // message stays, because every reference to it resolves through that id.
+  'seek:delete-message': {
+    en: /`Delete` in a message's own menu, which takes the words away/,
+    zh: /消息自己菜单里的 `Delete`，它把字拿走/,
+  },
+  'seek:delete-thread': {
+    en: /`Delete this topic` on the card removes the thread and its replies/,
+    zh: /卡上的 `删除话题` ?把这条线程和它的回复一次删掉/,
+  },
+  'seek:delete-room': {
+    en: /`Delete this group` removes the room and everything said in it/,
+    zh: /同一栏里的 `删除这个群` ?把房间和里面说过的话一起删掉/,
+  },
 }
 
 /**
