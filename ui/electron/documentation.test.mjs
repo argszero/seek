@@ -339,7 +339,6 @@ const CLAIMS = {
   // the host rather than writing the store, so the derivation from `seek:changed` cannot see
   // it. Claimed because a person changes the model in the window and expects turns to follow.
   'seek:llm-save': { en: /the settings page writes/, zh: /设置页把说话那半写进/ },
-  'seek:llm-models': { en: /asks the endpoint which models/, zh: /向那个端点问它有哪些模型/ },
   // The four calls behind an organization's row. A reader is told about them because a person
   // clicking them changes which world they are looking at, and one of them destroys a world:
   // `Delete` is the only step in the app that removes a directory, and saying so is the point.

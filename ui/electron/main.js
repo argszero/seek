@@ -483,55 +483,6 @@ ipcMain.handle('seek:llm-save', async (_event, input) => {
 })
 
 /**
- * Ask an endpoint which models it serves. **This runs here, in the main process, and that is
- * the point**: a renderer's `fetch` is subject to the page's origin, and the same call made
- * from the window to an arbitrary endpoint comes back as `Failed to fetch` with no status and
- * no body — measured, not assumed. From here it is a plain request, and an endpoint that
- * refuses can be quoted in its own words instead of hidden behind a CORS sentence.
- *
- * The address and key may come from the form (a person trying before saving) or from the saved
- * settings. A failure is a value in three parts rather than a thrown error, because each part
- * is drawn differently: the status, the body's first line, and the browser-free reason.
- */
-ipcMain.handle('seek:llm-models', async (_event, input) => {
-  const words = await wordsFacts()
-  const raw = typeof input?.baseUrl === 'string' && input.baseUrl.trim() !== ''
-    ? input.baseUrl.trim()
-    : words.workServer ?? ''
-  const baseUrl = raw.replace(/\/+$/, '')
-  if (!/^https?:\/\/./.test(baseUrl)) {
-    return { ok: false, error: 'the address has to start with http:// or https://' }
-  }
-  const typed = typeof input?.apiKey === 'string' ? input.apiKey.trim() : ''
-  const apiKey = typed !== '' ? typed : words.workApiKey
-  const headers = typeof apiKey === 'string' && apiKey.trim() !== ''
-    ? { Authorization: `Bearer ${apiKey.trim()}` }
-    : {}
-  try {
-    const response = await fetch(`${baseUrl}/models`, {
-      headers,
-      signal: AbortSignal.timeout(15000),
-    })
-    const body = await response.text()
-    if (!response.ok) {
-      return { ok: false, status: response.status, body: body.slice(0, 400), error: `HTTP ${response.status}` }
-    }
-    let parsed
-    try {
-      parsed = JSON.parse(body)
-    } catch {
-      return { ok: false, status: response.status, body: body.slice(0, 400), error: 'the answer was not JSON' }
-    }
-    const models = Array.isArray(parsed?.data)
-      ? parsed.data.map((one) => one?.id).filter((id) => typeof id === 'string')
-      : []
-    return { ok: true, status: response.status, models }
-  } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : String(error) }
-  }
-})
-
-/**
  * The composer's one call.
  *
  * A refusal comes back as `{ ok: false, error }` rather than as a rejected renderer

@@ -330,32 +330,36 @@ test('the settings page says nothing a catalogue did not say', () => {
   const keys = [...source.matchAll(/\bt\(\s*'(ui\.settings\.[a-zA-Z.-]+)'/g)].map(
     (match) => match[1],
   )
-  assert.ok(keys.length >= 55, `the scan found ${keys.length} lookups — the pattern is broken`)
-  assert.ok(new Set(keys).size >= 55, 'the page looks its words up rather than repeating a few')
+  // The floor follows the page: the model listing took eight keys away with it on 2026-10-27.
+  assert.ok(keys.length >= 45, `the scan found ${keys.length} lookups — the pattern is broken`)
+  assert.ok(new Set(keys).size >= 45, 'the page looks its words up rather than repeating a few')
 
   // And the shapes that were there. A return here is the whole page speaking English again.
   for (const [shape, what] of [
     [/<h2>Settings<\/h2>/, 'the page title written into the markup'],
     [/placeholder="a name/, 'the organization field hint written into the markup'],
-    [/\$\{answer\.models\.length\} models/, 'a count joined to the word `models`'],
     [/'saved — this half uses it/, 'the sentence after a save written into the handler'],
     [/count === 1 \?/, 'the `count === 1 ?` comparison'],
   ]) {
     assert.doesNotMatch(source, shape, `${what}: it is the catalogue's to say`)
   }
 
-  // A count on this page too, in the language where the shortcut cannot be the rule: Chinese
-  // carries one category, so the numeral changes and the sentence does not.
+  // A count, in the language where the shortcut cannot be the rule: Chinese carries one
+  // category, so the numeral changes and the sentence does not. The sample used to be this
+  // page's own model count — `ui.settings.models.none-listed`, drawn under the `List models`
+  // button until the host took that button away on 2026-10-27. The settings page has no count
+  // of its own any more, so the demonstration moved to the member count, which is drawn in two
+  // views and is the number a reader is most likely to meet.
   bindCatalogue(catalogueFor('zh-CN'))
   assert.equal(
-    t('ui.settings.models.none-listed', { count: 1 }).replace('1', 'N'),
-    t('ui.settings.models.none-listed', { count: 7 }).replace('7', 'N'),
+    t('ui.members', { count: 1 }).replace('1', 'N'),
+    t('ui.members', { count: 7 }).replace('7', 'N'),
     'one Chinese sentence, whatever the count',
   )
   bindCatalogue(catalogueFor('en'))
   assert.notEqual(
-    t('ui.settings.models.none-listed', { count: 1 }),
-    t('ui.settings.models.none-listed', { count: 2 }),
+    t('ui.members', { count: 1 }),
+    t('ui.members', { count: 2 }),
     'English changes form at two, and that change is the catalogue saying so',
   )
 })

@@ -55,14 +55,13 @@ contextBridge.exposeInMainWorld('seekHost', {
   // given roster rows is a bot that cannot answer, and the window says so.
   addBot: (input) => ipcRenderer.invoke('seek:add-bot', input),
   /**
-   * The settings page, and the four calls behind it.
+   * The settings page, and the three calls behind it.
    *
    * `llm` reads what is in use and what is saved; `saveLlm` writes the words half and makes it
-   * the one turns use; `models` asks an endpoint what it serves. **The key is written and never
-   * read back** — `llm` answers `hasKey`, `keyTail` and `keyLen`, so the window can say which
-   * key is in place without ever holding it. And `models` is a call from the main process
-   * rather than a `fetch` here, because a renderer's request to an arbitrary endpoint fails at
-   * the origin boundary with a sentence that names nothing.
+   * the one turns use. **The key is written and never read back** — `llm` answers `hasKey`,
+   * `keyTail` and `keyLen`, so the window can say which key is in place without ever holding
+   * it. There is no call here that asks an endpoint what it serves: the window's `List models`
+   * button went on 2026-10-27, and the handler behind it went with the button.
    */
   /**
    * The organizations on this machine.
@@ -81,7 +80,6 @@ contextBridge.exposeInMainWorld('seekHost', {
   removeOrganization: (id) => ipcRenderer.invoke('seek:org-remove', id),
   llm: () => ipcRenderer.invoke('seek:llm'),
   saveLlm: (input) => ipcRenderer.invoke('seek:llm-save', input),
-  models: (input) => ipcRenderer.invoke('seek:llm-models', input),
   settingsPath: () => ipcRenderer.invoke('seek:settings-path'),
   /**
    * The words the window puts around what was typed, read once from the catalogue the
