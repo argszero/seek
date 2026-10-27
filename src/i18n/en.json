@@ -176,7 +176,7 @@
     "ui.settings.organizations.deleting": "deleting…",
     "ui.settings.organizations.deleted": "moved to the trash",
     "ui.settings.organizations.delete-question": "Delete “{name}” and its directory? Rooms, messages, pictures and its roster go with it.",
-    "ui.settings.models.title": "Models",
+    "ui.settings.machine.title": "Models on this machine",
     "ui.settings.models.description": "Seek asks two models two different questions. One decides whether a message is worth answering, the other writes the answer. The first is the app's own and is not configurable; the second is yours. It is set once for this machine: every organization answers with the same one.",
     "ui.settings.models.writes": "Writes the words",
     "ui.settings.models.writes-description": "Remote · an OpenAI-compatible endpoint. Save below and this half uses it from the next turn.",
