@@ -51,6 +51,21 @@ export interface Bot {
   gender?: string;
   position?: string;
   personality?: string;
+  /**
+   * When this bot was taken out of the organization, or absent while it is in it.
+   *
+   * **A stamp, not a deletion**, and the difference is the whole point: a bot that
+   * has spoken is named by every message it wrote (`Message.sender_id`), so erasing
+   * the row would leave a room full of messages by somebody the store cannot name.
+   * Taking it out therefore removes its **memberships** — it is in no room, wakes
+   * nobody, and appears in no list of who could be added — and leaves the row here
+   * to keep the history readable.
+   *
+   * It is one moment in time and not a `removed: true` flag for the reason every
+   * other stamp in this file is: "when" answers both "is it gone" and "since when"
+   * with one fact, and a boolean plus a stamp is two facts that can disagree.
+   */
+  removed_at?: string;
 }
 
 /**
@@ -95,6 +110,34 @@ export interface Room {
    * Absent means none have run. A human message resets it.
    */
   consecutive_agent_turns?: number;
+  /**
+   * What the room says about itself: three texts a person may write and edit.
+   *
+   * They are on the Room rather than on a membership because they are the room's,
+   * not a reader's: everybody who opens it reads the same description, the same
+   * announcement and the same tag, and one person editing one of them changes what
+   * the others see. (A per-reader view is the thing the kernel deliberately does
+   * *not* keep — `docs/design/data-model.md` rule 15.)
+   *
+   * **Nothing already written depends on them.** A `Message` carries `room_id` and
+   * never a copy of the room's name, so editing these rewrites no history: the
+   * archived log still names the room it was said in, and the room still says what
+   * it is now. That is why these may move when a message's own words may not.
+   *
+   * Absent means nobody wrote one, which the window draws as an invitation to
+   * write it rather than as an empty string somebody chose.
+   */
+  description?: string;
+  /** The room's pinned notice — the protoype's 群公告, read by everyone. */
+  announcement?: string;
+  /**
+   * One short label a person may put on the room (`外部群`, `排期`), or absent.
+   *
+   * Free text and not a closed set: no code branches on it, exactly as `chat_mode`
+   * is stored and never branched on — the day something does, it stops being a
+   * label and becomes a field with a meaning, and that is a decision, not an edit.
+   */
+  tag?: string;
 }
 
 export type MembershipRole = 'owner' | 'member';

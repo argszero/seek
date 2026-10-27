@@ -59,6 +59,10 @@ export default function Contacts({ people, me, firstLaw, refusal, onMessage, onS
   const [sending, setSending] = useState(false)
   const [stopped, setStopped] = useState(null)
   const [note, setNote] = useState(null)
+  // Taking a bot out of the organization: one call in flight, and the kernel's own sentence
+  // when it refuses (the one refusal a person can hit is a bot alone in a room).
+  const [removing, setRemoving] = useState(false)
+  const [removal, setRemoval] = useState(null)
 
   const others = people.filter((person) => person.id !== me)
   const wanted = query.trim().toLowerCase()
@@ -80,6 +84,34 @@ export default function Contacts({ people, me, firstLaw, refusal, onMessage, onS
     setGender('')
     setPosition('')
     setPersonality('')
+  }
+
+  /**
+   * Take one bot out of this organization.
+   *
+   * **The prototype's 移出这个组织, and it is the bot's own write** — `removeBot()` stamps the bot
+   * and removes every membership it held (`src/bots.ts`), and the row stays so the messages it
+   * wrote still name somebody. Nothing here re-checks any of that; the card closes because the
+   * bot it was about is no longer in the list it came from.
+   */
+  async function takeOut(person) {
+    if (removing) return
+    setRemoving(true)
+    setRemoval(null)
+    setNote(null)
+    try {
+      const outcome = await window.seekHost.removeBot({ botId: person.id })
+      if (!outcome.ok) {
+        setRemoval(outcome.error)
+        return
+      }
+      onSnapshot(outcome.snapshot)
+      setOpenId(null)
+    } catch (failure) {
+      setRemoval(failure instanceof Error ? failure.message : String(failure))
+    } finally {
+      setRemoving(false)
+    }
   }
 
   async function add() {
@@ -151,6 +183,14 @@ export default function Contacts({ people, me, firstLaw, refusal, onMessage, onS
         {refusal && (
           <div className="composer-err" data-contacts="refused">
             {refusal}
+          </div>
+        )}
+        {/* A bot that may not be taken out is a refusal about the card on the right, and the
+            card has just closed — so it is drawn here, beside the list the bot came from, in
+            the kernel's own sentence. */}
+        {removal && (
+          <div className="composer-err" data-contacts="removal-refused">
+            {removal}
           </div>
         )}
         {making && (
@@ -290,7 +330,13 @@ export default function Contacts({ people, me, firstLaw, refusal, onMessage, onS
 
       <section className="main-col">
         {open ? (
-          <ContactCard person={open} firstLaw={firstLaw} onMessage={onMessage} />
+          <ContactCard
+            person={open}
+            firstLaw={firstLaw}
+            onMessage={onMessage}
+            onRemove={takeOut}
+            removing={removing}
+          />
         ) : (
           <div className="empty">{t('ui.contacts.pick')}</div>
         )}
@@ -317,7 +363,7 @@ function lineUnder(person) {
 }
 
 /** One person's card: what the store holds about them, and the way into a conversation. */
-function ContactCard({ person, firstLaw, onMessage }) {
+function ContactCard({ person, firstLaw, onMessage, onRemove, removing }) {
   return (
     <div className="pane" data-contact-card={person.id}>
       <h2 className="pane-title">{person.name}</h2>
@@ -373,6 +419,20 @@ function ContactCard({ person, firstLaw, onMessage }) {
         >
           {t('ui.contacts.message')}
         </button>
+        {/* **The prototype's 移出这个组织**, and only on a bot's card: a person is the one this
+            organization *is*, and taking them out is not a thing this product offers. It is a
+            second button rather than a menu item because it is the one other thing a card is
+            for, and it is on the danger side of the pair where the prototype puts it. */}
+        {person.bot && (
+          <button
+            className="btn danger"
+            data-contact-remove={person.id}
+            disabled={removing}
+            onClick={() => onRemove(person)}
+          >
+            {t('ui.contacts.take-out')}
+          </button>
+        )}
       </div>
     </div>
   )

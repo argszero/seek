@@ -55,6 +55,24 @@ contextBridge.exposeInMainWorld('seekHost', {
   // given roster rows is a bot that cannot answer, and the window says so.
   addBot: (input) => ipcRenderer.invoke('seek:add-bot', input),
   /**
+   * The three writes that change something already written.
+   *
+   * `updateRoom` is the first edit this window has ever made — a room's name, its description,
+   * its announcement, its tag — and `removeMember` and `removeBot` are the first two that take
+   * something away. They are three calls and not a store handle or a generic "patch" for the
+   * reason every write above is a call: the kernel's own functions decide what may change and
+   * refuse in their own sentences (`src/rooms.ts`, `src/bots.ts`), and a renderer that could
+   * write the store directly would be a second author of it.
+   *
+   * **Taking a bot out of the organization is not taking a person out of a room**, which is why
+   * they are two calls rather than one with a flag: the first stamps a bot and removes every
+   * membership it held, the second removes one membership. A window that offered one button for
+   * both would be asking the kernel a question with two answers.
+   */
+  updateRoom: (input) => ipcRenderer.invoke('seek:update-room', input),
+  removeMember: (input) => ipcRenderer.invoke('seek:remove-member', input),
+  removeBot: (input) => ipcRenderer.invoke('seek:remove-bot', input),
+  /**
    * The settings page, and the three calls behind it.
    *
    * `llm` reads what is in use and what is saved; `saveLlm` writes the words half and makes it

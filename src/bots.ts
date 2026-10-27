@@ -89,3 +89,75 @@ export function createBot(store: SeekStore, input: CreateBotInput): CreatedBot {
 function textOf(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
+
+export interface RemoveBotInput {
+  botId: string;
+  /** An injectable clock, so a test does not depend on wall time. */
+  now?: string;
+}
+
+/** A bot as it now stands, and the memberships that went with it. */
+export interface RemovedBot {
+  bot: Bot;
+  /** The rooms it was taken out of, so a caller can say what changed. */
+  rooms: string[];
+}
+
+/**
+ * Take a bot out of the organization — the prototype's 移出这个组织.
+ *
+ * **Two writes, and the second is the one that matters.** The bot is stamped
+ * `removed_at`, and every membership it held is deleted: being in a room is what
+ * wakes a bot (`botsIn`), so a stamped bot still holding memberships would keep
+ * answering in rooms nobody meant it to be in any more.
+ *
+ * **The row stays.** Deleting it would leave every message it wrote naming a
+ * principal the store has never heard of — `Message.sender_id` is a reference, not a
+ * snapshot, and the room would draw its own history with a blank where a name was.
+ * A stamp is enough to keep it out of the lists of who may be added (`snapshot.js`
+ * filters it) while history stays readable. This is the same trade `Message` makes
+ * when it says what it says once: the past is not rewritten, only the present.
+ *
+ * **A room may not be emptied by this.** If the bot is the only member of some room,
+ * removing it would leave a room nobody can speak in — the state `removeMember`
+ * refuses from the leaving side — so that is refused here too, in a sentence that
+ * names the room. A bot alone in a room is rare (a room the roster made for it), and
+ * refusing loudly is better than a room that silently stops working.
+ *
+ * The roster is not touched: `agents.yml` is a person's file, and this file has
+ * never written it. The bot's agents stay there and are inert — an agent with no
+ * membership in a room is delivered nothing.
+ */
+export function removeBot(store: SeekStore, input: RemoveBotInput): RemovedBot {
+  const botId = typeof input?.botId === 'string' ? input.botId : '';
+  const bot = store.data.bots[botId];
+  if (!bot) {
+    throw new Error(`unknown bot: ${botId}`);
+  }
+  if (bot.removed_at !== undefined) {
+    throw new Error(
+      `${bot.name} was already taken out of this organization on ${bot.removed_at}: ` +
+        'a second stamp would move the moment it happened',
+    );
+  }
+
+  const held = Object.values(store.data.memberships).filter(
+    (membership) => membership.principal_id === botId,
+  );
+  for (const membership of held) {
+    if (store.membershipsOf(membership.room_id).length === 1) {
+      throw new Error(
+        `${bot.name} is the only member of ${membership.room_id}, so taking it out would ` +
+          'leave a room nobody can speak in: put somebody else in that room first, or ' +
+          'leave it alone',
+      );
+    }
+  }
+
+  const now = input.now ?? new Date().toISOString();
+  bot.removed_at = now;
+  for (const membership of held) {
+    delete store.data.memberships[membership.id];
+  }
+  return { bot, rooms: held.map((membership) => membership.room_id) };
+}

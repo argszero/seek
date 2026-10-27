@@ -101,6 +101,13 @@ export function makeFixture() {
         id: 'room-design',
         name: 'Design review',
         kind: 'group',
+        // What a room says about itself, in the three texts a person may edit
+        // (`Room.description`/`announcement`/`tag`). `createdAt` is the kernel's `created_at`,
+        // which the snapshot renames once — the panel words the moment itself.
+        description: 'How the window looks, decided together.',
+        announcement: 'Read the rail ruling before changing a column width.',
+        tag: 'Design',
+        createdAt: at(20, 10, 0),
         spend: spend(6, 8_420, 1_310, [
           { id: NOVA.id, name: NOVA.name, turns: 4, input_tokens: 6_100, output_tokens: 900 },
           { id: ECHO.id, name: ECHO.name, turns: 2, input_tokens: 2_320, output_tokens: 410 },
@@ -159,6 +166,13 @@ export function makeFixture() {
         id: 'room-echo',
         name: 'Echo',
         kind: 'p2p',
+        // A direct message has no announcement and no tag — the panel draws the two only for a
+        // room of more than two, because a notice nobody else will read is a notice about
+        // nothing.
+        description: null,
+        announcement: null,
+        tag: null,
+        createdAt: at(22, 16, 30),
         spend: spend(2, 1_240, 260, [
           { id: ECHO.id, name: ECHO.name, turns: 2, input_tokens: 1_240, output_tokens: 260 },
         ]),

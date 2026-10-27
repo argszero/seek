@@ -7,7 +7,7 @@ import Groups from './Groups.jsx'
 import Icon from './icons.jsx'
 import Settings from './Settings.jsx'
 import Topics from './Topics.jsx'
-import { fileSize, size, t, weightsReason, whenShort } from './catalogue.mjs'
+import { fileSize, size, t, weightsReason, when, whenShort } from './catalogue.mjs'
 import {
   ADD_MENU,
   ADD_TITLE,
@@ -344,6 +344,30 @@ export default function App() {
   // `adding` is only ever the one call in flight, so a second press cannot race the first.
   const [peopleOpen, setPeopleOpen] = useState(false)
   const [adding, setAdding] = useState(false)
+  /**
+   * The room's own panel, and the form that edits it.
+   *
+   * **A third thing in the side column, beside the thread.** The column already held one panel
+   * (`openThread`), and the prototype puts 会话信息 there too (`renderSide()`, `kind: 'info'`);
+   * `infoOpen` is a second reading of the same column rather than a fourth column, because a
+   * window with both open would be two answers to one question. When both are true the panel
+   * wins — a person who just pressed 资料 is asking about the room, not about a thread.
+   *
+   * The four fields are the edit form's own state, exactly as a bot's four are `Contacts.jsx`'s:
+   * nothing else on this screen draws what is half-typed, and a form cancelled at any point must
+   * not be the next one's starting text.
+   */
+  const [infoOpen, setInfoOpen] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [editName, setEditName] = useState('')
+  const [editDescription, setEditDescription] = useState('')
+  const [editAnnouncement, setEditAnnouncement] = useState('')
+  const [editTag, setEditTag] = useState('')
+  const [savingRoom, setSavingRoom] = useState(false)
+  // What a write to this room answered with when it was not the snapshot: a refusal, and the one
+  // note a leave makes. Kept apart from `error` because the places they are drawn are different
+  // — this one is inside the panel it is about.
+  const [roomError, setRoomError] = useState(null)
   // Making a bot, and looking at one, moved to `Contacts.jsx`: the four fields a bot is —
   // 姓名／性别／职位／性格 — are that view's own state until `Add` hands them to the main process,
   // and nothing on this screen draws them. What stays here is the snapshot the add hands back,
@@ -850,6 +874,101 @@ export default function App() {
   }
 
   /**
+   * Take one person out of the room on show.
+   *
+   * `addToRoom`'s twin, and the same envelope: the kernel's `removeMember()` decides — it refuses
+   * a principal who is not in the room and refuses the last member, in sentences this window
+   * draws unchanged. Its refusal goes where its sibling's does, beside the people list it is
+   * about, because that is the list the row was in.
+   */
+  async function removeFromRoom(principalId) {
+    if (!active || adding) return
+    setAdding(true)
+    setError(null)
+    try {
+      const outcome = await window.seekHost.removeMember({ roomId: active.id, principalId })
+      if (outcome.ok) setSnap(outcome.snapshot)
+      else setError({ where: 'add-member', message: outcome.error })
+    } finally {
+      setAdding(false)
+    }
+  }
+
+  /**
+   * Leave the room on show — the same write, with the person this window speaks as.
+   *
+   * **The room does not disappear, and that is the store being honest.** A room list here is
+   * every room the organization holds, not the rooms one person is in; leaving therefore takes
+   * this person out of the room's members and leaves the room where it was. What changes is the
+   * composer: `deliver()` refuses a sender who is not a member, in its own sentence, which is
+   * the sentence a person sees when they try to speak in a room they have left — instead of a
+   * room that silently swallows what they type.
+   */
+  async function leaveRoom() {
+    if (!active || adding) return
+    const me = snap.me
+    if (!me) return
+    setAdding(true)
+    setRoomError(null)
+    try {
+      const outcome = await window.seekHost.removeMember({ roomId: active.id, principalId: me })
+      if (outcome.ok) {
+        setSnap(outcome.snapshot)
+        setInfoOpen(false)
+      } else setRoomError(outcome.error)
+    } finally {
+      setAdding(false)
+    }
+  }
+
+  /**
+   * Open the edit form, filled with what the room says now.
+   *
+   * **Read off the room, not off a copy.** The four boxes start as the four stored texts, and an
+   * absent one starts empty — a room nobody has written about is a room whose box is blank, not
+   * one whose box says "null".
+   */
+  function openEdit() {
+    if (!active) return
+    setRoomError(null)
+    setEditName(active.name)
+    setEditDescription(active.description ?? '')
+    setEditAnnouncement(active.announcement ?? '')
+    setEditTag(active.tag ?? '')
+    setEditing(true)
+  }
+
+  /**
+   * Save the four texts, once.
+   *
+   * **All four always travel**, and an emptied box travels as `''` rather than as nothing: that
+   * is the difference `updateRoom()` draws between "nobody touched this field" and "a person
+   * cleared it", and a form that only sent what changed could not express the second. The name is
+   * the one the kernel refuses when it is blank, in its own sentence — nothing is checked here
+   * that the kernel already answers.
+   */
+  async function saveRoom() {
+    if (!active || savingRoom) return
+    setSavingRoom(true)
+    setRoomError(null)
+    try {
+      const outcome = await window.seekHost.updateRoom({
+        roomId: active.id,
+        name: editName,
+        description: editDescription,
+        announcement: editAnnouncement,
+        tag: editTag,
+      })
+      if (outcome.ok) {
+        setSnap(outcome.snapshot)
+        setEditing(false)
+      } else setRoomError(outcome.error)
+    } finally {
+      setSavingRoom(false)
+    }
+  }
+
+  /**
    * Open the conversation with one person, making it if this store has none.
    *
    * A conversation here is a room of exactly two, and **the kernel stores no "is a direct
@@ -966,7 +1085,7 @@ export default function App() {
 
   return (
     <div
-      className={`app${openThread && view === 'chat' ? ' with-thread' : ''}${
+      className={`app${(openThread || infoOpen) && view === 'chat' ? ' with-thread' : ''}${
         view === 'settings' ? ' with-settings' : ''
       }`}
     >
@@ -1251,6 +1370,27 @@ export default function App() {
               >
                 {t('ui.members', { count: active.members.length })}
               </button>
+              {/* **What this room is**, in the column the thread already uses. The prototype
+                  puts it behind one mark in the chat header (`data-role="chat-info"`,
+                  `renderSide()`) and calls it 会话信息 for a group and 资料 for a one-to-one,
+                  because those are two different questions about two different things. The
+                  mark is the same either way; the panel's title is the one that differs. */}
+              <button
+                className="room-info-mark"
+                data-room-info="open"
+                title={
+                  active.kind === 'p2p'
+                    ? t('ui.chat.info-hint-p2p')
+                    : t('ui.chat.info-hint')
+                }
+                aria-pressed={infoOpen}
+                onClick={() => {
+                  setInfoOpen((open) => !open)
+                  setRoomError(null)
+                }}
+              >
+                <Icon name="info" size={16} />
+              </button>
               {/* What this room has cost, next to who is in it. A number and nothing
                   around it, because the ruling forbids the frame a budget would need. */}
               <Spend spend={active.spend} />
@@ -1275,9 +1415,20 @@ export default function App() {
                         <span className="people-name">{person.name}</span>
                         {person.bot && <span className="msg-bot">{t('ui.chat.bot')}</span>}
                         {inside ? (
-                          <span className="people-state" data-people-in={person.id}>
-                            {t('ui.chat.in-this-room')}
-                          </span>
+                          // **A member is a way out, not a badge.** The state used to be a
+                          // label saying "in this room", which answers a question nobody asked
+                          // twice: the row is only listed as inside because the room holds it.
+                          // The way out is the same write from the other end —
+                          // `removeMember()` — and it refuses the last member in the kernel's
+                          // own sentence, which is the one case a person can actually hit.
+                          <button
+                            className="people-remove"
+                            data-people-remove={person.id}
+                            disabled={adding}
+                            onClick={() => removeFromRoom(person.id)}
+                          >
+                            {t('ui.chat.take-out')}
+                          </button>
                         ) : (
                           <button
                             className="people-add"
@@ -1425,7 +1576,7 @@ export default function App() {
         )}
       </section>
 
-      {openThread && active && (
+      {openThread && !infoOpen && active && (
         <>
           {/* The thread panel's own seam. It sits to the panel's left, so it reads the drag
               with the opposite sign (`dir` in `resize.mjs`): the panel grows as the pointer
@@ -1545,6 +1696,211 @@ export default function App() {
         </>
       )}
         </>
+      )}
+
+      {/* **What this room is**, in the column the thread uses — the prototype's
+          `renderSide()` with `kind: 'info'`. One panel at a time in one column: a window that
+          drew both would be two answers to "tell me about this room".
+
+          It draws **what the store holds and nothing it does not**. The prototype's panel
+          carries two toggles — 置顶会话 and 消息免打扰 — and they are deliberately absent: nothing
+          in this product reads either one, so a switch here would be a control that changes a
+          flag and nothing a person could observe. That is the same rule as the `Aa` and `⤢`
+          marks the composer leaves out. The rest of the prototype's panel is here, and the two
+          things it could only draw from a store we do not have (a 群主 chip, a member count
+          that is not the list itself) are not invented. */}
+      {infoOpen && active && (
+        <>
+          <Gutter pane="side" />
+          <aside className="thread-col room-col" data-room-panel={active.id}>
+            <header className="thread-head">
+              <h3>
+                {active.kind === 'p2p' ? t('ui.room.title-p2p') : t('ui.room.title')}
+              </h3>
+              <button
+                className="thread-close"
+                data-room-info="close"
+                title={t('ui.room.close')}
+                onClick={() => setInfoOpen(false)}
+              >
+                ×
+              </button>
+            </header>
+
+            <div className="room-body">
+              <h4 className="room-name" data-room-field="name">
+                {active.name}
+              </h4>
+              <p className="room-sub">
+                {active.kind === 'p2p' ? t('ui.room.kind-p2p') : t('ui.room.kind-group')}
+                {' · '}
+                {t('ui.room.made', { when: when(active.createdAt) })}
+              </p>
+
+              {/* The refusal of the last write, in the panel it was made from. */}
+              {roomError && (
+                <div className="composer-err" data-room="refused">
+                  {roomError}
+                </div>
+              )}
+
+              <div className="card">
+                <div className="card-body">
+                  <div className="card-title">{t('ui.room.about')}</div>
+                  <p className="pane-desc" data-room-field="description">
+                    {active.description ?? t('ui.room.nothing-said')}
+                  </p>
+                </div>
+              </div>
+
+              {/* A notice and a label are a group's, not a one-to-one's: nobody else reads
+                  either, and the prototype draws both only for `chat_mode !== 'p2p'`. */}
+              {active.kind !== 'p2p' && (
+                <div className="card">
+                  <div className="card-body">
+                    <div className="card-title">{t('ui.room.announcement')}</div>
+                    <p className="pane-desc" data-room-field="announcement">
+                      {active.announcement ?? t('ui.room.nothing-announced')}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              <div className="card">
+                <div className="card-body">
+                  <div className="card-title">
+                    {t('ui.members', { count: active.members.length })}
+                  </div>
+                  <ul className="room-members">
+                    {active.members.map((member) => (
+                      <li key={member.id} className="room-member" data-room-member={member.id}>
+                        <span className="room-member-name">{member.name}</span>
+                        {member.bot && <span className="msg-bot">{t('ui.chat.bot')}</span>}
+                        {member.id === snap.me && (
+                          <span className="room-member-me">{t('ui.room.me')}</span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                  {/* Who goes is the people list's job — it is the one list that knows both
+                      who is in and who could be, and `removeMember()` refuses the last member
+                      in its own sentence either way. */}
+                  <button className="room-manage" onClick={() => setPeopleOpen(true)}>
+                    {t('ui.room.manage')}
+                  </button>
+                </div>
+              </div>
+
+              {active.tag !== null && active.kind !== 'p2p' && (
+                <p className="room-tag" data-room-field="tag">
+                  {t('ui.room.tag', { tag: active.tag })}
+                </p>
+              )}
+
+              <div className="room-actions">
+                <button className="btn" data-room-edit="open" onClick={openEdit}>
+                  {t('ui.room.edit')}
+                </button>
+                <button
+                  className="btn danger"
+                  data-room-leave="leave"
+                  disabled={adding}
+                  onClick={leaveRoom}
+                >
+                  {t('ui.room.leave')}
+                </button>
+              </div>
+            </div>
+          </aside>
+        </>
+      )}
+
+      {/* **Editing what a room says about itself** — the window's first edit, in the same card
+          the four "make something" forms use. It sends all four texts, always: an emptied box
+          is a person having cleared a text, which `updateRoom()` stores as absent, and a form
+          that sent only what changed could not say that. */}
+      {editing && active && (
+        <Dialog
+          name="room"
+          title={t('ui.room.edit')}
+          submit={t('ui.room.save')}
+          cancel={t('ui.room.cancel')}
+          busy={savingRoom}
+          onSubmit={saveRoom}
+          onClose={() => {
+            setEditing(false)
+            setRoomError(null)
+          }}
+        >
+          <div className="dialog-fields">
+            <div className="dialog-field">
+              <label className="field-label" htmlFor="room-name">
+                {t('ui.room.field.name')}
+              </label>
+              <input
+                id="room-name"
+                className="dialog-input"
+                data-room-edit="name"
+                autoFocus
+                value={editName}
+                onChange={(event) => {
+                  setRoomError(null)
+                  setEditName(event.target.value)
+                }}
+              />
+            </div>
+
+            <div className="dialog-field">
+              <label className="field-label" htmlFor="room-description">
+                {t('ui.room.field.description')}
+              </label>
+              <textarea
+                id="room-description"
+                className="dialog-input"
+                data-room-edit="description"
+                rows={3}
+                value={editDescription}
+                onChange={(event) => setEditDescription(event.target.value)}
+              />
+            </div>
+
+            {active.kind !== 'p2p' && (
+              <>
+                <div className="dialog-field">
+                  <label className="field-label" htmlFor="room-announcement">
+                    {t('ui.room.field.announcement')}
+                  </label>
+                  <textarea
+                    id="room-announcement"
+                    className="dialog-input"
+                    data-room-edit="announcement"
+                    rows={3}
+                    value={editAnnouncement}
+                    onChange={(event) => setEditAnnouncement(event.target.value)}
+                  />
+                </div>
+
+                <div className="dialog-field">
+                  <label className="field-label" htmlFor="room-tag">
+                    {t('ui.room.field.tag')}
+                  </label>
+                  <input
+                    id="room-tag"
+                    className="dialog-input"
+                    data-room-edit="tag"
+                    placeholder={t('ui.room.field.tag-hint')}
+                    value={editTag}
+                    onChange={(event) => setEditTag(event.target.value)}
+                  />
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* The kernel's sentence, in the card that asked for it. The blank name is the one
+              refusal a person meets here, and `updateRoom()` is where it is worded. */}
+          {roomError && <p className="dialog-err" data-room-edit="refused">{roomError}</p>}
+        </Dialog>
       )}
 
       {/* **Making an organization, over the window rather than instead of it.**

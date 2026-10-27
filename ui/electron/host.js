@@ -932,4 +932,78 @@ module.exports = {
   openHostOrRefuse,
   postMessage,
   reactToMessage,
+  removeBot,
+  removeMember,
+  updateRoom,
+}
+
+/**
+ * Change what a room says about itself — its name, its description, its announcement,
+ * its tag.
+ *
+ * **This is the interface's first edit.** `addMember` adds and `createRoom` makes; nothing
+ * before this call changed something already written. What it may change is the kernel's
+ * answer, not this file's: `updateRoom()` (`src/rooms.ts`) refuses a room this store does not
+ * hold and a name that is nothing but spaces, and applies the four texts in one step — half
+ * of a refused edit is worse than none of it.
+ *
+ * **A field the window did not send is a field nobody touched**, so each of the four is passed
+ * only when it arrives as a string. That is what lets the form send what the person edited
+ * without clearing the three texts they did not open.
+ */
+async function updateRoom(host, input) {
+  const patch = {}
+  for (const field of ['name', 'description', 'announcement', 'tag']) {
+    if (typeof input?.[field] === 'string') patch[field] = input[field]
+  }
+
+  const mods = await kernelModules()
+  mods.rooms.updateRoom(host.store, { roomId: input?.roomId, ...patch })
+  // Once, and before the snapshot — the rule a room, a message and a member all follow. An
+  // edit drawn but not saved is a room that reverts on the next open, which reads as the app
+  // forgetting what it was told.
+  await host.store.save()
+
+  return snapshotOf(host.store, host.storeFile, host.stage1, host.stage2)
+}
+
+/**
+ * Take one principal out of a room — the window's 退出, and the same call from the other side.
+ *
+ * `removeMember()` in `src/rooms.ts` decides who may go and refuses the last member in its own
+ * sentence; nothing is re-checked here, for the reason `createRoom` gives. What the window does
+ * with the answer — leaving the room, closing the people panel — is the window's, because it is
+ * about what is on screen and not about the store.
+ */
+async function removeMember(host, input) {
+  const mods = await kernelModules()
+  mods.rooms.removeMember(host.store, {
+    roomId: input?.roomId,
+    principalId: input?.principalId,
+  })
+  await host.store.save()
+
+  return snapshotOf(host.store, host.storeFile, host.stage1, host.stage2)
+}
+
+/**
+ * Take a bot out of the organization.
+ *
+ * **One store write and no file write.** `removeBot()` (`src/bots.ts`) stamps the bot and deletes
+ * its memberships; the roster beside the store is a person's file and this bridge has never
+ * written it — the bot's agent rows simply stop waking anything, because an agent with no
+ * membership in a room is delivered nothing.
+ */
+async function removeBot(host, input) {
+  const mods = await kernelModules()
+  const gone = mods.bots.removeBot(host.store, { botId: input?.botId })
+  await host.store.save()
+
+  return {
+    botId: gone.bot.id,
+    // The rooms it was taken out of, so the window can say what changed rather than leaving a
+    // person to notice it in a list.
+    rooms: gone.rooms,
+    snapshot: snapshotOf(host.store, host.storeFile, host.stage1, host.stage2),
+  }
 }

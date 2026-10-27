@@ -181,3 +181,117 @@ function assertPrincipal(store: SeekStore, principalId: Id): void {
     throw new Error(`unknown principal: ${principalId}`);
   }
 }
+
+export interface UpdateRoomInput {
+  roomId: Id;
+  /**
+   * The four texts a person may edit. **A field left out is a field nobody touched**
+   * — `undefined` leaves what is stored alone — while `''` is a person having
+   * deleted the text, which clears it. Two different answers, so they are two
+   * different values rather than one "empty".
+   */
+  name?: string;
+  description?: string;
+  announcement?: string;
+  tag?: string;
+  /** An injectable clock, so a test does not depend on wall time. */
+  now?: string;
+}
+
+/**
+ * Change what a room says about itself: its name, its description, its announcement,
+ * its tag.
+ *
+ * **The first write in this file that changes something already written**, and what
+ * it may change is deliberately narrow. A `Message` carries `room_id` and never a
+ * copy of the room's name, so renaming a room rewrites no history: every message
+ * still names the room it was said in, and the room says what it is now. That is
+ * the difference between this and `Message.text`, which `deliver()` writes once and
+ * nothing in the kernel moves.
+ *
+ * **A name is required to be a name.** `''` would draw as the room's own id in every
+ * list (`snapshotOf` falls back to the id, which is the right fallback for a room the
+ * roster made and the wrong one for a room somebody just emptied), so a blank name is
+ * refused rather than stored. The other three *may* be cleared, because "no
+ * announcement" is a state a room is allowed to be in.
+ *
+ * Returns the room as it now stands, so a caller need not re-read it.
+ */
+export function updateRoom(store: SeekStore, input: UpdateRoomInput): Room {
+  const room = store.room(input?.roomId);
+  if (!room) {
+    throw new Error(`unknown room: ${input?.roomId}`);
+  }
+
+  if (input.name !== undefined) {
+    const name = typeof input.name === 'string' ? input.name.trim() : '';
+    if (name === '') {
+      throw new Error(
+        'a room with no name: every list would draw it under its own id, and ' +
+          '`delete room.name` is how this kernel has no name at all — a person who ' +
+          'cleared the box has not asked for that',
+      );
+    }
+    room.name = name;
+  }
+
+  for (const field of ['description', 'announcement', 'tag'] as const) {
+    if (input[field] === undefined) continue;
+    const text = typeof input[field] === 'string' ? input[field].trim() : '';
+    if (text === '') delete room[field];
+    else room[field] = text;
+  }
+
+  return room;
+}
+
+export interface RemoveMemberInput {
+  roomId: Id;
+  principalId: Id;
+}
+
+/**
+ * Take one principal out of a room — leaving a group, or being taken out of one.
+ *
+ * Both directions are one write, because the kernel has no permission model to tell
+ * them apart: `MembershipRole` is stored and never branched on, so "I leave" and
+ * "somebody takes me out" are the same row going away. Who may do it is the
+ * interface's question and is not answered here.
+ *
+ * **A room may not be emptied.** `createRoom` refuses `members: []` because a room
+ * nobody is in is unrunnable in (`deliver` refuses a non-member sender) and invisible
+ * to every bot, so nothing could ever repair it; the same sentence applies from the
+ * other end, and the last member leaving is refused. This is what a person hits when
+ * they press 退出 in a room that holds only them, and the refusal says so instead of
+ * leaving behind a room that can never be used again.
+ *
+ * Removing somebody who has spoken changes nothing already written: a `Message`
+ * keeps `sender_id`, so the room's history still names who said what. It is *being
+ * in the room* that goes away, not having been in it.
+ */
+export function removeMember(store: SeekStore, input: RemoveMemberInput): Membership {
+  const { roomId, principalId } = input ?? ({} as RemoveMemberInput);
+  if (!store.room(roomId)) {
+    throw new Error(`unknown room: ${roomId}`);
+  }
+  const held = store
+    .membershipsOf(roomId)
+    .find((membership) => membership.principal_id === principalId);
+  if (!held) {
+    throw new Error(
+      `${principalId} is not a member of ${roomId}: there is no membership to remove, ` +
+        'and writing a deletion for a row that is not there would report that a room ' +
+        'changed when it did not',
+    );
+  }
+  if (store.membershipsOf(roomId).length === 1) {
+    throw new Error(
+      `${principalId} is the last member of ${roomId}: a room nobody is in can never be ` +
+        'spoken in again (`deliver` refuses a sender who is not a member) and no bot can ' +
+        'be woken by it, which is the state `createRoom` already refuses to make',
+    );
+  }
+
+  delete store.data.memberships[held.id];
+  return held;
+}

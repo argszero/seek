@@ -30,6 +30,9 @@ const {
   openHostOrRefuse,
   postMessage,
   reactToMessage,
+  removeBot,
+  removeMember,
+  updateRoom,
 } = require('./host.js')
 const { BY_MIME, mimeForPath, pathForKey, readMedia, saveAttachment, saveMedia } = require('./media.js')
 
@@ -584,6 +587,57 @@ ipcMain.handle('seek:add-member', async (_event, input) => {
     const snapshot = await addMember(host, input ?? {})
     if (win && !win.isDestroyed()) win.webContents.send('seek:changed', snapshot)
     return { ok: true, snapshot }
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+  }
+})
+
+/**
+ * Change what a room says about itself, and tell every window the new snapshot.
+ *
+ * The same envelope as `seek:add-member`: one write, one snapshot, and the kernel's own
+ * sentence when it refuses. Nothing rides back beside the snapshot, because unlike a made room
+ * or a made bot there is nothing the window cannot derive — the room it edited is the room it
+ * was already showing.
+ */
+ipcMain.handle('seek:update-room', async (_event, input) => {
+  try {
+    const snapshot = await updateRoom(host, input ?? {})
+    if (win && !win.isDestroyed()) win.webContents.send('seek:changed', snapshot)
+    return { ok: true, snapshot }
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+  }
+})
+
+/**
+ * Take one principal out of a room.
+ *
+ * `seek:update-room`'s twin, and for the same reason it carries nothing but the snapshot. The
+ * window learns *why* the kernel refused in `error`, which is where the last member learns that
+ * a room may not be emptied.
+ */
+ipcMain.handle('seek:remove-member', async (_event, input) => {
+  try {
+    const snapshot = await removeMember(host, input ?? {})
+    if (win && !win.isDestroyed()) win.webContents.send('seek:changed', snapshot)
+    return { ok: true, snapshot }
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+  }
+})
+
+/**
+ * Take a bot out of the organization.
+ *
+ * `rooms` rides back for the same reason `botId` does on the way in: which rooms a bot was in
+ * is not derivable from the snapshot that follows — it has already left them.
+ */
+ipcMain.handle('seek:remove-bot', async (_event, input) => {
+  try {
+    const gone = await removeBot(host, input ?? {})
+    if (win && !win.isDestroyed()) win.webContents.send('seek:changed', gone.snapshot)
+    return { ok: true, snapshot: gone.snapshot, botId: gone.botId, rooms: gone.rooms }
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) }
   }

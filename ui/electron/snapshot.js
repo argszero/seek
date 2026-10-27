@@ -167,7 +167,12 @@ function stageTwoOf(stage2) {
 function peopleOf(store) {
   const people = [
     ...Object.values(store.data.principals),
-    ...Object.values(store.data.bots),
+    // A bot that has been taken out of the organization is not one of the people it holds any
+    // more: it may not be put in a room and nothing may be sent to it. Its row stays in the
+    // store because every message it wrote names it (`Bot.removed_at`), and that is exactly
+    // the difference this filter draws — the history can still name it, the list cannot offer
+    // it. Filtered on the stamp and not on a flag, for the reason `removed_at` is a stamp.
+    ...Object.values(store.data.bots).filter((bot) => bot.removed_at === undefined),
   ].map((who) => {
     const isBot = Boolean(store.data.bots[who.id])
     return {
@@ -297,6 +302,17 @@ function snapshotOf(store, storeFile, stage1 = null, stage2 = null, storeRefusal
     // `chat_mode` is the field; it is stored and never branched on
     // (`src/README.md` line 32), which is why the interface may show it.
     kind: room.chat_mode,
+    // What the room says about itself, in the kernel's own three fields (`Room`). `null` and
+    // never `undefined`, for the reason `media` is `null`: a renderer facing two kinds of
+    // nothing draws whatever `undefined` does — and here the two kinds are real, because a
+    // room nobody has written about and a room whose text a person cleared are both absent in
+    // the store and both mean "say something" in the window.
+    description: textOrNull(room.description),
+    announcement: textOrNull(room.announcement),
+    tag: textOrNull(room.tag),
+    // When the room was made, so the panel that answers "what is this room" can say it. The
+    // window words the moment itself (`catalogue.mjs` `when()`), because a date is a format.
+    createdAt: room.created_at,
     // What the bots in this room have spent, as the ledger holds it — a number to read,
     // with nothing to compare it against (`docs/host-rulings.md`, "No spending cap").
     spend: spent.get(room.id) ?? NOTHING_SPENT,
