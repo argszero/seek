@@ -349,6 +349,51 @@ test('one person may leave a room, and the room still names what they said in it
   assert.deepEqual(again.observations, []);
 });
 
+test('a refusal names the person and the room, because an id is what a person reads', () => {
+  // **The window draws the kernel's sentence unrewritten** (`docs/design/i18n.md` §2), so an id
+  // in the sentence is an id on the screen. 退出 in a room of one answered
+  // `ou_74bd0305f28645c5 is the last member of oc_0d2105bd11af4229` in the running window
+  // (measured 2026-10-27) — two rows, and nobody. Wording it is the kernel's job, and this is
+  // the wording: the store's name where there is one, the id where there is not.
+  const world = makeWorld();
+  const { room } = createRoom(world.store, {
+    name: 'a room of one',
+    members: [{ principalId: world.me }],
+    now: AT,
+  });
+  assert.throws(
+    () => removeMember(world.store, { roomId: room.id, principalId: world.me }),
+    (error: Error) => {
+      assert.match(error.message, /^me is the last member of "a room of one": /);
+      assert.ok(!error.message.includes(world.me), 'the sentence still names the person by id');
+      assert.ok(!error.message.includes(room.id), 'the sentence still names the room by id');
+      return true;
+    },
+  );
+
+  // A row with no name falls back to its id rather than to nothing: the sentence has to point
+  // at something a reader can act on, and `the room` says which of the two ids it is.
+  const nameless = createRoom(world.store, {
+    members: [{ principalId: world.botA }],
+    now: AT,
+  });
+  assert.throws(
+    () => removeMember(world.store, { roomId: nameless.room.id, principalId: world.botA }),
+    new RegExp(`A is the last member of the room ${nameless.room.id}: a room nobody`),
+  );
+
+  // The other sentence of the pair, which a person reaches by pressing the x beside a row.
+  const two = createRoom(world.store, {
+    name: 'two of us',
+    members: [{ principalId: world.me }, { principalId: world.botA }],
+    now: AT,
+  });
+  assert.throws(
+    () => removeMember(world.store, { roomId: two.room.id, principalId: world.botB }),
+    /B is not a member of "two of us": there is no membership/,
+  );
+});
+
 test('the last member may not leave, and a member who is not there may not be removed', () => {
   const world = makeWorld();
   const { room } = createRoom(world.store, {

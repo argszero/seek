@@ -1047,7 +1047,17 @@ export default function App() {
 
   if (!snap) return <div className="booting">{t('ui.chat.opening-store')}</div>
 
-  const whoSaid = Object.fromEntries((active?.members ?? []).map((member) => [member.id, member]))
+  /**
+   * Who wrote a line, looked up in everyone the store has ever named and then in this room.
+   *
+   * **A message does not stop having an author when the author leaves.** Built from the room's
+   * members alone, a line whose sender had been taken out of the room — or out of the
+   * organization — fell back to the raw id and read `ou_447c1cba8e4d4bee` (measured
+   * 2026-10-27, after a bot that had spoken was taken out). `snap.named` is the store's own
+   * answer to "who is this", stamped bots included; membership is layered over it because a
+   * member's row is the one that carries what this room knows about them.
+   */
+  const whoSaid = { ...(snap.named ?? {}), ...Object.fromEntries((active?.members ?? []).map((member) => [member.id, member])) }
 
   /**
    * What a message's toolbar may call, as one object.
@@ -1083,9 +1093,26 @@ export default function App() {
       }
     : null
 
+  /**
+   * Whether this view has a column beside the room for a side panel, and therefore whether the
+   * window is laid out for one.
+   *
+   * **The side column belongs to the panel, not to the view it happens to be open on.** The
+   * class that declares those two extra tracks used to be keyed to `view === 'chat'`, and the
+   * panel itself is drawn wherever the window is reading a room — so on the four other views
+   * `.app` declared five tracks and the panel was its seventh child: it wrapped onto a second
+   * implicit row, measured 6px wide, and its contents painted from y 780 to y 1030 in a window
+   * 780 tall (measured 2026-10-27, 1180×780: chat 380px, Bots and Groups and Topics 6px).
+   *
+   * Settings is the one view that is not reading a room: it is a page of its own beside the
+   * rail, and a room's panel next to it would be a column about something that page is not
+   * about. So it is named here, once, and both panels and the class read this.
+   */
+  const sideOpen = view !== 'settings' && Boolean(active) && (openThread !== null || infoOpen)
+
   return (
     <div
-      className={`app${(openThread || infoOpen) && view === 'chat' ? ' with-thread' : ''}${
+      className={`app${sideOpen ? ' with-thread' : ''}${
         view === 'settings' ? ' with-settings' : ''
       }`}
     >
@@ -1576,7 +1603,7 @@ export default function App() {
         )}
       </section>
 
-      {openThread && !infoOpen && active && (
+      {sideOpen && openThread !== null && !infoOpen && (
         <>
           {/* The thread panel's own seam. It sits to the panel's left, so it reads the drag
               with the opposite sign (`dir` in `resize.mjs`): the panel grows as the pointer
@@ -1709,7 +1736,7 @@ export default function App() {
           marks the composer leaves out. The rest of the prototype's panel is here, and the two
           things it could only draw from a store we do not have (a 群主 chip, a member count
           that is not the list itself) are not invented. */}
-      {infoOpen && active && (
+      {sideOpen && infoOpen && (
         <>
           <Gutter pane="side" />
           <aside className="thread-col room-col" data-room-panel={active.id}>

@@ -139,8 +139,58 @@ test('an empty store is an empty room list, not a failure', () => {
 /** A room may carry no name at all, and the rail draws the first character of it. */
 test('a room with no name is drawn by its id rather than throwing', () => {
   const store = new SeekStore(emptyData())
+  store.data.principals['pr_me'] = { id: 'pr_me', kind: 'human', name: 'argszero' }
   store.data.rooms['oc_1'] = { id: 'oc_1', chat_mode: 'group', created_at: AT }
+  // A room holds somebody — the kernel refuses `members: []` — so the fixture holds the reader.
+  store.data.memberships['mb_1'] = {
+    id: 'mb_1',
+    room_id: 'oc_1',
+    principal_id: 'pr_me',
+    joined_at: AT,
+    role: 'owner',
+  }
   assert.equal(snapshotOf(store, '/tmp/seek.json').rooms[0].name, 'oc_1')
+})
+
+/**
+ * The list is the reader's own rooms, and leaving one is what makes the difference visible.
+ *
+ * It used to be every room in the store, which was the same list while a membership could only
+ * be added. `removeMember()` — the panel's 退出, 2026-10-27 — made a room the reader is not in
+ * reachable, and the window listed the room it had just left and offered it a composer, which
+ * is a write `deliver()` refuses because the sender is not a member (measured in the window the
+ * same day: `2 members` in the store, neither of them the reader).
+ */
+test('a room the reader is not in is not in the reader\'s list', () => {
+  const store = new SeekStore(emptyData())
+  store.data.principals['pr_me'] = { id: 'pr_me', kind: 'human', name: 'me' }
+  store.data.principals['pr_them'] = { id: 'pr_them', kind: 'human', name: 'them' }
+  for (const id of ['rm_mine', 'rm_theirs']) {
+    store.data.rooms[id] = { id, name: id, chat_mode: 'group', created_at: AT }
+  }
+  store.data.memberships['mb_mine'] = {
+    id: 'mb_mine',
+    room_id: 'rm_mine',
+    principal_id: 'pr_me',
+    joined_at: AT,
+    role: 'owner',
+  }
+  store.data.memberships['mb_theirs'] = {
+    id: 'mb_theirs',
+    room_id: 'rm_theirs',
+    principal_id: 'pr_them',
+    joined_at: AT,
+    role: 'owner',
+  }
+
+  const snapshot = snapshotOf(store, '/tmp/seek.json')
+  assert.deepEqual(
+    snapshot.rooms.map((room) => room.id),
+    ['rm_mine'],
+    'a room somebody else is in is not a room this window lists',
+  )
+  // The room itself is untouched: this filters the list, not the store.
+  assert.ok(store.data.rooms['rm_theirs'], 'the other room was only left out of the list')
 })
 
 /** The main process may ask before the store is open; the interface must not get a crash. */

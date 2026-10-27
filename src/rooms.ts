@@ -251,6 +251,27 @@ export interface RemoveMemberInput {
 }
 
 /**
+ * What to call a person, and what to call a room, in a sentence a person reads.
+ *
+ * **An id is not a name, and the window does not rewrite what the kernel says** (`i18n.md` §2:
+ * a sentence the kernel composed reaches the screen as it was written). So the refusal below
+ * answered 退出 with `ou_74bd0305f28645c5 is the last member of oc_0d2105bd11af4229` — measured
+ * in the window 2026-10-27 — which is a fact about two rows and not about anybody. Names fall
+ * back to ids because a row really can have no name: the same fallback `peopleOf()` makes.
+ */
+function nameOf(store: SeekStore, id: Id): string {
+  const found = store.principal(id);
+  const name = found && typeof found.name === 'string' ? found.name.trim() : '';
+  return name === '' ? id : name;
+}
+
+function roomNameOf(store: SeekStore, id: Id): string {
+  const room = store.room(id);
+  const name = room && typeof room.name === 'string' ? room.name.trim() : '';
+  return name === '' ? `the room ${id}` : `"${name}"`;
+}
+
+/**
  * Take one principal out of a room — leaving a group, or being taken out of one.
  *
  * Both directions are one write, because the kernel has no permission model to tell
@@ -279,14 +300,16 @@ export function removeMember(store: SeekStore, input: RemoveMemberInput): Member
     .find((membership) => membership.principal_id === principalId);
   if (!held) {
     throw new Error(
-      `${principalId} is not a member of ${roomId}: there is no membership to remove, ` +
+      `${nameOf(store, principalId)} is not a member of ${roomNameOf(store, roomId)}: ` +
+        'there is no membership to remove, ' +
         'and writing a deletion for a row that is not there would report that a room ' +
         'changed when it did not',
     );
   }
   if (store.membershipsOf(roomId).length === 1) {
     throw new Error(
-      `${principalId} is the last member of ${roomId}: a room nobody is in can never be ` +
+      `${nameOf(store, principalId)} is the last member of ${roomNameOf(store, roomId)}: ` +
+        'a room nobody is in can never be ' +
         'spoken in again (`deliver` refuses a sender who is not a member) and no bot can ' +
         'be woken by it, which is the state `createRoom` already refuses to make',
     );

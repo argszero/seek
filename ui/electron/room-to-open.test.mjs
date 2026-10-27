@@ -51,6 +51,18 @@ test('a room somebody is already reading is never taken from them', () => {
   assert.equal(roomToOpen('om_second', [{ id: 'om_second' }]), 'om_second')
 })
 
+test('a room that is no longer in the list is not a room to stay in', () => {
+  // **The other half of `current ??`.** Leaving a room — the panel's 退出, 2026-10-27, the first
+  // way out of one — takes the room out of the list the snapshot hands over (`snapshotOf()`
+  // lists the reader's own rooms), so an id held from before names nothing: the chat column drew
+  // empty beside a list that was right. A reader's room is still never taken from them; this
+  // only drops an id the answer does not contain.
+  assert.equal(roomToOpen('om_gone', ROOMS), 'om_first')
+  assert.equal(roomToOpen('om_gone', []), null)
+  // And the rule it must not undo: the room that is still listed stays.
+  assert.equal(roomToOpen('om_second', ROOMS), 'om_second')
+})
+
 test('the chat half picks its room through this rule, on both arrivals', () => {
   // Read as text because the renderer cannot be imported here. The first half of the claim
   // is that the rule is called at all; the second is that the *same* handler is handed to

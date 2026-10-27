@@ -164,16 +164,18 @@ function stageTwoOf(stage2) {
  * written in, and a list that reorders itself between two snapshots would move under a
  * person's cursor while they are choosing.
  */
-function peopleOf(store) {
-  const people = [
-    ...Object.values(store.data.principals),
-    // A bot that has been taken out of the organization is not one of the people it holds any
-    // more: it may not be put in a room and nothing may be sent to it. Its row stays in the
-    // store because every message it wrote names it (`Bot.removed_at`), and that is exactly
-    // the difference this filter draws — the history can still name it, the list cannot offer
-    // it. Filtered on the stamp and not on a flag, for the reason `removed_at` is a stamp.
-    ...Object.values(store.data.bots).filter((bot) => bot.removed_at === undefined),
-  ].map((who) => {
+function everyoneOf(store) {
+  // **A bot taken out of the organization is still someone this store named.** Its row stays
+  // because every message it wrote points at it (`Bot.removed_at`), so the two answers below
+  // read one list and differ in the one place that matters: who may be *offered*, and who may
+  // still be *named*. Filtered on the stamp and not on a flag beside it, for the reason
+  // `removed_at` is a stamp.
+  const stamped = new Set(
+    Object.values(store.data.bots)
+      .filter((bot) => bot.removed_at !== undefined)
+      .map((bot) => bot.id),
+  )
+  const people = [...Object.values(store.data.principals), ...Object.values(store.data.bots)].map((who) => {
     const isBot = Boolean(store.data.bots[who.id])
     return {
       id: who.id,
@@ -191,7 +193,32 @@ function peopleOf(store) {
       personality: isBot ? textOrNull(who.personality) : null,
     }
   })
-  return people
+  return { people, stamped }
+}
+
+/**
+ * Who may be put in a room: everyone the store holds except a bot that has been taken out.
+ *
+ * The list must not *offer* such a bot — nothing may be sent to it and it may not be added —
+ * while the history it left may still *name* it. That is the whole difference between this
+ * answer and `namedOf` below, and both read `everyoneOf`.
+ */
+function peopleOf(store) {
+  const { people, stamped } = everyoneOf(store)
+  return people.filter((one) => !stamped.has(one.id))
+}
+
+/**
+ * Everyone the store has ever named, by id — the stamped bots included.
+ *
+ * **This is what a message's author is looked up in.** A line whose sender has left the room or
+ * the organization is still a line somebody wrote, and the window used to fall back to the raw
+ * id (`ou_447c1cba8e4d4bee`) when the author was not a member any more: the sentence survived
+ * and lost its signature. Measured 2026-10-27 after taking a bot out of a room it had spoken in.
+ */
+function namedOf(store) {
+  const { people } = everyoneOf(store)
+  return Object.fromEntries(people.map((one) => [one.id, one]))
 }
 
 /** A stored string, or `null` when it is absent, empty or not a string at all. */
@@ -294,7 +321,21 @@ function snapshotOf(store, storeFile, stage1 = null, stage2 = null, storeRefusal
   }
 
   const spent = spendByRoom(store)
-  const rooms = Object.values(store.data.rooms).map((room) => ({
+  // **The list is the rooms this person is in.** It was every room in the store, which was the
+  // same list while a membership could only be *added*; `removeMember()` and the panel's `Leave`
+  // (2026-10-27) made a room somebody is not in reachable, and the window went on listing the
+  // room it had just left and offering it a composer — a write `deliver()` refuses, because the
+  // sender is not a member. Measured the same day: after leaving a three-member group the room
+  // stayed in the column with `2 members` in the store and nobody of them the reader.
+  const me = meOf(store)
+  const mine = new Set(
+    Object.values(store.data.memberships)
+      .filter((row) => row.principal_id === me)
+      .map((row) => row.room_id),
+  )
+  const rooms = Object.values(store.data.rooms)
+    .filter((room) => mine.has(room.id))
+    .map((room) => ({
     id: room.id,
     // A room's name is optional in the kernel's own type, and a room the roster
     // created may have none — drawing `undefined.slice` would throw on it.
@@ -402,7 +443,10 @@ function snapshotOf(store, storeFile, stage1 = null, stage2 = null, storeRefusal
   return {
     rooms,
     people: peopleOf(store),
-    me: meOf(store),
+    // A message may name someone no longer in the room, so the window gets the names that are
+    // not offers as well — see `namedOf`.
+    named: namedOf(store),
+    me,
     storeFile,
     stage1: stageOneOf(stage1),
     stage2: stageTwoOf(stage2),
@@ -414,4 +458,4 @@ function snapshotOf(store, storeFile, stage1 = null, stage2 = null, storeRefusal
   }
 }
 
-module.exports = { meOf, peopleOf, snapshotOf }
+module.exports = { meOf, peopleOf, namedOf, snapshotOf }

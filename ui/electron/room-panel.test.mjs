@@ -150,9 +150,17 @@ test('the panel draws the room’s own facts, and a removed bot is in no list of
   }
   assert.match(SNAPSHOT, /createdAt: room\.created_at/)
 
-  // The filter, and its reason: the history still names a removed bot, the list must not offer
-  // it. Filtered on the stamp and never on a flag beside it.
-  assert.match(SNAPSHOT, /Object\.values\(store\.data\.bots\)\.filter\(\(bot\) => bot\.removed_at === undefined\)/)
+  // **One place reads the stamp, and two answers come out of it**: the list that may offer a
+  // bot, and the map that still names one. Filtered on the stamp and never on a flag beside it.
+  assert.match(SNAPSHOT, /const stamped = new Set\(/)
+  assert.match(SNAPSHOT, /\.filter\(\(bot\) => bot\.removed_at !== undefined\)/)
+  assert.match(SNAPSHOT, /return people\.filter\(\(one\) => !stamped\.has\(one\.id\)\)/)
+  assert.match(SNAPSHOT, /function namedOf\(store\)/)
+  assert.match(SNAPSHOT, /named: namedOf\(store\)/)
+  // And the window looks a line's sender up there, with the room's own row layered over it —
+  // built from members alone, a bot that left took its name off the sentences it wrote
+  // (measured 2026-10-27: `ou_447c1cba8e4d4bee` where `Echobot` had been).
+  assert.match(APP, /const whoSaid = \{ \.\.\.\(snap\.named \?\? \{\}\)/)
 
   // The panel itself, by its own marks: the four texts, the two answers and the way into the
   // member list. A `data-room-field` nobody sets would be the same nothing the panel draws for
@@ -189,9 +197,13 @@ test('one column holds one panel at a time, and the room’s panel does not outl
   // The side column is the thread's and the room's. Drawing both would be two answers to one
   // question, so the thread stands down while the panel is up — and the shell's class, which
   // is what makes the column exist in the grid, is on for either.
-  assert.match(APP, /\{openThread && !infoOpen && active && \(/)
-  assert.match(APP, /\{infoOpen && active && \(/)
-  assert.match(APP, /\(openThread \|\| infoOpen\) && view === 'chat' \? ' with-thread' : ''/)
+  //
+  // **Both gates and the class read one condition.** They were three separate expressions, and
+  // the class was the one that named the chat view, so the panel it was meant to lay out was a
+  // 6px sliver on the other four views (see the test at the foot of this file).
+  assert.match(APP, /\{sideOpen && openThread !== null && !infoOpen && \(/)
+  assert.match(APP, /\{sideOpen && infoOpen && \(/)
+  assert.match(APP, /\{`app\$\{sideOpen \? ' with-thread' : ''\}/)
 })
 
 test('every class the new panel draws has a rule, and the two buttons are the two shapes', () => {
@@ -232,4 +244,58 @@ test('every class the new panel draws has a rule, and the two buttons are the tw
   // The panel scrolls, because 退出 is at its foot: a panel taller than the window with no
   // scroll is a button a person cannot reach.
   assert.equal(rule(SHELL, '.room-col .room-body')['overflow-y'], 'auto')
+})
+
+/** A track list split on its top-level spaces, so `minmax(0, 1fr)` stays one track. */
+function tracks(value) {
+  const out = []
+  let depth = 0
+  let current = ''
+  for (const ch of value.trim()) {
+    if (ch === '(') depth += 1
+    if (ch === ')') depth -= 1
+    if (/\s/.test(ch) && depth === 0) {
+      if (current !== '') out.push(current)
+      current = ''
+      continue
+    }
+    current += ch
+  }
+  if (current !== '') out.push(current)
+  return out
+}
+
+test('the side column is laid out wherever the panel is drawn, not only in the chat view', () => {
+  // **The class that declares the column belongs to the panel, not to a view.** It was keyed to
+  // `view === 'chat'` while the panel is drawn on every view that reads a room, so on the other
+  // four `.app` declared five tracks for seven children: the panel wrapped onto a second,
+  // implicit row and measured **6px** wide, its contents painted from y 780 to y 1030 in a
+  // window 780 tall (measured 2026-10-27 at 1180×780 — chat 380px, Bots/Groups/Topics 6px).
+  // The guard is the shape of the agreement rather than the pixels: one condition, read by the
+  // class and by both panels, so a fifth place cannot decide it differently.
+  const condition = slice(APP, 'const sideOpen =', '\n')
+  assert.ok(
+    !condition.includes("'chat'"),
+    'the side column is keyed to the chat view again, which is the 6px sliver',
+  )
+  assert.doesNotMatch(
+    APP,
+    /\(openThread \|\| infoOpen\) && view === 'chat'/,
+    'the old form is back: the panel is drawn on views whose grid has no track for it',
+  )
+  assert.match(APP, /className=\{`app\$\{sideOpen \? ' with-thread' : ''\}/)
+  assert.equal(
+    APP.split('sideOpen &&').length - 1,
+    2,
+    'the two side panels are not both gated on the same condition that declares the column',
+  )
+
+  // Seven tracks: rail, seam, list, seam, the room, seam, the panel. `rule()` reads one
+  // declaration per line and this value spans three, so it is taken here whole.
+  const block = slice(SHELL, '.app.with-thread {', '}')
+  const value = /grid-template-columns:([\s\S]*?);/.exec(block)[1]
+  const found = tracks(value)
+  assert.equal(found.length, 7, `.app.with-thread declares ${found.length} tracks: ${found.join(' | ')}`)
+  assert.equal(found[5], 'var(--gutter-w)', 'the panel has no seam beside it')
+  assert.equal(found[6], 'var(--side-w)', 'the last track is not the side panel')
 })
