@@ -112,7 +112,12 @@ const llm = {
     keyLen: 0,
   },
   refusal: null,
-  settingsPath: 'the prototype keeps no settings file',
+  // **A place, not a sentence.** The settings page puts this value inside one of its own
+  // sentences — `Kept in {path} on this machine, readable only by you` — so a demo that answered
+  // "the prototype keeps no settings file" made the page read *Kept in the prototype keeps no
+  // settings file on this machine*, which is not English. What the demo actually has is memory,
+  // so it names that.
+  settingsPath: 'the demo’s memory',
   configPath: 'the prototype reads no config file',
 }
 
