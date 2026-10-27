@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
 import Contacts from './Contacts.jsx'
+import Dialog from './Dialog.jsx'
 import Gutter from './Gutter.jsx'
 import Groups from './Groups.jsx'
 import Icon from './icons.jsx'
@@ -574,6 +575,27 @@ export default function App() {
     setError(null)
   }
 
+  // The rail's add mark asks this view for its form, and the ask is cleared as it is taken: one
+  // press, one dialog. Same mechanism as `Contacts.jsx` and `Groups.jsx`, because the three
+  // forms are now one shape opened from one place.
+  useEffect(() => {
+    if (ask !== 'chat') return
+    startMaking()
+    clearAsk()
+  }, [ask])
+
+  /**
+   * Forget the room form's refusal, and only that one.
+   *
+   * `error` on this screen is every refusal the chat view shows — the room form's, the
+   * composer's, the thread's, the member panel's — so a blanket `setError(null)` on typing a
+   * room's name would also wipe a sentence about something else. This one clears the room
+   * form's own and leaves the rest alone.
+   */
+  function forgetNewRoom() {
+    setError((was) => (was?.where === 'new-room' ? null : was))
+  }
+
   function togglePick(id) {
     setPicked((current) =>
       current.includes(id) ? current.filter((one) => one !== id) : [...current, id],
@@ -892,82 +914,77 @@ export default function App() {
       ) : (
         <>
       <section className="list-col">
+        {/* **No count, no `+`** (宿主, 2026-10-27: 这里的加号和数字不需要了). The count repeated a
+            number the list already shows by being as long as it is, and making a room moved to
+            the rail's add mark with the other three things this product can make. */}
         <header className="list-head">
           <h1>{t('ui.chat.title')}</h1>
-          {/* `space-between` with three children would centre the count; the tools are one
-              group so the heading and the group are the two ends. */}
-          <span className="list-tools">
-            <span className="count">{snap.rooms.length}</span>
-            {/* A store whose only room the seed made is a store where the room list is a
-                constant. This is the way out of that, and it is one button. */}
-            <button
-              className="list-new"
-              data-new-room="open"
-              title={t('ui.chat.new-room')}
-              onClick={startMaking}
-            >
-              +
-            </button>
-          </span>
         </header>
 
-        {/* The refusal goes here, beside the form, in the kernel's own words. */}
-        {error?.where === 'new-room' && (
-          <div className="composer-err" data-new-room="refused">
-            {error.message}
-          </div>
-        )}
-
         {making && (
-          <form
-            className="new-room"
-            data-new-room="form"
-            onSubmit={(event) => {
-              event.preventDefault()
-              makeRoom()
+          <Dialog
+            name="room"
+            title={t('ui.rail.add-room')}
+            submit={t('ui.chat.create')}
+            cancel={t('ui.chat.cancel')}
+            busy={sending}
+            onSubmit={makeRoom}
+            onClose={() => {
+              setMaking(false)
+              setError(null)
+              setNewName('')
             }}
           >
-            <input
-              className="new-room-name"
-              placeholder={t('ui.chat.room-name-hint')}
-              value={newName}
-              onChange={(event) => setNewName(event.target.value)}
-            />
-            <ul className="new-room-people">
-              {(snap.people ?? []).map((person) => (
-                <li key={person.id}>
-                  <label>
-                    <input
-                      type="checkbox"
-                      data-new-room-member={person.id}
-                      checked={picked.includes(person.id)}
-                      onChange={() => togglePick(person.id)}
-                    />
-                    <span className="new-room-who">{person.name}</span>
-                    {person.bot && <span className="msg-bot">{t('ui.chat.bot')}</span>}
-                  </label>
-                </li>
-              ))}
-            </ul>
-            <div className="new-room-actions">
-              {/* Not disabled when nobody is ticked: an empty room is a thing the kernel
-                  has a sentence for, and a disabled button would replace that sentence
-                  with a silence. */}
-              <button type="submit" data-new-room="create" disabled={sending}>
-                {t('ui.chat.create')}
-              </button>
-              <button
-                type="button"
-                data-new-room="cancel"
-                onClick={() => {
-                  setMaking(false)
-                  setError(null)
-                }}
-              >
-                {t('ui.chat.cancel')}
-              </button>
+            <div className="dialog-fields">
+              <div className="dialog-field">
+                <label className="field-label" htmlFor="room-name">
+                  {t('ui.chat.room-name')}
+                </label>
+                <input
+                  id="room-name"
+                  className="dialog-input"
+                  data-new-room="name"
+                  autoFocus
+                  placeholder={t('ui.chat.room-name-hint')}
+                  value={newName}
+                  onChange={(event) => {
+                    forgetNewRoom()
+                    setNewName(event.target.value)
+                  }}
+                />
+              </div>
+
+              <div className="dialog-field">
+                <span className="field-label">{t('ui.chat.room-members')}</span>
+                <ul className="dialog-people">
+                  {(snap.people ?? []).map((person) => (
+                    <li key={person.id}>
+                      <label>
+                        <input
+                          type="checkbox"
+                          data-new-room-member={person.id}
+                          checked={picked.includes(person.id)}
+                          onChange={() => {
+                    forgetNewRoom()
+                    togglePick(person.id)
+                  }}
+                        />
+                        <span>{person.name}</span>
+                        {person.bot && <span className="msg-bot">{t('ui.chat.bot')}</span>}
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             </div>
-          </form>
+            {error?.where === 'new-room' && (
+              <p className="dialog-err" data-new-room="refused">
+                {error.message}
+              </p>
+            )}
+            {/* Not disabled when nobody is ticked: an empty room is a thing the kernel has a
+                sentence for, and a disabled button would replace that sentence with a silence. */}
+          </Dialog>
         )}
 
         <ul className="conv-list">
@@ -1282,62 +1299,45 @@ export default function App() {
           works from wherever the person is reading — and it leaves them there, which is the
           whole point of it not being a page. A press outside or Escape closes it. */}
       {orgForm && (
-        <div
-          className="dialog-mask"
-          data-org-form
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setOrgForm(null)
-          }}
-          onKeyDown={(event) => {
-            if (event.key === 'Escape') setOrgForm(null)
-          }}
+        <Dialog
+          name="organization"
+          title={t('ui.rail.add-organization')}
+          submit={t('ui.settings.create')}
+          cancel={t('ui.settings.cancel')}
+          busy={orgBusy}
+          onSubmit={createOrg}
+          onClose={() => setOrgForm(null)}
         >
-          <form
-            className="dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-label={t('ui.rail.add-organization')}
-            onSubmit={(event) => {
-              event.preventDefault()
-              createOrg()
-            }}
-          >
-            <h3 className="dialog-title">{t('ui.rail.add-organization')}</h3>
-            {/* **A label above the field, not a placeholder standing in for one.** This is the
-                shape the bot form uses (`Contacts.jsx`, `field-label` over its name field) and
-                the host asked for this form to be like that one — 创建组织，和创建机器人一样. It also
-                survives typing, where a placeholder does not. */}
-            <div className="dialog-field">
-              <label className="field-label" htmlFor="organization-name">
-                {t('ui.rail.organization-name')}
-              </label>
-              <input
-                id="organization-name"
-                className="dialog-input"
-                value={orgName}
-                autoFocus
-                placeholder={t('ui.rail.organization-name-hint')}
-                onChange={(event) => setOrgName(event.target.value)}
-                data-org-name
-              />
-              {/* What the name is for, said in the catalogue's own words: it labels this list
-                  and nothing else — it never becomes the name of the person inside the world
-                  (宿主, 2026-10-27: 组织名与「我」无关). A placeholder cannot carry that, because
-                  it leaves the moment there is something to read. */}
-              <p className="dialog-hint">{t('ui.settings.organizations.name-hint')}</p>
-            </div>
-            {orgForm.error && <p className="dialog-err" data-org-refused>{orgForm.error}</p>}
-            {orgForm.note && <p className="dialog-note" data-org-made>{orgForm.note}</p>}
-            <div className="dialog-actions">
-              <button className="btn" type="button" onClick={() => setOrgForm(null)}>
-                {t('ui.settings.cancel')}
-              </button>
-              <button className="btn primary" type="submit" disabled={orgBusy} data-org-save>
-                {t('ui.settings.create')}
-              </button>
-            </div>
-          </form>
-        </div>
+          {/* **A label above the field, not a placeholder standing in for one.** This is the
+              shape the bot form uses (`Contacts.jsx`, `field-label` over its name field) and
+              the host asked for this form to be like that one — 创建组织，和创建机器人一样. It also
+              survives typing, where a placeholder does not. */}
+          <div className="dialog-field">
+            <label className="field-label" htmlFor="organization-name">
+              {t('ui.rail.organization-name')}
+            </label>
+            <input
+              id="organization-name"
+              className="dialog-input"
+              value={orgName}
+              autoFocus
+              placeholder={t('ui.rail.organization-name-hint')}
+              onChange={(event) => {
+                // The refusal is about the name that is no longer there once typing starts.
+                setOrgForm((was) => (was?.error ? { ...was, error: null } : was))
+                setOrgName(event.target.value)
+              }}
+              data-org-name
+            />
+            {/* What the name is for, said in the catalogue's own words: it labels this list
+                and nothing else — it never becomes the name of the person inside the world
+                (宿主, 2026-10-27: 组织名与「我」无关). A placeholder cannot carry that, because
+                it leaves the moment there is something to read. */}
+            <p className="dialog-hint">{t('ui.settings.organizations.name-hint')}</p>
+          </div>
+          {orgForm.error && <p className="dialog-err" data-org-refused>{orgForm.error}</p>}
+          {orgForm.note && <p className="dialog-note" data-org-made>{orgForm.note}</p>}
+        </Dialog>
       )}
     </div>
   )
@@ -1492,9 +1492,11 @@ function StoreRefused({ refusal }) {
  * Both halves are served by the server those weights feed, and `half()` in
  * `ui/electron/main.js` hands them the same `pending` for exactly that reason. So this is
  * not a per-half strip: a strip each printed the same sentence twice, and two identical
- * lines read as two problems rather than as one download. `waiting` takes the base colours
- * on purpose — a first run fetching its weights is the app working, and painting it with
- * `refused` would report it as broken.
+ * lines read as two problems rather than as one download. A strip that is arriving carries no
+ * modifier and takes the base colours on purpose — a first run fetching its weights is the app
+ * working, and painting it with `refused` would report it as broken. (It wore a `waiting` class
+ * until 2026-10-27; no rule ever answered to that name, and the base colours were what it drew
+ * all along, so the class said something the sheet did not.)
  *
  * **The sentence is written here, from three facts.** It used to be composed in
  * `ui/electron/weights-fetch.js` and handed over finished, which fixed its language before the
@@ -1509,7 +1511,7 @@ function WeightsArriving({ facts }) {
   const all = size(facts.total)
 
   return (
-    <div className="weights waiting" data-weights="waiting">
+    <div className="weights" data-weights="waiting">
       <strong>{t('ui.chat.weights-arriving')}</strong>
       <span className="weights-why">
         {facts.file === null

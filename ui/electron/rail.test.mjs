@@ -259,26 +259,31 @@ test('the theme toggle has words before it has a window', () => {
   )
 })
 
-test('the add button offers the three things this product can make', () => {
+test('the add button offers the four things this product can make', () => {
   // Measured off the client (2026-10-27, a 1912×829 messenger): the mark is 24px rounded at 6,
   // 12px in from the column's right edge, and its panel is a 152px sheet hung off the mark's top
   // edge. The client's own menu carries more rows than this product can act on, so the rows here
-  // are the three things the window can actually make, and nothing else.
-  assert.equal(ADD_MENU.length, 3, 'three rows, because there are three things to make')
+  // are the things the window can actually make, and nothing else.
+  //
+  // **A room joined the list on 2026-10-27**, when the host cut the per-list `+` and the count
+  // off the chat column's head (这里的加号和数字不需要了): making a room had lived on that `+`,
+  // so it moved here, beside the other three, and every list in the window is now a list.
+  assert.equal(ADD_MENU.length, 4, 'four rows, because there are four things to make')
   assert.deepEqual(
     ADD_MENU.map((one) => one.view ?? one.makes),
-    ['groups', 'contacts', 'organization'],
-    'a group, a bot, an organization',
+    ['chat', 'groups', 'contacts', 'organization'],
+    'a room, a group, a bot, an organization',
   )
-  // **The organization's row does not name a view.** Two rows make their thing in a view and go
-  // there; the third makes a world and stays put (宿主, 2026-10-27: 创建组织，不要跳转到 settings，
+  // **The organization's row does not name a view.** Three rows make their thing in a view and go
+  // there; the last makes a world and stays put (宿主, 2026-10-27: 创建组织，不要跳转到 settings，
   // 和创建机器人一样，在当前窗口实现就行). A `view` on that row would put the settings page back in
   // front of a person who only wanted to name a world.
-  assert.equal(ADD_MENU[0].view, 'groups', 'a group is made in the groups view')
-  assert.equal(ADD_MENU[1].view, 'contacts', 'a bot in the bots view')
-  assert.equal(ADD_MENU[2].view, undefined, 'and an organization is made where the person already is')
-  assert.equal(ADD_MENU[2].makes, 'organization', 'the row says what it makes instead of where it goes')
-  assert.equal(new Set(ADD_MENU.map((one) => one.icon)).size, 3, 'no two rows draw the same glyph')
+  assert.equal(ADD_MENU[0].view, 'chat', 'a room is made from the chat view')
+  assert.equal(ADD_MENU[1].view, 'groups', 'a group in the groups view')
+  assert.equal(ADD_MENU[2].view, 'contacts', 'a bot in the bots view')
+  assert.equal(ADD_MENU[3].view, undefined, 'and an organization is made where the person already is')
+  assert.equal(ADD_MENU[3].makes, 'organization', 'the row says what it makes instead of where it goes')
+  assert.equal(new Set(ADD_MENU.map((one) => one.icon)).size, 4, 'no two rows draw the same glyph')
 
   const zhWords = catalogueFor('zh-CN').messages
   const enWords = catalogueFor('en').messages

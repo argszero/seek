@@ -684,6 +684,11 @@ body {
 
 .reaction-glyph { font-size: 13px; line-height: 1; }
 
+/* The count beside the glyph. Everything it draws it inherits from `.reaction` — this rule
+   exists because it is a class in the markup, and because a count is a number that changes:
+   tabular figures keep the chip from changing width when a second person reacts. */
+.reaction-count { font-variant-numeric: tabular-nums; }
+
 .msg-forwarded {
   display: flex;
   align-items: center;
@@ -1091,99 +1096,12 @@ body {
 /* A refusal in the panel is the same refusal as in the room, at the panel's margin. */
 .thread-col .composer-err { margin: 0 16px; }
 
-/* The room column's tools: the count, and the one button that makes the list stop being
-   a constant. Grouped so the heading and this group are the head's two ends. */
+/* The head's tools, for the one list that still has any: the topics view says how many threads
+   it gathered from every room, which is a fact no single row shows. The other three lists used
+   to carry a count and a `+` here and no longer do (宿主, 2026-10-27: 这里的加号和数字不需要了),
+   so `.list-new` is gone with the last button that drew it. */
 .list-tools { display: flex; align-items: center; gap: 10px; }
 
-.list-new {
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border: 1px solid var(--line-border-component);
-  border-radius: var(--radius-sm);
-  background: var(--bg-base);
-  color: var(--N700);
-  font: inherit;
-  font-size: 15px;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.list-new:hover { background: var(--N100); }
-
-/* Making a room: a name, who is in it, and the two buttons. It sits above the list rather
-   than in a dialog, so the rooms already there stay visible while it is filled in — the
-   answer to "did I already have this one" is the list under it. */
-.new-room {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin: 0 8px 10px;
-  padding: 10px;
-  border: 1px solid var(--line-border-component);
-  border-radius: var(--radius-md);
-  background: var(--bg-base);
-}
-
-.new-room-name {
-  padding: 7px 10px;
-  border: 1px solid var(--line-border-component);
-  border-radius: var(--radius-sm);
-  background: var(--bg-base);
-  color: var(--N900);
-  font: inherit;
-  font-size: 13px;
-}
-
-.new-room-people {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  max-height: 168px;
-  overflow-y: auto;
-}
-
-.new-room-people li { padding: 3px 0; }
-
-/* The label is the click target, so the whole row is a hit area and the name is not
-   something a person has to aim at beside a small box. */
-.new-room-people label {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 13px;
-  color: var(--N900);
-  cursor: pointer;
-}
-
-.new-room-people input { margin: 0; }
-
-.new-room-actions { display: flex; gap: 8px; }
-
-.new-room-actions button {
-  height: 30px;
-  padding: 0 12px;
-  border: 1px solid var(--line-border-component);
-  border-radius: var(--radius-sm);
-  background: var(--bg-base);
-  color: var(--N700);
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.new-room-actions button[type='submit'] {
-  border-color: transparent;
-  background: var(--primary-fill-default);
-  color: var(--primary-on-primary-fill);
-  font-weight: 500;
-}
-
-.new-room-actions button[type='submit']:hover:not(:disabled) {
-  background: var(--primary-fill-hover);
-}
-
-.new-room-actions button:disabled { opacity: 0.5; cursor: default; }
 
 /* The refusal, beside the form it belongs to rather than at the composer's margin. */
 .list-col .composer-err { margin: 0 8px 10px; }
@@ -1517,9 +1435,18 @@ button.members:hover { border-color: var(--line-border-component); color: var(--
   line-height: 24px;
 }
 
-/* The label and its field, as one thing: 12px caption over a 36px input, which is the bot
-   form's pairing one view away rather than a second way to label a field. */
-.dialog-field { margin-bottom: 4px; }
+/* The fields, stacked with one gap rather than each carrying its own margin: a form here is a
+   name, sometimes a select and a paragraph, and the space between them should be one decision. */
+.dialog-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* The label and its field, as one thing: 12px caption over a 36px input. The label's own
+   bottom margin is cancelled here because the gap above already spaced the pair apart. */
+.dialog-field { display: flex; flex-direction: column; gap: 6px; }
+.dialog-field > .field-label { margin-bottom: 0; }
 
 .dialog-input {
   width: 100%;
@@ -1536,6 +1463,40 @@ button.members:hover { border-color: var(--line-border-component); color: var(--
 
 .dialog-input::placeholder { color: var(--text-placeholder); }
 .dialog-input:focus { outline: none; border-color: var(--primary-fill-default); }
+
+/* A few lines of prose, where a form asks for one: the same field, growing downwards. */
+textarea.dialog-input {
+  height: auto;
+  min-height: 84px;
+  padding: 8px 12px;
+  line-height: 20px;
+  resize: vertical;
+}
+
+/* Who could be in it, inside the card. The list scrolls rather than the card, so the two
+   buttons stay where they are however many people this store holds. */
+.dialog-people {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.dialog-people li { padding: 2px 0; }
+
+/* The label is the click target, so the whole row is a hit area and a name is not something to
+   aim at beside a small box. */
+.dialog-people label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--N900);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.dialog-people input { margin: 0; }
 
 /* One line under the field, in the caption colour: what the name is for, which is a ruling
    rather than decoration — it labels this list and never becomes the name of the person inside

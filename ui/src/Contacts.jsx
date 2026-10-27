@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import { t } from './catalogue.mjs'
+import Dialog from './Dialog.jsx'
 import Gutter from './Gutter.jsx'
 
 /**
@@ -65,6 +66,22 @@ export default function Contacts({ people, me, firstLaw, refusal, onMessage, onS
     wanted === '' ? others : others.filter((person) => person.name.toLowerCase().includes(wanted))
   const open = others.find((person) => person.id === openId) ?? null
 
+  /**
+   * Close the form, and forget what was typed in it.
+   *
+   * The dialog is one of four in this window and is opened from the rail's add mark, so it can
+   * be cancelled at any point: a name half typed for one bot must not be the name the next one
+   * is made with, and a refusal about the bot that was never made must not be waiting either.
+   */
+  function close() {
+    setMaking(false)
+    setStopped(null)
+    setName('')
+    setGender('')
+    setPosition('')
+    setPersonality('')
+  }
+
   async function add() {
     if (sending) return
     if (name.trim() === '') {
@@ -104,19 +121,11 @@ export default function Contacts({ people, me, firstLaw, refusal, onMessage, onS
   return (
     <>
       <section className="list-col">
+        {/* **No count and no `+`.** The count was a second number for a list you can see the
+            length of, and the `+` was one of four ways in; every thing this product makes is
+            now made from the rail's add mark (宿主, 2026-10-27: 这里的加号和数字不需要了). */}
         <header className="list-head">
           <h1>{t('ui.contacts.title')}</h1>
-          <span className="list-tools">
-            <span className="count">{listed.length}</span>
-            <button
-              className="list-new"
-              data-new-bot="open"
-              title={t('ui.contacts.add')}
-              onClick={() => setMaking(!making)}
-            >
-              +
-            </button>
-          </span>
         </header>
 
         <div className="list-search">
@@ -129,104 +138,114 @@ export default function Contacts({ people, me, firstLaw, refusal, onMessage, onS
           />
         </div>
 
-        {/* The refusals go here, beside the list, in the kernel's own words. */}
-        {refusal && (
-          <div className="composer-err" data-contacts="refused">
-            {refusal}
-          </div>
-        )}
-        {stopped && (
-          <div className="composer-err" data-new-bot="refused">
-            {stopped}
-          </div>
-        )}
+        {/* **A make can answer with something a snapshot cannot show** — a bot with no roster
+            rows cannot answer at all — and that line outlives the dialog it was made in, so it
+            belongs beside the list rather than in a card that has just closed. */}
         {note && (
           <div className="composer-err" data-new-bot="note">
             {note}
           </div>
         )}
 
+        {/* The refusals go here, beside the list, in the kernel's own words. */}
+        {refusal && (
+          <div className="composer-err" data-contacts="refused">
+            {refusal}
+          </div>
+        )}
         {making && (
-          <form
-            className="new-room"
-            data-new-bot="form"
-            onSubmit={(event) => {
-              event.preventDefault()
-              add()
-            }}
+          <Dialog
+            name="bot"
+            title={t('ui.rail.add-bot')}
+            submit={t('ui.contacts.form.add')}
+            cancel={t('ui.contacts.form.cancel')}
+            busy={sending}
+            onSubmit={add}
+            onClose={close}
           >
-            <label className="field-label" htmlFor="bot-name">
-              {t('ui.contacts.form.name')}
-            </label>
-            <input
-              id="bot-name"
-              className="new-room-name"
-              data-new-bot="name"
-              autoFocus
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-            />
+            <div className="dialog-fields">
+              <div className="dialog-field">
+                <label className="field-label" htmlFor="bot-name">
+                  {t('ui.contacts.form.name')}
+                </label>
+                <input
+                  id="bot-name"
+                  className="dialog-input"
+                  data-new-bot="name"
+                  autoFocus
+                  value={name}
+                  onChange={(event) => {
+                    // A refusal names what is wrong with what is on screen; the person fixing
+                    // it is the moment it stops being true, so it goes with the first keystroke
+                    // rather than on the next press of Create.
+                    setStopped(null)
+                    setName(event.target.value)
+                  }}
+                />
+              </div>
 
-            <label className="field-label" htmlFor="bot-gender">
-              {t('ui.contacts.form.gender')}
-            </label>
-            <select
-              id="bot-gender"
-              className="new-room-name"
-              data-new-bot="gender"
-              value={gender}
-              onChange={(event) => setGender(event.target.value)}
-            >
-              {/* The values are the store's (`Bot.gender` is written as it was typed, and the
-                  three here are the ones the form offers); the words are the catalogue's. */}
-              <option value="">{t('ui.contacts.not-said')}</option>
-              {GENDERS.map((one) => (
-                <option key={one.value} value={one.value}>
-                  {t(one.key)}
-                </option>
-              ))}
-            </select>
+              <div className="dialog-field">
+                <label className="field-label" htmlFor="bot-gender">
+                  {t('ui.contacts.form.gender')}
+                </label>
+                <select
+                  id="bot-gender"
+                  className="dialog-input"
+                  data-new-bot="gender"
+                  value={gender}
+                  onChange={(event) => setGender(event.target.value)}
+                >
+                  {/* The values are the store's (`Bot.gender` is written as it was typed, and
+                      the three here are the ones the form offers); the words are the
+                      catalogue's. */}
+                  <option value="">{t('ui.contacts.not-said')}</option>
+                  {GENDERS.map((one) => (
+                    <option key={one.value} value={one.value}>
+                      {t(one.key)}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-            <label className="field-label" htmlFor="bot-position">
-              {t('ui.contacts.form.position')}
-            </label>
-            <input
-              id="bot-position"
-              className="new-room-name"
-              data-new-bot="position"
-              placeholder={t('ui.contacts.form.position-hint')}
-              value={position}
-              onChange={(event) => setPosition(event.target.value)}
-            />
+              <div className="dialog-field">
+                <label className="field-label" htmlFor="bot-position">
+                  {t('ui.contacts.form.position')}
+                </label>
+                <input
+                  id="bot-position"
+                  className="dialog-input"
+                  data-new-bot="position"
+                  placeholder={t('ui.contacts.form.position-hint')}
+                  value={position}
+                  onChange={(event) => setPosition(event.target.value)}
+                />
+              </div>
 
-            <label className="field-label" htmlFor="bot-personality">
-              {t('ui.contacts.form.personality')}
-            </label>
-            <textarea
-              id="bot-personality"
-              className="new-room-name"
-              data-new-bot="personality"
-              rows={4}
-              placeholder={t('ui.contacts.form.personality-hint')}
-              value={personality}
-              onChange={(event) => setPersonality(event.target.value)}
-            />
+              <div className="dialog-field">
+                <label className="field-label" htmlFor="bot-personality">
+                  {t('ui.contacts.form.personality')}
+                </label>
+                <textarea
+                  id="bot-personality"
+                  className="dialog-input"
+                  data-new-bot="personality"
+                  rows={3}
+                  placeholder={t('ui.contacts.form.personality-hint')}
+                  value={personality}
+                  onChange={(event) => setPersonality(event.target.value)}
+                />
+              </div>
+            </div>
 
-            {/* The rule, quoted where the bot is made. `firstLaw` comes from the snapshot,
-                which reads it from `ui/electron/law.js` — one copy for the three screens. */}
-            <p className="pane-desc" data-new-bot="law">
+            {/* The kernel's refusal, in the card that asked for it. */}
+            {stopped && <p className="dialog-err" data-new-bot="refused">{stopped}</p>}
+
+            {/* The rule, quoted where the bot is made. `firstLaw` comes from the snapshot, which
+                reads it from `ui/electron/law.js` — one copy for the three screens. */}
+            <p className="dialog-hint" data-new-bot="law">
               {t('ui.contacts.form.law', { law: firstLaw })}
             </p>
-
-            <div className="new-room-actions">
-              <button type="submit" data-new-bot="create" disabled={sending}>
-                {t('ui.contacts.form.add')}
-              </button>
-              <button type="button" data-new-bot="cancel" onClick={() => setMaking(false)}>
-                {t('ui.contacts.form.cancel')}
-              </button>
-            </div>
-          </form>
+          </Dialog>
         )}
 
         <ul className="conv-list">
