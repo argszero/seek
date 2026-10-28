@@ -126,9 +126,9 @@ export interface BoxMedia {
  *
  * **The box is what a judgement is told; the question is what it is asked, and it
  * is not here.** The question is the prompt artifact's own last part (`prompts.ts`):
- * `watch-v1` declares one binary question, and the trailing space after it is the
- * boundary the option token is appended at — so the text, the option ids bound to
- * its end, and the shipped cut are one artifact. A question carried here as well
+ * `watch-v3` declares one choice question with two named answers, and the shipped
+ * cut is a threshold on the probability the endpoint answers with — so the text,
+ * the two answer names and the cut are one artifact. A question carried here as well
  * would be a second one, free to disagree with the text and with the mask measured
  * against it, and the roster has no field for it either — so there is no path by which a caller can ask two.
  */

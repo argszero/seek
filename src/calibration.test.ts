@@ -27,13 +27,15 @@
  * be checked against a copy of itself, so the three checks below each lean on
  * something outside the sentence they are checking:
  *
- * 1. **The declaration.** The record states which estimator it is talking about, in a
- *    field a machine reads, and that value is the one `src/llama.test.ts` pins by
- *    behaviour. A record that stops saying is the state this defect started in.
- * 2. **The implementation.** Every document that describes the estimator has to name
- *    the function that reads it, and that function has to be the summing one — read
- *    out of `src/llama.ts` rather than asserted about it. The stale sentence named
- *    `bindOptions`, which measures where to read, not what to read.
+ * 1. **The declaration, and where it points.** The record states the estimator its own
+ *    numbers were taken under, in a field a machine reads — and, because that reading no
+ *    longer ships, the record that replaced it. The pointer is followed and that file's
+ *    `transport` is read, so "superseded" is a fact about a file rather than a word.
+ * 2. **The implementation.** The reader this tree ships is read out of `src/llama.ts`:
+ *    it holds the endpoint's probabilities to the two declared options and neither
+ *    exponentiates a logprob nor sums over spellings. Every document that describes the
+ *    estimator has to name the record that replaced this one, so that none of them still
+ *    describes the summed reading as what ships.
  * 3. **The corpus.** The record may not call something unmeasured while the tree
  *    holds labelled cases for it. What counts as a set is structural, not verbal: a
  *    labelled case set carries a `labels` field and a `cases` array, while a replay
@@ -122,39 +124,61 @@ function labelledImageCases(): { total: number; sets: string[] } {
   return { total, sets };
 }
 
-test('the record declares the estimator the runtime reads, and the reader sums', () => {
+test('the record names the reading it took, and the tree reads the endpoint that replaced it', () => {
   const how = record().how_the_probability_was_read;
   assert.equal(
     how.estimator,
     'summed_over_spellings',
     `${RECORD} must state which estimator its numbers were taken under, in a field a ` +
-      'machine reads. The runtime sums every spelling of an option ' +
-      '(src/llama.ts `readingOf`, pinned by src/llama.test.ts "the reading sums every ' +
-      'spelling of the option"), so a record saying anything else — or saying nothing ' +
-      '— is describing a different reading from the one that ships',
+      'machine reads. The numbers in this file were summed over the spellings of an option, ' +
+      'and calling them anything else would describe a measurement nobody took — this record ' +
+      'is history and it is allowed to be history, but not to be mislabelled history',
   );
 
-  const body = functionBody(read('src/llama.ts'), 'readingOf');
+  // A record whose reading no longer ships has to name the one that does, and the file it
+  // names has to exist: a pointer to nothing is the same defect as no pointer at all.
+  assert.ok(
+    typeof how.superseded_by === 'string' && how.superseded_by.length > 0,
+    `${RECORD} describes a reading this tree no longer performs and names no record that ` +
+      'replaced it, so a reader has nothing to follow to the numbers 0.600 rests on today',
+  );
+  const successor = JSON.parse(read(how.superseded_by)) as {
+    transport?: string;
+    threshold?: number;
+  };
   assert.match(
+    String(successor.transport),
+    /\/v1\/systemone/,
+    `${how.superseded_by} is the record this one points at, and it does not say its numbers ` +
+      'came from /v1/systemone — the endpoint the runtime reads now',
+  );
+
+  // The implementation, read out of the file rather than asserted about it. The reader that
+  // ships holds the endpoint's numbers to the two declared options. It does not exponentiate
+  // a logprob and it does not accumulate over candidates, because the endpoint generates no
+  // token for either to be done to — a body that does is the reading that was replaced.
+  const body = functionBody(read('src/llama.ts'), 'probabilitiesOf');
+  assert.doesNotMatch(
     body,
-    /Math\.exp\(/,
-    'the reader the record describes reads probabilities out of logprobs, and this body ' +
-      'does not — the declared estimator and the implementation have parted company',
+    /Math\.exp\(|reduce\(/,
+    'the summing reader is gone from this tree, so a reader that still exponentiates ' +
+      'logprobs or accumulates over spellings is the reading that was replaced, not the one ' +
+      'that ships',
   );
   assert.match(
     body,
-    /reduce\(/,
-    'the declared estimator sums over spellings, so the reader has to accumulate over ' +
-      'more than one candidate; this body does not',
+    /tokens\.act/,
+    "the reader the tree ships holds the endpoint's probabilities to the declared options, " +
+      'and this body does not mention them',
   );
 
   for (const file of DESCRIBERS) {
     assert.match(
       read(file),
-      /readingOf/,
-      `${file} describes the estimator without naming the function that reads it. The ` +
-        'sentence this check replaced named `bindOptions`, which measures the position ' +
-        'the answer is read at rather than the quantity read there',
+      /set4-d1\.json/,
+      `${file} describes the estimator without naming the record that replaced this one. A ` +
+        'document that still describes the summed reading as what ships is telling a reader ' +
+        'about a runtime this tree does not have',
     );
   }
 });

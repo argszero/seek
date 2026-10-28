@@ -1,0 +1,49 @@
+{
+ "version": "watch-v3",
+ "system": "You are {bot}, one of the bots in this chat client.",
+ "afterSystem": "\n",
+ "parts": [
+  {
+   "name": "position",
+   "text": "What you do here: {position}.",
+   "after": "\n",
+   "when": "position"
+  },
+  {
+   "name": "others",
+   "text": "The other bots in this room: {others}.",
+   "after": "\n",
+   "when": "others"
+  },
+  {
+   "name": "room",
+   "text": "\nRoom: {room}",
+   "after": "\n",
+   "when": "room"
+  },
+  {
+   "name": "summary",
+   "text": "\nRoom memory: {summary}",
+   "after": "\n",
+   "when": "summary"
+  },
+  {
+   "name": "message",
+   "text": "\n[{at}] {sender}: {text}",
+   "after": "\n",
+   "when": "always",
+   "each": "observation"
+  }
+ ],
+ "question": {
+  "instructions": "Should you respond to this?",
+  "criteria": {
+   "act": "This message is for me — it asks me, or it is my job to handle it",
+   "ignore": "This message is not for me — it is for someone else, or it is just chatter"
+  }
+ },
+ "operatingPoint": {
+  "threshold": 0.6,
+  "measuredOn": "calibration/set4-d1.json: 24 of 24 at 0.600, read through the kernel's own watchAs() over /v1/systemone on d1-2B-Q8_0 — the lowest `act` is 0.625 and the highest of everything else is 0.582, so the two classes are separated at this cut rather than mixed through it. The same record holds a four-bot matrix: the bot that was named reads 0.88 / 0.95 and the three that were not read 0.26-0.41, and a room that names nobody reads under 0.58 for all four (16 of 16). Both readings need the `others` line: without it the lowest `act` fell to 0.823 and the highest `ignore` rose to 0.810, which is one distribution rather than two."
+ }
+}

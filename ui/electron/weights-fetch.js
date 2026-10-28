@@ -1,7 +1,7 @@
 'use strict'
 
 /**
- * What a first run needs before it can start the server it carries: the two weight files.
+ * What a first run needs before it can start the server it carries: the weight file.
  *
  * The mechanism is `model-weights.js`, and it deliberately decides nothing about *where* a
  * file comes from — "the canonical host and any mirror beside it is a choice about
@@ -9,22 +9,22 @@
  * the wiring that a launch goes through: which repository, which URL shape, how far the
  * whole download has got, and what the window is told while it runs.
  *
- * **The repository is not invented here.** `LiquidAI/LFM2.5-VL-3B-GGUF` is the checkpoint
- * `calibration/vision/measured.json` names as the one the `0.600` cut was calibrated
- * against, and the two file names are the ones that record carries. A different repository
- * would be a different model, which is a different probability distribution and therefore
- * a different cut — so this is a constant rather than a setting.
+ * **The repository is not invented here.** `LiquidAI/d1-2B-GGUF` is the checkpoint
+ * `calibration/set4-d1.json` names as the one the `0.600` cut was calibrated against, and the
+ * file name is the one that record carries. A different repository would be a different model,
+ * which is a different probability distribution and therefore a different cut — so this is a
+ * constant rather than a setting.
  *
  * **What is a setting is the host, and the order is a ruling rather than a preference.** The
  * host decided the mirror comes first and the canonical host second (`docs/host-rulings.md`,
  * "Distribution"), because the network this product is being built on reaches `hf-mirror.com`
  * and not `huggingface.co` — measured: the mirror answers `206` with `content-range: bytes
- * 0-99/1593894944` for the first file and `/583109984` for the second, while the canonical
+ * 0-99/1846240576` for the weight file, while the canonical
  * host times out after 40 s, which is a first run that spends 40 s learning nothing. A person
  * who wants one host exactly says so with `SEEK_WEIGHTS_BASE`, and then there is no second.
  *
  * **Two hosts resume across each other, and that is why the fallback costs nothing.** A `.part`
- * holds bytes rather than a host's promise: both hosts serve the same two files, so a download
+ * holds bytes rather than a host's promise: both hosts serve the same file, so a download
  * that stopped on the first continues from its own bytes on the second with one `Range`
  * request (`model-weights.js` decides that, and says why).
  *
@@ -40,8 +40,8 @@
 
 const { fetchWeights, WEIGHT_FILES } = require('./model-weights.js')
 
-/** The checkpoint the shipped cut was calibrated against (`calibration/vision/measured.json`). */
-const WEIGHTS_REPO = 'LiquidAI/LFM2.5-VL-3B-GGUF'
+/** The checkpoint the shipped cut was calibrated against (`calibration/set4-d1.json`). */
+const WEIGHTS_REPO = 'LiquidAI/d1-2B-GGUF'
 
 /** Where the files come from when nobody says otherwise, in the order they are tried. */
 const WEIGHTS_BASES = ['https://hf-mirror.com', 'https://huggingface.co']
@@ -63,11 +63,12 @@ function urlForAt(base) {
 /**
  * What a progress reading is: three facts, and no words.
  *
- * `received` and `total` count across both files rather than across the current one, because
- * the person waiting is waiting for "can I use this app yet", not for a file. `name` is the file
- * being fetched, and it travels with them — the second file is 583 MB against the first's
- * 1.59 GB, so a strip whose number jumped backwards without a name beside it would read as a
- * restart, which is the one thing a resumable download must never look like.
+ * `received` and `total` count across every file the first run wants rather than across the
+ * current one, because the person waiting is waiting for "can I use this app yet", not for a
+ * file. `name` is the file being fetched, and it travels with them — today there is one file
+ * (`d1-2B-Q8_0.gguf`, 1.72 GiB), and a list that grows again keeps the name beside the number
+ * so a strip whose figure jumped could never be read as a restart, which is the one thing a
+ * resumable download must never look like.
  *
  * **The sentence is not composed here, and that is the point of the shape.** `docs/design/
  * i18n.md` §1 forbids a user-visible string in code, and §4 puts a file size in the layer that

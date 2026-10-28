@@ -87,7 +87,7 @@ test('the address is the recorded checkpoint, and a base with a trailing slash i
     ['https://hf-mirror.com', 'https://huggingface.co'],
     'and the canonical host is the one tried after it — the host ruled this order',
   )
-  assert.equal(WEIGHTS_REPO, 'LiquidAI/LFM2.5-VL-3B-GGUF', 'the checkpoint the 0.600 cut was calibrated against')
+  assert.equal(WEIGHTS_REPO, 'LiquidAI/d1-2B-GGUF', 'the checkpoint the 0.600 cut was calibrated against')
 })
 
 test('a run with no host says so, instead of blaming the network', async () => {

@@ -31,8 +31,9 @@
  * **A configured endpoint is not a server the app was *told* about.** `server.js` answers
  * `named` for an origin in the environment and then starts nothing, and that rule is untouched
  * here: the environment is silent in this path, so the app still fetches its weights and starts
- * the server it carries for the *judgement*, which no hosted endpoint can serve — stage 1 reads
- * token probabilities (`src/llama.ts`), and a hosted endpoint reports text.
+ * the server it carries for the *judgement*, which no hosted endpoint can serve — stage 1 asks
+ * `/v1/systemone`, llama.cpp's own decision endpoint (`src/llama.ts`), and a hosted chat
+ * endpoint has no such call.
  *
  * The key is never written to a log, a refusal or a snapshot: a refusal names the *key's name*
  * and never its value, and the only places the value goes are the `Authorization` headers of

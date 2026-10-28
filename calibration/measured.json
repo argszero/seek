@@ -1,62 +1,87 @@
 {
- "_what_this_is": "The measured readings the shipped prompt and operating point rest on, copied out of the session that produced them. Nothing in this repository re-derives them: there is no inference here, no model, no download.",
- "_where_they_come_from": "session s_261023_1731_109509b5 (tmp/work), run 2026-10-24 on the host's own laptop",
- "_why_this_file_exists": "four of the scripts that produced these numbers print them and write no file (validate.py, round3.py, lang.py, zhconfirm.py), so the figures survived only in that session's transcript; this file is the persisted copy",
- "model": {
-  "shipped": "LFM2.5-VL-3B Q4_0, 1.52 GB as downloaded",
-  "vision_projector": "not shipped: vision was measured 2026-10-25 and came up short — 25/32 at the 0.600 cut across the two image sets in calibration/vision/ (src/README.md line 25)"
- },
- "operating_point": {
-  "threshold": 0.6,
-  "set": "set4.json",
-  "ask": "q6 — \"Do you need to do something about this message? Answer act or ignore.\"",
-  "shots": 0,
-  "auc": 1.0,
-  "accuracy_at_this_cut": 0.833,
-  "accuracy_at_this_cut_note": "corrected 2026-10-25. This field said 1.0, which was the best cut's accuracy recorded as though it were this cut's. At 0.600 four act cases read 0.3948, 0.3956, 0.4074 and 0.5318, so 20 of 24 are correct. Re-derived from the per-case probabilities in calibration/vision/server-transport.json, which agree with the one-shot rig to 0.0003 per case and give the same 20/24. AUC is 1.000 and the two classes separate perfectly, so a cut in (0.3845, 0.3948] scores 24/24 — but 0.600 is not in that interval, and the threshold is unmoved: moving it is the host's word, not a correction's.",
-  "per_message_ms": 96,
-  "how": "validate.py swept thresholds in steps of 0.025 over 1/40..39/40 and reported the best, on a set written after every prompt choice had been made. Corrected 2026-10-25: this said 0.600 is that best, and it is not. On that grid the best is 23/24, at 0.35, 0.375 or 0.4; 0.600 earns 20/24. The grid cannot land inside the separating interval (0.3845, 0.3948] at all, because its points step over it — a 0.025 sweep on 24 cases is too coarse to find the cut these cases actually have, which is why the interval above matters more than the grid's best"
- },
- "other_models_on_the_same_set": {
-  "LFM2.5-VL-450M Q4_K_M": {
-   "auc": 0.681,
-   "accuracy_at_best_cut": 0.75,
-   "best_cut": 0.7,
-   "per_message_ms": 18,
-   "note": "the ≤300 MB target was withdrawn because of readings like this one"
+  "_what_this_is": "The measured readings the shipped prompt and operating point rest on, copied out of the session that produced them. Nothing in this repository re-derives them: there is no inference here, no model, no download.",
+  "_where_they_come_from": "session s_261023_1731_109509b5 (tmp/work), run 2026-10-24 on the host's own laptop",
+  "_why_this_file_exists": "four of the scripts that produced these numbers print them and write no file (validate.py, round3.py, lang.py, zhconfirm.py), so the figures survived only in that session's transcript; this file is the persisted copy",
+  "model": {
+    "shipped": "LFM2.5-VL-3B Q4_0, 1.52 GB as downloaded",
+    "vision_projector": "not shipped: vision was measured 2026-10-25 and came up short — 25/32 at the 0.600 cut across the two image sets in calibration/vision/ (src/README.md line 25)"
   },
-  "Qwen3.5-0.8B Q4_K_M": {
-   "note": "run in this pass at 6 and 4 shots with a different ask, not at q6 zero-shot, so it contributes no figure to the shipped cut"
-  }
- },
- "language_split": {
-  "_what": "zhconfirm.py, pooled Chinese cases across all four sets (44 of them: 16 act, 28 other), and the same model asked in English",
-  "_why_it_matters": "one model, two languages, two different usable cuts — so a single global cut is a choice, not a measurement",
-  "LFM2.5-VL-3B Q4_0": {
-   "en": { "auc": 0.96, "accuracy_at_best_cut": 0.955, "best_cut": 0.53 },
-   "zh": { "auc": 0.998, "accuracy_at_best_cut": 0.977, "best_cut": 0.88 }
+  "operating_point": {
+    "threshold": 0.6,
+    "set": "set4.json",
+    "ask": "q6 — \"Do you need to do something about this message? Answer act or ignore.\"",
+    "shots": 0,
+    "auc": 1.0,
+    "accuracy_at_this_cut": 0.833,
+    "accuracy_at_this_cut_note": "corrected 2026-10-25. This field said 1.0, which was the best cut's accuracy recorded as though it were this cut's. At 0.600 four act cases read 0.3948, 0.3956, 0.4074 and 0.5318, so 20 of 24 are correct. Re-derived from the per-case probabilities in calibration/vision/server-transport.json, which agree with the one-shot rig to 0.0003 per case and give the same 20/24. AUC is 1.000 and the two classes separate perfectly, so a cut in (0.3845, 0.3948] scores 24/24 — but 0.600 is not in that interval, and the threshold is unmoved: moving it is the host's word, not a correction's.",
+    "per_message_ms": 96,
+    "how": "validate.py swept thresholds in steps of 0.025 over 1/40..39/40 and reported the best, on a set written after every prompt choice had been made. Corrected 2026-10-25: this said 0.600 is that best, and it is not. On that grid the best is 23/24, at 0.35, 0.375 or 0.4; 0.600 earns 20/24. The grid cannot land inside the separating interval (0.3845, 0.3948] at all, because its points step over it — a 0.025 sweep on 24 cases is too coarse to find the cut these cases actually have, which is why the interval above matters more than the grid's best"
   },
-  "LFM2.5-VL-450M Q4_K_M": {
-   "en": { "auc": 0.647, "accuracy_at_best_cut": 0.727, "best_cut": 0.68 },
-   "zh": { "auc": 0.277, "accuracy_at_best_cut": 0.614, "best_cut": 0.97 },
-   "note": "below chance in Chinese and above it in English: the model inverts, which is why it was not shipped"
+  "other_models_on_the_same_set": {
+    "LFM2.5-VL-450M Q4_K_M": {
+      "auc": 0.681,
+      "accuracy_at_best_cut": 0.75,
+      "best_cut": 0.7,
+      "per_message_ms": 18,
+      "note": "the ≤300 MB target was withdrawn because of readings like this one"
+    },
+    "Qwen3.5-0.8B Q4_K_M": {
+      "note": "run in this pass at 6 and 4 shots with a different ask, not at q6 zero-shot, so it contributes no figure to the shipped cut"
+    }
   },
-  "Qwen3.5-0.8B Q4_K_M": {
-   "en": { "auc": 0.598, "accuracy_at_best_cut": 0.636, "best_cut": 0.97 },
-   "zh": { "auc": 0.504, "accuracy_at_best_cut": 0.636, "best_cut": 0.97 }
-  }
- },
- "how_the_probability_was_read": {
-  "_load_bearing": "the measurement and the runtime read one estimator, and this file records which one — corrected 2026-10-25, when it said they did not",
-  "estimator": "summed_over_spellings",
-  "measurement": "vocab.py built a map keyed by the tokeniser's decoded text with .strip().lower(), so ids_for('act') returns every id whose decoding strips to 'act' — six of them for this checkpoint (598, 901, 3619, 7372, 15674, 32234). P(act) was the sum over all of them, and P(ignore) likewise, normalised over the pair.",
-  "runtime": "llama.ts readingOf reads that same quantity: it sums exp(logprob) over every candidate whose decoded form strips to the option, and src/llama.test.ts asserts the sum rather than leaving it to a comment. Corrected 2026-10-25 — this said the runtime \"masks that single id\", with bindOptions named as the reader, and that is not what it does. bindOptions still measures one id per option, but that id is the position the answer is read at, not the quantity read there: agent-lifecycle.md §4 line 79's single-token rule is about the option surviving as one token, which both readings require, and it never said to read one id's probability alone.",
-  "consequence": "the cut was chosen and is applied under one estimator, so the number means what it was measured to mean. Corrected 2026-10-25 — this called the difference a \"stated open tension\": the design has since settled it the other way, and calibration/vision/server-transport.json replays the summed reading through the transport the runtime actually uses, reproducing this file's set (AUC 1.000, 20/24 at 0.600, per-case difference at most 0.0008). It is still why a replacement model must clear the same measurement before it ships: a number is only meaningful together with the way it was read.",
-  "normalisation_not_yet_checkable": "One difference between the two descriptions is not settled and is not claimed settled here: vocab.py normalised P(act) over the pair (act against ignore), while readingOf returns the raw sum, and calibration/vision/server-transport.json's shape.answer_read describes the raw sum too. So either the normalisation moves these cases by less than the 0.0008 that transport already reproduces, or the recorded set and the replay are both un-normalised and the sentence in 'measurement' describes arithmetic only vocab.py performed. Nothing in the tree can tell the two apart, because no per-case pre-normalisation value was written down. Settling it needs one run of the text set recording the raw act and ignore sums per case; until then the cut is applied to the raw sum and the agreement figure above stands on its own measurement rather than on this sentence."
- },
- "what_was_not_measured": [
-  "vision is measured, not unmeasured: 56 English image cases and 12 Chinese in calibration/vision/, read 2026-10-25 — 41/56 at the shipped 0.600, 48/56 at a cut near 0.39, and at most 8/12 on the Chinese at any cut. The requirement stands unmet for a narrower reason than this entry used to give: the Chinese shortfall is the model's discrimination, which no operating point repairs. Corrected 2026-10-25: this entry denied that any image had been read, while the model.vision_projector entry above said otherwise, and the two stood side by side in this one file",
-  "a box holding more than one message: the measured shape is one message at a time, so a multi-entry box is an extrapolation from the same ask",
-  "per-room summary variation: every measured run used one fixed digest string"
- ]
+  "language_split": {
+    "_what": "zhconfirm.py, pooled Chinese cases across all four sets (44 of them: 16 act, 28 other), and the same model asked in English",
+    "_why_it_matters": "one model, two languages, two different usable cuts — so a single global cut is a choice, not a measurement",
+    "LFM2.5-VL-3B Q4_0": {
+      "en": {
+        "auc": 0.96,
+        "accuracy_at_best_cut": 0.955,
+        "best_cut": 0.53
+      },
+      "zh": {
+        "auc": 0.998,
+        "accuracy_at_best_cut": 0.977,
+        "best_cut": 0.88
+      }
+    },
+    "LFM2.5-VL-450M Q4_K_M": {
+      "en": {
+        "auc": 0.647,
+        "accuracy_at_best_cut": 0.727,
+        "best_cut": 0.68
+      },
+      "zh": {
+        "auc": 0.277,
+        "accuracy_at_best_cut": 0.614,
+        "best_cut": 0.97
+      },
+      "note": "below chance in Chinese and above it in English: the model inverts, which is why it was not shipped"
+    },
+    "Qwen3.5-0.8B Q4_K_M": {
+      "en": {
+        "auc": 0.598,
+        "accuracy_at_best_cut": 0.636,
+        "best_cut": 0.97
+      },
+      "zh": {
+        "auc": 0.504,
+        "accuracy_at_best_cut": 0.636,
+        "best_cut": 0.97
+      }
+    }
+  },
+  "how_the_probability_was_read": {
+    "_load_bearing": "this record exists so the readings the shipped prompt rests on are written down rather than remembered. Corrected 2026-10-25, when it said the measurement and the runtime read different estimators. **Superseded 2026-10-28**: the shipped runtime reads no token at all — `superseded_by` names the record of what it reads now, and this file is kept as the measurement it was, not as a description of the code.",
+    "estimator": "summed_over_spellings",
+    "measurement": "vocab.py built a map keyed by the tokeniser's decoded text with .strip().lower(), so ids_for('act') returns every id whose decoding strips to 'act' — six of them for this checkpoint (598, 901, 3619, 7372, 15674, 32234). P(act) was the sum over all of them, and P(ignore) likewise, normalised over the pair.",
+    "runtime": "**Nothing in the tree reads this way any more.** The judgement is one call to llama.cpp's `/v1/systemone` on a decision model, and the answer comes back as one calibrated probability per declared answer with `output_tokens: 0` — there is no completion to sample, no token whose decoded form strips to an option, and no sum. `readingOf` and `bindOptions` were deleted with the reading they served (`src/llama.ts`). What the shipped cut rests on now is `calibration/set4-d1.json`, taken through the kernel's own `watchAs` over that endpoint. The sentences below describe the measurement this file holds, which was real: `llama.ts`'s `readingOf` summed `exp(logprob)` over every candidate whose decoded form stripped to the option, and `src/llama.test.ts` asserted the sum.",
+    "consequence": "the cut was chosen and is applied under one estimator, so the number means what it was measured to mean — **for this record**. Corrected 2026-10-25, when it called the difference a \"stated open tension\": `calibration/vision/server-transport.json` replays the summed reading through the transport the runtime used then and reproduces this file's set (AUC 1.000, 20/24 at 0.600, per-case difference at most 0.0008). **Superseded 2026-10-28**: the replacement model was measured before it shipped, which is the rule this sentence states — `calibration/set4-d1.json`, 24 of 24 at 0.600 — and the estimator it was measured under is the endpoint's calibrated probability rather than a sum.",
+    "normalisation_not_yet_checkable": "One difference between the two descriptions is not settled and is not claimed settled here: vocab.py normalised P(act) over the pair (act against ignore), while readingOf returns the raw sum, and calibration/vision/server-transport.json's shape.answer_read describes the raw sum too. So either the normalisation moves these cases by less than the 0.0008 that transport already reproduces, or the recorded set and the replay are both un-normalised and the sentence in 'measurement' describes arithmetic only vocab.py performed. Nothing in the tree can tell the two apart, because no per-case pre-normalisation value was written down. Settling it needs one run of the text set recording the raw act and ignore sums per case; until then the cut is applied to the raw sum and the agreement figure above stands on its own measurement rather than on this sentence. **Moot since 2026-10-28**: nothing normalises and nothing sums on either side of the shipped reading any more. The endpoint answers with a probability per declared answer and `watch.ts` compares that number to the cut.",
+    "superseded_by": "calibration/set4-d1.json"
+  },
+  "what_was_not_measured": [
+    "vision is measured, not unmeasured: 56 English image cases and 12 Chinese in calibration/vision/, read 2026-10-25 — 41/56 at the shipped 0.600, 48/56 at a cut near 0.39, and at most 8/12 on the Chinese at any cut. The requirement stands unmet for a narrower reason than this entry used to give: the Chinese shortfall is the model's discrimination, which no operating point repairs. Corrected 2026-10-25: this entry denied that any image had been read, while the model.vision_projector entry above said otherwise, and the two stood side by side in this one file",
+    "a box holding more than one message: the measured shape is one message at a time, so a multi-entry box is an extrapolation from the same ask",
+    "per-room summary variation: every measured run used one fixed digest string"
+  ]
 }

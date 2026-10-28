@@ -1,118 +1,73 @@
 /**
- * Stage 1: the watch side, as a runtime.
+ * Stage 1: the rules, and the question they put to a model.
  *
- * `agent-lifecycle.md` §4 splits the tick in two. Stage 0 settles what the rules
- * settle for free (`gate.ts`); stage 1 asks the watch agent about the rest; stage
- * 2 runs the work agent, and only if the answer was `act`. This file is stage 1:
- * it builds the room's box, puts **one binary question** to a model, reads the
- * answer as a probability, compares it against the operating point it was given,
- * and writes the verdict — and the reason, when one came back — onto the entries
- * it judged.
+ * **What this is, and what it is not.** `docs/host-rulings.md` (2026-10-28T11:36) settled
+ * that the judgement is not an agent: it is one step of the loop, a question asked only
+ * when a rule could not settle it, with three answers — call the work agent, call it to
+ * compress, or do nothing. This file is that step. It builds the box the question is
+ * about (`box.ts`), hands it to a model, and writes one verdict per entry judged.
  *
- * **No model is built, bundled or chosen here.** `WatchModel` is the seam and
- * `llama.ts` is the implementation over a local server; `watch-server.ts` is the
- * composition that measures the ids over that server and hands back this file's
- * runtime, so a caller does not have to do the three steps in the right order from
- * outside. Which model *ships* is
- * `src/README.md` line 25, answered by measurement, and nothing in this file reads
- * that answer. So this file stays the rules, and stays testable without a model.
+ * **The question has two answers, and they are the model's to pick from.** A judgement used
+ * to be a sentence ending in "Answer act or ignore" with one token sampled after it, and the
+ * reading was a search through the distribution for a spelling of `act`. That measured the
+ * model's willingness to *start* with a word rather than its answer: `Act`, `Action` and
+ * `act` arrived as three ids, `我` and `I` took a third of the mass, and a bot in a room of
+ * four could not tell whether it was the one being addressed. What replaced it is a decision
+ * model (`/v1/systemone`, `llama.ts`) handed a `state` and a question whose answers are
+ * declared, answering with a calibrated probability per answer. Nothing is generated, so
+ * there is no token to read and no spelling to match.
  *
- * Five things the runtime is not allowed to decide for itself, each with the
- * document that keeps it out of here:
+ * **The state is assembled here and the question is the artifact's.** The text a judgement
+ * reads is built from the versioned artifact (`src/prompts/watch-v3.json`) and the box: the
+ * model is not asked where the summary, the room and the messages go, because an order that
+ * lives in the model is an order no version pins and no measurement covers.
  *
- * - **The window** (§3, checklist line 23). The model's window is a measured
- *   number, so it arrives from the caller as a budget, together with what one
- *   entry costs against it.
- * - **The operating point** (checklist line 26): *"the operating point comes from
- *   a labelled set, never 0.5"*. A small model's usable cut sits between 0.6 and
- *   0.98, far from even, so a default in here would be a wrong answer wearing the
- *   shape of a considered one. `threshold` has no default and cannot be omitted.
- * - **The question, and the order it is asked in** (checklist line 27,
- * **the prompt artifact's** "the question put to the watch model is part of the contract").
- *   Rewording alone moved one model's discrimination from 0.09 to 0.77 and
- *   inverted it between Chinese and English, so the prompt is a versioned artifact
- *   read from a file (`prompts.ts`, `src/prompts/watch-v1.json`) — never a string
- *   composed at this call site — and **this file assembles it**, so where each part
- *   of the box sits is the artifact's decision rather than the model's. The
- *   operating point names the version it was measured against, because a cut
- *   measured on another question is not a cut for this one.
- * - **The option tokens** (§4 "one binary question", line 79). The model answers
- *   from the probabilities of two declared tokens, `act` and `ignore`; `keep` and
- *   `snooze` are the loop's to write and are never asked for, because a model that
- *   answers by reading token probabilities cannot emit an option it was not given.
- * - **Where in the vocabulary the answer is read** (§4 line 79, second sentence).
- *   An option is only answerable if it survives as **one** token past the prompt,
- *   and the id to mask is the one it takes *there* — not the id of the bare word.
- *   Both are measured off `prompt.text + option` with the model's own tokeniser
- *   (`bindOptions`), because masking the wrong form makes an option permanently
- *   unreachable and reads as a confident wrong answer; nothing here may assume the
- *   two ids are the same, and nothing here may pick a tokeniser, which is the
- *   model's.
- * - **Where the verdict lives**: on the entry it judged,
- *   and nowhere else. Nothing here keeps a copy.
+ * **Who is being asked is in the state, and who else is in the room is too.** A judgement is
+ * one bot's; the state names it, what it does here, and the other bots in the room. That last
+ * line is load-bearing rather than decorative: without it, four bots read the same
+ * `小荷，这个 bug 你来看一下` as addressed to each of them (act 0.64–0.73 for all four);
+ * with it, the named bot reads 0.89 and the others read 0.21–0.36, and a room that names
+ * nobody reads under 0.57 for everyone.
  *
- * **The resident context is this file's, and the tokens are still the model's.** §4
- * keeps the box's tokens warm per (bot, room): re-reading a full box at a 3B costs
- * about a millisecond a token, so a judgement pays only for what arrived since the
- * last one. What is kept here is the memory of what was handed over — the head's
- * identity, and the entries that head has read (`ResidentContext`) — and it is
- * handed over as fields, never as text (`WatchInput.resident`). **The box itself is
- * still rebuilt in full on every tick**, and stays a pure read of the record: what
- * is saved is what the *model* re-encodes, and only the model's own context can make
- * that true. A runtime that kept its own copy of an encoding would be keeping a
- * second version of a fact the model already holds, free to disagree with it.
+ * **No model is built, bundled or chosen here.** `WatchModel` is the seam; `llama.ts` is the
+ * one implementation that speaks to a server, and the model behind it is `src/README.md`
+ * line 25's. This file decides the question, the cut and the verdict, and nothing about
+ * where the answer comes from.
  *
- * **What is written, and when.** `act` and `ignore` both go on the record. The box
- * reads the newest verdict back out of the entries (§3's last-verdict part: *"when
- * it was taken, what it was, and the reason if one came back"*), and a decision
- * that only the no-act branch recorded could never say how long ago it forwarded
- * something — which is the one piece of feedback the watch side gets.
- *
- * **A reason is the judgement's own sentence.** It is written when the model
- * returned one and is never invented, because a fabricated reason is worse than
- * none: it reads exactly like evidence. Nothing here puts it in front of the work
- * agent either — that boundary is `turn.ts`'s (`HandedEntry`), which strips both
- * fields on the way across.
+ * **The verdict is the only thing it writes.** A judgement sets `entry.verdict` and, when
+ * the model gave one, `entry.reason` — on the entries it judged and nowhere else, so the
+ * record has one place a verdict lives rather than two free to disagree. It appends no
+ * message and opens no turn: §4 keeps those for the half that can write.
  */
 
-import { buildBox, type BoxOptions, type RoomBox } from './box.ts';
-import type { Judge } from './inbox.ts';
 import {
   assemblePrompt,
   loadPromptArtifact,
-  skeletonOf,
+  questionOf,
   systemOf,
   type PromptArtifact,
+  type PromptLine,
+  type PromptQuestion,
 } from './prompts.ts';
+import { buildBox, type BoxOptions } from './box.ts';
 import type { SeekStore } from './store.ts';
-import type { Id, Observation, Verdict } from './types.ts';
+import type { Id, Message, Observation, Verdict } from './types.ts';
 
 /**
- * The text a judgement continues from, as one string.
+ * What a judgement is asked, in the two pieces the endpoint takes.
  *
- * `version` is part of the value because the operating point is calibrated
- * *against* a prompt: the prompt artifact's §"the question put to the watch model" makes
- * the two one contract. `text` is what was actually encoded — handed to the model
- * exactly as it stands, and **assembled by this runtime** from the versioned
- * artifact (`prompts.ts`) and the box, never left for the model to lay out. A
- * `WatchPrompt` is also what a mask is measured against: `bindOptions` reads its
- * option ids off the end of this text, so the end is the part of it that matters.
+ * `state` is the text the model reads — the bot, its job, the room, the other bots in it,
+ * the memory, then the entries, oldest first — and `question` is the single question with
+ * its two answers. Both are assembled by this runtime from the versioned artifact, never
+ * laid out by the model.
  */
 export interface WatchPrompt {
   /** The artifact's identity. The operating point names this string. */
   version: string;
-  /**
-   * The head this text begins with, as it was filled in.
-   *
-   * **Filled in, not the file's template.** The head names the bot being asked, and the
-   * server has to be handed that same line twice: once as the chat template's system
-   * message, and once as the prefix to split the assembly at (`llama.ts` refuses a text
-   * that does not begin with it). Carrying the template instead would make every bot's
-   * judgement look assembled from another artifact.
-   */
-  system: string;
-  /** The question and its framing, verbatim. */
-  text: string;
+  /** Everything the model is told before it is asked anything. */
+  state: string;
+  /** The question, and what each of the two answers means. */
+  question: PromptQuestion;
 }
 
 /**
@@ -131,12 +86,13 @@ export interface OperatingPoint {
 }
 
 /**
- * The two declared option tokens of the binary question.
+ * The two declared options of the binary question.
  *
  * §4 names the verdicts themselves as the options — *"`act` and `ignore` are the
- * whole of what it produces"* — so those two words are the default. A binding
- * with a different tokeniser may declare others; what it may not do is declare
- * one that splits into several tokens (line 79).
+ * whole of what it produces"* — so those two words are the default, and they are also
+ * the keys of the artifact's `question.criteria` and of the probabilities the endpoint
+ * answers with. Nothing else in the tree has to know a token id: the model is handed
+ * the two names and picks one.
  */
 export interface OptionTokens {
   act: string;
@@ -144,122 +100,20 @@ export interface OptionTokens {
 }
 
 /**
- * What a tokeniser makes of a piece of text.
+ * One judgement's input: the question, and the options it may be answered with.
  *
- * One method, and one is all the mask needs: the ids a string becomes. It is a
- * seam rather than an import because the tokeniser belongs to the model, and which
- * model ships is `src/README.md` line 25 — a measurement, so this file may as
- * little choose a vocabulary as a window. The stub in the tests is the only
- * implementation in the tree, exactly as `WatchModel`'s is.
+ * **The box is not here.** It was, while the reading was a distribution over the text's
+ * own end and a transport had to know where that end was and whether a picture sat in it.
+ * A decision model is handed the assembled state as a whole, so what crosses this seam is
+ * the text rather than the pieces it was built from.
  */
-export interface Tokeniser {
-  /** The ids `text` becomes, in order. */
-  encode(text: string): number[];
-}
-
-/** One declared option, bound to the id it takes where the answer is read. */
-export interface BoundOption {
-  /** The option as it was declared. */
-  token: string;
-  /**
-   * The id this option occupies at the prompt's own end.
-   *
-   * **Not necessarily the id of the bare word.** A tokeniser that reads `act` after
-   * a space gives it a different id than `act` on its own, and the mask is aimed at
-   * the position the answer is actually read from (§4 line 79).
-   */
-  id: number;
-}
-
-/** The two options, each bound to the id it takes at the prompt's own end. */
-export interface OptionBinding {
-  act: BoundOption;
-  ignore: BoundOption;
-}
-
-/**
- * What this judgement has already read, for one (bot, room).
- *
- * `agent-lifecycle.md` §4, last line: *"The box's tokens are kept warm … Each (bot,
- * room) therefore keeps a resident context and pays only for what arrived since its
- * last judgement."* This is that memory: two facts and no tokens, because the tokens
- * are the model's.
- *
- * **What the head is.** The front of the box, in the order a judgement reads it: the
- * prompt, the room's summary, then the entries named here — **oldest first**, so an
- * arrival can only ever be appended to it. Everything else the box carries (the
- * counts, the last verdict, who spoke, the caller's question set) is per-tick by
- * nature and is never resident: it is the tail this judgement is asked about.
- *
- * **What is not promised.** Whether a cache still holds that head is the model's to
- * know. A key that matches means this runtime has not invalidated the head, not that
- * a model must resume over it — a model that dropped its own context is free to
- * re-read, and one that resumes over a head it was never given is the failure this
- * field exists to make impossible.
- */
-export interface ResidentContext {
-  /**
-   * The head's identity.
-   *
-   * Every ingredient of the front is in it (see `headKey`), so a change in any of
-   * them is a different head rather than the same head quietly re-fingered.
-   */
-  key: string;
-  /**
-   * The entries of **this** box the model has already read, in the box's own order.
-   *
-   * In the box's order and not the head's, because it is a statement about this
-   * box — *which of these lines are not new* — and the head's own order is the
-   * reverse of it.
-   */
-  entries: Id[];
-}
-
-/** One question put to the model. Fields, never prose. */
 export interface WatchInput {
-  /**
-   * The text this judgement continues from, already assembled.
-   *
-   * Assembled by the runtime from the artifact and this box: the model is not
-   * asked where the summary, the messages and the question go, because an order
-   * that lives in the model is an order no version pins and no measurement covers.
-   */
+  /** The state and the question, already assembled. */
   prompt: WatchPrompt;
-  /**
-   * The room's box (§3): standing summary, delta, last verdict, unread count —
-   * and the pictures in the delta, named there, because a model that is handed
-   * the entries and not their images is judging from text alone.
-   */
-  state: RoomBox;
-  /**
-   * How much of this box the model has already read under the same head.
-   *
-   * **Absent means cold**: a room's first judgement, or a head that changed — a
-   * compaction that rewrote the summary, or a runtime wired to a different prompt or
-   * option binding. Then the whole box is new, and a model that resumed anyway would
-   * be answering over a front it was never given.
-   */
-  resident?: ResidentContext;
   /** The declared options the answer is read from. */
   options: OptionTokens;
-  /**
-   * The ids the mask has to allow, measured at the prompt's own end.
-   *
-   * Handed over rather than left to the model to work out: a binding re-derived per
-   * call site is a binding free to disagree with the prompt it belongs to, and its
-   * failure mode is an option nobody can reach.
-   */
-  mask: OptionBinding;
 }
 
-/**
- * A decision model's answer for one question.
- *
- * Both declared options have to come back as probabilities: an option missing
- * from the reading is the failure line 79 describes — a token masked at the wrong
- * id is permanently unreachable, and its absence is the only symptom there is.
- * Reading `act` alone would turn that defect into a confident decision.
- */
 export interface WatchReading {
   /** Probability per declared option token, each a finite number in [0, 1]. */
   probabilities: Record<string, number>;
@@ -267,13 +121,6 @@ export interface WatchReading {
   reason?: string;
 }
 
-/**
- * The injected model: one forward pass, no generated text, no tools.
- *
- * The real one reads token probabilities at the prompt's end; the stub in the
- * tests returns a `WatchReading` and remembers its input. Nothing else in the
- * kernel knows the difference.
- */
 export interface WatchModel {
   read(input: WatchInput): Promise<WatchReading> | WatchReading;
 }
@@ -284,7 +131,7 @@ export interface WatchOptions {
   /**
    * The versioned prompt artifact.
    *
-   * **Absent means the shipped one** (`src/prompts/watch-v1.json`), which is what
+   * **Absent means the shipped one** (`src/prompts/watch-v3.json`), which is what
    * "the prompt is a versioned file" has to mean for a default to exist at all.
    * A file, a version and a cut are one contract, so passing one here moves the
    * others with it — an artifact that declares no operating point needs a
@@ -294,40 +141,15 @@ export interface WatchOptions {
   /**
    * The calibrated cut, and the prompt version it belongs to.
    *
-   * **Absent means the artifact's own declaration**: `watch-v1` ships 0.600,
-   * measured on 24 cases written after every prompt choice had been made
-   * (`calibration/measured.json`). That is a default with a source rather than a
-   * convenience — 0.5 is the value that looks reasonable and is measurably wrong,
-   * and a number this file carried itself would be a second copy free to disagree
-   * with the artifact it belongs to.
+   * **Absent means the artifact's own declaration**: `watch-v3` ships 0.600, measured
+   * on the shape that artifact states. That is a default with a source rather than a
+   * convenience — 0.5 is the value that looks reasonable and is measurably wrong (it
+   * reads 20/24 where 0.600 reads 23/24), and a number this file carried itself would
+   * be a second copy free to disagree with the artifact it belongs to.
    */
   operatingPoint?: OperatingPoint;
   /** Overrides for the declared option tokens. Defaults to `act` / `ignore`. */
   optionTokens?: Partial<OptionTokens>;
-  /**
-   * The tokeniser the mask ids are measured with.
-   *
-   * **One of this and `mask` is required**, and neither has a default: a runtime
-   * holding neither cannot say where its own answer is read, and the options it
-   * cannot place may never be answerable at all. It refuses at construction for the
-   * same reason the operating point does — the defect would otherwise show up as a
-   * bot that always says no.
-   *
-   * Give this one when the tokeniser answers synchronously, which is what the suite's
-   * stub does. Give `mask` instead when the ids have to be measured *before* the
-   * runtime is built: a model behind HTTP cannot answer inside a synchronous bind,
-   * so `llama.ts` measures first (`bindOverServer`) and hands the result over.
-   */
-  tokeniser?: Tokeniser;
-  /**
-   * The mask, already measured at the prompt's own end.
-   *
-   * The value `bindOptions` would have produced, measured by whoever could reach the
-   * tokeniser — and checked here rather than trusted, because this is the one field
-   * that reaches the model without passing through the function that normally
-   * catches a mask that names no answer.
-   */
-  mask?: OptionBinding;
   /** What one observation costs against `window`. Passed through to the box. */
   weigh?: (entry: Observation) => number;
 }
@@ -343,7 +165,7 @@ export interface WatchOutcome {
   /**
    * Answers that could not be read, counted apart from `ignored`.
    *
-   * An unparseable answer counts as no act (§4), which means it leaves the same
+   * An unanswerable reading counts as no act (§4), which means it leaves the same
    * verdict a confident "not about me" would — so the distinction is kept here,
    * where a caller can see the model has stopped answering, rather than by
    * inventing a fifth verdict the design does not have.
@@ -378,11 +200,10 @@ export interface Watch {
  * operating point measured against a different question would otherwise run
  * happily, spending verdicts on a threshold that means nothing.
  *
- * It is also where the resident context lives (§4): what this (bot, room) has
- * already read is the runtime's own memory rather than a row. A head is only warm
- * while the model that read it still holds it, so a persisted one would outlive the
- * cache that gave it meaning and tell the next process's first judgement to skip a
- * front it had never seen.
+ * **What it remembers is nothing.** A judgement is one call over a whole box, so
+ * there is no resident context to keep warm and no front to invalidate: an earlier
+ * version of this file tracked what a model had already read so its KV cache could be
+ * reused, which is an economy a per-call decision model does not have.
  */
 export function watchAs(
   store: SeekStore,
@@ -392,34 +213,21 @@ export function watchAs(
 ): Watch {
   const tokens = declaredOptions(options.optionTokens);
   // The artifact and the cut are one contract, so both are settled once, here: a
-  // runtime whose prompt could change mid-life would be a runtime whose mask and
-  // threshold belonged to a question it is no longer asking.
+  // runtime whose prompt could change mid-life would be a runtime whose question and
+  // threshold belonged to something it is no longer asking.
   const artifact = options.prompt ?? loadPromptArtifact();
   const point = resolveOperatingPoint(artifact, options.operatingPoint);
-  // **Who is being asked.** One `watchAs` is one bot, and the question put to it names
-  // that bot rather than describing some other one: without this every bot in an
-  // organization was handed the same head and answered the same way, so a room of four
-  // either woke all four or none. The name is the one a person gave the bot, and a bot
-  // with none is asked under its id, which is what every other reading in the store
-  // calls it (`snapshot.js`). The position is quoted only when the card says one.
+  // **Who is being asked.** One `watchAs` is one bot, and the state names that bot rather
+  // than describing some other one: without this every bot in an organization was handed
+  // the same text and answered the same way, so a room of four either woke all four or
+  // none. The name is the one a person gave the bot, and a bot with none is asked under
+  // its id, which is what every other reading in the store calls it (`snapshot.js`).
   const who = store.principal(botId);
   const given = who !== undefined && 'name' in who ? who.name : undefined;
   const botName = typeof given === 'string' && given !== '' ? given : botId;
   const declared = who !== undefined && 'position' in who ? who.position : undefined;
   const position = typeof declared === 'string' && declared !== '' ? declared : undefined;
-  // Measured once, and measured on the assembly's *end*: `skeletonOf` is the same
-  // text with no summary and no entries, and it ends where every real assembly ends
-  // (the artifact's last part is unconditional), so these are the ids the answer is
-  // read at in every room and on every tick. Warmth is not this line's doing — that
-  // is `resident` below, and it holds no ids of its own.
-  const mask = maskFor(artifact, options, tokens);
-  const front = frontOf(artifact);
-
-  // The resident context, one per room (§4 "the box's tokens are kept warm"). One
-  // `watchAs` is one bot, so the bot lives in the instance rather than in the key:
-  // two bots are two instances and can share nothing, which is what keeps one bot's
-  // warmth from being handed to another that never read it.
-  const resident = new Map<Id, ResidentContext>();
+  const question = questionOf(artifact, tokens);
 
   const watch = (async (entries: Observation[]): Promise<Observation[]> => {
     const outcome: WatchOutcome = {
@@ -454,50 +262,67 @@ export function watchAs(
       // was taken away.
       const boxOptions: BoxOptions = { window: options.window };
       if (options.weigh) boxOptions.weigh = options.weigh;
-      const state = buildBox(store, botId, roomId, boxOptions);
+      const box = buildBox(store, botId, roomId, boxOptions);
 
-      // What this judgement may assume was already read. The key names the front —
-      // prompt, option binding, summary — and the entries are intersected with the
-      // box, because an entry the window no longer holds is not something the model
-      // is being given again.
-      const head = headKey(botId, roomId, front, tokens, mask, state.summary);
-      const previous = warmFrom(resident.get(roomId), head, state.delta);
+      // **A picture in the box is refused, not judged from its caption.** The model this
+      // app ships is text (`d1-2B`: `modalities.vision: false`), and `/v1/systemone` takes a
+      // `state` string, so a picture's bytes have nowhere to go. Judging the entry from the
+      // message's text would produce a verdict that reads exactly like one reached with the
+      // picture in front of the model, which is the worst of the three possibilities — and
+      // it is what `box.ts` warns about when it says an entry alone cannot prevent it.
+      // Refusing keeps the judgement from *looking* like it saw something.
+      if (box.media.length > 0) {
+        throw new Error(
+          `room ${roomId} holds ${box.media.length} picture(s) in this judgement's window ` +
+            'and the model behind this seam cannot see: a verdict read from the caption ' +
+            'would be indistinguishable from one reached with the picture in front of the ' +
+            'model. Teaching it to see needs a model with a projector, not a smaller prompt',
+        );
+      }
 
-      // What this judgement is asked, in the artifact's own order. The record keeps
-      // a message's body on the message and an observation only names it, so the
-      // bodies are read once per room — read, never copied onto the entry: a verdict
-      // is the only thing stage 1 writes. Entries are rendered **oldest first**, so
-      // an arrival can only ever be appended to the head (§4 "the box's tokens are
-      // kept warm"), while `delta` itself is newest first because that is the order
-      // the window filled it in.
-      const bodies = new Map<Id, string>();
-      for (const message of store.messagesOf(roomId)) bodies.set(message.id, message.text);
-      const ask: WatchPrompt = {
-        version: artifact.version,
-        system: systemOf(artifact, { bot: botName }),
-        text: assemblePrompt(artifact, {
+      // What this judgement is asked. The record keeps a message's body on the message
+      // and an observation only names it, so the bodies are read once per room — read,
+      // never copied onto the entry: a verdict is the only thing stage 1 writes. Entries
+      // are rendered **oldest first**, so the newest arrival is the last thing read.
+      const messages = new Map<Id, Message>();
+      for (const message of store.messagesOf(roomId)) messages.set(message.id, message);
+      // The room's name, when it has one: `rooms.ts` treats an empty name as no name,
+      // and the artifact skips its room part rather than printing a blank after a colon.
+      const declaredRoom = store.room(roomId)?.name;
+      const roomName =
+        typeof declaredRoom === 'string' && declaredRoom !== '' ? declaredRoom : undefined;
+      // The other bots in the room, by name. This is the line that makes "is this for me"
+      // answerable (`watch-v3.json`): the artifact skips it when the bot is alone, and a
+      // bot not in the room at all gets the same absence rather than an empty list.
+      const otherNames = store
+        .botsIn(roomId)
+        .filter((bot) => bot.id !== botId)
+        .map((bot) => (bot.name === '' ? bot.id : bot.name));
+      const others = otherNames.length > 0 ? otherNames.join(', ') : undefined;
+
+      // **Four facts the box computes and this artifact does not render**, said here rather
+      // than left to be discovered: `read` / `total` / `unread`, `lastVerdict` with its
+      // staleness, `whoSpoke`, and the media list. `box.ts` keeps them because they are
+      // facts about the record; `watch-v3` renders none of them, because the shape that was
+      // measured is *who is being asked* plus *the messages* — the four-bot matrix and set4
+      // were both taken on exactly that, and adding a line is adding text no measurement
+      // covers. The cost is stated rather than hidden: a judgement that could not fit the
+      // whole delta no longer says so, and an earlier verdict is not visible to it.
+      const ask: WatchPrompt = {        version: artifact.version,
+        state: assemblePrompt(artifact, {
           bot: botName,
           ...(position === undefined ? {} : { position }),
-          ...(state.summary === undefined ? {} : { summary: state.summary }),
-          texts: [...state.delta].reverse().map((entry) => textOf(entry, bodies)),
+          ...(others === undefined ? {} : { others }),
+          ...(box.summary === undefined ? {} : { summary: box.summary }),
+          ...(roomName === undefined ? {} : { room: roomName }),
+          lines: [...box.delta]
+            .reverse()
+            .map((entry) => lineOf(entry, messages, store, botName)),
         }),
+        question,
       };
 
-      const input: WatchInput = {
-        prompt: ask,
-        state,
-        options: tokens,
-        mask,
-      };
-      if (previous) input.resident = previous;
-      const reading = await model.read(input);
-
-      // Read is read: everything in this box has just been handed over, so the next
-      // judgement may claim it. Recorded after the model answered, because a call that
-      // threw read nothing and a head rebuilt on a failed read would let the next
-      // judgement skip a front it never saw.
-      resident.set(roomId, { key: head, entries: state.delta.map((entry) => entry.id) });
-
+      const reading = await model.read({ prompt: ask, options: tokens });
       const probability = probabilityOf(reading, tokens);
 
       if (probability === undefined) outcome.unparsed += 1;
@@ -536,139 +361,11 @@ export function watchAs(
 }
 
 /**
- * The mask in force: measured here from a tokeniser, or measured elsewhere and
- * handed in.
- *
- * Exactly one route, because two would be two answers about where the answer is read
- * — a tokeniser that disagrees with the mask beside it is a runtime that cannot say
- * which id it is about to read, and the failure is silent in the worst way: the mask
- * goes to the model and an unreachable option reads as a confident "no".
- *
- * A supplied mask is checked, not trusted. The three refusals `bindOptions` makes are
- * about the mask rather than about the tokeniser, so they apply to this one too: an
- * id that is not a token id names no position, and one id for both options is one
- * answer wearing two names.
- */
-function maskFor(
-  artifact: PromptArtifact,
-  options: WatchOptions,
-  tokens: OptionTokens,
-): OptionBinding {
-  const supplied = options.mask;
-  if (supplied !== undefined && options.tokeniser !== undefined) {
-    throw new Error(
-      'stage 1 was given both a tokeniser and a mask, and they are free to disagree ' +
-        "about where this prompt's end is — hand over whichever one measured the ids, " +
-        'not both',
-    );
-  }
-  if (supplied !== undefined) return checkedMask(supplied);
-  if (options.tokeniser !== undefined) {
-    return bindOptions(options.tokeniser, skeletonOf(artifact), tokens);
-  }
-  throw new Error(
-    'stage 1 needs a tokeniser or a mask measured from one: the ids are read off the ' +
-      "prompt's own end, and without them a declared option may be unreachable for good " +
-      '(src/README.md line 26)',
-  );
-}
-
-/** A supplied mask, held to the same three refusals as a measured one. */
-function checkedMask(mask: OptionBinding): OptionBinding {
-  const ids = [mask.act?.id, mask.ignore?.id];
-  for (const id of ids) {
-    if (!Number.isInteger(id) || id < 0) {
-      throw new Error(
-        `a mask id must be a token id, got ${JSON.stringify(id)} — the answer is read by ` +
-          'position, and an id that names no token names no answer',
-      );
-    }
-  }
-  if (ids[0] === ids[1]) {
-    throw new Error(
-      `the two options land on the same id (${ids[0]}), so ${JSON.stringify(mask.act?.token)} ` +
-        `and ${JSON.stringify(mask.ignore?.token)} are one answer wearing two names`,
-    );
-  }
-  return mask;
-}
-
-/**
- * The head's identity: every ingredient of the front of the box, and nothing else.
- *
- * The front is the prompt, the option binding and the room's summary (§4 "the box's
- * tokens are kept warm"), so a judgement may only be told "you have read this" while
- * all of them are unchanged. Each is here for a reason:
- *
- * - **The artifact** is version *and* content. The version is its identity, and the
- *   operating point is calibrated against it; the content is what the text is
- *   assembled from, and an artifact edited without moving its version would
- *   otherwise get a head it never read. What is **not** in the key is the assembled
- *   text: it carries this tick's messages, so a key built from it would move on
- *   every arrival and no head would ever stay warm.
- * - **The option tokens** change what the model is asked to continue from.
- * - **The mask ids** stand for the tokeniser: two vocabularies that bind the same ids
- *   read the same answer, and one that binds different ids is a different head even
- *   under the same prompt.
- * - **The summary** is the compaction's result, so a compaction is exactly the event
- *   that rewrites the front and must invalidate it (`agent-lifecycle.md` §3). A
- *   summary absent and a summary present are different heads, hence the `null`.
- *
- * Not here, deliberately: the counts, the last verdict, who spoke and the caller's
- * question set. They change with every tick, so a head that claimed them would be
- * invalidated by the next arrival — which is the cost the whole mechanism exists to
- * avoid. That is why the counts are not in the head.
- *
- * Serialised as a JSON array rather than joined with a separator: a summary is free
- * text, and a delimiter it can contain is a key two different heads can share.
- */
-function headKey(
-  botId: Id,
-  roomId: Id,
-  front: string,
-  tokens: OptionTokens,
-  mask: OptionBinding,
-  summary: string | undefined,
-): string {
-  return JSON.stringify([
-    botId,
-    roomId,
-    front,
-    tokens.act,
-    tokens.ignore,
-    mask.act.id,
-    mask.ignore.id,
-    summary ?? null,
-  ]);
-}
-
-/**
- * What of this box the head has already read, or `undefined` when it has read none
- * of it under this head.
- *
- * The intersection is the point. A compaction may have consumed entries the model
- * read, and the window may have pushed others out, so the previous list is filtered
- * against the box in hand rather than returned as it stands: an id this box does not
- * hold is not something the judgement can be asked to resume over. What survives is
- * still what was read, in the order it was read, because filtering preserves it.
- */
-function warmFrom(
-  previous: ResidentContext | undefined,
-  key: string,
-  delta: Observation[],
-): ResidentContext | undefined {
-  if (!previous || previous.key !== key) return undefined;
-  const here = new Set(delta.map((entry) => entry.id));
-  return { key, entries: previous.entries.filter((id) => here.has(id)) };
-}
-
-/**
  * The two declared option tokens, checked for the shapes line 79 requires.
  *
- * Exported because the ids are sometimes measured before this runtime exists —
- * `watch-server.ts` binds the mask over HTTP and then builds the runtime, and it has
- * to resolve the tokens through this function rather than keep its own copy of the
- * rules that refuse an empty or repeated option.
+ * Exported because the question's two criteria are keyed by these tokens
+ * (`questionOf` in `prompts.ts`), so the file and the runtime have to agree on them
+ * through one function rather than two copies of the rules.
  */
 export function declaredOptions(override?: Partial<OptionTokens>): OptionTokens {
   const tokens: OptionTokens = { act: 'act', ignore: 'ignore', ...override };
@@ -683,97 +380,6 @@ export function declaredOptions(override?: Partial<OptionTokens>): OptionTokens 
     );
   }
   return tokens;
-}
-
-/**
- * Bind the two declared options to the ids they take at the prompt's own end.
- *
- * `agent-lifecycle.md` §4, line 79: *"Option tokens must be single tokens, and
- * masked where they actually land. A word that the tokeniser splits cannot carry a
- * probability in one pass … And the id to mask is the one the option takes at the
- * prompt's own end (with its leading space, in its own case), not the id of the
- * bare word: masking the wrong form makes an option permanently unreachable and
- * reads as a confident wrong answer."*
- *
- * So the measurement is taken on `prompt.text + option` — the exact string the
- * model is asked to continue — and never on the option alone. Three things can go
- * wrong, each silent at the call site and each refused here instead:
- *
- * - the option **does not survive as one token** past the prompt;
- * - appending it **rewrites the prompt's own encoding**, so "the prompt's own end"
- *   names no fixed position and the id read there is not the option's. This is the
- *   real hazard rather than a theoretical one: a tokeniser that lets the last token
- *   of the prompt merge with the first of the option produces exactly this, and the
- *   prompt has to be the thing that changes — end it at a boundary that holds;
- * - both options **land on the same id**, which makes two answers one answer.
- *
- * The first case has a history: `snooze` had to be replaced because it split into
- * four pieces, and a fourth verdict cannot be asked of a model that answers by
- * reading probabilities.
- */
-export function bindOptions(
-  tokeniser: Tokeniser,
-  prompt: WatchPrompt,
-  options: OptionTokens,
-): OptionBinding {
-  if (!tokeniser || typeof tokeniser.encode !== 'function') {
-    throw new Error(
-      'stage 1 needs a tokeniser: the mask ids are read off the prompt\'s own end, and ' +
-        'without them a declared option may be unreachable for good ' +
-        '(src/README.md line 26)',
-    );
-  }
-  // Encoded once for the pair: the prompt is the same text for both suffixes, and
-  // re-encoding it per option is the first step towards re-encoding it per tick.
-  const prefix = tokeniser.encode(prompt.text);
-  const act = bindOne(tokeniser, prompt, prefix, options.act);
-  const ignore = bindOne(tokeniser, prompt, prefix, options.ignore);
-  if (act.id === ignore.id) {
-    throw new Error(
-      `the two options land on the same id (${act.id}) at this prompt's end, so ` +
-        `${JSON.stringify(options.act)} and ${JSON.stringify(options.ignore)} are one ` +
-        'answer wearing two names',
-    );
-  }
-  return { act, ignore };
-}
-
-/** One option, measured where the model will read it. */
-function bindOne(
-  tokeniser: Tokeniser,
-  prompt: WatchPrompt,
-  prefix: number[],
-  token: string,
-): BoundOption {
-  const whole = tokeniser.encode(prompt.text + token);
-  // The prompt has to end where the option begins. Any earlier id differing means
-  // the suffix changed the prefix, and then there is no position that is this
-  // prompt's own end for this option.
-  for (let index = 0; index < prefix.length; index += 1) {
-    if (whole[index] !== prefix[index]) {
-      throw new Error(
-        `the tokeniser rewrites the prompt's own encoding once ${JSON.stringify(token)} ` +
-          `is appended (position ${index} becomes ${whole[index]}, was ${prefix[index]}), ` +
-          "so no id at the prompt's end belongs to this option — end the prompt at a " +
-          'boundary that survives the suffix',
-      );
-    }
-  }
-  const tail = whole.slice(prefix.length);
-  if (tail.length === 0) {
-    throw new Error(
-      `${JSON.stringify(token)} adds no token past this prompt, so there is no id to ` +
-        'read an answer from',
-    );
-  }
-  if (tail.length !== 1) {
-    throw new Error(
-      `${JSON.stringify(token)} takes ${tail.length} tokens at the prompt's end, and an ` +
-        'option that splits cannot carry a probability in one pass ' +
-        '(agent-lifecycle.md §4)',
-    );
-  }
-  return { token, id: tail[0] };
 }
 
 /**
@@ -832,29 +438,47 @@ function resolveOperatingPoint(
 }
 
 /**
- * The artifact's identity, for the head key.
- *
- * Version *and* content, so an artifact edited without moving its version is still
- * a different head: the version is what the operating point names, and the content
- * is what the text is assembled from.
- */
-function frontOf(artifact: PromptArtifact): string {
-  return JSON.stringify(artifact);
-}
-
-/**
- * The line one box entry contributes to the assembled text.
+ * The line one box entry contributes to the assembled text: what was said, by whom,
+ * and when.
  *
  * A message's body lives on the message, and an observation only names it —
  * `Observation.text` is the reminder's own words and nothing else — so a judgement
- * that reads one assembled string has to be given the body here. A reminder never
- * reaches this point (it has no room, so no box), but the fallback keeps that a
- * property of the loop rather than of this helper.
+ * that reads one assembled string has to be given the body here. **The sender is the
+ * record's**, resolved off `Message.sender_id`, and never a guess from the words: the
+ * defect this closed was a bot reading `小荷，这个 bug 你来看一下` with nothing on the
+ * line saying who spoke, so every bot in the room had to decide from the sentence
+ * alone whether it was the one being addressed, and all four decided it was not.
+ *
+ * A reminder's sender is the bot itself: `agent-lifecycle.md` §12 has a reminder
+ * written by the bot for its own future, so the name on it is the bot's. A reminder
+ * never reaches this point (it has no room, so no box), but the fallback keeps that
+ * a property of the loop rather than of this helper.
  */
-function textOf(entry: Observation, bodies: Map<Id, string>): string {
-  if (entry.text !== undefined) return entry.text;
-  if (entry.message_id === undefined) return '';
-  return bodies.get(entry.message_id) ?? '';
+function lineOf(
+  entry: Observation,
+  messages: Map<Id, Message>,
+  store: SeekStore,
+  botName: string,
+): PromptLine {
+  if (entry.text !== undefined) {
+    return { text: entry.text, sender: botName, at: entry.delivered_at };
+  }
+  const message = entry.message_id === undefined ? undefined : messages.get(entry.message_id);
+  if (message === undefined) {
+    // A body the room no longer holds: the erased message, or one the record named
+    // and never had. The line keeps its time and says whose it was as far as the
+    // record can, which is the same refusal to invent that `reason` gets.
+    return { text: '', sender: botName, at: entry.delivered_at };
+  }
+  return { text: message.text, sender: nameOf(store, message.sender_id), at: entry.delivered_at };
+}
+
+/** A principal's name, or its id when the name is missing or empty. */
+function nameOf(store: SeekStore, id: Id): string {
+  const who = store.principal(id);
+  if (who === undefined) return id;
+  const given = 'name' in who ? who.name : undefined;
+  return typeof given === 'string' && given !== '' ? given : id;
 }
 
 /**
@@ -887,6 +511,3 @@ function reasonOf(reading: WatchReading | undefined): string | undefined {
   const reason = reading?.reason;
   return typeof reason === 'string' ? reason : undefined;
 }
-
-/** The loop's `Judge` type, named here so a mistake shows up at the seam. */
-export type WatchJudge = Judge;

@@ -380,7 +380,7 @@ ipcMain.handle('seek:catalogue', async () => {
  *
  * The judgement half is *not* re-decided: the model server is a fact about the machine and it
  * is already running, so it is passed through unchanged — a switch that spent a minute loading
- * a 2.2 GB model to show a different set of rooms would be a switch nobody makes twice.
+ * a 1.7 GB model to show a different set of rooms would be a switch nobody makes twice.
  */
 async function openOrganization(id) {
   const next = switchOrganization(ORGANIZATIONS, id)
@@ -948,7 +948,7 @@ async function wordsFacts() {
   // **A model named with no server of your own is refused before the download, not after
   // it.** The server this app starts serves the model it carries, so a name given with no
   // origin is not a fact about it — and waiting until `stageTwoFor` ran would spend the
-  // 2.2 GB first. The sentence is that layer's, read from it rather than written again.
+  // 1.7 GB first. The sentence is that layer's, read from it rather than written again.
   const workModelRefusal =
     from === 'environment' && wordsHalf.workModel !== undefined && workServer === undefined
       ? WORK_MODEL_WITHOUT_SERVER
@@ -1014,7 +1014,7 @@ async function llmForWindow() {
  * writers, and the kernel has one.
  *
  * The judgement half is untouched. It is the server this app started, it is held at module
- * scope, and it is passed back unchanged — re-pointing the words half must not spend 2.2 GB
+ * scope, and it is passed back unchanged — re-pointing the words half must not spend 1.7 GB
  * of download or a minute of model loading.
  */
 async function reopenHost() {

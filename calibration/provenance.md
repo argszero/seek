@@ -72,24 +72,26 @@ place a repository can cite.
 ## What this material does not settle
 
 - **Vision.** No image case was ever run **in this directory**. The image set lives beside it
-  in `vision/`, measured 2026-10-25: 25/32 at the 0.600 cut across two sets, AUC 0.891 — the requirement still
-  stands unmet, and nothing here
-  may be read as saying images are handled.
+  in `vision/`, measured 2026-10-25 on a model that could see: 25/32 at the 0.600 cut across two sets, AUC
+  0.891. The model that ships now cannot — `d1-2B` declares `modalities.vision: false`, so a picture inside a
+  judgement's window is refused, not judged from its caption — so the requirement stands unmet, and nothing
+  here may be read as saying images are handled.
 - **A box with more than one message.** Every measured run judged one message at a time.
   The shipped prompt renders a box's delta as one `Message:` line per entry, which equals
   the measured shape when there is one entry and is an extrapolation when there are more.
-- **The estimator.** The measurement summed the probability of *every* token whose decoded
-  form strips to `act`, and the runtime reads it the same way: `llama.ts`'s `readingOf` sums
-  every candidate that spells the option, and `src/llama.test.ts` asserts the sum.
-  `bindOptions` still measures one id per option, but that id is where the answer is read,
-  not the quantity read there — the design's single-token rule is about the option surviving
-  as one token, not about reading one id's probability alone. This bullet used to say the
-  runtime masked a single id, and that this was carried as an open
-  tension; the design settles the reading the other way,
-  and `calibration/vision/server-transport.json` is the replay that holds it. One difference
-  between the two descriptions is **not** settled: `vocab.py` normalised over the pair and
-  `readingOf` returns the raw sum — `measured.json` records that as a question, not as a
-  finding, because no per-case pre-normalisation value was ever written down.
+- **The estimator, and the one that replaced it.** The measurement summed the probability of
+  *every* token whose decoded form strips to `act` — `vocab.py` on the recording side,
+  `llama.ts`'s `readingOf` on the runtime's, which is what let the two numbers be compared at
+  all. **That is no longer how this tree reads.** The judgement is one call to `llama.cpp`'s
+  `/v1/systemone` on a decision model (`d1-2B`), which answers with one calibrated probability
+  per declared answer and generates no token: nothing is summed, and there is no spelling to
+  match. `readingOf` and `bindOptions` went with it. What the shipped cut rests on now is
+  `calibration/set4-d1.json` — set4 read through the kernel's own `watchAs` over that endpoint,
+  24 of 24 at 0.600, lowest `act` 0.625 and highest of everything else 0.582. Everything above
+  is the measurement that *was* taken, kept as what it is and not read as a description of the
+  code; `measured.json` says which record replaced it. The one difference that was never
+  settled — `vocab.py` normalising over the pair while `readingOf` returned the raw sum — is now
+  moot rather than answered: no arithmetic of that kind happens on either side.
 - **The language split.** One model wants a different cut in Chinese than in English
   (0.88 against 0.53). The shipped default is a single global cut, chosen deliberately;
   branching on language in code would be inventing a ruling nobody made.

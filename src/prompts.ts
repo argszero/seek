@@ -32,7 +32,7 @@
  *
  * **The last token is what the mask is measured against**, so the assembly always
  * ends with a part that cannot be absent — see `assertArtifact`, and note the
- * trailing space in `watch-v1.json`'s question: it is the boundary the option token
+ * trailing space in the shipped artifact's question: it is the boundary the option token
  * is appended at, not decoration. A prompt that ends mid-word lets a tokeniser
  * merge the option into the last token of the prompt, and then no id at the
  * prompt's own end is the option's (`watch.ts`, `bindOptions`).
@@ -41,14 +41,17 @@
 import { readFileSync } from 'node:fs';
 
 /**
- * A part's condition: always rendered, once the room has a summary, or only for a
- * bot whose card says what it does here.
+ * A part's condition: always rendered, once the room has a summary, only for a bot
+ * whose card says what it does here, or only for a room that has a name.
  *
  * `position` is `work-v2`'s rule on this side of the runtime: a part that quotes a
  * fact the bot may not have is skipped rather than rendered with a blank in it, and
- * a bot whose card is empty is asked the same question without that line.
+ * a bot whose card is empty is asked the same question without that line. `room`
+ * is the same rule applied to the room: a room may be nameless (`rooms.ts` — an
+ * empty name is no name), and a nameless room is asked where the message went by
+ * the line being absent rather than by a blank after a colon.
  */
-export type PartCondition = 'always' | 'summary' | 'position';
+export type PartCondition = 'always' | 'summary' | 'position' | 'room' | 'others';
 
 /** One part of the assembly, in the order the file lists it. */
 export interface PromptPart {
@@ -92,18 +95,66 @@ export interface PromptArtifact {
   version: string;
   /** The head of the text: there are no chat roles here, only one continuation. */
   system: string;
-  /** What follows the system block — `"\n\n"` in `watch-v1`. */
+  /** What follows the system block — `"\n\n"` in the shipped artifact. */
   afterSystem: string;
   /** The parts, in the order they are rendered. */
   parts: PromptPart[];
+  /**
+   * The one question, with its two answers.
+   *
+   * A decision model is handed a question whose answers it can only pick from, and
+   * the answer comes back as a calibrated probability per key — so the keys are the
+   * option tokens (`watch.ts`, `declaredOptions`) and the criteria are what each one
+   * means in words. This replaced a sentence ending in "Answer act or ignore", which
+   * was a question with no options: the model was free to begin with any token at
+   * all, and `llama.ts` searched the distribution for a spelling of `act`.
+   */
+  question: PromptQuestion;
   /** The cut this version was calibrated at. Absent means no declared default. */
   operatingPoint?: DeclaredOperatingPoint;
 }
 
-/** What a part is filled from: the room's summary, and each delta entry's text. */
+/** The question put to a judgement: what is asked, and what each answer means. */
+export interface PromptQuestion {
+  /** What is being asked, as one sentence. */
+  instructions: string;
+  /** Per option token, what choosing it means. Both tokens must be here. */
+  criteria: Record<string, string>;
+}
+
+/**
+ * One line of the box, with the three facts a reader needs to place it.
+ *
+ * All four are on the record before this module sees them: the text is the
+ * message's (`Observation` names a message; a reminder carries its own words),
+ * the sender is `Message.sender_id` resolved through the store, and the time is
+ * the entry's own `delivered_at`. A watch prompt that handed a model the text
+ * alone made it judge a sentence with no idea who said it or when — which is how
+ * four bots read `小荷，这个 bug 你来看一下` as ordinary chatter and all four
+ * stayed quiet, while the work side had been naming its sender all along
+ * (`work-v2.json`'s entry part).
+ */
+export interface PromptLine {
+  /** The message's text, verbatim. */
+  text: string;
+  /** Whoever spoke it, by the name the store gives them; a reminder's author. */
+  sender: string;
+  /** When it landed, as the record timestamps it. */
+  at: string;
+}
+
+/** What a part is filled from: the room, its summary, and each delta entry. */
 export interface PromptValues {
   /** The compaction's result, when the room has one. */
   summary?: string;
+  /**
+   * The name of the room these entries came from, when it has one.
+   *
+   * Absent is a nameless room — `rooms.ts` treats an empty name as no name — and
+   * never a caller that forgot: a part quoting the room is skipped without it,
+   * the same way a part quoting a position is.
+   */
+  room?: string;
   /**
    * Which bot is being asked, by the name a person gave it.
    *
@@ -115,13 +166,23 @@ export interface PromptValues {
   bot?: string;
   /** What that bot does here, when its card says. */
   position?: string;
+  /**
+   * The other bots in the room, by name, comma-joined.
+   *
+   * **This line is what makes "is this for me" a question the model can answer.** Without
+   * it a named message was read by every bot as addressed to it: four bots asked the same
+   * `小荷，这个 bug 你来看一下` all answered `act`. With it, the named bot reads 0.89 and
+   * the other three read 0.21–0.36. Absent when the bot is alone in the room, or when it is
+   * not in it at all — the part is skipped rather than saying "none".
+   */
+  others?: string;
   /** The entries to render, **oldest first**. */
-  texts: string[];
+  lines: PromptLine[];
 }
 
 /** The shipped artifact's location, beside this module. */
 export function shippedPromptPath(): URL {
-  return new URL('./prompts/watch-v1.json', import.meta.url);
+  return new URL('./prompts/watch-v3.json', import.meta.url);
 }
 
 /**
@@ -181,14 +242,23 @@ export function assemblePrompt(artifact: PromptArtifact, values: PromptValues): 
   for (const part of artifact.parts) {
     if (part.when === 'summary' && values.summary === undefined) continue;
     if (part.when === 'position' && values.position === undefined) continue;
+    if (part.when === 'room' && values.room === undefined) continue;
+    if (part.when === 'others' && values.others === undefined) continue;
     if (part.each === 'observation') {
-      for (const text of values.texts) out.push(fill(part.text, { text }), part.after);
+      for (const line of values.lines) {
+        out.push(
+          fill(part.text, { text: line.text, sender: line.sender, at: line.at }),
+          part.after,
+        );
+      }
       continue;
     }
     out.push(
       fill(part.text, {
         summary: values.summary ?? '',
         position: values.position ?? '',
+        room: values.room ?? '',
+        others: values.others ?? '',
       }),
       part.after,
     );
@@ -216,7 +286,33 @@ export function skeletonOf(artifact: PromptArtifact): {
   return {
     version: artifact.version,
     system: systemOf(artifact, {}),
-    text: assemblePrompt(artifact, { texts: [], bot: '' }),
+    text: assemblePrompt(artifact, { lines: [], bot: '' }),
+  };
+}
+
+/**
+ * The question to put, with its two answers, checked against the option tokens.
+ *
+ * The keys are the tokens the answer is read by (`watch.ts`, `declaredOptions`), so a
+ * question that names an option the runtime does not read is refused here rather than
+ * answered and dropped.
+ */
+export function questionOf(
+  artifact: PromptArtifact,
+  tokens: { act: string; ignore: string },
+): PromptQuestion {
+  const criteria = artifact.question.criteria;
+  for (const token of [tokens.act, tokens.ignore]) {
+    if (typeof criteria[token] !== 'string') {
+      throw new Error(
+        `${artifact.version} asks its question with no meaning for ${JSON.stringify(token)}: ` +
+          'the two options the cut is applied to are the two the artifact must describe',
+      );
+    }
+  }
+  return {
+    instructions: artifact.question.instructions,
+    criteria: { [tokens.act]: criteria[tokens.act], [tokens.ignore]: criteria[tokens.ignore] },
   };
 }
 
@@ -267,7 +363,7 @@ function assertArtifact(value: unknown, source: string): PromptArtifact {
 
   // The head may name the bot and what it does here, and nothing else: who is being
   // asked is a fact about the bot, while a message or a summary in the head would be
-  // the same text in every room — the header `watch-v1` refuses to let a room write.
+  // the same text in every room — the header refuses to let a room write.
   for (const name of placeholdersIn(artifact.system)) {
     if (name !== 'bot') {
       return fail(
@@ -289,9 +385,15 @@ function assertArtifact(value: unknown, source: string): PromptArtifact {
       return fail(`${where}.text must be a non-empty string`);
     }
     if (typeof row.after !== 'string') return fail(`${where}.after must be a string`);
-    if (row.when !== 'always' && row.when !== 'summary' && row.when !== 'position') {
+    if (
+      row.when !== 'always' &&
+      row.when !== 'summary' &&
+      row.when !== 'position' &&
+      row.when !== 'room' &&
+      row.when !== 'others'
+    ) {
       return fail(
-        `${where}.when must be "always", "summary" or "position", ` +
+        `${where}.when must be "always", "summary", "position", "room" or "others", ` +
           `got ${JSON.stringify(row.when)}`,
       );
     }
@@ -307,10 +409,27 @@ function assertArtifact(value: unknown, source: string): PromptArtifact {
       if (name === 'position' && row.when !== 'position') {
         return fail(`${where} fills {position} but is rendered when the bot may have none`);
       }
-      if (name === 'text' && row.each !== 'observation') {
-        return fail(`${where} fills {text} without \`each: "observation"\`, so it has nothing to fill from`);
+      if (name === 'room' && row.when !== 'room') {
+        return fail(`${where} fills {room} but is rendered when the room may have no name`);
       }
-      if (name !== 'summary' && name !== 'text' && name !== 'position') {
+      if (name === 'others' && row.when !== 'others') {
+        return fail(`${where} fills {others} but is rendered when the bot may be alone`);
+      }
+      if ((name === 'text' || name === 'sender' || name === 'at') && row.each !== 'observation') {
+        return fail(
+          `${where} fills {{${name}}} without \`each: "observation"\`, so it has nothing ` +
+            'to fill from',
+        );
+      }
+      if (
+        name !== 'summary' &&
+        name !== 'text' &&
+        name !== 'position' &&
+        name !== 'room' &&
+        name !== 'others' &&
+        name !== 'sender' &&
+        name !== 'at'
+      ) {
         return fail(`${where} names {{{${name}}}}, which nothing here fills`);
       }
     }
@@ -319,6 +438,12 @@ function assertArtifact(value: unknown, source: string): PromptArtifact {
     if (row.when === 'position' && !placeholders.includes('position')) {
       return fail(
         `${where} is skipped without a position and does not quote one, so nothing it ` +
+          'says depends on it',
+      );
+    }
+    if (row.when === 'room' && !placeholders.includes('room')) {
+      return fail(
+        `${where} is skipped without a room name and does not quote one, so nothing it ` +
           'says depends on it',
       );
     }
@@ -336,22 +461,27 @@ function assertArtifact(value: unknown, source: string): PromptArtifact {
     parts.push(normalised);
   }
 
-  // The end is where the answer is read, so it may not depend on the room: a part
-  // that repeats per observation must be followed by one that never goes missing.
-  const last = parts[parts.length - 1];
-  if (last.each === 'observation') {
-    return fail(
-      `the last part (${JSON.stringify(last.name)}) repeats per observation, so the text ` +
-        'would end wherever the last message ended and the mask ids would move with it — ' +
-        'end the assembly with a part that is always present',
-    );
+  // The question is checked as a question: one sentence, and a meaning for each of the two
+  // answers. A missing criterion is an option the model cannot choose for a stated reason —
+  // the endpoint would still return a probability for it, which is the shape of a verdict
+  // with nothing behind it.
+  const question = artifact.question as Partial<PromptQuestion> | undefined;
+  if (typeof question !== 'object' || question === null) {
+    return fail('`question` must be an object with `instructions` and `criteria`');
   }
-  if (last.when !== 'always') {
-    return fail(
-      `the last part (${JSON.stringify(last.name)}) is conditional, so a room without a ` +
-        'summary would end the text somewhere else and the mask ids would move — ' +
-        'the assembly must end with an unconditional part',
-    );
+  if (typeof question.instructions !== 'string' || question.instructions.trim().length === 0) {
+    return fail('`question.instructions` must be a non-empty string');
+  }
+  const criteria = question.criteria as Record<string, unknown> | undefined;
+  if (typeof criteria !== 'object' || criteria === null) {
+    return fail('`question.criteria` must be an object mapping each option to its meaning');
+  }
+  const meanings: Record<string, string> = {};
+  for (const [token, meaning] of Object.entries(criteria)) {
+    if (typeof meaning !== 'string' || meaning.trim().length === 0) {
+      return fail(`\`question.criteria.${token}\` must be a non-empty string`);
+    }
+    meanings[token] = meaning;
   }
 
   const artifactOut: PromptArtifact = {
@@ -359,6 +489,7 @@ function assertArtifact(value: unknown, source: string): PromptArtifact {
     system: artifact.system,
     afterSystem: artifact.afterSystem,
     parts,
+    question: { instructions: question.instructions, criteria: meanings },
   };
   if (artifact.operatingPoint !== undefined) {
     const point = artifact.operatingPoint as Partial<DeclaredOperatingPoint>;
@@ -671,7 +802,7 @@ function assertWorkArtifact(value: unknown, source: string): WorkArtifact {
 
   // The system block may name the bot and its own description, and nothing that
   // belongs to a turn: a system line that quoted a message would be the same text
-  // for every room, which is the header `watch-v1` also refuses to let a room write.
+  // for every room, which is the header also refuses to let a room write.
   for (const name of placeholdersIn(artifact.system)) {
     if (name !== 'bot' && name !== 'description') {
       return fail(

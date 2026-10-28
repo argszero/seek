@@ -32,15 +32,16 @@ const { Readable } = require('node:stream')
 const { pipeline } = require('node:stream/promises')
 
 /**
- * The files a first run wants, with the sizes measured for the release these were read from.
+ * The file a first run wants, with the size measured for the release it was read from.
  *
- * Both are the shipped model's — `LFM2.5-VL-3B` and its projector — because the watch half's
- * `0.600` cut is calibrated against that model (issue #89, "What the judgement model must stay
- * local for"), so the weights cannot be swapped without recalibrating the cut.
+ * **One file, and no projector.** `d1-2B` is the decision model the judgement is asked of
+ * (`src/llama.ts`, `/v1/systemone`), and it answers in text: `/props` reports
+ * `modalities.vision: false` on the real binary, so there is nothing for a projector to
+ * contribute and one was not fetched. The cut `0.600` is calibrated against this model
+ * (`calibration/set4-d1.json`), so the weights cannot be swapped without recalibrating it.
  */
 const WEIGHT_FILES = [
-  { name: 'LFM2.5-VL-3B-Q4_0.gguf', bytes: 1593894944 },
-  { name: 'mmproj-LFM2.5-VL-3B-Q8_0.gguf', bytes: 583109984 },
+  { name: 'd1-2B-Q8_0.gguf', bytes: 1846240576 },
 ]
 
 /** The suffix a stopped download is kept under, so half a file cannot pass for a whole one. */

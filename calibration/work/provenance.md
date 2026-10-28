@@ -119,74 +119,82 @@ says nothing about what a different sampling would do.
 The work model is stage 2. A message arrives there when stage 0's rules fast-pass it or when
 stage 1 reads `act` at the shipped cut, and is consumed with nothing spent otherwise — so the
 table above is a cost only where these nine cases get that far. `measure-gate.mjs`, beside
-this file, is the driver; `gate.json` is what it wrote,
-taken the same way as the rest of this directory: the kernel's own `classify`, `watchAs` and
-the shipped `0.600` over a real server, one message per judgement, run twice, identical both
-times.
+this file, is the driver. There are two records, because the judgement changed underneath
+them:
+
+- `gate.json` — the reading this directory first held, taken with the watch model that shipped
+  then (`LFM2.5-VL-3B`, which read a token probability and summed every spelling of an
+  option). It is kept as what it was, and its own `superseded_by` names the record below.
+- `gate-d1.json` — the same nine cases through the judgement that ships now: one call to
+  `/v1/systemone` on `d1-2B`, which answers with one calibrated probability per declared
+  answer and generates no token. Taken the same way as the rest of this directory: the
+  kernel's own `classify` and `watchAs`, the shipped `0.600`, one message per judgement.
 
 | case | wants | stage 0 | stage 1 (`act`) | reaches stage 2 |
 |---|---|---|---|---|
-| the nightly batch failed again — can you look at it? | speak | judge | **0.7486 → act** | **yes** |
+| the nightly batch failed again — can you look at it? | speak | judge | **0.9638 → act** | **yes** |
 | @Echo what is the retry queue doing right now? | speak | **act (named)** | not asked | **yes** |
-| did you finish the reconciliation you mentioned yesterday? | speak | judge | 0.2935 → ignore | no |
-| 今天的对账跑完了吗？ | speak | judge | 0.1995 → ignore | no |
+| did you finish the reconciliation you mentioned yesterday? | speak | judge | **0.9585 → act** | **yes** |
+| 今天的对账跑完了吗？ | speak | judge | **0.9385 → act** | **yes** |
 | @Echo 那条重试队列现在什么情况？ | speak | **act (named)** | not asked | **yes** |
-| 批处理又挂了，你能看一眼吗？ | speak | judge | 0.362 → ignore | no |
-| ok | quiet | judge | 0.0879 → ignore | no |
-| thanks! | quiet | judge | 0.1828 → ignore | no |
-| 好的收到 | quiet | judge | 0.1383 → ignore | no |
+| 批处理又挂了，你能看一眼吗？ | speak | judge | **0.9359 → act** | **yes** |
+| ok | quiet | judge | 0.4371 → ignore | no |
+| thanks! | quiet | judge | **0.7418 → act** | **yes** |
+| 好的收到 | quiet | judge | 0.5875 → ignore | no |
 
-**Three of the six that should speak reach a work model. None of the three that should stay
-quiet does.**
+**All six that should speak reach a work model. One of the three that should stay quiet does
+too.**
 
-Two readings follow, and both narrow the table above rather than extend it.
+Two readings follow, and they are the opposite of the ones this section carried while the
+other judgement was shipping.
 
-**1. The quiet column has no price at this cut.** All three should-be-quiet cases die at
-stage 1, far below it — 0.0879, 0.1383, 0.1828. So the Qwen candidates' `3/3` in that column
-would cost nothing in a room: a work model cannot speak about a message it is never shown. It
-is still a defect — it says what the model does when handed a message nobody needed answered
-— but it is not one a user meets with the shipped gate.
+**1. The quiet column has a price now, and it is one case.** `thanks!` reads 0.7418 — above the
+cut, so it reaches stage 2. The other two read 0.4371 and 0.5875, below it. So the Qwen
+candidates' `3/3` in that column would cost one answer in a room rather than nothing: a work
+model handed `thanks!` gets to decide whether to answer it. That is a defect a user can meet,
+not one a gate hides.
 
-**2. The delivery column has a ceiling, and the model does not set it.** Three of the six
-should-speak cases never arrive: `did you finish the reconciliation…`, `今天的对账跑完了吗？`
-and `批处理又挂了…` read 0.1995–0.362 and are consumed as `ignore` before stage 2 runs. A work
-model that delivers 6/6 — the 4B's row — would therefore deliver **at most three** of these
-six in a room. Stage 1 runs `LFM2.5-VL-3B` whatever work model ships, so no choice in the
-table above moves that ceiling.
+**2. The ceiling the table had is gone.** In the earlier reading three of the six should-speak
+cases were consumed at stage 1, so a work model that delivers 6/6 delivered at most three of
+them in a room. With `d1-2B` all six arrive: the delivery column is the work model's to lose,
+and the 4B's 6/6 is six answers in a room rather than three.
 
-That changes what the table is for. It is not "which model says something"; it is "which model
-says something **about the messages that reach it**" — and of this set, three.
+That restores what the table is for. It asks "which model says something **about the messages
+that reach it**" — and of this set, now, six.
 
 **One condition, and it is not the room's.** Every case was judged alone with `window` 10. The
 runtime judges a delta — a summary plus several entries — and a different box is a different
-prompt, so these are a controlled reading of the cases rather than a replay of a live room.
-Two of the three refused should-speak cases are Chinese, the weak side the judgement half's
-own record already states; that is agreement, not a cause, and nothing here isolates it.
+prompt, so these are a controlled reading of the cases rather than a replay of a live room. The
+earlier note that two of the refused should-speak cases were Chinese no longer applies: both
+Chinese cases act here at 0.9385 and 0.9359, and the one case that now passes the cut when it
+should not is English.
 
 ## What this does not decide
 
 **Which model ships.** That is a cost and a horizon, and both are the owner's word, not a
 measurement's:
 
-- the 4B that delivers all six is **2,497,281,664 B** against the shipped model's
-  1,593,894,944 B, so first-run weights grow from ≈1.5 GiB to ≈2.3 GiB before any projector;
-- the judgement half reads **token probabilities** and its `0.600` cut is calibrated against
-  `LFM2.5-VL-3B` on 56 cases (`../provenance.md`). A different
-  model is a different distribution, so a work model that also served stage 1 would need
-  that cut recalibrated — which is a second measurement, not a line to change;
+- the 4B that delivers all six is **2,497,281,664 B** against the judgement model's
+  1,846,240,576 B (`d1-2B-Q8_0`), so first-run weights grow from ≈1.72 GiB to ≈2.3 GiB;
+- the judgement half reads **one calibrated probability** from a decision endpoint, and its
+  `0.600` cut is calibrated against `d1-2B` on the twenty-four cases in `../set4-d1.json`
+  (24 of 24). A different model is a different distribution, so a work model that also served
+  stage 1 would need that cut recalibrated — which is a second measurement, not a line to
+  change;
 - the two halves are wired to separate servers (`SEEK_SERVER` / `SEEK_WORK_SERVER`), so
   keeping the shipped model on the judgement half and a Qwen on the writing half is
-  possible today and costs **two** weight downloads (≈1.5 GiB + ≈2.3 GiB) instead of one.
+  possible today and costs **two** weight downloads (≈1.72 GiB + ≈2.3 GiB) instead of one.
 
 ## What was not measured
 
-- **Stage 1 on several of these cases at once.** `gate.json` reads each case alone, and the
+- **Stage 1 on several of these cases at once.** `gate-d1.json` reads each case alone, and the
   section above is what it says about them one at a time. A box holding several entries, or a
   summary, or a different `window`, is a different prompt — and the runtime judges deltas.
   That reading is not here.
-- **Any cut but 0.600, and any watch model but the shipped one.** The refused cases read
-  0.1995–0.362, so a cut inside that band changes which of them arrive; moving it is the
-  host's word, not this file's.
+- **Any cut but 0.600, and any watch model but the shipped one.** The one should-quiet case
+  that gets through reads 0.7418 and the two that do not read 0.4371 and 0.5875, so a cut
+  inside that band changes which of them arrive; moving it is the host's word, not this
+  file's.
 - **Images.** Every case is text and neither Qwen row was loaded with a projector. Nothing
   here says they see. `src/README.md` line 25's multimodal requirement is stated of the
   watch model; whether the work model must see too is a question this set does not answer.

@@ -41,6 +41,16 @@ const SERVER_DIRECTORY = 'server'
 const SERVER_NAME = 'llama-server'
 
 /**
+ * The name the server answers to, for a roster that wants to name the model it expects.
+ *
+ * Without `--alias`, `/props` reports `model_alias` as the **path** of the weights file, so a
+ * roster row that claims a model has nothing stable to claim: the path carries the person's
+ * home directory and changes with it. Measured on the real binary — with the alias it reports
+ * `model_alias: 'd1-2B'` and `model_path` as the file; that is what a roster row may write.
+ */
+const MODEL_ALIAS = 'd1-2B'
+
+/**
  * How much one judgement may read, once the app is the one supplying the server.
  *
  * This is the number the kernel's own instructions use — `src/main.ts:69` asks "the measured
@@ -177,7 +187,10 @@ async function startBundledServer(options = {}) {
   const port = wantedPort ?? (await freePort())
   const args = [
     '--model', join(weightsDir, files[0].name),
-    '--mmproj', join(weightsDir, files[1].name),
+    '--alias', MODEL_ALIAS,
+    // No `--mmproj`: the model this app carries is a decision model and reports
+    // `modalities.vision: false` on `/props`, so there is no projector to load and passing
+    // one would name a file that was never fetched.
     '--host', '127.0.0.1',
     '--port', String(port),
     '--no-webui',
@@ -185,10 +198,15 @@ async function startBundledServer(options = {}) {
     // cache for a caller that never asks twice at once.
     '--parallel', '1',
     // The window this app feeds stage 1 is counted in tokens by `box.ts`, so the server has
-    // to be able to hold at least that many plus the reply. 4096 is the smallest power of two
-    // above the 2048 the measurements in `calibration/` ran with.
-    '--ctx-size', '4096',
+    // to be able to hold that many plus the reply. `d1-2B` reports `n_ctx: 8192` on `/props`,
+    // and 8192 is the window the readings in `calibration/set4-d1.json` were taken at.
+    '--ctx-size', '8192',
     '--n-gpu-layers', '99',
+    // The prefill batch and its micro-batch, set to the whole window. These are the flags the
+    // calibration was measured under, so a server started by the app answers the way the
+    // record says it does rather than the way this file hopes it would.
+    '--batch-size', '8192',
+    '--ubatch-size', '8192',
   ]
 
   let child
