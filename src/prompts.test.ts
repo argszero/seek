@@ -382,8 +382,13 @@ test('the accuracy the artifact advertises is the one its record gives at that c
 /** The artifact `calibration/work/` measured. It ships beside the one that ships now. */
 const MEASURED_WORK = new URL('./prompts/work-v1.json', import.meta.url);
 
-/** One turn's values; the card is passed in as a person may have filled it. */
-function turnValues(card: { description?: string; position?: string; personality?: string }) {
+/** One turn's values; the card and the room's note are passed in as they may be filled. */
+function turnValues(card: {
+  description?: string;
+  position?: string;
+  personality?: string;
+  summary?: string;
+}) {
   return {
     bot: 'Echo',
     description: card.description ?? '',
@@ -392,24 +397,51 @@ function turnValues(card: { description?: string; position?: string; personality
     gender: '',
     room: 'oc_0000000000000000',
     roster: '- role=work tools=say home=/tmp/seek/echo/work self=true',
+    summary: card.summary ?? '',
     entries: [{ sender: '邵安清', text: 'deploy is red' }],
   };
 }
 
-test('the shipped turn artifact is v2, and a blank card is asked the measured text', () => {
+test('the shipped turn artifact is v3, and a blank card in an uncompacted room is asked the measured text', () => {
   const shipped = loadWorkArtifact();
-  assert.equal(shipped.version, 'work-v2');
-  assert.match(shippedWorkPromptPath().pathname, /work-v2\.json$/);
+  assert.equal(shipped.version, 'work-v3');
+  assert.match(shippedWorkPromptPath().pathname, /work-v3\.json$/);
 
-  // Byte for byte the v1 prompt, for a bot whose card says nothing. That is what
-  // lets `calibration/work/` keep measuring v1 while this tree ships v2: the two
-  // parts v2 adds are exactly the ones a blank card does not fill.
+  // Byte for byte the v1 prompt, for a bot whose card says nothing and a room nothing
+  // has been compacted in. That is what lets `calibration/work/` keep measuring v1
+  // while this tree ships v3: the parts v2 and v3 add are exactly the ones neither a
+  // blank card nor an uncompacted room fills.
   const measured = loadWorkArtifact(MEASURED_WORK);
   const values = turnValues({ description: 'the one who watches the nightly batch' });
   const before = assembleWorkPrompt(measured, values);
   const after = assembleWorkPrompt(shipped, values);
   assert.equal(after.system, before.system);
   assert.equal(after.rest, before.rest);
+});
+
+test('the room’s note reaches the turn, and an uncompacted room is told nothing about it', () => {
+  const shipped = loadWorkArtifact();
+
+  const withNote = assembleWorkPrompt(
+    shipped,
+    turnValues({ summary: 'the batch failed twice; nobody has said why' }),
+  );
+  assert.ok(
+    withNote.rest.includes('the batch failed twice; nobody has said why'),
+    'the note is what lets a turn know what was said before its window began',
+  );
+  // Before the messages, not after: the note is the older half of the box.
+  assert.ok(
+    withNote.rest.indexOf('the batch failed twice') < withNote.rest.indexOf('deploy is red'),
+    'the note is read before the observations it summarises',
+  );
+
+  const withoutNote = assembleWorkPrompt(shipped, turnValues({}));
+  assert.equal(
+    withoutNote.rest.includes('What you wrote down about this room'),
+    false,
+    'a room nothing has been compacted in is not told about a note it does not have',
+  );
 });
 
 test('a filled card reaches the turn, and an empty one leaves no sentence behind', () => {
@@ -488,6 +520,27 @@ test('a part that quotes a card field depends on exactly that field', async () =
       3,
     );
     assert.throws(() => loadWorkArtifact(repeated), /cannot both repeat per entry/);
+
+    // The room's note is the same rule on the room's side: quoted while the room may
+    // have none is a blank in a sentence, and skipped without quoting one is a part
+    // that leaves the prompt for a reason its own text does not give.
+    const noteWithoutCondition = await artifactWith(
+      { name: 'p', text: 'What you noted before: {summary}', after: '\n', when: 'always' },
+      4,
+    );
+    assert.throws(
+      () => loadWorkArtifact(noteWithoutCondition),
+      /fills \{summary\} but is rendered when the room has none/,
+    );
+
+    const conditionWithoutNote = await artifactWith(
+      { name: 'p', text: 'What you noted before.', after: '\n', when: 'summary' },
+      5,
+    );
+    assert.throws(
+      () => loadWorkArtifact(conditionWithoutNote),
+      /is skipped without a summary and does not quote one/,
+    );
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

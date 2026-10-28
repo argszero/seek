@@ -5,9 +5,12 @@
  * `docs/design/agent-lifecycle.md` §4 defines the turn and the three places the
  * boundary sits:
  *
- * - **It receives the observation entries and nothing else** — not the watch
- *   agent's reason, which stays on the record where this agent may go and read
- *   it ("what crosses the line from watch to work").
+ * - **It receives the room's box** — the note written last time and every
+ *   observation since — and not the watch agent's reason, which stays on the
+ *   record where this agent may go and read it ("what crosses the line from watch
+ *   to work"). The box is the whole of what it opens with, and the entries that
+ *   woke it are inside it: a turn handed only those answered "我看不到上文" to a
+ *   question the room had been discussing for twenty messages.
  * - **To say anything it calls the speaking tool** (`say.ts`). Nothing is
  *   posted on its behalf; a turn that ends without that call has said nothing.
  * - **To keep a promise it calls `schedule`** (`schedule.ts`). A turn that
@@ -30,6 +33,7 @@
  * two turns rather than one turn with two rooms in it.
  */
 
+import { buildBox } from './box.ts';
 import { bumpAgentTurns } from './chain.ts';
 import { identityFor, type AgentIdentity } from './identity.ts';
 import type { RunTurn } from './inbox.ts';
@@ -97,6 +101,21 @@ export interface TurnSpec {
 export type HandedEntry = Omit<Observation, 'verdict' | 'reason'>;
 
 /**
+ * The room's box as the turn reads it: the note, and the observations after it.
+ *
+ * Oldest first, which is the order the record wrote them and the order a
+ * conversation is read in. `box.ts` builds it newest-first, because a judgement
+ * fills its window from the newest end; the reversal happens once, in `runTurn`,
+ * so no reader has to know which end either shape starts at.
+ */
+export interface TurnBox {
+  /** The last compaction's result, when the room has one. */
+  summary?: string;
+  /** Every observation since it, oldest first. */
+  entries: HandedEntry[];
+}
+
+/**
  * Whose agent this is — the bot's identity and the roster of its agents,
  * itself included (`agent-lifecycle.md` §2).
  *
@@ -115,13 +134,26 @@ export interface TurnContext {
   /** The bot it belongs to, and every agent of that bot: pushed, never stored. */
   identity: AgentIdentity;
   /**
-   * The observations that woke it — the entries and nothing more.
+   * The entries that woke it, and nothing else.
    *
-   * "Nothing more" is meant literally and is enforced above: no verdict, no
-   * reason, because those are the watch side's answer to a question this agent
-   * was never asked (§4).
+   * This is *what woke me*, not *what I read* — the box below is what the turn
+   * opens with. It is kept separate because it answers a different question: a
+   * turn woken by exactly one message is answering that message and says so by
+   * linking its reply to it (`work-server.ts`, `replyOf`), which a box holding
+   * twenty observations cannot tell.
+   *
+   * No verdict, no reason: those are the watch side's answer to a question this
+   * agent was never asked (§4).
    */
   entries: HandedEntry[];
+  /**
+   * The room's box as it stands, oldest first: the note written last time and
+   * every observation since it (`box.ts`).
+   *
+   * Absent on a reminder's turn, which is in no room (§12) and so has no box to
+   * read — what it opens with is the reminder itself.
+   */
+  box?: TurnBox;
   /** `say(room, text)`: bound to this bot and this agent, addressed by the caller. */
   say: SayTool;
   /**
@@ -234,6 +266,11 @@ export async function runTurn(
   // What the decision reports having spent, held across the `finally` so a turn that
   // throws still closes its row. `null` is "nobody reported anything", which is the
   // placeholder path and also a server that answered without a usage block.
+  // §4: what the turn opens with is the room's box, read off the record here so no
+  // caller can hand it a different one, and so a turn can never be woken with a
+  // window into a conversation it is being asked to continue.
+  const box = spec.roomId === undefined ? undefined : boxFor(store, agent.bot_id, spec.roomId);
+
   let spent: TokenUsage | null = null;
   try {
     spent = (await decide({
@@ -244,6 +281,7 @@ export async function runTurn(
       roomId: spec.roomId,
       identity,
       entries: spec.entries.map(handOver),
+      ...(box === undefined ? {} : { box }),
       say,
       schedule,
     })) ?? null;
@@ -365,4 +403,26 @@ function handOver(entry: Observation): HandedEntry {
   void verdict;
   void reason;
   return crosses;
+}
+
+/**
+ * The room's box, as the turn opens with it.
+ *
+ * **The window is infinite on purpose.** What bounds this box is the compaction
+ * threshold, not a number picked here: no work model's window has been measured in
+ * this repository, and a figure invented now would refuse a turn over a guess. It is
+ * the same trade the judgement's box makes from the other end — its window is a
+ * measured count, and the same threshold is what keeps that count from having to
+ * grow.
+ *
+ * Reversed once, here: `buildBox` fills from the newest end because a judgement has
+ * to, and a turn reads a conversation oldest first. `handOver` strips the verdict
+ * and the reason off every entry, exactly as it does for the entries that woke the
+ * turn — the box is the record, never the watch side's answer to it.
+ */
+function boxFor(store: SeekStore, botId: Id, roomId: Id): TurnBox {
+  const built = buildBox(store, botId, roomId, { window: Number.POSITIVE_INFINITY });
+  const box: TurnBox = { entries: [...built.delta].reverse().map(handOver) };
+  if (built.summary !== undefined) box.summary = built.summary;
+  return box;
 }

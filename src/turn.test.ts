@@ -50,7 +50,8 @@ test('one room end to end: an @-mention reaches the work agent, and what it says
 
   assert.equal(result.woke, true);
   assert.equal(spoke.length, 1);
-  // The turn is the work agent's, and it is handed the entries and nothing else.
+  // The turn is the work agent's: what woke it is the one entry, and what it reads is
+  // the room's box, which holds that entry among the others.
   assert.equal(spoke[0].agentId, world.agentA2);
   assert.equal(spoke[0].botId, world.botA);
   assert.equal(spoke[0].roomId, world.room);
@@ -206,6 +207,126 @@ test("the watch side's verdict and reason stay behind; the entry itself crosses"
     ?? judged;
   assert.equal(onRecord.verdict, 'act');
   assert.equal(onRecord.reason, 'it concerns the release this bot is waiting on');
+
+  // The box is the record too, so the same two facts stay out of it there.
+  const inBox = spoke.at(-1)?.box?.entries ?? [];
+  assert.ok(inBox.length > 0, 'the box was handed over');
+  assert.equal(
+    inBox.some((entry) => 'verdict' in entry || 'reason' in entry),
+    false,
+    'no entry in the box carries the watch side’s answer',
+  );
+});
+
+test('a turn opens with the room’s box, not only the entries that woke it', async () => {
+  const world = makeWorld();
+  deliver(world.store, {
+    roomId: world.room,
+    senderId: world.me,
+    text: 'the deploy is red',
+    now: '2026-10-24T00:30:00.000Z',
+  });
+  deliver(world.store, {
+    roomId: world.room,
+    senderId: world.me,
+    text: 'the retry queue failed twice',
+    now: '2026-10-24T00:31:00.000Z',
+  });
+  const entries = await world.store.drain(world.botA);
+  assert.equal(entries.length, 2);
+
+  const spoke: TurnContext[] = [];
+  await runTurn(
+    world.store,
+    { agentId: world.agentA2, roomId: world.room, entries: [entries[1]] },
+    (context) => {
+      spoke.push(context);
+    },
+  );
+
+  // What woke it is the second message and only that; what it reads is the room.
+  assert.deepEqual(
+    spoke[0].entries.map((entry) => entry.id),
+    [entries[1].id],
+  );
+  const box = spoke[0].box;
+  assert.ok(box, 'a turn in a room is handed that room’s box');
+  assert.deepEqual(
+    box.entries.map((entry) => entry.id),
+    [entries[0].id, entries[1].id],
+    'the earlier message is in the box, oldest first, so the turn knows what was said',
+  );
+  assert.equal(box.summary, undefined, 'nothing has been compacted in this room yet');
+});
+
+test('once a note exists, the box is the note and what arrived after it', async () => {
+  const world = makeWorld();
+  deliver(world.store, {
+    roomId: world.room,
+    senderId: world.me,
+    text: 'the deploy is red',
+    now: '2026-10-24T00:30:00.000Z',
+  });
+  deliver(world.store, {
+    roomId: world.room,
+    senderId: world.me,
+    text: 'the retry queue failed twice',
+    now: '2026-10-24T00:31:00.000Z',
+  });
+  const entries = await world.store.drain(world.botA);
+
+  // A note the compaction wrote: it accounts for the first message, and the point it
+  // consumed up to is that message.
+  world.store.memoriesOf(world.agentA2).push({
+    id: 'mm_note',
+    agent_id: world.agentA2,
+    level: 'room_digest',
+    room_id: world.room,
+    body: 'the deploy has been red since last night, cause unknown',
+    consumed_to: entries[0].id,
+    updated_at: '2026-10-24T00:32:00.000Z',
+  });
+
+  const spoke: TurnContext[] = [];
+  await runTurn(
+    world.store,
+    { agentId: world.agentA2, roomId: world.room, entries: [entries[1]] },
+    (context) => {
+      spoke.push(context);
+    },
+  );
+
+  const box = spoke[0].box;
+  assert.ok(box, 'the box is still handed over');
+  assert.equal(box.summary, 'the deploy has been red since last night, cause unknown');
+  assert.deepEqual(
+    box.entries.map((entry) => entry.id),
+    [entries[1].id],
+    'the compacted message is in the note rather than read again',
+  );
+});
+
+test('a reminder’s turn has no box, because it is in no room', async () => {
+  const world = makeWorld();
+  addRow(world.store, {
+    botId: world.botA,
+    when: '2026-10-24T02:00:00.000Z',
+    text: 'check the thread tomorrow',
+    now: '2026-10-24T00:00:00.000Z',
+  });
+  const entries = fireDue(world.store, '2026-10-24T03:00:00.000Z');
+  assert.equal(entries.length, 1);
+
+  const spoke: TurnContext[] = [];
+  await runTurn(world.store, { agentId: world.agentA2, entries }, (context) => {
+    spoke.push(context);
+  });
+  assert.equal(spoke[0].box, undefined, 'no room, so nothing to be in the box');
+  assert.deepEqual(
+    spoke[0].entries.map((entry) => entry.id),
+    entries.map((entry) => entry.id),
+    'the reminder itself is what it opens with',
+  );
 });
 
 test('entries from two rooms open two turns, one per room', async () => {

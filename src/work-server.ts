@@ -129,8 +129,9 @@ export async function workOverServer(
   if (!bot) throw new Error(`unknown bot: ${botId}`);
 
   // The smallest turn this bot could ever be given: no description to render (that
-  // part is skipped), no entries, no roster. A server that cannot hold it cannot serve
-  // a single turn, whatever the first real one turns out to be.
+  // part is skipped), no note about the room (that part is skipped with it), no
+  // entries, no roster. A server that cannot hold it cannot serve a single turn,
+  // whatever the first real one turns out to be.
   const smallest = assembleWorkPrompt(artifact, {
     bot: bot.name,
     description: '',
@@ -139,6 +140,7 @@ export async function workOverServer(
     gender: '',
     room: ROOM_SAMPLE,
     roster: '',
+    summary: '',
     entries: [],
   });
   // Which of the two kinds of endpoint this is decides what can be asked of it, and the
@@ -328,9 +330,23 @@ function replyOf(context: TurnContext): { replyTo: Id } | undefined {
   return rootId === undefined ? undefined : { replyTo: rootId };
 }
 
-/** What this turn's parts are filled from, read off the store at the moment it runs. */
+/**
+ * What this turn's parts are filled from, read off the store at the moment it runs.
+ *
+ * **What the model reads is the box, not the wake** (`docs/host-rulings.md`: "The work
+ * agent is handed the whole box"). A turn woken by one message in a room that has been
+ * talking for an hour is asked to continue that conversation, so the note and every
+ * observation since it are rendered here, oldest first. The waking entries are a
+ * fallback for the one shape with no box — a reminder, which is in no room (§12) — and
+ * for a record that no longer holds the entries it was handed, which is the erased or
+ * the never-stored: what woke the turn is then all there is to read, and it is still
+ * read rather than answered from nothing.
+ */
 function valuesOf(store: SeekStore, context: TurnContext): WorkValues {
   const bot = context.identity.bot;
+  const box = context.box;
+  const readable =
+    box !== undefined && box.entries.length > 0 ? box.entries : context.entries;
   return {
     bot: bot.name,
     description: bot.description ?? '',
@@ -339,7 +355,8 @@ function valuesOf(store: SeekStore, context: TurnContext): WorkValues {
     gender: bot.gender ?? '',
     room: context.roomId ?? '',
     roster: rosterOf(context.identity),
-    entries: context.entries.map((entry) => entryOf(store, bot.name, entry)),
+    summary: box?.summary ?? '',
+    entries: readable.map((entry) => entryOf(store, bot.name, entry)),
   };
 }
 

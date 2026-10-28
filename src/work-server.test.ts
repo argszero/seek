@@ -283,6 +283,50 @@ test('the prompt carries the entry and not the watch side’s verdict', async ()
   );
 });
 
+test('what the model reads is the room’s box: the note, and the message before the one that woke it', async () => {
+  const world = makeWorld();
+  deliver(world.store, {
+    roomId: world.room,
+    senderId: world.me,
+    text: 'the deploy is red',
+    now: '2026-10-24T00:30:00.000Z',
+  });
+  const entries = await entriesOf(world, 'the retry queue failed twice');
+  assert.equal(entries.length, 2);
+
+  // The note a compaction would have written about this room. It accounts for nothing
+  // yet, so both messages are still in the delta — what this test is about is that the
+  // earlier one reaches the model at all.
+  world.store.memoriesOf(world.agentA2).push({
+    id: 'mm_note',
+    agent_id: world.agentA2,
+    level: 'room_digest',
+    room_id: world.room,
+    body: 'the deploy has been red since last night, cause unknown',
+    updated_at: '2026-10-24T00:10:00.000Z',
+  });
+
+  const recorder = fakeServer({ content: 'nothing worth adding' });
+  const decide = await workOverServer(world.store, world.botA, serverOf(recorder), {
+    prompt: ARTIFACT,
+  });
+  // Woken by the second message only — that is the whole of what `entries` is.
+  await turnWith(world, decide, [entries[1]]);
+
+  const chat = recorder.calls.find((call) => call.path === '/v1/chat/completions');
+  assert.ok(chat, 'the model was asked');
+  const asked = (chat.body.messages as { role: string; content: string }[])
+    .map((message) => message.content)
+    .join('\n');
+
+  assert.match(asked, /the deploy has been red since last night/, 'the note is handed over');
+  assert.match(asked, /the deploy is red/, 'and so is the message that did not wake it');
+  assert.ok(
+    asked.indexOf('the deploy is red') < asked.indexOf('the retry queue failed twice'),
+    'the box is read oldest first, so the newest message sits nearest the question',
+  );
+});
+
 test('the card a person filled in is quoted in the turn the model reads', async () => {
   const world = makeWorld();
   const bot = world.store.data.bots[world.botA];
@@ -472,7 +516,7 @@ test('the roster this repository ships allows everything the prompt it ships off
   for (const tool of ARTIFACT.tools) {
     assert.ok(
       work.tools.includes(tool.name),
-      `the shipped work row allows '${tool.name}', which work-v2.json offers`,
+      `the shipped work row allows '${tool.name}', which work-v3.json offers`,
     );
   }
 });
