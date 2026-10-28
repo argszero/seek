@@ -566,13 +566,16 @@ export interface WorkPart {
   /** What follows the part, verbatim. */
   after: string;
   /**
-   * `always`, or the one optional fact this part is skipped without.
+   * `always`, `summary` for a part that is skipped while the room has no note, or the
+   * one optional fact this part is skipped without.
    *
    * A bot may have nothing on its card but its name, so a part that quotes a field
    * a person may have left empty has to name that field: the part then leaves the
-   * prompt with the fact instead of asking a model about a blank.
+   * prompt with the fact instead of asking a model about a blank. A room may have no
+   * note for the same reason (`compact.ts`: nothing has been compacted), and a part
+   * that quotes the note names it the same way.
    */
-  when: 'always' | OptionalFact;
+  when: 'always' | 'summary' | OptionalFact;
   /**
    * `entry` repeats the part once per observation the turn was woken for.
    *
@@ -635,22 +638,34 @@ export interface WorkValues {
   room: string;
   /** The bot's own agents, as facts rather than as prose (`identity.ts`). */
   roster: string;
-  /** The entries the turn was woken for, **oldest first**. */
+  /**
+   * The note the bot wrote about this room last time, or the empty string.
+   *
+   * It is the box's first part (`box.ts`), and the reason a turn can carry a
+   * conversation longer than its window: what has been compacted is not gone, it is
+   * this line. Empty means nothing has been compacted — the part that quotes it then
+   * leaves the prompt rather than quoting a blank.
+   */
+  summary: string;
+  /** The observations since that note, **oldest first**. */
   entries: { sender: string; text: string }[];
 }
 
 /**
  * The shipped turn artifact's location, beside this module.
  *
- * `work-v2.json` ships and `work-v1.json` stays beside it. A prompt is versioned
- * rather than edited in place, because `calibration/work/` measured v1 and a record
- * that quotes a prompt the tree has changed describes a run nobody can re-read —
- * `work-calibration.test.ts` holds that pair together. What v2 adds is the two parts
- * that quote a bot's card, and both are conditional: a bot whose card says nothing is
- * asked the v1 text byte for byte, which `prompts.test.ts` checks against v1 itself.
+ * `work-v3.json` ships; `work-v1.json` and `work-v2.json` stay beside it. A prompt is
+ * versioned rather than edited in place, because `calibration/work/` measured v1 and a
+ * record that quotes a prompt the tree has changed describes a run nobody can re-read
+ * — `work-calibration.test.ts` holds that pair together. What v2 added is the two parts
+ * that quote a bot's card, both conditional: a bot whose card says nothing is asked the
+ * v1 text byte for byte, which `prompts.test.ts` checks against v1 itself. What v3 adds
+ * is the note the bot wrote about the room last time (`compact.ts`), conditional the
+ * same way: a room with no note is asked the v2 text byte for byte, which the same test
+ * checks against v2.
  */
 export function shippedWorkPromptPath(): URL {
-  return new URL('./prompts/work-v2.json', import.meta.url);
+  return new URL('./prompts/work-v3.json', import.meta.url);
 }
 
 /**
@@ -715,6 +730,7 @@ export function assembleWorkPrompt(
     gender: values.gender,
     room: values.room,
     roster: values.roster,
+    summary: values.summary,
   };
 
   // `afterSystem` opens the user turn rather than closing the system block: it is
@@ -754,6 +770,7 @@ const WORK_FACTS = [
   'position',
   'room',
   'roster',
+  'summary',
 ] as const;
 
 /** The four a bot may simply not have, in the order an error message lists them. */
@@ -767,6 +784,15 @@ const OPTIONAL_FACTS: readonly OptionalFact[] = [
 /** True for a placeholder name that is one of the card's optional facts. */
 function isOptionalFact(name: unknown): name is OptionalFact {
   return (OPTIONAL_FACTS as readonly unknown[]).includes(name);
+}
+
+/**
+ * True for a placeholder the prompt may have to leave out: the card's four, and the
+ * room's note — a room nothing has been compacted in has no note, and quoting a blank
+ * after a colon is the same defect as quoting an empty position.
+ */
+function isSkippable(name: unknown): boolean {
+  return name === 'summary' || isOptionalFact(name);
 }
 
 /**
@@ -824,9 +850,9 @@ function assertWorkArtifact(value: unknown, source: string): WorkArtifact {
       return fail(`${where}.text must be a non-empty string`);
     }
     if (typeof row.after !== 'string') return fail(`${where}.after must be a string`);
-    if (row.when !== 'always' && !isOptionalFact(row.when)) {
+    if (row.when !== 'always' && !isSkippable(row.when)) {
       return fail(
-        `${where}.when must be "always" or one of ${OPTIONAL_FACTS.join(', ')}, ` +
+        `${where}.when must be "always", "summary", or one of ${OPTIONAL_FACTS.join(', ')}, ` +
           `got ${JSON.stringify(row.when)}`,
       );
     }
@@ -843,13 +869,14 @@ function assertWorkArtifact(value: unknown, source: string): WorkArtifact {
     // rendered anyway leaves a blank in the middle of a sentence; a part that says it
     // depends on a fact and never quotes it leaves the prompt for a reason nothing in
     // its own text explains.
-    const dependsOn = placeholdersIn(row.text).filter(isOptionalFact);
+    const dependsOn = placeholdersIn(row.text).filter(isSkippable);
     for (const name of dependsOn) {
       if (row.when !== name) {
-        return fail(`${where} fills {${name}} but is rendered when the bot has none`);
+        const who = name === 'summary' ? 'the room has none' : 'the bot has none';
+        return fail(`${where} fills {${name}} but is rendered when ${who}`);
       }
     }
-    if (isOptionalFact(row.when) && !dependsOn.includes(row.when)) {
+    if (isSkippable(row.when) && !dependsOn.includes(row.when)) {
       return fail(
         `${where} is skipped without a ${row.when} and does not quote one, so nothing ` +
           'it says depends on it',

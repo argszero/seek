@@ -291,27 +291,11 @@ test('the roster supplies the agents, the seed supplies the world', async () => 
 });
 
 test('the run settles the compaction it started before it reports', async () => {
-  /**
-   * A store that counts the saves which completed while a summary was in memory.
-   *
-   * The compaction pushes its digest and *then* saves, so exactly one save has a
-   * digest to write: the compaction's own. Counting that instead of a total keeps
-   * the assertion off "how many saves a turn happens to make".
-   */
-  class DigestStore extends SeekStore {
-    savedWithDigest = 0;
-
-    async save(): Promise<void> {
-      await super.save();
-      if (Object.keys(this.data.memories).length > 0) this.savedWithDigest += 1;
-    }
-  }
-
   const dir = await mkdtemp(join(tmpdir(), 'seek-milestone-'));
   try {
     const path = join(dir, 'seek.json');
     await writeFile(join(dir, 'agents.yml'), ROSTER_YAML);
-    const store = new DigestStore((await SeekStore.load(path)).data, path);
+    const store = await SeekStore.load(path);
 
     const run = await runFirstMilestone(store, {
       now: () => AT,
@@ -321,18 +305,19 @@ test('the run settles the compaction it started before it reports', async () => 
     });
 
     assert.equal(run.spoke, true);
-    // The compaction is the background action the tick started and the turn did
-    // not finish. It has completed before the run reports, which is what the
-    // wait is for — without it the run would describe a store still moving.
-    assert.equal(
-      store.savedWithDigest,
-      1,
-      'the summary was written before the run returned',
-    );
-    const digest = store
+    // The compaction is the background action the tick started and the turn did not
+    // finish. It has completed before the run reports, which is what the wait is for —
+    // without it the run would describe a store still moving.
+    //
+    // Read back off the file rather than off a save the store happened to make: a
+    // counter of "saves that saw a summary" answers how many saves had one in hand,
+    // which any later save moves, and this turn makes one. What the wait promises is
+    // that the summary is *durable*, so that is what is read.
+    const reloaded = await SeekStore.load(path);
+    const digest = reloaded
       .memoriesOf(run.scene.work)
       .filter((row) => row.level === 'room_digest');
-    assert.equal(digest.length, 1);
+    assert.equal(digest.length, 1, 'the summary was written before the run returned');
     assert.equal(digest[0].body, 'the room so far');
   } finally {
     await rm(dir, { recursive: true, force: true });
