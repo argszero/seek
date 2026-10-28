@@ -40,8 +40,15 @@
 
 import { readFileSync } from 'node:fs';
 
-/** A part's condition: always rendered, or only once the room has a summary. */
-export type PartCondition = 'always' | 'summary';
+/**
+ * A part's condition: always rendered, once the room has a summary, or only for a
+ * bot whose card says what it does here.
+ *
+ * `position` is `work-v2`'s rule on this side of the runtime: a part that quotes a
+ * fact the bot may not have is skipped rather than rendered with a blank in it, and
+ * a bot whose card is empty is asked the same question without that line.
+ */
+export type PartCondition = 'always' | 'summary' | 'position';
 
 /** One part of the assembly, in the order the file lists it. */
 export interface PromptPart {
@@ -97,6 +104,17 @@ export interface PromptArtifact {
 export interface PromptValues {
   /** The compaction's result, when the room has one. */
   summary?: string;
+  /**
+   * Which bot is being asked, by the name a person gave it.
+   *
+   * **Absent is a caller that has no bot to name** — `skeletonOf`, measuring where the
+   * question ends — and never a bot without a name: a store names every bot, and a
+   * judgement that did not say whose it was would be the same question put to every
+   * bot in the organization, which is what made four bots answer alike.
+   */
+  bot?: string;
+  /** What that bot does here, when its card says. */
+  position?: string;
   /** The entries to render, **oldest first**. */
   texts: string[];
 }
@@ -148,14 +166,32 @@ export function loadPromptArtifact(source: string | URL = shippedPromptPath()): 
  * otherwise let a room write the front of its own prompt.
  */
 export function assemblePrompt(artifact: PromptArtifact, values: PromptValues): string {
-  const out: string[] = [artifact.system, artifact.afterSystem];
+  // Who this judgement is for, or nothing at all. A head that names a placeholder
+  // because nobody handed the name over would be read as part of the question, so
+  // the two cases are refused here rather than filled blank: a caller that has no
+  // name is `skeletonOf`, and it says so by passing one.
+  if (artifact.system.includes('{bot}') && values.bot === undefined) {
+    throw new Error(
+      'the artifact names {bot} and no bot was given: a judgement about a bot is asked ' +
+        'with its name, and a head reading "{bot}" is a placeholder the model would ' +
+        'answer instead of a question',
+    );
+  }
+  const out: string[] = [fill(artifact.system, { bot: values.bot ?? '' }), artifact.afterSystem];
   for (const part of artifact.parts) {
     if (part.when === 'summary' && values.summary === undefined) continue;
+    if (part.when === 'position' && values.position === undefined) continue;
     if (part.each === 'observation') {
       for (const text of values.texts) out.push(fill(part.text, { text }), part.after);
       continue;
     }
-    out.push(fill(part.text, { summary: values.summary ?? '' }), part.after);
+    out.push(
+      fill(part.text, {
+        summary: values.summary ?? '',
+        position: values.position ?? '',
+      }),
+      part.after,
+    );
   }
   return out.join('');
 }
@@ -168,8 +204,32 @@ export function assemblePrompt(artifact: PromptArtifact, values: PromptValues): 
  * part, which `assertArtifact` keeps unconditional, so the skeleton and a room's
  * full box share their final token and the ids measured once hold for all of them.
  */
-export function skeletonOf(artifact: PromptArtifact): { version: string; text: string } {
-  return { version: artifact.version, text: assemblePrompt(artifact, { texts: [] }) };
+export function skeletonOf(artifact: PromptArtifact): {
+  version: string;
+  system: string;
+  text: string;
+} {
+  // The name is empty here on purpose: the skeleton is the assembly with nothing
+  // room-specific in it, and its job is to end where every real assembly ends. Who
+  // the bot is changes the head of the text and never its last token, so the ids
+  // measured once at this end hold for every bot asked the same question.
+  return {
+    version: artifact.version,
+    system: systemOf(artifact, {}),
+    text: assemblePrompt(artifact, { texts: [], bot: '' }),
+  };
+}
+
+/**
+ * The head of the assembly on its own: who is being asked, and what it does here.
+ *
+ * Apart from `assemblePrompt` because the server needs it apart — the chat template
+ * takes the head as its system message and the rest as the user turn, and the split
+ * is found by matching this line (`llama.ts`). Empty when the artifact's head names
+ * no bot at all, which is what a template without a `{bot}` fills in.
+ */
+export function systemOf(artifact: PromptArtifact, values: { bot?: string }): string {
+  return fill(artifact.system, { bot: values.bot ?? '' });
 }
 
 /** One template, filled in a single pass. */
@@ -205,6 +265,18 @@ function assertArtifact(value: unknown, source: string): PromptArtifact {
     return fail('`parts` must be a non-empty array');
   }
 
+  // The head may name the bot and what it does here, and nothing else: who is being
+  // asked is a fact about the bot, while a message or a summary in the head would be
+  // the same text in every room — the header `watch-v1` refuses to let a room write.
+  for (const name of placeholdersIn(artifact.system)) {
+    if (name !== 'bot') {
+      return fail(
+        `\`system\` names {{${name}}}, which belongs to the box rather than to the bot — ` +
+          'the head is the same text in every room',
+      );
+    }
+  }
+
   const parts: PromptPart[] = [];
   for (const [index, part] of artifact.parts.entries()) {
     const where = `parts[${index}]`;
@@ -217,8 +289,11 @@ function assertArtifact(value: unknown, source: string): PromptArtifact {
       return fail(`${where}.text must be a non-empty string`);
     }
     if (typeof row.after !== 'string') return fail(`${where}.after must be a string`);
-    if (row.when !== 'always' && row.when !== 'summary') {
-      return fail(`${where}.when must be "always" or "summary", got ${JSON.stringify(row.when)}`);
+    if (row.when !== 'always' && row.when !== 'summary' && row.when !== 'position') {
+      return fail(
+        `${where}.when must be "always", "summary" or "position", ` +
+          `got ${JSON.stringify(row.when)}`,
+      );
     }
     if (row.each !== undefined && row.each !== 'observation') {
       return fail(`${where}.each must be "observation" when present`);
@@ -229,15 +304,26 @@ function assertArtifact(value: unknown, source: string): PromptArtifact {
       if (name === 'summary' && row.when !== 'summary') {
         return fail(`${where} fills {summary} but is rendered when there is no summary`);
       }
+      if (name === 'position' && row.when !== 'position') {
+        return fail(`${where} fills {position} but is rendered when the bot may have none`);
+      }
       if (name === 'text' && row.each !== 'observation') {
         return fail(`${where} fills {text} without \`each: "observation"\`, so it has nothing to fill from`);
       }
-      if (name !== 'summary' && name !== 'text') {
+      if (name !== 'summary' && name !== 'text' && name !== 'position') {
         return fail(`${where} names {{{${name}}}}, which nothing here fills`);
       }
     }
-    if (row.each === 'observation' && row.when === 'summary') {
-      return fail(`${where} cannot be both per-observation and conditional on a summary`);
+    // The other half of that rule: a part that says it depends on a position and never
+    // quotes one leaves the prompt for a reason nothing in its own text explains.
+    if (row.when === 'position' && !placeholders.includes('position')) {
+      return fail(
+        `${where} is skipped without a position and does not quote one, so nothing it ` +
+          'says depends on it',
+      );
+    }
+    if (row.each === 'observation' && row.when !== 'always') {
+      return fail(`${where} cannot both repeat per observation and be conditional`);
     }
 
     const normalised: PromptPart = {

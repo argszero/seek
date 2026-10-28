@@ -207,7 +207,7 @@ export function llamaWatchModel(server: LlamaServer): WatchModel {
         media.length === 0
           ? await completion(
               server,
-              await applyTemplate(server, userTurn(artifact, input.prompt.text)),
+              await applyTemplate(server, input.prompt.system, userTurn(input.prompt, artifact)),
             )
           : await readWithPictures(server, input, media, canSee);
       // No `reason`: see above. What the kernel does with an absent one is its
@@ -271,7 +271,7 @@ async function readWithPictures(
         '(`--mmproj`) so it can see',
     );
   }
-  const user = userTurn(server.artifact, input.prompt.text);
+  const user = userTurn(input.prompt, server.artifact);
   const { front, question } = splitAtQuestion(server.artifact, user);
   const bytes = await load(picture);
   const parts: unknown[] = [];
@@ -281,7 +281,7 @@ async function readWithPictures(
   if (front.length > 0) parts.push({ type: 'text', text: front });
   parts.push({ type: 'image_url', image_url: { url: dataUriOf(picture, bytes) } });
   parts.push({ type: 'text', text: question });
-  return chatCompletion(server, parts);
+  return chatCompletion(server, input.prompt.system, parts);
 }
 
 /**
@@ -380,7 +380,7 @@ export async function bindOverServer(
   prompt: WatchPrompt,
   tokens: OptionTokens,
 ): Promise<OptionBinding> {
-  const templated = await applyTemplate(server, userTurn(server.artifact, prompt.text));
+  const templated = await applyTemplate(server, prompt.system, userTurn(prompt, server.artifact));
   const prefix = await tokenise(server, templated);
   const act = await bindOne(server, templated, prefix, tokens.act);
   const ignore = await bindOne(server, templated, prefix, tokens.ignore);
@@ -469,7 +469,7 @@ export async function requireServerShape(
   prompt: WatchPrompt,
 ): Promise<ServerShape> {
   const shape = await requireTemplate(server);
-  const templated = await applyTemplate(server, userTurn(server.artifact, prompt.text));
+  const templated = await applyTemplate(server, prompt.system, userTurn(prompt, server.artifact));
   const spend = (await tokenise(server, templated)).length + 1;
   if (spend > shape.nCtx) {
     throw new Error(
@@ -688,21 +688,21 @@ function readingOf(candidates: Candidate[], tokens: OptionTokens): Record<string
  * artifact's own head is a text assembled from a different artifact, and reading a
  * number off it would answer a question nobody measured.
  */
-function userTurn(artifact: PromptArtifact, text: string): string {
-  const head = artifact.system + artifact.afterSystem;
-  if (!text.startsWith(head)) {
+function userTurn(prompt: { system: string; text: string }, artifact: PromptArtifact): string {
+  const head = prompt.system + artifact.afterSystem;
+  if (!prompt.text.startsWith(head)) {
     throw new Error(
       'this judgement was assembled from a different artifact: its text does not begin ' +
         "with the artifact's system line and the separator after it, so the measured " +
         'split between the system message and the user turn cannot be found',
     );
   }
-  return text.slice(head.length);
+  return prompt.text.slice(head.length);
 }
 
 /** The prompt the model is actually given: the server's own chat template, rendered. */
-async function applyTemplate(server: LlamaServer, user: string): Promise<string> {
-  return renderTurn(server, server.artifact.system, user);
+async function applyTemplate(server: LlamaServer, system: string, user: string): Promise<string> {
+  return renderTurn(server, system, user);
 }
 
 /**
@@ -785,10 +785,14 @@ async function completion(server: LlamaServer, prompt: string): Promise<Candidat
  * for, so what arrives is the raw softmax the cut was taken on, not a quantity a
  * temperature could have reshaped.
  */
-async function chatCompletion(server: LlamaServer, parts: unknown[]): Promise<Candidate[]> {
+async function chatCompletion(
+  server: LlamaServer,
+  system: string,
+  parts: unknown[],
+): Promise<Candidate[]> {
   const answer = (await postJson(server, '/v1/chat/completions', {
     messages: [
-      { role: 'system', content: server.artifact.system },
+      { role: 'system', content: system },
       { role: 'user', content: parts },
     ],
     max_tokens: 1,
