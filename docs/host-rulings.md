@@ -93,49 +93,85 @@ Both are requirements. With the size target withdrawn they no longer pull agains
 *"Do not restrict it to JSON — as long as it meets the requirements I just described."*
 A word, a label or a tiny JSON — whatever the chosen model emits reliably. An unparseable verdict counts as no act.
 
-**No special input pipeline for the watch agent.**
+**No special input pipeline for the judgement.**
 *"There is no need to design one specially, because the Agent itself already has a session history, memory and compaction. The judge's request should be essentially the same as the request the Agent sends when it really runs — it gets the agent's session history, memory and compaction."*
-Nothing is assembled for the judgement at decision time: its memory for a room is the observation box, read as it stands. **The one thing the watch side does not do is write** — it is a decision model, answering named questions and producing no text, so the summary in that box is written by the work agent, and the watch side keeps no session of its own.
+Nothing is assembled for the judgement at decision time: what it reads is that bot's observation box, as it stands. **The one thing the watch side does not do is write** — it is a decision model, answering named questions and producing no text, so the summary in that box is written by the work agent, and the watch side keeps no session of its own.
 
 **The judgement reads a two-part box.**
 *"The observation box splits into two parts: the result of the last compaction, and the observations that have arrived since it. Every judgement sends the last compaction's result together with the observations produced after it, plus the time and the result of the last judgement, to the system-one model, and gets a fast verdict."*
-Per (bot, room), the judgement input is that box and nothing else: the standing summary, the delta since it, and the previous verdict. The previous verdict goes in as a fact — how long ago it was and what it was — never as an instruction.
+The box is the bot's and not a room's, so the judgement input is per bot and is that box and nothing else: the last compaction, the observations since it, and the previous verdict. The previous verdict goes in as a fact — how long ago it was and what it was — never as an instruction.
 
-**Compaction is triggered by a line, not by every message.**
-Asked whether compaction should run when the delta crosses a threshold or on every new message, the host answered *"A"* — the threshold.
-The delta crossing a line starts a compaction, and a judgement never waits for one. Compaction is single-flight: at most one runs at a time, and it commits the new summary and the point it consumed to atomically, so a concurrent arrival is either inside the new summary or still in the delta, never lost. **Compaction is a runtime action and not a turn** — a room that never needs a word said still has to be compactable — and **the judgement is not asked whether to compact**: that is arithmetic over the delta, and a model that could request a spend could request it every tick. The line itself is a default, settled by measurement, not a ruling.
+**Compaction is never run per message, and it is the judgement that says when one is due.**
+Asked once whether compaction runs when the delta crosses a threshold or on every new message, the host answered *"A"* — anything but every message; when he later settled the three roads out of a judgement, one of them is *"2. (the observations have piled up and need compacting) call the work agent"*.
+Nothing compacts per message, and a judgement never waits for a compaction. When one is due is the judgement's to say: it reads the box, and one of its three answers is that the observations have piled up and the agent that works should compact them. Compaction is single-flight: at most one runs at a time, and it commits the new summary and the point it consumed to atomically, so a concurrent arrival is either inside the new summary or still in the delta, never lost. **Compaction is a runtime action and not a turn** — a room that never needs a word said still has to be compactable.
 
 ---
 
-## Two agents behind one bot
+## One bot, one agent, and a judgement that is not one
 
-**The watch agent is an agent.**
-*"Let us say the judge is also an Agent, only using a local model."*
-It is a row in `agents.yml` with its own model, its own prompt and its own memory, exactly as the work agent is — a decision model rather than a chat model, so it answers in one pass and generates nothing.
+**The watch side is not an agent.**
+*"No — watch is not an agent."*
+It is not a row in `agents.yml`, and it has nothing of its own: no model, no prompt, no store, no tools, no session. It is a step the bot's loop takes before it acts — the rules first, and one call to the local judgement model only where the rules cannot settle it. The only agent behind a bot is the one that works.
 
-**Two agents per bot.**
-*"Actually each bot has two Agents: one for fast judgement, one that really does the work."*
-The split is between two agents, not two modes of one.
+**It reads the box, and there are three ways out.**
+*"It takes two things out of the observation box: the most recent compaction, and the observations after that compaction. It judges by rule; where the rules cannot settle it, it sends the bot's identity plus the most recent compaction plus the observations after it to the local judgement model you chose, and the answer decides which road: 1. (there is a message to handle) call the work agent directly. 2. (the observations have piled up and need compacting) call the work agent. 3. (nothing to handle and nothing to compact) do nothing."*
+The rules run first and cost nothing; only what they cannot settle reaches the model. The three answers are the whole of it — wake the worker, wake it to compact, do nothing. How long ago the last judgement was and what it said travel with it as facts, never as instructions.
 
 **Two role names: `watch` and `work`.**
 *"Fine, B then."* [asked: *"What should the two roles be called?"* — B: `watch` / `work`. The implementer's wording.]
-The names come from vocabulary the design already had — the watch queue, the work.
+`watch` names the judgement and `work` names the agent, which is why only one of the two is a row in `agents.yml`. The words are ones the design already had — the watch queue, the work.
 
-**Separate stores, each readable by the other.**
-*"Do not share one memory. Each is independent, and each knows the other exists and can read the other's history, memory and so on."*
-Each agent's own store stays its own: the work agent's sessions and diary, and the watch agent's box per room. **They share exactly one thing, and it has one writer**: a room's standing summary, written by the work agent because it is the half that can write, and read by the watch agent (§3). **The read path covers everything either agent writes, including a verdict and the reason behind it** — it is how the work agent can find out why it was woken without that reason being handed to it.
+**One box per bot, and no two bots share one.**
+*"Do not share one memory. Each is independent, and each knows the other exists and can read the other's history, memory and so on."* / *"Yes."* [asked: *"In a room holding bots A and B, each gathers its own observations and judges on its own, and neither knows what the other concluded."* — the implementer's wording.]
+The box is the bot's — not an agent's, and not a room's. One bot has one, it travels with the bot, and what the bot gathered in another room is in it. **It has one writer**: the work agent writes it, because it is the half that can write, and the judgement reads it, because it has nothing else. Nothing passes from one bot's box into another's — a bot in a room with another bot sees what it saw said, not what the other concluded. **Reading is not sealed either**: the reason behind a verdict is on that record, so the work agent can find out why it was woken without the reason being handed to it.
 
 **The tool set is EMRG's, unchanged, with what the host named added.**
-*"It has tools — otherwise how would it read and write memory, compress its session?"* [asked: whether the watch agent is given tools at all. It is not: a decision model answers in a single pass and produces no text, so it has no tool call to make. What that sentence asked for is discharged elsewhere — the memory is the box, and the compaction is the work agent's.] / *"Just use the EMRG set."*
+*"It has tools — otherwise how would it read and write memory, compress its session?"* [asked: whether the watch side is given tools at all. It is not: a decision model answers in a single pass and produces no text, so it has no tool call to make. What that sentence asked for is discharged elsewhere — the memory is the box, and the compaction is the work agent's.] / *"Just use the EMRG set."*
 The work agent's tools are the kernel's registry (bash / read / write / edit / glob / grep / subagent / submit_rant / boss), and which agent may call which is ordinary per-agent configuration in `agents.yml`. No watch-specific tool, no memory tool, no compaction tool: memory writes and compaction are runtime behaviour, as for any agent. **Two exceptions, both named by the host: `schedule` (§12) and the tool that speaks in a room** — the second is not an addition to how an agent acts but the only way anything reaches a room at all. Two is where the count stops being a coincidence: a third would mean the registry was being rebuilt one exception at a time.
 
-**The watch agent reads its own outcome, and is not expected to improve.**
+**The judgement reads its own outcome, and is not expected to improve.**
 *"The judge relies on the observation data: say it judged wrong and the working agent then said nothing in the room — next time the judge sees that it handed this over and nothing was done. Also, do not agonise over the judge learning; it is fine if it never learns."*
-No feedback channel is built and nothing is trained. The outcome is read off the record the watch agent already keeps, and nothing downstream may assume it gets better.
+No feedback channel is built and nothing is trained. The outcome is read off the record the box already keeps, and nothing downstream may assume it gets better.
 
-**Only the observations are handed over; the reason stays where it was written.**
-*"A."* [asked: *"What does the work agent receive when the watch agent decides to act?"* — A: the inbox entries only. The implementer's wording.]
-The work agent wakes with the entries and nothing else: the runtime never puts the watch agent's reason into its context, because a reason in a context is a premise rather than advice — where the watch agent is wrong, the work agent would amplify rather than correct it, and the amplification would look like coherence. **It is not sealed, though.** The reason is on the record, and the two agents can read each other's records, so the work agent may go and read it — and then it knows both what was decided and whose sentence it was. What is forbidden is the silent handoff, not the lookup.
+**The work agent is handed the whole box, and the reason is the one thing kept out of it.**
+*"Yes."* [asked: *"The work agent does not see only the few observations that woke it, but its whole box — the last compaction plus every observation after it — so it knows what the conversation was about."* — the implementer's wording.]
+What the work agent opens with is the bot's box: the last compaction and every observation since it, whichever room each one came from — that is how it knows what has already been said and how far the work has got. The runtime never puts the judgement's reason into that context, because a reason in a context is a premise rather than advice — where the judgement is wrong, the work agent would amplify rather than correct it, and the amplification would look like coherence. **It is not sealed, though.** The reason is on the record, so the work agent may go and read it — and then it knows both what was decided and whose sentence it was. What is forbidden is the silent handoff, not the lookup.
+
+---
+
+## The observation box
+
+**It is the name of files on the disk.**
+*"The observation box is an abstraction; behind it are files on this machine."*
+What the rest of the design calls the box is something the bot keeps on the disk. A bot has one; it is not a list per room, and it is not assembled at decision time and then forgotten.
+
+**Two operations: write an observation, read the observations.**
+*"No — watch cannot see the files; the files are wrapped inside the box. watch does not even know the box holds two parts, a compaction and the observations after it. The box offers only a write and a read. On a read it finds the last compaction and the observations after it and hands them over together."*
+That is the whole surface. Whoever reads does not ask for a compaction or for a delta: the box finds the last one and hands it over with whatever came after, so how it is stored is the box's business and never the caller's.
+
+**Two ways to write: append, and overwrite.**
+*"No — the box takes an observation two ways: one is append, one is overwrite. The work agent overwrites to put a new compaction into the box."*
+A message arriving appends. A compaction overwrites, because a new summary takes the place of the one before it rather than following it.
+
+**A compaction writes the whole history again, and it is not a summary of the new part.**
+*"No — it is not writing this pile of observations into a summary, it is this pile of observations plus the observations before them compressed into a new compaction."* / *"Yes, it accumulates, but not by appending — it is summarised again each time. The point is to be able to tell from the observations what is being worked on, how far along each thing is, and so on."*
+Each compaction is written afresh from the last compaction together with everything after it. Old and new are not kept side by side, and nothing is tacked onto the end of the previous one.
+
+**What a compaction consumed is not kept beside it.**
+*"Yes."* [asked: *"Those observations, once they are inside a new compaction, are not kept separately in the box — a read returns the new compaction and whatever arrived after it."* — the implementer's wording.]
+After a compaction is written back, the observations it consumed are gone from the read: what a read returns is that compaction and what has arrived since.
+
+**Every observation says which room, who, when, and what.**
+*"Yes."* [asked: *"Every observation in the box carries which room it came from, who said it, when, and what was said, so the work agent can tell which entries are another room's business."* — the implementer's wording.]
+An observation is not a bare sentence. A bot woken in one room reads a box that also holds other rooms, and those four facts are what tell them apart.
+
+**What the bot said itself goes into its own box.**
+*"No — what it said itself has to go into the observation box; if it did not, watch would think the thing to handle had not been handled and would wake the work agent over and over. watch and the agent are not stupid; they know who said which words."*
+Its own words are observations like anyone's, and the record of who said them is what keeps a bot from answering itself in a loop.
+
+**A bot observes only what it can see.**
+*"Yes, one point: a bot's observation is limited to what it can see — for instance, if a group holds only bots A and B, then bot C cannot see that group or anything said in it."* / *"Yes, a direct message is visible to the two of them only; nobody else can see it."*
+There is no observation of a room the bot is not in. A direct message is gathered by its two participants and by nobody else.
 
 ---
 
@@ -143,7 +179,7 @@ The work agent wakes with the entries and nothing else: the runtime never puts t
 
 **Two data models; identity lives on the bot.**
 *"A bot is a bot and an Agent is an Agent — two data models. The name and avatar land on the bot, and the bot passes its name down to the two Agents."*
-An agent has a `role`, not a name of its own; renaming a bot reaches every agent at once, and a room never sees two contacts where there is one.
+An agent has a `role`, not a name of its own; renaming a bot reaches every agent at once, and a room never sees two contacts where there is one. The `two` in that sentence is how many he was describing at the time, not a count: what stands is that the identity lands on the bot and every agent of that bot carries it.
 
 **An agent knows which bot it belongs to, and everything about it.**
 *"A work agent, in its own system prompt or in a skill, can know which bot it belongs to, and everything about that bot — its name, which agents there are, what each one does, each agent's directory, and so on."*
@@ -164,6 +200,10 @@ One queue, one "already handled" state and one tick, all bot-level; an agent sta
 **Speaking is a tool call.**
 *"The work agent sends a message only by calling the speaking tool — who it goes to (a group or a direct chat) and what it says. Emitting text must not put anything in the IM."*
 A turn that ends without that call has said nothing, and the text it produced stays in the turn's own record. Nothing is posted to a room on the agent's behalf: not its final answer, not a streamed fragment, not a summary of what it did.
+
+**What it says is one message in the room, and the room keeps no summary.**
+*"Yes."* [asked: *"What the work agent says is a message in the room like anyone's, written into the room's record; the room keeps no separate 'summary' or the like — whoever wants to know reads the messages."* — the implementer's wording.]
+Speaking puts a message in the room and stores nothing beside it: no digest of what was said, no second copy of it.
 
 **One path, one loop.**
 *"Direct is not skipping the judgement; it is that the judgement notices an @ and lets it through. There is really only one path."*
@@ -257,6 +297,10 @@ What a person is shown is what a person can act on. An origin, a variable name, 
 **A failure is worded by the window, and the diagnosis stays in the log.**
 *"A."* [asked: *"The line about the weights that did not arrive still carries `fetch failed`, which is the runtime's own wording. A: the window words the failure and the original goes to the log, at the cost of narrowing §2 to 'what people say is never rewritten, a process failure is never copied'. B: keep it as it is and translate only the frame, at the cost of that wording staying on the screen."* — the implementer's wording.]
 A process's failure is drawn in the application's words, in the language the window runs in: what a person sees is that the thing did not work and what a second attempt does. What a host answered, what a runtime said — a status code, `fetch failed` — is a diagnostic and goes to the log, where whoever built or configured the install reads it. **What somebody typed is untouched**: §2's rule that content is never rewritten stands, and this is the line between the two — a person's words are content, a process's words are a diagnosis.
+
+**A bot whose model is not ready says nothing, and the window says why.**
+*"Yes."* [asked: *"If this machine has not got the model ready — the small model's weights not finished downloading, or the speaking model not configured — the bot makes no sound: not one message appears in the room, and the window says plainly that the model is not ready; it never makes a sentence up to stand in."* — the implementer's wording.]
+Nothing is posted on its behalf and nothing is invented. Silence in the room is the correct outcome and not a failure to paper over, and what a person sees instead is the state of their own install, in the language they read.
 
 **The bots list is the bots, and a first run puts nobody else in the world.**
 *"In Bots, why is there still a `someone else` that cannot be deleted? … A first launch does not need to create a person called `someone else`."* — the implementer's wording, quoting the host.
