@@ -13,8 +13,10 @@
  * there, and the last test re-opens the store to prove the file it wrote is a roster the
  * kernel still reads.
  *
- * Nothing here starts a model or an Electron: `openHost` runs under plain `node --test`, which
- * is why the answers below are the kernel's `STUB_REPLY`.
+ * Nothing here starts a model or an Electron: `openHost` runs under plain `node --test`, and it
+ * is handed the kernel's own two placeholders — the way a test hands it a transport — because
+ * what is being measured is a bot made in the window and the rows that let it speak, not a
+ * model. That is why the answers below are `STUB_REPLY`.
  */
 import assert from 'node:assert/strict'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
@@ -22,7 +24,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
-import { seedOneRoom, STUB_REPLY } from '../../src/main.ts'
+import { seedOneRoom, STUB_REPLY, stubDecide, stubJudge } from '../../src/main.ts'
 import { applyRoster, parseRoster } from '../../src/roster.ts'
 import { emptyData, SeekStore } from '../../src/store.ts'
 import { addBot, closeHost, createRoom, openHost, postMessage } from './host.js'
@@ -61,7 +63,7 @@ async function world({ withRoster = true } = {}) {
   }
   await store.save()
 
-  const host = await openHost(storeFile)
+  const host = await openHost(storeFile, { judge: stubJudge, decide: stubDecide })
   return {
     host,
     scene,

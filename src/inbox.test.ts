@@ -38,8 +38,13 @@ class HoldingStore extends SeekStore {
   }
 }
 
-/** Stage 1 that says every ambiguous entry acts (the stub the loop ships with says none do). */
-const judgeActs = (entries: Observation[]): Observation[] => entries;
+/**
+ * Stage 1 that says every ambiguous entry acts (the shipped default says none do).
+ *
+ * The bot the tick belongs to is the first argument and these two ignore it: the box a
+ * judgement reads is the bot's own, and a judge that does not read one has no use for it.
+ */
+const judgeActs = (_botId: Id, entries: Observation[]): Observation[] => entries;
 
 /** Stage 1 that says nothing acts — the shipped default, named for readability. */
 const judgeDeclines = (): Observation[] => [];

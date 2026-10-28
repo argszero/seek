@@ -120,6 +120,19 @@ export function deletedAtOf(bot: Bot): string | undefined {
 }
 
 /**
+ * The bots this organization still has, in the order the store keeps them.
+ *
+ * **A stamp is not a removal, so a row is not the answer.** A deleted bot keeps its row
+ * (its messages name it), so a reader that counted `Object.keys(bots)` was counting the
+ * graveyard as well — and the one place that did it most expensively refused the whole
+ * store a model server because a person had once deleted a bot. A question about who is
+ * here goes through this function, so the answer is the same everywhere.
+ */
+export function standingBots(store: SeekStore): Bot[] {
+  return Object.values(store.data.bots).filter((bot) => deletedAtOf(bot) === undefined);
+}
+
+/**
  * Move a store's old `removed_at` rows onto `deleted_at`.
  *
  * **The one write a field rename needs**, and it is called by `openHost` on every open rather

@@ -101,6 +101,7 @@ import { newId, SeekStore } from './store.ts';
 import type { Decide } from './turn.ts';
 import type { Id } from './types.ts';
 import { watchOverServer } from './watch-server.ts';
+import type { Watch } from './watch.ts';
 
 /** Where the seed writes its `created_at`, so a seeded world is reproducible. */
 const SEED_AT = '2026-10-24T00:00:00.000Z';
@@ -135,7 +136,7 @@ export const STUB_REPLY =
  * honest description of a stub and the reason its verdict says nothing about
  * whether the design holds up.
  */
-export const stubJudge: Judge = (entries) => entries;
+export const stubJudge: Judge = (_botId, entries) => entries;
 
 /** Stage 2, standing in for the work model: it answers, without reading. */
 export const stubDecide: Decide = (context) => {
@@ -430,8 +431,29 @@ async function stageOne(
   }
 
   return {
-    judge: await watchOverServer(store, botId, options.watchServer, { window }),
+    judge: judgeOfBot(botId, await watchOverServer(store, botId, options.watchServer, { window })),
     server: options.watchServer.baseUrl,
+  };
+}
+
+/**
+ * One bot's watch, as the loop's `Judge`.
+ *
+ * `watchOverServer` binds the bot — the standing it checks and the box it reads are that
+ * bot's — while the loop hands the bot over with each tick, because one binding can serve a
+ * store of several. This run is one bot's, so the two are reconciled here: a tick for
+ * another bot is a wiring mistake and says so, rather than being judged against a box that
+ * belongs to somebody else.
+ */
+function judgeOfBot(botId: Id, watch: Watch): Judge {
+  return (asked, entries) => {
+    if (asked !== botId) {
+      throw new Error(
+        `this run bound a model server to ${botId} and the tick named ${asked}: a ` +
+          'judgement reads the box of the bot it is asked about, so the two have to agree',
+      );
+    }
+    return watch(entries);
   };
 }
 

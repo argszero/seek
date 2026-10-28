@@ -7,7 +7,7 @@ import Groups from './Groups.jsx'
 import Icon from './icons.jsx'
 import Settings from './Settings.jsx'
 import Topics from './Topics.jsx'
-import { fileSize, size, t, weightsSentence, when, whenShort } from './catalogue.mjs'
+import { fileSize, joinList, size, t, weightsSentence, when, whenShort } from './catalogue.mjs'
 import {
   ADD_MENU,
   ADD_TITLE,
@@ -223,13 +223,15 @@ function FileRow({ file }) {
  * typed and the answer you get are therefore in the store, in that order, before either
  * is drawn — this window is a view of them, not a second copy. **Whether** the bot answers
  * is stage 1, and **what it says** is stage 2; each half is a real model when the app was
- * started with the server that carries it (`ui/electron/host.js`), and each is the
- * kernel's own placeholder when it was not (`stubJudge`, `stubDecide` in `src/main.ts`).
- * **Which of those two it is looking at is not drawn.** It used to be, in a strip per half,
+ * started with the server that carries it (`ui/electron/host.js`), and with no model at all
+ * the bot writes nothing — no line stands in for one.
+ * **Which server a half is bound to is not drawn.** It used to be, in a strip per half,
  * and a person was shown an origin, a variable name and the words `stage 1` over a bot that
  * was simply working — `docs/host-rulings.md`, "The window does not speak to a developer".
- * A half that fell back or was refused says so on stderr (`ui/electron/main.js`), which is
- * where the one reader who can change it is already looking, and the window stays silent.
+ * A half that was refused says so on stderr (`ui/electron/main.js`), which is where the one
+ * reader who can change it is already looking. What may be on the screen is the state of
+ * this person's own install — `the model is not ready`, with the bots it leaves quiet —
+ * because that is the answer to "why did nobody reply", and the room itself cannot say it.
  *
  * **What the thread panel is.** A thread is not a second conversation this file keeps:
  * the kernel already records it. A message that answers another carries `root_id`, the
@@ -240,10 +242,8 @@ function FileRow({ file }) {
  *
  * The panel answers the message the thread belongs to, which is what makes every reply
  * in it one hop from that message, the way thread replies sit under the parent.
- * The bot's answer lands in the panel when stage 2 is bound, because `workOverServer`
- * names the entry that woke the turn and the kernel's own chain follows it there; with
- * no work server the answer lands in the room, because `stubDecide` says its line
- * without naming what it answers.
+ * A bot's answer lands in the panel when stage 2 is bound, because `workOverServer`
+ * names the entry that woke the turn and the kernel's own chain follows it there.
  *
  * **Who a message addresses.** A message may carry `mentions[]` — the open-platform field, each
  * entry a `{id, name}` pair (`src/types.ts`) — and rule 15 of `docs/design/data-model.md`
@@ -1435,6 +1435,13 @@ export default function App() {
           <WeightsArriving facts={snap.stage1.pending} />
         ) : snap.stage1?.weights ? (
           <WeightsRefused weights={snap.stage1.weights} />
+        ) : snap.modelNotReady ? (
+          // **The one thing a person can act on when nobody answers.** The room shows the
+          // silence and says nothing about why; this says why, in their language, and names
+          // the bots it leaves quiet (`docs/host-rulings.md`, "A bot whose model is not
+          // ready says nothing, and the window says why"). A download under way or stopped
+          // wins the line, because then the reason is already being said.
+          <ModelNotReady facts={snap.modelNotReady} />
         ) : null}
         {active ? (
           <>
@@ -2263,6 +2270,46 @@ function WeightsArriving({ facts }) {
         {facts.file === null
           ? t('ui.weights.arriving-amount-no-file', { got, all })
           : t('ui.weights.arriving-amount', { got, all, file: facts.file })}
+      </span>
+    </div>
+  )
+}
+
+/**
+ * The model this install has not got ready, and what it costs the bots a person can see.
+ *
+ * A state of the person's own install and nothing else: no origin, no row, no half, no
+ * variable — `docs/host-rulings.md`, "The window does not speak to a developer". What a
+ * person reads is why the room stays empty when they write in it, which is the question an
+ * empty room leaves them with.
+ *
+ * **Two sentences, and which one is drawn is a fact about the bots, not about the kernel.**
+ * A bot with no model behind its words cannot answer at all. A bot with no model behind its
+ * judgement still answers what is addressed to it — a direct room, a mention, a reply to its
+ * own message, its own reminder coming due are all settled by the rules (`gate.ts` row 2) —
+ * and it is silent in a room where people talk past it. So the second sentence says what to
+ * do (speak to it directly) rather than what is missing. Measured, not reasoned: a two-person
+ * room with no judgement half answered an unnamed message, so a sentence about naming would
+ * have been false on the screen it was drawn on.
+ *
+ * The stronger fact wins the one line when both are true of different bots: a bot that cannot
+ * answer is what a person needs to know first.
+ *
+ * Drawn in the base colours rather than the refused ones: nothing was named and lost, so
+ * nothing failed. It is the shape a first run is in until its model is there.
+ */
+function ModelNotReady({ facts }) {
+  if (!facts) return null
+  const mute = facts.cannotAnswer.length > 0
+  const bots = mute ? facts.cannotAnswer : facts.namedOnly
+  if (bots.length === 0) return null
+  return (
+    <div className="weights" data-model="not-ready">
+      <strong>{t('ui.chat.model-not-ready')}</strong>
+      <span className="weights-why">
+        {mute
+          ? t('ui.chat.cannot-answer', { bots: joinList(bots) })
+          : t('ui.chat.spoken-to', { bots: joinList(bots) })}
       </span>
     </div>
   )

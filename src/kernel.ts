@@ -70,9 +70,23 @@ export interface KernelOptions {
    *
    * Left out, a turn says nothing — `turn.ts`'s own default, kept as the
    * default here so that "no model is called yet" stays one fact in one place.
+   * **This one fact then means silence, and silence is the answer**: a bot with no model
+   * behind it writes nothing into a room rather than a line standing in for one
+   * (`docs/host-rulings.md`, "A bot whose model is not ready says nothing").
+   *
+   * One function serves every bot, like `judge` below: a turn names its bot in the
+   * context, so a caller whose bots are bound to different servers dispatches on
+   * `context.botId` rather than handing the kernel a table.
    */
   decide?: Decide;
-  /** Stage 1. Left out, the loop's own "act on nothing" placeholder. */
+  /**
+   * Stage 1. Left out, the loop's own "act on nothing" placeholder.
+   *
+   * **One judge serves every bot**, because it is told which bot each tick is for: the
+   * box a judgement reads belongs to that bot (§3), and the store's bots are not a fact
+   * about the model server. This layer used to bind one bot and refuse a store holding
+   * two, which refused the store the host's own machine carries.
+   */
   judge?: Judge;
   /**
    * The room summary's writer — the half that can write (`compact.ts`).
@@ -182,7 +196,8 @@ export class Kernel {
    *
    * Keyed by bot because `run` is bound to one bot: `makeTurn` resolves *this*
    * bot's `work` agent, and handing one loop's `run` another bot's entries would
-   * run them on the wrong agent.
+   * run them on the wrong agent. The judge is not bound that way: it is handed the
+   * bot with the entries, so the one judge reaches every loop unchanged.
    *
    * A row written during a turn re-arms the comparator from here, through
    * `scheduleAs`'s `onWritten`: a reminder written for sooner than the instant

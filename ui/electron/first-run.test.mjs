@@ -17,7 +17,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
-import { seedOneRoom, STUB_REPLY } from '../../src/main.ts'
+import { seedOneRoom, STUB_REPLY, stubDecide, stubJudge } from '../../src/main.ts'
 import { applyRoster, parseRoster, ROSTER_FILE } from '../../src/roster.ts'
 import { emptyData, SeekStore } from '../../src/store.ts'
 import { closeHost, openHost, postMessage } from './host.js'
@@ -62,7 +62,10 @@ async function existingWorld(storeFile) {
  */
 test('a directory with nothing in it opens on a room whose bot answers', async () => {
   const f = await freshDirectory()
-  const host = await openHost(f.storeFile)
+  // The two halves are handed in, because what this file measures is the world a first run
+  // makes: an install with no model leaves the bot silent (`model-wiring.test.mjs`), and the
+  // question here is whether there is a bot to be silent.
+  const host = await openHost(f.storeFile, { judge: stubJudge, decide: stubDecide })
   try {
     const { roomId, botId, people } = world(host.store)
 

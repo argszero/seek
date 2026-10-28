@@ -23,11 +23,15 @@ import type { Id, Observation } from './types.ts';
 export type RunTurn = (entries: Observation[]) => Promise<void> | void;
 
 /**
- * Stage 1: the watch agent's judgement, as this loop sees it.
+ * Stage 1: the judgement, as this loop sees it.
  *
- * It is handed the entries stage 0 could not settle and returns the ones that
- * act. It never sees what stage 0 already settled — that is what the rules are
- * for.
+ * It is handed **which bot** the tick belongs to, and the entries stage 0 could not
+ * settle, and returns the ones that act. The bot comes with the call rather than being
+ * bound into the judge: the box a judgement reads is the bot's own (§3), one judge serves
+ * every bot in the store, and an instance per bot would be the same fact kept in a place
+ * nothing checks.
+ *
+ * It never sees what stage 0 already settled — that is what the rules are for.
  *
  * The real stage 1 is a decision model (`agent-lifecycle.md` §4): one forward
  * pass over the room's box, an answer per named question, "unparseable counts
@@ -37,6 +41,7 @@ export type RunTurn = (entries: Observation[]) => Promise<void> | void;
  * and a placeholder has nothing to record.
  */
 export type Judge = (
+  botId: Id,
   entries: Observation[],
 ) => Promise<Observation[]> | Observation[];
 
@@ -110,7 +115,7 @@ export class InboxLoop {
     // Row 4 is the only row that costs anything, and it costs it here. A tick
     // where the rules settled everything never reaches this line.
     if (settled.judge.length > 0) {
-      acting.push(...(await this.judge(settled.judge)));
+      acting.push(...(await this.judge(botId, settled.judge)));
     }
 
     // §11.4: an entry the chain wall held back still belongs to this bot's

@@ -77,6 +77,9 @@ const SAMPLES = {
   // And the reason a whole sentence is placed inside one: the frame around it says what to do
   // next, and what it wraps is either ours or a host's own words.
   why: 'the weights were not fetched',
+  // The bots a missing model leaves quiet, already joined by `joinList()` for the same reason
+  // `hosts` is: a list's form is this layer's, so the entry receives the phrase.
+  bots: 'Echo and Scout',
   // The room panel's two. `when` is an instant already written in the language's form —
   // `when()` in `catalogue.mjs` is what writes it, exactly as `size()` writes `got`/`all` — and
   // `tag` is the label a person typed on the room, which is theirs and stays as they wrote it.
@@ -823,7 +826,9 @@ test('the window tells nobody which model server it is on', () => {
   // developer". The strips that named an origin (`stage 1 asks <origin>`) went first; the two
   // that spoke when a half was on the kernel's placeholder, or when a named server was
   // refused, went after them. A lookup left behind is the sentence coming back, and a
-  // catalogue entry left behind is the lookup one `t()` away from coming back.
+  // catalogue entry left behind is the lookup one `t()` away from coming back. What replaced
+  // them is a state about the person's own install rather than a report about a half — the
+  // model is not ready, and these bots are quiet — which is the anti-vacuity list below.
   assert.doesNotMatch(source, /ui\.chat\.stage[12]-/, 'the page asks the catalogue nothing about a stage')
   for (const tag of locales()) {
     const stages = Object.keys(catalogueFor(tag).messages).filter((key) => /^ui\.chat\.stage[12]-/.test(key))
@@ -838,8 +843,8 @@ test('the window tells nobody which model server it is on', () => {
   // notice, not the fact: an install whose watch or work half fell back has to stay readable
   // by whoever has to fix it, and stderr is where that reader already is.
   const main = readFileSync(join(HERE, 'main.js'), 'utf8')
-  assert.match(main, /the watch server was not used/, 'a stage 1 that refused says so on stderr')
-  assert.match(main, /the work server was not used/, 'and so does a stage 2')
+  assert.match(main, /a bot has no watch model/, 'a bot left without stage 1 says so on stderr')
+  assert.match(main, /a bot has no words model/, 'and so does one left without stage 2')
 
   // Anti-vacuity: the notices a person *can* act on are still drawn and still shipped, so the
   // check above is a deletion rather than a notice area that emptied out — a store that would
@@ -848,6 +853,9 @@ test('the window tells nobody which model server it is on', () => {
     ['<StoreRefused', 'ui.chat.store-refused'],
     ['<WeightsArriving', 'ui.chat.weights-arriving'],
     ['<WeightsRefused', 'ui.chat.weights-refused'],
+    // The state a person asks about when nobody answers: the room shows the silence and
+    // cannot say why, so this line is the answer, in their language and naming the bots.
+    ['<ModelNotReady', 'ui.chat.model-not-ready'],
   ]) {
     assert.ok(source.includes(drawn), `the page still draws ${drawn}>, rather than leaving the slot empty`)
     assert.ok(source.includes(key), `and its words are the catalogue's (${key})`)
