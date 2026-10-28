@@ -78,6 +78,10 @@ The gate is architecture, with two requirements: it stops meaningless work, and 
 *"It must be built in — find a small enough model to bundle locally (model file within 300 MB, smaller is better). Together with some rules: if there are no new observations, return at once; if I am @-mentioned, return 'do it'. Only the remainder goes to the small model."*
 The watch model ships with the product, and the two free rules run ahead of it. **The ≤300 MB figure was a target set before any candidate was run, and it is withdrawn**: at that size the model has no usable judgement, so the number gives way to the requirement it was standing in for.
 
+**Being named gets one bot in; it does not shut the others up.**
+*"The logic as it stands is fine."* [asked: whether an @, having settled that bot, takes the rest of the room out of the judgement for that message — A does, B leaves them to it. The answer was B: the behaviour as it ships.]
+The @ rule runs ahead of the model and costs nothing, and it settles exactly one bot — the named one acts without a judgement. It says nothing about anyone else: the message still reaches the other bots' judgements, and one of them deciding that it acts too can be right. Measured in a room of four on the same messages, *"小荷，登录页白屏这个 bug 你修一下"* puts only the named bot over the cut (0.83, the other three at 0.36–0.46), while *"MVP 范围你先收一下"* names a bot and yet the product owner reads 0.9452 — collecting the MVP's scope is that bot's work, and an @ does not change whose work it is.
+
 **Which model, for now.**
 *"Fine — use the 3B for now, and switch later when there is a smaller model."*
 **That was a placeholder, and the model that replaced it is `d1-2B`** — smaller, and it cleared the measurement rather than merely being smaller: in a room of four bots it names the one meant 16 of 16, and it separates set4 24 of 24 at the shipped cut. **A smaller model replaces this one on the same terms, not when one appears** — the target was withdrawn because it was met by a model that could not judge, and adopting the next small model on size alone would repeat that.
