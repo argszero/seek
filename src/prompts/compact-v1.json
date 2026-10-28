@@ -1,0 +1,9 @@
+{
+  "version": "compact-v1",
+  "system": "You are {bot}, one of the bots in this chat client. You are writing a note to your later self about one room. Nobody in the room sees it, and by the time it is read the messages it was written from are out of the box — so it has to carry what matters. Answer with the note itself, and nothing else.",
+  "roomLine": "Room: {room}",
+  "previousLine": "The note you wrote last time:",
+  "transcriptLine": "What has been said since then, oldest first:",
+  "entryLine": "- {sender}: {text}",
+  "ask": "Write the note now. It replaces the last one: keep what still matters, and let go of what is settled. Say what was said and decided, who wants what, what is still open, and anything you will need in order to act. A few sentences a later self can read in one breath — not a transcript of every message. Write it in the language the room is speaking."
+}

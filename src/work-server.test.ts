@@ -11,7 +11,7 @@ import { loadWorkArtifact, type WorkArtifact } from './prompts.ts';
 import { parseRoster } from './roster.ts';
 import { runTurn } from './turn.ts';
 import type { Id, Observation } from './types.ts';
-import { workOverServer } from './work-server.ts';
+import { digestOver, workOverServer } from './work-server.ts';
 
 // The shipped artifact, loaded rather than written out here: what this file has to
 // pin is that *that* file is the one the runtime speaks through, and a copy pasted
@@ -603,4 +603,59 @@ test('half a usage block is no report at all, and the half that is there is not 
   // and 0 written is a claim about the answer nobody made.
   assert.equal(record.turn.input_tokens, 0);
   assert.equal(record.turn.output_tokens, 0);
+});
+
+test('the note is written by the same server that speaks, and offers no tool', async () => {
+  const world = makeWorld();
+  const recorder = fakeServer({ content: '对账还坏着；小荷在看重试队列。' });
+  const entries = await entriesOf(world, 'the batch failed at 03:00');
+
+  const digest = digestOver(world.store, world.botA, serverOf(recorder));
+  const body = await digest({
+    botId: world.botA,
+    agentId: world.agentA2,
+    roomId: world.room,
+    delta: entries,
+    previous: undefined,
+  });
+
+  assert.equal(body, '对账还坏着；小荷在看重试队列。');
+
+  const chat = recorder.calls.filter((call) => call.path === '/v1/chat/completions');
+  assert.equal(chat.length, 1);
+
+  // **No tool.** A turn is offered `say` because a room is reached no other way; the
+  // note is a return value, and a model handed the turn's tool here would answer a note
+  // with `say` — which is a message, and the note would be one behind the reader's back.
+  assert.equal(chat[0].body.tools, undefined);
+  const messages = chat[0].body.messages as { role: string; content: string }[];
+  const system = messages.find((one) => one.role === 'system')?.content ?? '';
+  const rest = messages.find((one) => one.role === 'user')?.content ?? '';
+  // Who is writing, and about which room: both by name, because the note is this bot's
+  // and this room's (`docs/host-rulings.md`, "One box per bot").
+  assert.match(system, new RegExp(world.store.data.bots[world.botA]?.name ?? 'A'));
+  assert.match(rest, new RegExp(world.store.room(world.room)?.name ?? world.room));
+  // The observation it was asked about is in the prompt, quoted.
+  assert.match(rest, /the batch failed at 03:00/);
+});
+
+test('a note that comes back empty is refused, and says what it would have cost', async () => {
+  const world = makeWorld();
+  // A model that answers nothing is not a model that says nothing: a note of nothing
+  // would consume the delta it was written from and leave the bot knowing less.
+  const recorder = fakeServer({ content: '   \n' });
+  const entries = await entriesOf(world, 'the batch failed at 03:00');
+
+  const digest = digestOver(world.store, world.botA, serverOf(recorder));
+  await assert.rejects(
+    () =>
+      digest({
+        botId: world.botA,
+        agentId: world.agentA2,
+        roomId: world.room,
+        delta: entries,
+        previous: undefined,
+      }),
+    /came back empty/,
+  );
 });

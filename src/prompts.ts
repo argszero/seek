@@ -933,3 +933,142 @@ function assertWorkArtifact(value: unknown, source: string): WorkArtifact {
 function placeholdersIn(template: string): string[] {
   return [...template.matchAll(/\{(\w+)\}/g)].map((match) => match[1]);
 }
+
+/**
+ * One versioned note prompt: what the work agent is asked when a room's delta has
+ * outgrown itself (`compact.ts`, `RoomCompactor`).
+ *
+ * A second artifact rather than a variant of `work-v2`, because it answers a different
+ * question. A turn's prompt tells the model that the only way into a room is a `say`
+ * call and offers it the tool; the note is written for nobody in the room to read, it
+ * offers no tool, and what it produces is a `Memory` row rather than a message. Folded
+ * together, either one would have to say "except when" about the other's first line.
+ */
+export interface CompactArtifact {
+  /** The identity this file is. `compact-v1` is the shipped one. */
+  version: string;
+  /** The head of the text, before the rest. Filled with `{bot}`. */
+  system: string;
+  /** `Room: {room}` — which conversation the note is about. */
+  roomLine: string;
+  /** What stands over the note written last time, when there is one. */
+  previousLine: string;
+  /** What stands over this delta, when there is one. */
+  transcriptLine: string;
+  /** One observation, as `{sender}` and `{text}`. */
+  entryLine: string;
+  /** What the model is asked to do, after the observations. */
+  ask: string;
+}
+
+/** What a note is written from: who writes it, about which room, from what. */
+export interface CompactValues {
+  /** The bot's display name. */
+  bot: string;
+  /** The room's name, or its id when nobody named it. */
+  room: string;
+  /** The note this one replaces, when the room already has one. */
+  previous?: string;
+  /** The observations being folded in, **oldest first**. */
+  entries: { sender: string; text: string }[];
+}
+
+/** The shipped note artifact's location, beside this module. */
+export function shippedCompactPromptPath(): URL {
+  return new URL('./prompts/compact-v1.json', import.meta.url);
+}
+
+/**
+ * Read the note artifact off disk.
+ *
+ * Throws rather than falling back, for `loadWorkArtifact`'s reason: a built-in prompt
+ * substituted behind a missing file is a question nobody wrote down, asked under the
+ * version number of one that was. The caller is `compact.ts`, which turns a throw into
+ * "this compaction did not run" and backs off rather than retrying every tick — so a
+ * malformed file costs a room its notes, never its replies.
+ */
+export function loadCompactArtifact(
+  source: string | URL = shippedCompactPromptPath(),
+): CompactArtifact {
+  let raw: string;
+  try {
+    raw = readFileSync(source, 'utf8');
+  } catch (error) {
+    throw new Error(
+      `the note prompt artifact could not be read from ${String(source)}: ` +
+        `${(error as Error).message} — the prompt is a file, and a note written without ` +
+        'one is a note nobody asked for',
+    );
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    throw new Error(
+      `the note prompt artifact at ${String(source)} is not JSON: ${(error as Error).message}`,
+    );
+  }
+  const file = parsed as Partial<CompactArtifact>;
+  const strings: (keyof CompactArtifact)[] = [
+    'version',
+    'system',
+    'roomLine',
+    'previousLine',
+    'transcriptLine',
+    'entryLine',
+    'ask',
+  ];
+  for (const name of strings) {
+    const value = file[name];
+    if (typeof value !== 'string' || value === '') {
+      throw new Error(
+        `the note prompt artifact at ${String(source)} has no ${name}: every field here is ` +
+          'a line the note is assembled from, and a missing one is a sentence the model ' +
+          'never reads',
+      );
+    }
+  }
+  return {
+    version: file.version as string,
+    system: file.system as string,
+    roomLine: file.roomLine as string,
+    previousLine: file.previousLine as string,
+    transcriptLine: file.transcriptLine as string,
+    entryLine: file.entryLine as string,
+    ask: file.ask as string,
+  };
+}
+
+/**
+ * The note's two halves, in the file's own order.
+ *
+ * Two strings rather than one, because a chat model takes messages: the system block
+ * describes who is writing, and the rest is one user turn holding the room, the old
+ * note, this delta and the ask. One pass over the templates, as everywhere else —
+ * a message that happens to contain `{room}` is not a substitution site.
+ *
+ * The old note is left out entire when the room has none, header included: a header
+ * standing over nothing reads as a note that was written and came back empty.
+ */
+export function assembleCompactPrompt(
+  artifact: CompactArtifact,
+  values: CompactValues,
+): { version: string; system: string; rest: string } {
+  const out: string[] = [
+    fill(artifact.roomLine, { room: values.room }),
+    '\n\n',
+  ];
+  if (values.previous !== undefined && values.previous !== '') {
+    out.push(artifact.previousLine, '\n', values.previous, '\n\n');
+  }
+  out.push(artifact.transcriptLine, '\n');
+  for (const entry of values.entries) {
+    out.push(fill(artifact.entryLine, { sender: entry.sender, text: entry.text }), '\n');
+  }
+  out.push('\n', artifact.ask);
+  return {
+    version: artifact.version,
+    system: fill(artifact.system, { bot: values.bot }),
+    rest: out.join(''),
+  };
+}
