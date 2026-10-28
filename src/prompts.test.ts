@@ -8,8 +8,10 @@ import { test } from 'node:test';
 import { deliver } from './delivery.ts';
 import { makeWorld, type World } from './fixtures.ts';
 import {
+  assembleCompactPrompt,
   assemblePrompt,
   assembleWorkPrompt,
+  loadCompactArtifact,
   loadPromptArtifact,
   loadWorkArtifact,
   shippedPromptPath,
@@ -489,4 +491,58 @@ test('a part that quotes a card field depends on exactly that field', async () =
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test('the note artifact is asked about one room, and says the room by its name', () => {
+  const artifact = loadCompactArtifact();
+  assert.equal(artifact.version, 'compact-v1');
+
+  const first = assembleCompactPrompt(artifact, {
+    bot: '小荷',
+    room: '支付组',
+    entries: [
+      { sender: '邵安清', text: '对账任务今天凌晨跑失败了' },
+      { sender: '小荷', text: '我看一下重试队列' },
+    ],
+  });
+
+  // The bot's name is in the system block, because a note written by "a bot" is not
+  // the note this bot would have written — the same fact the watch question carries.
+  assert.match(first.system, /小荷/);
+  // The room and every observation, oldest first: a note read out of order is a
+  // different conversation.
+  assert.match(first.rest, /支付组/);
+  const ask = first.rest.indexOf('对账任务今天凌晨跑失败了');
+  const answer = first.rest.indexOf('我看一下重试队列');
+  assert.ok(ask !== -1 && answer > ask, 'the observations are in the order they arrived');
+  // Nothing is said about a previous note when the room has none: a header standing
+  // over nothing reads as a note that came back empty.
+  assert.doesNotMatch(first.rest, new RegExp(artifact.previousLine));
+
+  const second = assembleCompactPrompt(artifact, {
+    bot: '小荷',
+    room: '支付组',
+    previous: '对账在对账组，还没修好。',
+    entries: [{ sender: '邵安清', text: '今天能修完吗' }],
+  });
+  assert.match(second.rest, /对账在对账组，还没修好。/);
+  assert.match(second.rest, new RegExp(artifact.previousLine));
+});
+
+test('a note artifact missing a line is refused rather than half assembled', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'seek-note-prompt-'));
+  const loose = join(dir, 'compact.json');
+  await writeFile(
+    loose,
+    JSON.stringify({
+      version: 'compact-v1',
+      system: 'You are {bot}.',
+      roomLine: 'Room: {room}',
+      previousLine: 'Before:',
+      transcriptLine: 'Since then:',
+      entryLine: '- {sender}: {text}',
+      // `ask` is missing.
+    }),
+  );
+  assert.throws(() => loadCompactArtifact(loose), /no ask/);
 });

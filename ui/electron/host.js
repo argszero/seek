@@ -346,6 +346,26 @@ function decideOver(bound) {
 }
 
 /**
+ * The same table for the note a room is compacted into, and one difference that matters:
+ * a bot with no writer refuses rather than answering with nothing.
+ *
+ * A turn that says nothing is a legal turn — woken, silent, on the ledger. A note that
+ * says nothing is not: it would consume the observations it was written from and leave the
+ * bot knowing less than before, which is why `digestOver` throws on an empty answer. The
+ * throw reaches `RoomCompactor`, which records the failure, backs off until the delta grows
+ * and writes nothing — and no note is better than an empty one.
+ */
+function summariseOver(writers) {
+  return (input) => {
+    const own = writers.get(input.botId);
+    if (own === undefined) {
+      throw new Error(`no note writer is bound for ${input.botId}`);
+    }
+    return own(input);
+  };
+}
+
+/**
  * Why a model name with no server beside it is refused.
  *
  * One sentence in one place, because it is one rule: a model name is a fact about the
@@ -357,6 +377,23 @@ function decideOver(bound) {
 const WORK_MODEL_WITHOUT_SERVER =
   'SEEK_WORK_MODEL names a model with no SEEK_WORK_SERVER: which model writes the words ' +
   'is a fact about the server that serves it, and a name on its own says nothing to ask it of';
+
+/**
+ * How many new observations a room may pile up before its box is compacted.
+ *
+ * The host settled it in these words on 2026-10-28 — 「超过20条新消息，就压缩」 — and it is a
+ * count and not an age, because what has to be bounded is how much a later judgement is
+ * asked to read. `RoomCompactor.crosses` fires at `>=`, so the twentieth pending observation
+ * is the one that starts a note, which is what "more than twenty" means when the twentieth
+ * has already arrived.
+ *
+ * It bounds the judgement's input and nothing else: the work agent still opens its whole box
+ * (`turn.ts` hands it the entries it was woken for, and §"The work agent is handed the whole
+ * box" is a separate ruling). What the number changes is that the box stops growing forever —
+ * before it, a room with a history woke every bot in it, because every judgement read the
+ * whole conversation and found itself addressed by something in it.
+ */
+const NOTE_AFTER = 20;
 
 /**
  * Who writes what the bot says: the kernel's placeholder, or the work model over the
@@ -405,7 +442,13 @@ async function stageTwoFor(mods, store, standing, options) {
   // turn has said what the bot's model would have said, and standing up a server to say it
   // is a fake measuring the fake.
   if (typeof options?.decide === 'function') {
-    return { decide: options.decide, server: null, refusal: null, quiet: [] };
+    return {
+      decide: options.decide,
+      summarise: options.summarise,
+      server: null,
+      refusal: null,
+      quiet: [],
+    };
   }
 
   const server =
@@ -423,36 +466,55 @@ async function stageTwoFor(mods, store, standing, options) {
   // Nothing named, so no bot has words: every turn this store wakes runs and says nothing.
   // The turn is still on the ledger, which is what "woken and silent" reads as.
   if (server === undefined) {
-    return { decide: undefined, server: null, refusal: null, quiet: standing.map(nameOf) };
+    return {
+      decide: undefined,
+      summarise: undefined,
+      server: null,
+      refusal: null,
+      quiet: standing.map(nameOf),
+    };
   }
 
   // One binding per bot, for the reason stage 1 has one: the row whose `model` claim is
   // checked against this server belongs to one bot, and a turn is filled from that bot's
   // own name and card (`work-server.ts`, `valuesOf`).
   const bound = new Map();
+  const writers = new Map();
   const quiet = [];
   const refusals = [];
   for (const bot of standing) {
     try {
+      const endpoint = {
+        baseUrl: server,
+        ...(model === undefined ? {} : { model }),
+        ...(workApiKeyOf(options) === undefined ? {} : { apiKey: workApiKeyOf(options) }),
+        // Stage 2 reads this for nothing — `work-server.ts` takes the words from its own
+        // artifact (`src/prompts/work-v1.json`) and uses the server for what it reports
+        // (`/props`, or `/v1/models` on a hosted one — never both) and the chat call. It is
+        // here because `LlamaServer` requires it, and passing a made-up one would be a second
+        // artifact nobody measured.
+        artifact: mods.prompts.loadPromptArtifact(),
+        ...(options?.workFetch === undefined ? {} : { fetch: options.workFetch }),
+      };
       bound.set(
         bot.id,
         await mods.workServer.workOverServer(
           store,
           bot.id,
-          {
-            baseUrl: server,
-            ...(model === undefined ? {} : { model }),
-            ...(workApiKeyOf(options) === undefined ? {} : { apiKey: workApiKeyOf(options) }),
-            // Stage 2 reads this for nothing — `work-server.ts` takes the words from its own
-            // artifact (`src/prompts/work-v1.json`) and uses the server for what it reports
-            // (`/props`, or `/v1/models` on a hosted one — never both) and the chat call. It is
-            // here because `LlamaServer` requires it, and passing a made-up one would be a second
-            // artifact nobody measured.
-            artifact: mods.prompts.loadPromptArtifact(),
-            ...(options?.workFetch === undefined ? {} : { fetch: options.workFetch }),
-          },
+          endpoint,
           { prompt: mods.prompts.loadWorkArtifact() },
         ),
+      );
+      // The other thing this half writes: the note a room's box is compacted into. It is
+      // bound beside the turn rather than after it, on the same server and the same bot,
+      // because `docs/host-rulings.md` gives the writing to the half that works — and a
+      // note written by a model this bot does not speak through would be another agent's
+      // summary of a conversation it was not in.
+      writers.set(
+        bot.id,
+        mods.workServer.digestOver(store, bot.id, endpoint, {
+          prompt: mods.prompts.loadCompactArtifact(),
+        }),
       );
     } catch (error) {
       quiet.push(nameOf(bot));
@@ -462,6 +524,7 @@ async function stageTwoFor(mods, store, standing, options) {
 
   return {
     decide: decideOver(bound),
+    summarise: summariseOver(writers),
     server,
     refusal: refusals.length === 0 ? null : refusals.join('\n'),
     quiet,
@@ -589,9 +652,17 @@ async function openHost(storeFile, options = {}) {
   // A half nobody bound is left out rather than passed as nothing: the kernel's own default
   // is the honest one for a missing half — a judgement that acts on nothing and a turn that
   // says nothing — and both are what a bot with no model does.
+  //
+  // **The note is the one line a room gets.** The host settled it in these words on
+  // 2026-10-28 — 「超过20条新消息，就压缩」 — and it is a count rather than an age, because
+  // what the box has to bound is how much a later judgement can be asked to read. Without a
+  // writer the line is inert: `RoomCompactor.due()` answers false before it counts anything,
+  // so a bot with no model still fills its box and still reads it.
   const kernel = new mods.kernel.Kernel(store, {
     ...(stage2.decide === undefined ? {} : { decide: stage2.decide }),
     ...(stage1.judge === undefined ? {} : { judge: stage1.judge }),
+    ...(stage2.summarise === undefined ? {} : { summarise: stage2.summarise }),
+    compactLines: { maxObservations: NOTE_AFTER },
   })
   // Nothing is woken by starting: this arms the one comparator for rows that came due
   // (`§12 (c)`), and a delivery is what wakes a bot.

@@ -735,3 +735,85 @@ test('a bot the store stamped with the older spelling is still deleted when the 
     await rm(dir, { recursive: true, force: true })
   }
 })
+
+/**
+ * The note a room is compacted into, through the interface's own write path.
+ *
+ * The host settled the line on 2026-10-28 — 「超过20条新消息，就压缩」 — and what this test
+ * measures is that the number reaches the kernel at all: `RoomCompactor.due()` answers false
+ * before it counts anything when no writer is bound, so before this wiring existed a room's
+ * box grew forever and every judgement read the whole conversation.
+ *
+ * The writer is handed in the way `judge` and `decide` are — a function that says what the
+ * bot's model would have said — because what is being measured is the interface's wiring and
+ * not a model. What it returns is deliberately recognisable: a test that only counted the
+ * write would pass with the delta's own text written back.
+ */
+async function worldWithNote(note) {
+  const dir = await mkdtemp(join(tmpdir(), 'seek-ui-note-'))
+  const storeFile = join(dir, 'seek.json')
+  const store = new SeekStore(emptyData(), storeFile)
+  const scene = seedOneRoom(store)
+  applyRoster(store, [
+    { bot: 'Echo', role: 'watch', tools: [] },
+    { bot: 'Echo', role: 'work', tools: ['say'] },
+  ])
+  await store.save()
+
+  const asked = []
+  const host = await openHost(storeFile, {
+    judge: stubJudge,
+    decide: stubDecide,
+    summarise: async (input) => {
+      asked.push(input)
+      return note
+    },
+  })
+  return {
+    host,
+    scene,
+    asked,
+    async done() {
+      closeHost(host)
+      await rm(dir, { recursive: true, force: true })
+    },
+  }
+}
+
+test('a room of more than twenty new observations is compacted into a note', async () => {
+  const w = await worldWithNote('the batch is still failing; nobody has looked at the queue')
+  try {
+    for (let i = 1; i <= 21; i += 1) {
+      await postMessage(w.host, { roomId: w.scene.room, text: `message ${i}` })
+    }
+
+    assert.equal(w.asked.length, 1, 'one compaction ran, and it ran once')
+    const digest = w.host.store
+      .memoriesOf(w.asked[0].agentId)
+      .filter((row) => row.level === 'room_digest')
+    assert.equal(digest.length, 1, 'the room has exactly one note')
+    assert.equal(digest[0].room_id, w.scene.room)
+    assert.equal(digest[0].body, 'the batch is still failing; nobody has looked at the queue')
+    // The consumed-to point is the note's own claim about how much it covers, and it is
+    // what makes the box stop growing: the delta is read from after it (`deltaFor`).
+    assert.ok(digest[0].consumed_to !== undefined && digest[0].consumed_to !== '')
+  } finally {
+    await w.done()
+  }
+})
+
+test('a room of a few observations has no note, and none is invented', async () => {
+  const w = await worldWithNote('a note nobody should have asked for')
+  try {
+    for (let i = 1; i <= 5; i += 1) {
+      await postMessage(w.host, { roomId: w.scene.room, text: `message ${i}` })
+    }
+    assert.equal(w.asked.length, 0, 'five observations are under the line')
+    const digests = Object.values(w.host.store.data.memories ?? {}).filter(
+      (row) => row.level === 'room_digest',
+    )
+    assert.equal(digests.length, 0, 'and no empty note stands in for one')
+  } finally {
+    await w.done()
+  }
+})

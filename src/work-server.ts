@@ -60,11 +60,15 @@ import {
   type ToolCall,
 } from './llama.ts';
 import {
+  assembleCompactPrompt,
   assembleWorkPrompt,
+  loadCompactArtifact,
   loadWorkArtifact,
+  type CompactArtifact,
   type WorkArtifact,
   type WorkValues,
 } from './prompts.ts';
+import type { Summarise, SummariseInput } from './compact.ts';
 import { requireServedModel } from './served.ts';
 import type { SeekStore } from './store.ts';
 import type { Decide, HandedEntry, TurnContext } from './turn.ts';
@@ -390,5 +394,57 @@ function entryOf(
   return {
     sender: store.principal(message.sender_id)?.name ?? message.sender_id,
     text: message.text,
+  };
+}
+
+/**
+ * The other thing the half that writes writes: the room's note.
+ *
+ * `compact.ts` owns *when* a delta has outgrown itself and how the note and its
+ * consumed-to point land together; this is the writer it hands in (`Summarise`), bound
+ * to the same server and the same bot as the turns, because `docs/host-rulings.md`
+ * settles that only the half that can write keeps the box. The judgement reads the
+ * note and never writes one.
+ *
+ * **No tool is offered.** A turn is offered `say` because a room is reached no other
+ * way; the note is reached no other way either — it is a return value, not a call. A
+ * model handed the turn's tool here would answer a note with `say`, and the note would
+ * be a message.
+ *
+ * **An empty answer throws rather than becoming an empty note.** `RoomCompactor` turns
+ * a throw into "this compaction did not run" and waits for the delta to grow before
+ * trying again, which is the honest outcome: a note of nothing would consume the delta
+ * and leave the later self with less than it had.
+ */
+export function digestOver(
+  store: SeekStore,
+  botId: Id,
+  server: LlamaServer,
+  options: { prompt?: CompactArtifact } = {},
+): Summarise {
+  const artifact = options.prompt ?? loadCompactArtifact();
+  return async (input: SummariseInput): Promise<string> => {
+    const botName = store.data.bots[botId]?.name ?? botId;
+    const assembled = assembleCompactPrompt(artifact, {
+      bot: botName,
+      room: store.room(input.roomId)?.name ?? input.roomId,
+      ...(input.previous === undefined ? {} : { previous: input.previous.body }),
+      entries: input.delta.map((entry) => entryOf(store, botName, entry)),
+    });
+
+    const answer = await chatTurn(server, [
+      { role: 'system', content: assembled.system },
+      { role: 'user', content: assembled.rest },
+    ]);
+
+    const body = answer.content.trim();
+    if (body === '') {
+      throw new Error(
+        `the note for room ${input.roomId} came back empty: a note of nothing would ` +
+          `consume ${input.delta.length} observations and leave the bot knowing less than ` +
+          'before it wrote one',
+      );
+    }
+    return body;
   };
 }
