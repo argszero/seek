@@ -103,7 +103,7 @@ The box is the bot's and not a room's, so the judgement input is per bot and is 
 
 **Compaction is never run per message, and it is the judgement that says when one is due.**
 Asked once whether compaction runs when the delta crosses a threshold or on every new message, the host answered *"A"* — anything but every message; when he later settled the three roads out of a judgement, one of them is *"2. (the observations have piled up and need compacting) call the work agent"*.
-Nothing compacts per message, and a judgement never waits for a compaction. When one is due is the judgement's to say: it reads the box, and one of its three answers is that the observations have piled up and the agent that works should compact them. Compaction is single-flight: at most one runs at a time, and it commits the new summary and the point it consumed to atomically, so a concurrent arrival is either inside the new summary or still in the delta, never lost. **Compaction is a runtime action and not a turn** — a room that never needs a word said still has to be compactable.
+Nothing compacts per message, and a judgement never waits for a compaction. When one is due is the judgement's to say: it reads the box, and one of its three answers is that the observations have piled up and the agent that works should compact them. Compaction is single-flight: at most one runs at a time, and it commits the new summary and the point it consumed to atomically, so a concurrent arrival is either inside the new compaction or still among the observations after it, never lost. **Compaction is a runtime action and not a turn** — a room that never needs a word said still has to be compactable.
 
 ---
 
@@ -147,7 +147,7 @@ What the rest of the design calls the box is something the bot keeps on the disk
 
 **Two operations: write an observation, read the observations.**
 *"No — watch cannot see the files; the files are wrapped inside the box. watch does not even know the box holds two parts, a compaction and the observations after it. The box offers only a write and a read. On a read it finds the last compaction and the observations after it and hands them over together."*
-That is the whole surface. Whoever reads does not ask for a compaction or for a delta: the box finds the last one and hands it over with whatever came after, so how it is stored is the box's business and never the caller's.
+That is the whole surface. Whoever reads does not ask for the compaction and the observations separately: the box finds the last one and hands it over with whatever came after, so how it is stored is the box's business and never the caller's.
 
 **Two ways to write: append, and overwrite.**
 *"No — the box takes an observation two ways: one is append, one is overwrite. The work agent overwrites to put a new compaction into the box."*
