@@ -134,14 +134,20 @@ function serverOf(recorder: { fetch: Fetcher }): LlamaServer {
   return { baseUrl: 'http://127.0.0.1:8080', artifact: ARTIFACT, fetch: recorder.fetch };
 }
 
-/** The prompt a judgement continues from, as the kernel would have assembled it. */
+/**
+ * The prompt a judgement continues from, as the kernel would have assembled it —
+ * head included, because the transport splits the text at that head rather than at
+ * the template it came from.
+ */
 const PROMPT: WatchPrompt = {
   version: 'watch-v1',
+  system: ARTIFACT.system,
   text: `${ARTIFACT.system}${ARTIFACT.afterSystem}Message: the batch failed\nDoes this room need you to act? Answer act or ignore. `,
 };
 
 const SKELETON: WatchPrompt = {
   version: 'watch-v1',
+  system: ARTIFACT.system,
   text: `${ARTIFACT.system}${ARTIFACT.afterSystem}Does this room need you to act? Answer act or ignore. `,
 };
 
@@ -173,7 +179,11 @@ test('an assembly from another artifact is refused rather than read', async () =
   await assert.rejects(
     () =>
       model.read({
-        prompt: { version: 'watch-v1', text: 'a text nobody assembled from this artifact' },
+        prompt: {
+          version: 'watch-v1',
+          system: 'You watch another room of a payments team.',
+          text: 'a text nobody assembled from this artifact',
+        },
         state: {} as never,
         options: TOKENS,
         mask: { act: { token: 'act', id: 1 }, ignore: { token: 'ignore', id: 2 } },
@@ -642,6 +652,7 @@ test('a picture is refused when the turn did not come from this artifact', async
       model.read({
         prompt: {
           version: 'watch-v1',
+          system: ARTIFACT.system,
           text: `${ARTIFACT.system}${ARTIFACT.afterSystem}Message: the batch failed\n`,
         },
         state: { read: 1, total: 1, unread: 0, delta: [], media: [SHOT] } as never,

@@ -20,9 +20,12 @@ import {
 import type { Id } from './types.ts';
 import { watchAs, type Tokeniser, type WatchInput, type WatchReading } from './watch.ts';
 
-const SYSTEM =
-  'You are the ops bot of a payments team. Your job: catch incidents and answer ' +
-  'questions the team asks. You stay quiet otherwise.';
+// The head as the shipped file writes it, with the bot's own name in place: this
+// is the sentence the host refused on 2026-10-28, when it described an ops bot of a
+// payments team rather than whichever bot the judgement was for.
+const SYSTEM = (bot: string) =>
+  `You are ${bot}, one of the bots in this chat client. You answer for what you ` +
+  'yourself would do in the room, and for nothing anybody else would do.';
 const QUESTION = 'Do you need to do something about this message? Answer act or ignore.';
 
 /** The dispatched stub tokeniser: one id per space-delimited chunk. */
@@ -91,15 +94,38 @@ test('the shipped artifact is the shape that was measured', () => {
   // Verbatim, and in this order: system, the room's memory, the message, the
   // question — the last of them followed by the space the option is appended at.
   assert.equal(
-    assemblePrompt(artifact, { summary: 'a release is being arranged', texts: ['deploy is red'] }),
-    `${SYSTEM}\n\nRoom memory: a release is being arranged\n\nMessage: deploy is red\n${QUESTION} `,
+    assemblePrompt(artifact, {
+      bot: 'Echo',
+      summary: 'a release is being arranged',
+      texts: ['deploy is red'],
+    }),
+    `${SYSTEM('Echo')}\n\nRoom memory: a release is being arranged\n\nMessage: deploy is red\n${QUESTION} `,
   );
   // No summary yet is a room whose first judgement is cold, not a room with an
   // empty memory: the part is skipped with its separator, not rendered blank.
   assert.equal(
-    assemblePrompt(artifact, { texts: ['deploy is red'] }),
-    `${SYSTEM}\n\nMessage: deploy is red\n${QUESTION} `,
+    assemblePrompt(artifact, { bot: 'Echo', texts: ['deploy is red'] }),
+    `${SYSTEM('Echo')}\n\nMessage: deploy is red\n${QUESTION} `,
   );
+});
+
+test('two bots are asked two different questions, and a card that says nothing stays out', () => {
+  // The defect this replaced: every bot in an organization was handed one fixed head
+  // — an ops bot of a payments team, whoever it was — so four bots read the same words
+  // and answered alike, and a room either woke all of them or none.
+  const artifact = loadPromptArtifact();
+  const texts = ['大家讨论一下这个app做什么'];
+
+  const echo = assemblePrompt(artifact, { bot: 'Echo', texts });
+  const xiaoli = assemblePrompt(artifact, { bot: '小李', position: '产品经理', texts });
+  assert.notEqual(echo, xiaoli, 'who is asked is part of the question');
+  assert.ok(echo.includes('You are Echo,'), 'the first line names the bot being asked');
+  assert.ok(xiaoli.includes('You are 小李,'));
+
+  // The position is a line of its own, and only when the card says one: a card that
+  // says nothing is asked the same question without an empty sentence in the middle.
+  assert.ok(xiaoli.includes('\n\nWhat you do here: 产品经理.\n\n'));
+  assert.equal(echo.includes('What you do here'), false);
 });
 
 test('the mask is measured on an assembly that ends where every assembly ends', () => {
@@ -110,8 +136,12 @@ test('the mask is measured on an assembly that ends where every assembly ends', 
   // The skeleton is the same text with nothing in the box. Its last character is
   // the one an option is appended after, so the ids read there are the ids a full
   // room reads its answer at.
-  assert.equal(skeleton.text, `${SYSTEM}\n\n${QUESTION} `);
+  // No name: the skeleton is where the question ends, and who is asked only moves
+  // the head of the text, never its last token.
+  assert.equal(skeleton.text, `${SYSTEM('')}\n\n${QUESTION} `);
   const full = assemblePrompt(artifact, {
+    bot: 'Echo',
+    position: '研发',
     summary: 'anything at all',
     texts: ['one', 'two', 'three'],
   });
@@ -124,6 +154,7 @@ test('a room message cannot write the front of its own prompt', () => {
   // never had, or fill the question slot.
   const artifact = loadPromptArtifact();
   const text = assemblePrompt(artifact, {
+    bot: 'Echo',
     summary: 'quiet',
     texts: ['{summary} and {text} are what this line says'],
   });

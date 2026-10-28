@@ -734,6 +734,34 @@ test('two bots in one room keep separate heads', async () => {
   );
 });
 
+test('two bots are asked two different questions, and the store says who they are', async () => {
+  // The defect this replaces: the head was one fixed sentence about the ops bot of a
+  // payments team, whoever was being asked — so four bots in one room read the same
+  // words and answered alike, and a room either woke all of them or none of them.
+  const world = makeWorld();
+  world.store.data.bots[world.botA].position = 'the one who answers about servers';
+  say(world, ['everyone, what should this app be?']);
+
+  async function askedOf(botId: Id): Promise<string> {
+    const { model, seen } = stub({ probabilities: { act: 0.7, ignore: 0.3 } });
+    await watchAs(world.store, botId, model, { window: 10, tokeniser: makeTokeniser() })(
+      await world.store.drain(botId),
+    );
+    return seen[0].prompt.text;
+  }
+
+  const forA = await askedOf(world.botA);
+  const forB = await askedOf(world.botB);
+  assert.notEqual(forA, forB, 'who is asked is part of the question');
+  assert.ok(forA.includes('You are A,'), 'the name a person gave it, in the head');
+  assert.ok(forB.includes('You are B,'));
+
+  // The card's position is a line of its own, and only for a bot whose card says one:
+  // a card that says nothing is asked the same question without a blank in the middle.
+  assert.ok(forA.includes('What you do here: the one who answers about servers.'));
+  assert.equal(forB.includes('What you do here'), false);
+});
+
 test('a runtime built again reads its first judgement cold', async () => {
   const world = makeWorld();
   say(world, ['one', 'two']);
@@ -794,12 +822,14 @@ test('no artifact and no cut given means the shipped file and its 0.600', async 
 
   const at = await decideAt(0.6);
   assert.equal(at.asked.prompt.version, 'watch-v1', 'the shipped version, not a literal in here');
+  // The head names the bot this judgement is for, and this world's bot has a card:
+  // the runtime fills both in from the store rather than from a sentence in the file.
+  assert.match(at.asked.prompt.system, /^You are .+, one of the bots in this chat client\./);
   assert.equal(
     at.asked.prompt.text,
-    'You are the ops bot of a payments team. Your job: catch incidents and answer ' +
-      'questions the team asks. You stay quiet otherwise.\n\nMessage: deploy is red\n' +
+    `${at.asked.prompt.system}\n\nMessage: deploy is red\n` +
       'Do you need to do something about this message? Answer act or ignore. ',
-    'the measured shape, assembled by the runtime from the file',
+    'the measured shape, with this bot named in its head',
   );
   assert.equal(at.acting.length, 1, 'exactly at the shipped cut, and the cut is inclusive');
 

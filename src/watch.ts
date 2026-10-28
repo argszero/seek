@@ -77,7 +77,13 @@
 
 import { buildBox, type BoxOptions, type RoomBox } from './box.ts';
 import type { Judge } from './inbox.ts';
-import { assemblePrompt, loadPromptArtifact, skeletonOf, type PromptArtifact } from './prompts.ts';
+import {
+  assemblePrompt,
+  loadPromptArtifact,
+  skeletonOf,
+  systemOf,
+  type PromptArtifact,
+} from './prompts.ts';
 import type { SeekStore } from './store.ts';
 import type { Id, Observation, Verdict } from './types.ts';
 
@@ -95,6 +101,16 @@ import type { Id, Observation, Verdict } from './types.ts';
 export interface WatchPrompt {
   /** The artifact's identity. The operating point names this string. */
   version: string;
+  /**
+   * The head this text begins with, as it was filled in.
+   *
+   * **Filled in, not the file's template.** The head names the bot being asked, and the
+   * server has to be handed that same line twice: once as the chat template's system
+   * message, and once as the prefix to split the assembly at (`llama.ts` refuses a text
+   * that does not begin with it). Carrying the template instead would make every bot's
+   * judgement look assembled from another artifact.
+   */
+  system: string;
   /** The question and its framing, verbatim. */
   text: string;
 }
@@ -380,6 +396,17 @@ export function watchAs(
   // threshold belonged to a question it is no longer asking.
   const artifact = options.prompt ?? loadPromptArtifact();
   const point = resolveOperatingPoint(artifact, options.operatingPoint);
+  // **Who is being asked.** One `watchAs` is one bot, and the question put to it names
+  // that bot rather than describing some other one: without this every bot in an
+  // organization was handed the same head and answered the same way, so a room of four
+  // either woke all four or none. The name is the one a person gave the bot, and a bot
+  // with none is asked under its id, which is what every other reading in the store
+  // calls it (`snapshot.js`). The position is quoted only when the card says one.
+  const who = store.principal(botId);
+  const given = who !== undefined && 'name' in who ? who.name : undefined;
+  const botName = typeof given === 'string' && given !== '' ? given : botId;
+  const declared = who !== undefined && 'position' in who ? who.position : undefined;
+  const position = typeof declared === 'string' && declared !== '' ? declared : undefined;
   // Measured once, and measured on the assembly's *end*: `skeletonOf` is the same
   // text with no summary and no entries, and it ends where every real assembly ends
   // (the artifact's last part is unconditional), so these are the ids the answer is
@@ -447,7 +474,10 @@ export function watchAs(
       for (const message of store.messagesOf(roomId)) bodies.set(message.id, message.text);
       const ask: WatchPrompt = {
         version: artifact.version,
+        system: systemOf(artifact, { bot: botName }),
         text: assemblePrompt(artifact, {
+          bot: botName,
+          ...(position === undefined ? {} : { position }),
           ...(state.summary === undefined ? {} : { summary: state.summary }),
           texts: [...state.delta].reverse().map((entry) => textOf(entry, bodies)),
         }),
