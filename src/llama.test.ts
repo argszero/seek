@@ -1,785 +1,501 @@
 import assert from 'node:assert/strict';
-import { Buffer } from 'node:buffer';
 import { test } from 'node:test';
 
-import { deliver } from './delivery.ts';
-import { makeWorld } from './fixtures.ts';
 import {
-  bindOverServer,
+  chatTurn,
   llamaWatchModel,
-  requireServerShape,
-  strip,
+  requireChatShape,
+  requireDeclaredModel,
+  requireWatchShape,
   type Fetcher,
   type LlamaServer,
 } from './llama.ts';
-import type { PromptArtifact } from './prompts.ts';
-import { watchAs, type OptionTokens, type WatchPrompt } from './watch.ts';
-
-// The artifact the transport is bound to. Its head is what splits the system message
-// from the user turn, and its trailing space is the boundary an option is appended
-// at — the same two facts the shipped `watch-v1.json` states.
-const ARTIFACT: PromptArtifact = {
-  version: 'watch-v1',
-  system: 'You watch one room of a payments team.',
-  afterSystem: '\n\n',
-  parts: [
-    { name: 'summary', text: 'Room memory: {summary}', after: '\n\n', when: 'summary' },
-    { name: 'message', text: 'Message: {text}', after: '\n', when: 'always', each: 'observation' },
-    {
-      name: 'question',
-      text: 'Does this room need you to act? Answer act or ignore.',
-      after: ' ',
-      when: 'always',
-    },
-  ],
-  operatingPoint: { threshold: 0.6, measuredOn: 'the suite' },
-};
-
-const TOKENS: OptionTokens = { act: 'act', ignore: 'ignore' };
+import { declaredOptions, type OptionTokens } from './watch.ts';
 
 /** One request the transport made, as the server saw it. */
 interface Call {
+  url: string;
   path: string;
-  body: Record<string, unknown>;
+  method: string;
   headers: Record<string, string>;
+  body: Record<string, unknown>;
 }
+
+/** A vocabulary that makes one word one token, so a cost is countable in a test. */
+function makeVocab(): (content: string) => number[] {
+  const ids = new Map<string, number>();
+  let next = 100;
+  return (content: string): number[] =>
+    (content.match(/\s+|[^\s]+/g) ?? []).map((piece) => {
+      const known = ids.get(piece);
+      if (known !== undefined) return known;
+      ids.set(piece, next);
+      next += 1;
+      return ids.get(piece) as number;
+    });
+}
+
+const TEMPLATE_TAIL = '<|im_end|>\n<|im_start|>assistant\n';
 
 /**
  * A server that answers by path and records what it was asked.
  *
- * A recorder rather than a live socket: what this file has to pin is the request
- * shape and the reading of the answer, and both are visible without a model. The
- * numbers themselves were measured against the real binary
- * (`calibration/vision/server-transport.json`), which no unit test can stand in for.
+ * A recorder rather than a live socket: what this file has to pin is the wire shape and the
+ * refusals, and both are visible without a model. Every number quoted here as a claim about
+ * llama.cpp was measured on the real binary first — the endpoint names, the two model names
+ * in `/props`, `choice` being one half where the cut is 0.600, and `usage.output_tokens: 0`
+ * on a decision.
  */
 function fakeServer(
-  routes: Record<string, (body: Record<string, unknown>) => unknown>,
-  options: { fail?: number; notJson?: boolean } = {},
+  handlers: Record<
+    string,
+    (body: Record<string, unknown>) => { ok?: false; status?: number; payload?: unknown }
+  > = {},
 ): { fetch: Fetcher; calls: Call[] } {
+  const tokenise = makeVocab();
   const calls: Call[] = [];
+  const defaults: Record<string, (body: Record<string, unknown>) => { payload?: unknown }> = {
+    '/props': () => ({
+      payload: {
+        chat_template: '<|im_start|>system\n{{ messages }}',
+        build_info: 'b11946-test',
+        model_alias: 'd1-2B',
+        model_path: '/models/d1-2B-Q8_0.gguf',
+        modalities: { vision: false, video: false, audio: false },
+        default_generation_settings: { n_ctx: 8192 },
+      },
+    }),
+    '/tokenize': (body) => ({ payload: { tokens: tokenise(String(body.content)) } }),
+    '/apply-template': (body) => {
+      const messages = body.messages as { role: string; content: string }[];
+      const system = messages.find((one) => one.role === 'system')?.content ?? '';
+      const user = messages.find((one) => one.role === 'user')?.content ?? '';
+      return { payload: { prompt: `${system}\n\n${user}${TEMPLATE_TAIL}` } };
+    },
+    '/v1/systemone': () => ({
+      payload: {
+        answers: {
+          respond: {
+            type: 'choice',
+            choice: 'act',
+            probabilities: { act: 0.9026, ignore: 0.0974 },
+            confidence: 0.9026,
+          },
+        },
+        usage: { input_tokens: 81, output_tokens: 0 },
+      },
+    }),
+    '/v1/chat/completions': () => ({
+      payload: {
+        choices: [{ message: { content: '', tool_calls: [] } }],
+        usage: { prompt_tokens: 722, completion_tokens: 371 },
+      },
+    }),
+    '/v1/models': () => ({ payload: { data: [{ id: 'deepseek-flash', context_window: 1048576 }] } }),
+  };
+
   const fetcher: Fetcher = async (url, init) => {
     const path = new URL(url).pathname;
-    // `/props` is read with a GET and carries no body, so the recorder has to accept
-    // a request without one rather than parse `undefined`.
     const body =
       init.body === undefined ? {} : (JSON.parse(init.body) as Record<string, unknown>);
-    calls.push({ path, body, headers: init.headers });
-    const handler = routes[path];
-    const payload = handler ? handler(body) : { error: 'no such route' };
-    return {
-      ok: options.fail === undefined,
-      status: options.fail ?? (handler ? 200 : 404),
-      text: async () =>
-        options.notJson ? 'not json at all' : JSON.stringify(payload),
-    };
+    calls.push({ url, path, method: init.method, headers: init.headers, body });
+    const handler = handlers[path] ?? defaults[path];
+    if (handler === undefined) {
+      return { ok: false, status: 404, text: async () => 'no such route' };
+    }
+    const answer = handler(body);
+    if (answer.ok === false) {
+      return { ok: false, status: answer.status ?? 500, text: async () => 'refused' };
+    }
+    return { ok: true, status: 200, text: async () => JSON.stringify(answer.payload ?? {}) };
   };
   return { fetch: fetcher, calls };
 }
 
-/**
- * A vocabulary that makes one word one token.
- *
- * Whitespace runs and words are separate pieces, so appending `act` to a text ending
- * in a newline yields exactly one new token — which is the property an option has to
- * have before it can carry a probability (§4).
- */
-function makeVocab(options: { split?: Record<string, number> } = {}) {
-  const ids = new Map<string, number>();
-  let next = 100;
-  const idOf = (piece: string): number => {
-    const known = ids.get(piece);
-    if (known !== undefined) return known;
-    ids.set(piece, next);
-    next += 1;
-    return ids.get(piece) as number;
-  };
-  return (content: string): number[] => {
-    const pieces = content.match(/\s+|[^\s]+/g) ?? [];
-    const out: number[] = [];
-    for (const piece of pieces) {
-      const split = options.split?.[piece];
-      if (split !== undefined) {
-        for (let index = 0; index < split; index += 1) out.push(idOf(`${piece}#${index}`));
-        continue;
-      }
-      out.push(idOf(piece));
-    }
-    return out;
+function serverOf(recorder: { fetch: Fetcher }, extra: Partial<LlamaServer> = {}): LlamaServer {
+  return { baseUrl: 'http://127.0.0.1:8080', fetch: recorder.fetch, ...extra };
+}
+
+const TOKENS: OptionTokens = declaredOptions();
+
+/** A state and question in the shape `watch.ts` assembles, so a call is realistic. */
+function ask(question = 'Should you respond to this?') {
+  return {
+    prompt: {
+      version: 'test-v1',
+      state: 'You are 小荷, one of the bots in this chat client.\n\n[2026-10-28] 邵安清: 来了',
+      question: {
+        instructions: question,
+        criteria: {
+          act: 'This message is for me — it asks me, or it is my job to handle it',
+          ignore: 'This message is not for me — it is for someone else, or it is just chatter',
+        },
+      },
+    },
+    options: TOKENS,
   };
 }
 
-/** The template this fake model uses: a fixed head and tail, so the ends are stable. */
-const TEMPLATE_HEAD = '<|im_start|>system\n';
-const TEMPLATE_MID = '<|im_end|>\n<|im_start|>user\n';
-const TEMPLATE_TAIL = '<|im_end|>\n<|im_start|>assistant\n';
+// ---------------------------------------------------------------------------
+// The judgement: one forward pass, no text
+// ---------------------------------------------------------------------------
 
-function renderingServer(options: { split?: Record<string, number>; candidates?: unknown[] } = {}) {
-  const tokenise = makeVocab(options.split ? { split: options.split } : {});
-  return fakeServer({
-    '/apply-template': (body) => {
-      const messages = body.messages as { role: string; content: string }[];
-      const system = messages.find((m) => m.role === 'system')?.content ?? '';
-      const user = messages.find((m) => m.role === 'user')?.content ?? '';
-      return { prompt: `${TEMPLATE_HEAD}${system}${TEMPLATE_MID}${user}${TEMPLATE_TAIL}` };
+test('a judgement is one call to the decision endpoint, carrying the state and the question', async () => {
+  const recorder = fakeServer();
+  const reading = await llamaWatchModel(serverOf(recorder)).read(ask());
+
+  assert.deepEqual(
+    recorder.calls.map((call) => call.path),
+    ['/v1/systemone'],
+    'one call, and not a completion with a sampled token after it',
+  );
+  const [call] = recorder.calls;
+  assert.equal(call.method, 'POST');
+  assert.equal(call.body.state, ask().prompt.state, 'the state travels verbatim');
+  assert.deepEqual(call.body.questions, {
+    respond: {
+      type: 'choice',
+      instructions: 'Should you respond to this?',
+      criteria: ask().prompt.question.criteria,
     },
-    '/tokenize': (body) => ({ tokens: tokenise(String(body.content)) }),
-    '/completion': () => ({
-      completion_probabilities: [{ top_logprobs: options.candidates ?? [] }],
+  });
+  assert.deepEqual(reading.probabilities, { act: 0.9026, ignore: 0.0974 });
+  assert.equal(reading.reason, undefined, 'a decision model writes no sentence, so none appears');
+});
+
+test('the probabilities are keyed by the option names the caller declared', async () => {
+  const recorder = fakeServer({
+    '/v1/systemone': () => ({
+      payload: { answers: { respond: { probabilities: { respond: 0.8, silence: 0.2 } } } },
     }),
   });
-}
-
-/** A server plus the artifact it is bound to. */
-function serverOf(recorder: { fetch: Fetcher }): LlamaServer {
-  return { baseUrl: 'http://127.0.0.1:8080', artifact: ARTIFACT, fetch: recorder.fetch };
-}
-
-/**
- * The prompt a judgement continues from, as the kernel would have assembled it —
- * head included, because the transport splits the text at that head rather than at
- * the template it came from.
- */
-const PROMPT: WatchPrompt = {
-  version: 'watch-v1',
-  system: ARTIFACT.system,
-  text: `${ARTIFACT.system}${ARTIFACT.afterSystem}Message: the batch failed\nDoes this room need you to act? Answer act or ignore. `,
-};
-
-const SKELETON: WatchPrompt = {
-  version: 'watch-v1',
-  system: ARTIFACT.system,
-  text: `${ARTIFACT.system}${ARTIFACT.afterSystem}Does this room need you to act? Answer act or ignore. `,
-};
-
-test('the system line travels as a system message and the rest as a user turn', async () => {
-  const recorder = renderingServer();
-  const model = llamaWatchModel(serverOf(recorder));
-
-  await model.read({
-    prompt: PROMPT,
-    state: { read: 1, total: 1, unread: 0, delta: [] } as never,
-    options: TOKENS,
-    mask: { act: { token: 'act', id: 1 }, ignore: { token: 'ignore', id: 2 } },
+  const input = ask();
+  const reading = await llamaWatchModel(serverOf(recorder)).read({
+    ...input,
+    options: { act: 'respond', ignore: 'silence' },
   });
 
-  const templates = recorder.calls.filter((call) => call.path === '/apply-template');
-  assert.equal(templates.length, 1);
-  const messages = templates[0].body.messages as { role: string; content: string }[];
-  assert.deepEqual(messages[0], { role: 'system', content: ARTIFACT.system });
-  assert.deepEqual(messages[1], {
-    role: 'user',
-    content: 'Message: the batch failed\nDoes this room need you to act? Answer act or ignore. ',
-  });
+  assert.deepEqual(reading.probabilities, { respond: 0.8, silence: 0.2 });
 });
 
-test('an assembly from another artifact is refused rather than read', async () => {
-  const recorder = renderingServer();
-  const model = llamaWatchModel(serverOf(recorder));
-
-  await assert.rejects(
-    () =>
-      model.read({
-        prompt: {
-          version: 'watch-v1',
-          system: 'You watch another room of a payments team.',
-          text: 'a text nobody assembled from this artifact',
-        },
-        state: {} as never,
-        options: TOKENS,
-        mask: { act: { token: 'act', id: 1 }, ignore: { token: 'ignore', id: 2 } },
-      }),
-    /assembled from a different artifact/,
-  );
-  assert.equal(recorder.calls.length, 0, 'nothing is put to a model about a text it cannot place');
-});
-
-test('the reading sums every spelling of the option, which is how the cut was measured', async () => {
-  // `Act` and `act` are two ids and one answer, and the recorded p_act adds both.
-  // `Action` is a third id and a different word, so it must not be counted.
-  const recorder = renderingServer({
-    candidates: [
-      { token: 'Act', logprob: Math.log(0.5) },
-      { token: 'act', logprob: Math.log(0.25) },
-      { token: 'Action', logprob: Math.log(0.1) },
-      { token: 'Ignore', logprob: Math.log(0.08) },
-      { token: 'ignore', logprob: Math.log(0.04) },
-    ],
-  });
-  const model = llamaWatchModel(serverOf(recorder));
-
-  const reading = await model.read({
-    prompt: PROMPT,
-    state: {} as never,
-    options: TOKENS,
-    mask: { act: { token: 'act', id: 1 }, ignore: { token: 'ignore', id: 2 } },
-  });
-
-  assert.equal(reading.probabilities.act.toFixed(6), '0.750000');
-  assert.equal(reading.probabilities.ignore.toFixed(6), '0.120000');
-  assert.equal(reading.reason, undefined, 'a decision model produces no sentence');
-});
-
-test('the probabilities are keyed by the option token the caller declared', async () => {
-  // The kernel reads `probabilities[tokens.act]`, so a runtime that keyed these by
-  // "act" and "ignore" regardless would return an unreadable answer to a caller
-  // that declared other options — and count it as a confident no.
-  const recorder = renderingServer({
-    candidates: [
-      { token: ' yes', logprob: Math.log(0.7) },
-      { token: ' no', logprob: Math.log(0.3) },
-    ],
-  });
-  const model = llamaWatchModel(serverOf(recorder));
-
-  const reading = await model.read({
-    prompt: PROMPT,
-    state: {} as never,
-    options: { act: 'yes', ignore: 'no' },
-    mask: { act: { token: 'yes', id: 1 }, ignore: { token: 'no', id: 2 } },
-  });
-
-  assert.deepEqual(Object.keys(reading.probabilities).sort(), ['no', 'yes']);
-  assert.equal(reading.probabilities.yes.toFixed(6), '0.700000');
-});
-
-test('an option the answer did not place is absent rather than zero', async () => {
-  const recorder = renderingServer({ candidates: [{ token: 'Act', logprob: Math.log(0.9) }] });
-  const model = llamaWatchModel(serverOf(recorder));
-
-  const reading = await model.read({
-    prompt: PROMPT,
-    state: {} as never,
-    options: TOKENS,
-    mask: { act: { token: 'act', id: 1 }, ignore: { token: 'ignore', id: 2 } },
-  });
-
-  assert.equal('ignore' in reading.probabilities, false, 'unreadable is not a confident no');
-  assert.equal(reading.probabilities.act.toFixed(6), '0.900000');
-});
-
-test('the completion is asked for with every sampler neutral and the front cached', async () => {
-  const recorder = renderingServer();
-  const model = llamaWatchModel({ ...serverOf(recorder), nProbs: 32 });
-
-  await model.read({
-    prompt: PROMPT,
-    state: {} as never,
-    options: TOKENS,
-    mask: { act: { token: 'act', id: 1 }, ignore: { token: 'ignore', id: 2 } },
-  });
-
-  const body = recorder.calls.find((call) => call.path === '/completion')?.body;
-  assert.ok(body);
-  assert.equal(body.n_probs, 32, 'the depth the estimator sums over is the caller\'s');
-  assert.equal(body.temperature, 1, 'the raw distribution, not a sampled one');
-  assert.equal(body.top_k, 0, 'a truncated tail is a reading that under-reports');
-  assert.equal(body.min_p, 0);
-  assert.equal(body.cache_prompt, true, 'the resident context, at the transport level');
-});
-
-test('a transport failure throws, because a judgement that could not be asked is not an answer', async () => {
-  const recorder = renderingServer();
-  const failing = { ...serverOf(recorder), baseUrl: 'http://127.0.0.1:8080' };
-  const server = { ...failing, fetch: fakeServer({}, { fail: 500 }).fetch };
-  const model = llamaWatchModel(server);
-
-  await assert.rejects(
-    () =>
-      model.read({
-        prompt: PROMPT,
-        state: {} as never,
-        options: TOKENS,
-        mask: { act: { token: 'act', id: 1 }, ignore: { token: 'ignore', id: 2 } },
-      }),
-    /answered 500 for \/apply-template/,
-  );
-});
-
-test('an answer that is not JSON throws rather than reading as no act', async () => {
-  const server = {
-    ...serverOf(renderingServer()),
-    fetch: fakeServer({}, { notJson: true }).fetch,
-  };
-  await assert.rejects(
-    () =>
-      llamaWatchModel(server).read({
-        prompt: PROMPT,
-        state: {} as never,
-        options: TOKENS,
-        mask: { act: { token: 'act', id: 1 }, ignore: { token: 'ignore', id: 2 } },
-      }),
-    /answered no JSON/,
-  );
-});
-
-test('the mask is measured on the templated prompt, not on the assembly', async () => {
-  const recorder = renderingServer();
-  const mask = await bindOverServer(serverOf(recorder), SKELETON, TOKENS);
-
-  // Whatever ids the fake vocabulary gave, they are distinct and they came from the
-  // templated text: the tokenize calls carry the template's own tail, so an option
-  // appended here is read where the model reads it, not where the assembly ends.
-  assert.notEqual(mask.act.id, mask.ignore.id);
-  assert.equal(mask.act.token, 'act');
-  const tokenised = recorder.calls.filter((call) => call.path === '/tokenize');
-  assert.equal(tokenised.length, 3, 'the prompt and its two suffixes, once each');
-  for (const call of tokenised) {
-    assert.ok(
-      String(call.body.content).includes(TEMPLATE_TAIL),
-      'the measurement is taken past the template, where the answer is read',
+test('a number that is not a probability is dropped, and the option left missing', async () => {
+  // `watch.ts` reads a missing option as no answer at all. Dropping rather than throwing is
+  // deliberate: a model that answered in a shape this file cannot read has still answered,
+  // and the honest reading of that is "no answer that could be read".
+  const cases: Record<string, unknown>[] = [
+    { act: '0.9', ignore: 0.1 },
+    { act: 1.4, ignore: 0.1 },
+    { act: -0.2, ignore: 0.1 },
+    { act: Number.NaN, ignore: 0.1 },
+    { ignore: 0.1 },
+  ];
+  for (const probabilities of cases) {
+    const recorder = fakeServer({
+      '/v1/systemone': () => ({ payload: { answers: { respond: { probabilities } } } }),
+    });
+    const reading = await llamaWatchModel(serverOf(recorder)).read(ask());
+    assert.equal(
+      Object.hasOwn(reading.probabilities, 'act'),
+      false,
+      `${JSON.stringify(probabilities)} must not read as an act probability`,
     );
   }
 });
 
-test('an option the server splits into several tokens is refused', async () => {
-  const recorder = renderingServer({ split: { snooze: 3 } });
-  await assert.rejects(
-    () => bindOverServer(serverOf(recorder), SKELETON, { act: 'act', ignore: 'snooze' }),
-    /takes 3 tokens at the prompt's end/,
-  );
+test('an answer with no probabilities at all is an empty reading rather than an error', async () => {
+  for (const payload of [{}, { answers: {} }, { answers: { respond: {} } }]) {
+    const recorder = fakeServer({ '/v1/systemone': () => ({ payload }) });
+    const reading = await llamaWatchModel(serverOf(recorder)).read(ask());
+    assert.deepEqual(reading.probabilities, {}, JSON.stringify(payload));
+  }
 });
 
-test('two options landing on one id are refused, because that is one answer', async () => {
-  // A vocabulary that makes `act` and `ignore` the same piece: the tail is one token
-  // either way, and a runtime that accepted it would read one answer under two names.
-  const tokenise = (content: string): number[] =>
-    content.match(/\s+|[^\s]+/g)?.map((piece) => (piece === 'act' || piece === 'ignore' ? 7 : 8)) ?? [];
+test('a transport failure throws, because a judgement that could not be asked is not an answer', async () => {
   const recorder = fakeServer({
-    '/apply-template': () => ({ prompt: 'a templated prompt\n' }),
-    '/tokenize': (body) => ({ tokens: tokenise(String(body.content)) }),
+    '/v1/systemone': () => ({ ok: false, status: 500, payload: undefined }),
   });
   await assert.rejects(
-    () => bindOverServer(serverOf(recorder), SKELETON, TOKENS),
-    /land on the same id/,
+    () => llamaWatchModel(serverOf(recorder)).read(ask()),
+    /answered 500 for \/v1\/systemone/,
   );
 });
 
-test('a runtime given both a tokeniser and a mask refuses, because they can disagree', async () => {
-  const world = makeWorld();
-  const recorder = renderingServer();
-  assert.throws(
-    () =>
-      watchAs(world.store, world.botA, llamaWatchModel(serverOf(recorder)), {
-        window: 10,
-        prompt: ARTIFACT,
-        mask: { act: { token: 'act', id: 1 }, ignore: { token: 'ignore', id: 2 } },
-        tokeniser: { encode: () => [1] },
-      }),
-    /both a tokeniser and a mask/,
-  );
-});
-
-test('a supplied mask is held to the refusals a measured one is', async () => {
-  const world = makeWorld();
-  const recorder = renderingServer();
-  assert.throws(
-    () =>
-      watchAs(world.store, world.botA, llamaWatchModel(serverOf(recorder)), {
-        window: 10,
-        prompt: ARTIFACT,
-        mask: { act: { token: 'act', id: 7 }, ignore: { token: 'ignore', id: 7 } },
-      }),
-    /land on the same id/,
-  );
-  assert.throws(
-    () =>
-      watchAs(world.store, world.botA, llamaWatchModel(serverOf(recorder)), {
-        window: 10,
-        prompt: ARTIFACT,
-        mask: { act: { token: 'act', id: 1.5 }, ignore: { token: 'ignore', id: 2 } },
-      }),
-    /must be a token id/,
-  );
-});
-
-test('the transport drives a real verdict through the kernel\'s own seam', async () => {
-  // End to end over the seam: the store, the box, the assembled prompt, the mask
-  // measured over the server, and a verdict written onto the entry it judged.
-  const world = makeWorld();
-  deliver(world.store, { roomId: world.room, senderId: world.me, text: 'the settlement batch failed' });
-  const entries = await world.store.drain(world.botA);
-  assert.equal(entries.length, 1);
-
-  const recorder = renderingServer({
-    candidates: [
-      { token: 'Act', logprob: Math.log(0.62) },
-      { token: 'ignore', logprob: Math.log(0.31) },
-    ],
-  });
-  const server = serverOf(recorder);
-  const mask = await bindOverServer(server, SKELETON, TOKENS);
-  const watch = watchAs(world.store, world.botA, llamaWatchModel(server), {
-    window: 10,
-    prompt: ARTIFACT,
-    mask,
-    optionTokens: TOKENS,
-  });
-
-  const acting = await watch(entries);
-
-  assert.deepEqual(acting.map((entry) => entry.id), [entries[0].id], '0.62 clears the 0.600 cut');
-  assert.equal(entries[0].verdict, 'act');
-  assert.equal(watch.last?.unparsed, 0, 'both options were read, so nothing was unreadable');
-});
-
-test('a reading under the cut is a decided ignore, not an unreadable answer', async () => {
-  const world = makeWorld();
-  deliver(world.store, { roomId: world.room, senderId: world.me, text: 'thanks, all good' });
-  const entries = await world.store.drain(world.botA);
-
-  const recorder = renderingServer({
-    candidates: [
-      { token: 'Act', logprob: Math.log(0.1) },
-      { token: 'ignore', logprob: Math.log(0.85) },
-    ],
-  });
-  const server = serverOf(recorder);
-  const watch = watchAs(world.store, world.botA, llamaWatchModel(server), {
-    window: 10,
-    prompt: ARTIFACT,
-    mask: await bindOverServer(server, SKELETON, TOKENS),
-    optionTokens: TOKENS,
-  });
-
-  const acting = await watch(entries);
-
-  assert.deepEqual(acting, []);
-  assert.equal(entries[0].verdict, 'ignore');
-  assert.equal(watch.last?.ignored, 1);
-  assert.equal(watch.last?.unparsed, 0);
-});
-
-test('the strip rule is the calibration\'s: letters and digits anywhere, lowercased', () => {
-  assert.equal(strip(' Act'), 'act');
-  assert.equal(strip('act'), 'act');
-  assert.equal(strip('(act)'), 'act');
-  assert.equal(strip('Action'), 'action');
-  assert.equal(strip('!ignore.'), 'ignore');
-});
-
-/** A PNG header is enough to prove the bytes survive the trip; no decoder reads them. */
-const PNG_BYTES = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
-
-/** One picture as `box.ts` hands it over: a reference, never the bytes. */
-const SHOT = {
-  entryId: 'obs_1',
-  messageId: 'msg_1',
-  key: 'blob/shot.png',
-  mime: 'image/png',
-};
-
-/**
- * The projector's own answer, which is not `undefined` by accident.
- *
- * `/props` reports `modalities` as an object of booleans; passing `null` here is the
- * server too old to report it, which has to be read the safe way round.
- */
-const SEES = { vision: true, video: false, audio: false };
-
-/** A server with a projector, answering the one endpoint that takes a picture. */
-function pictureServer(
-  options: { modalities?: unknown; candidates?: unknown[] } = {},
-): { fetch: Fetcher; calls: Call[] } {
-  return fakeServer({
-    '/props': () => ({
-      chat_template: 'a template',
-      build_info: 'test',
-      ...('modalities' in options
-        ? { modalities: options.modalities }
-        : { modalities: SEES }),
-      default_generation_settings: { n_ctx: 4096 },
-    }),
-    '/v1/chat/completions': () => ({
-      choices: [{ logprobs: { content: [{ top_logprobs: options.candidates ?? [] }] } }],
-    }),
-  });
-}
-
-/** The server, plus the loader `box.ts` makes necessary. */
-function seeingServer(recorder: { fetch: Fetcher }, extra: Partial<LlamaServer> = {}): LlamaServer {
-  return {
-    ...serverOf(recorder),
-    loadMedia: async () => PNG_BYTES,
-    ...extra,
+test('an answer that is not JSON throws rather than reading as no act', async () => {
+  const fetcher: Fetcher = async (url) => {
+    const path = new URL(url).pathname;
+    return path === '/v1/systemone'
+      ? { ok: true, status: 200, text: async () => 'not json at all' }
+      : { ok: true, status: 200, text: async () => '{}' };
   };
-}
-
-/** A judgement whose box carries `media`, against the ordinary prompt. */
-function askWith(model: ReturnType<typeof llamaWatchModel>, media: unknown[]) {
-  return model.read({
-    prompt: PROMPT,
-    state: { read: 1, total: 1, unread: 0, delta: [], media } as never,
-    options: TOKENS,
-    mask: { act: { token: 'act', id: 1 }, ignore: { token: 'ignore', id: 2 } },
-  });
-}
-
-test('a picture travels between the box text and the question, as a data URL', async () => {
-  // The placement is the measured one: the replay put the message text first, the
-  // image second and the question last, and read all 56 image cases to within 0.0011
-  // of the recorded rig that way (`calibration/vision/server-transport-images.json`).
-  const recorder = pictureServer();
-  const model = llamaWatchModel(seeingServer(recorder));
-
-  await askWith(model, [SHOT]);
-
-  assert.equal(
-    recorder.calls.filter((call) => call.path === '/completion').length,
-    0,
-    'a picture does not go through the endpoint that takes no projector',
+  await assert.rejects(
+    () => llamaWatchModel({ baseUrl: 'http://127.0.0.1:8080', fetch: fetcher }).read(ask()),
+    /answered no JSON for \/v1\/systemone/,
   );
-  const chat = recorder.calls.filter((call) => call.path === '/v1/chat/completions');
-  assert.equal(chat.length, 1);
+});
 
-  const messages = chat[0].body.messages as { role: string; content: unknown }[];
-  assert.deepEqual(messages[0], { role: 'system', content: ARTIFACT.system });
+// ---------------------------------------------------------------------------
+// The preflight the judgement needs, and the one it does not
+// ---------------------------------------------------------------------------
 
-  const parts = messages[1].content as { type: string; text?: string; image_url?: { url: string } }[];
+test('a judgement’s preflight counts the state and never renders a template', async () => {
+  const recorder = fakeServer();
+  const shape = await requireWatchShape(serverOf(recorder), 'You are 小荷, one bot of this client.');
+
   assert.deepEqual(
-    parts.map((part) => part.type),
-    ['text', 'image_url', 'text'],
-    'text, picture, question — in that order',
+    recorder.calls.map((call) => call.path),
+    ['/props', '/tokenize'],
+    'what the server is, then what the state costs',
   );
-  assert.equal(parts[0].text, 'Message: the batch failed\n');
-  assert.equal(parts[2].text, 'Does this room need you to act? Answer act or ignore. ');
-
-  const url = parts[1].image_url?.url ?? '';
-  assert.ok(url.startsWith('data:image/png;base64,'), `expected a data URL, got ${url}`);
-  assert.deepEqual(
-    new Uint8Array(Buffer.from(url.slice('data:image/png;base64,'.length), 'base64')),
-    PNG_BYTES,
-    'the bytes the loader produced are the bytes the model is sent',
-  );
-
-  // Neutral samplers and `logprobs`, for the reason `/completion` gets them: the
-  // estimator sums the raw softmax, so anything that truncates or reshapes it lies.
-  const body = chat[0].body;
-  assert.equal(body.max_tokens, 1);
-  assert.equal(body.logprobs, true);
-  assert.equal(body.top_logprobs, 64);
-  assert.equal(body.cache_prompt, true);
-  assert.equal(body.temperature, 1);
-  assert.equal(body.top_k, 0);
-  assert.equal(body.top_p, 1);
-  assert.equal(body.min_p, 0);
-  assert.equal(body.repeat_penalty, 1);
+  assert.equal(recorder.calls[0].method, 'GET', '/props is registered for a GET');
+  assert.equal(recorder.calls[1].body.content, 'You are 小荷, one bot of this client.');
+  assert.equal(shape.nCtx, 8192);
+  assert.equal(shape.buildInfo, 'b11946-test');
+  assert.equal(shape.modelAlias, 'd1-2B');
+  assert.equal(shape.modelPath, '/models/d1-2B-Q8_0.gguf');
 });
 
-test('a picture reading is summed over the spellings of the option, as text is', async () => {
-  const recorder = pictureServer({
-    candidates: [
-      { token: 'act', logprob: Math.log(0.6) },
-      { token: ' Act', logprob: Math.log(0.3) },
-      { token: 'ignore', logprob: Math.log(0.05) },
-    ],
-  });
-  const model = llamaWatchModel(seeingServer(recorder));
-
-  const reading = await askWith(model, [SHOT]);
-
-  assert.ok(
-    Math.abs((reading.probabilities[TOKENS.act] ?? 0) - 0.9) < 1e-9,
-    'every candidate that spells the option counts, exactly as on the text path',
-  );
-  assert.ok(Math.abs((reading.probabilities[TOKENS.ignore] ?? 0) - 0.05) < 1e-9);
+test('a server with no chat template still passes the judgement’s preflight', async () => {
+  // `/v1/systemone` applies the decision format internally, so the template is not this
+  // half's business — asking for one would pass on the shipped model for a reason that has
+  // nothing to do with the endpoint.
+  const recorder = fakeServer({ '/props': () => ({ payload: { default_generation_settings: { n_ctx: 8192 } } }) });
+  const shape = await requireWatchShape(serverOf(recorder), 'a state');
+  assert.equal(shape.chatTemplate, '', 'absent is read as none, not as a guess');
 });
 
-test('a picture with no way to read its bytes is refused, not judged from its caption', async () => {
-  // `box.ts` keeps `key` opaque, so a transport with no loader cannot resolve one and
-  // must not invent a path. The alternative is the defect the picture path exists to prevent: a
-  // verdict from the caption that looks like one reached with the picture present.
-  const recorder = pictureServer();
-  const model = llamaWatchModel(serverOf(recorder));
+test('a state larger than the window is refused, and the boundary is the token count', async () => {
+  const probe = fakeServer();
+  const state = 'one two three four';
+  const spend = (state.match(/\s+|[^\s]+/g) ?? []).length;
 
+  const exact = fakeServer({ '/props': () => ({ payload: { default_generation_settings: { n_ctx: spend } } }) });
+  const shape = await requireWatchShape(serverOf(exact), state);
+  assert.equal(shape.nCtx, spend, 'a state that exactly fits still fits: nothing is read after it');
+
+  const small = fakeServer({ '/props': () => ({ payload: { default_generation_settings: { n_ctx: spend - 1 } } }) });
   await assert.rejects(
-    () => askWith(model, [SHOT]),
-    /carries a picture[\s\S]*image\/png[\s\S]*no way to read its bytes[\s\S]*loadMedia/,
+    () => requireWatchShape(serverOf(small), state),
+    /allows \d+ tokens per prompt[\s\S]*larger `-c`/,
   );
-  assert.equal(recorder.calls.length, 0, 'nothing is asked about a picture that cannot travel');
+  assert.ok(probe.calls.length === 0, 'and nothing of the probe above was needed');
 });
 
-test('a server with no projector is refused, and asked once rather than per judgement', async () => {
-  // A server started without `--mmproj` reports `modalities.vision: false` and would
-  // drop the image part on the way in, leaving a reading from the caption alone.
-  const recorder = pictureServer({ modalities: { vision: false, video: false, audio: false } });
-  const model = llamaWatchModel(seeingServer(recorder));
-
-  await assert.rejects(() => askWith(model, [SHOT]), /reports no projector[\s\S]*modalities\.vision/);
-  await assert.rejects(() => askWith(model, [SHOT]), /reports no projector/);
-
-  assert.equal(
-    recorder.calls.filter((call) => call.path === '/props').length,
-    1,
-    'whether a projector is loaded is a fact about the process, not about this tick',
-  );
-  assert.equal(
-    recorder.calls.filter((call) => call.path === '/v1/chat/completions').length,
-    0,
-    'an image part into a server that cannot see is not a request worth making',
-  );
-});
-
-test('a server too old to report its modalities is read as unable to see', async () => {
-  const recorder = pictureServer({ modalities: undefined });
-  const model = llamaWatchModel(seeingServer(recorder));
-
-  await assert.rejects(() => askWith(model, [SHOT]), /reports no projector/);
-});
-
-test('two pictures are refused, because one per box is what was measured', async () => {
-  // Every set in `calibration/vision/` holds one picture per box, so where a second
-  // sits relative to the first was never replayed; dropping it would be the same
-  // defect as dropping the only one.
-  const recorder = pictureServer();
-  const model = llamaWatchModel(seeingServer(recorder));
-
-  await assert.rejects(
-    () => askWith(model, [SHOT, { ...SHOT, key: 'blob/other.png' }]),
-    /carries 2 pictures[\s\S]*measured on one per box/,
-  );
-  assert.equal(recorder.calls.length, 0);
-});
-
-test('a picture is refused when the turn did not come from this artifact', async () => {
-  // The picture's place is the artifact's own last part, so a turn that does not end
-  // with that part has no measured place for it — and guessing one would put the
-  // image somewhere the replay never looked.
-  const recorder = pictureServer();
-  const model = llamaWatchModel(seeingServer(recorder));
-
-  await assert.rejects(
-    () =>
-      model.read({
-        prompt: {
-          version: 'watch-v1',
-          system: ARTIFACT.system,
-          text: `${ARTIFACT.system}${ARTIFACT.afterSystem}Message: the batch failed\n`,
-        },
-        state: { read: 1, total: 1, unread: 0, delta: [], media: [SHOT] } as never,
-        options: TOKENS,
-        mask: { act: { token: 'act', id: 1 }, ignore: { token: 'ignore', id: 2 } },
-      }),
-    /different artifact[\s\S]*last part/,
-  );
-  assert.equal(recorder.calls.filter((call) => call.path === '/v1/chat/completions').length, 0);
-});
-
-test('a projector probe that failed once is asked again, not remembered as a no', async () => {
-  // A server unreachable for one tick is not a server without a projector: caching
-  // the failure would turn a blip into a permanent refusal of every picture.
-  const answered = pictureServer({
-    candidates: [
-      { token: 'act', logprob: Math.log(0.9) },
-      { token: 'ignore', logprob: Math.log(0.05) },
-    ],
-  });
-  let probes = 0;
-  const fetcher: Fetcher = async (url, init) => {
-    if (new URL(url).pathname === '/props') {
-      probes += 1;
-      if (probes === 1) return { ok: false, status: 503, text: async () => 'not up yet' };
-    }
-    return answered.fetch(url, init);
-  };
-  const model = llamaWatchModel({
-    ...serverOf({ fetch: fetcher }),
-    loadMedia: async () => PNG_BYTES,
-  });
-
-  await assert.rejects(() => askWith(model, [SHOT]), /answered 503/);
-
-  const reading = await askWith(model, [SHOT]);
-  assert.ok((reading.probabilities[TOKENS.act] ?? 0) > 0.8, 'the second tick reads normally');
-  assert.equal(probes, 2, 'the failed probe is not what the next judgement is told');
-});
-
-test('a box with no picture in it judges exactly as it did before', async () => {
-  const recorder = renderingServer({ candidates: [
-    { token: 'act', logprob: Math.log(0.9) },
-    { token: 'ignore', logprob: Math.log(0.05) },
-  ] });
-  const model = llamaWatchModel(serverOf(recorder));
-
-  const reading = await model.read({
-    prompt: PROMPT,
-    state: { read: 1, total: 1, unread: 0, delta: [], media: [] } as never,
-    options: TOKENS,
-    mask: { act: { token: 'act', id: 1 }, ignore: { token: 'ignore', id: 2 } },
-  });
-
-  assert.ok(
-    (reading.probabilities[TOKENS.act] ?? 0) > 0.8,
-    'the text-only path is untouched by the picture path',
-  );
-  assert.equal(recorder.calls.filter((call) => call.path === '/completion').length, 1);
-  assert.equal(
-    recorder.calls.filter((call) => call.path === '/v1/chat/completions').length,
-    0,
-    'a text-only judgement keeps the endpoint the text cut was measured through',
-  );
-  assert.equal(
-    recorder.calls.filter((call) => call.path === '/props').length,
-    0,
-    'and pays for no projector probe it has no use for',
-  );
-});
-
-test('the server shape records whether a projector is loaded', async () => {
-  // `/props` reports `modalities: {vision, video, audio}`, and a server too old to
-  // report it is read as unable to see — the safe way round, since nothing here can
-  // send a picture anyway. The rest of the routes are present because the preflight
-  // also renders the question and counts it against the window.
-  const shapeOf = (modalities: unknown) => {
-    const tokenise = makeVocab();
-    return fakeServer({
-      '/props': () => ({
-        chat_template: 'a template',
-        build_info: 'test',
-        ...(modalities === undefined ? {} : { modalities }),
-        default_generation_settings: { n_ctx: 4096 },
-      }),
-      '/apply-template': () => ({ prompt: `${TEMPLATE_HEAD}a question${TEMPLATE_TAIL}` }),
-      '/tokenize': (body) => ({ tokens: tokenise(String(body.content)) }),
+test('a window that is missing, zero or fractional is refused rather than read as a number', async () => {
+  for (const nCtx of [undefined, 0, 1.5, -1]) {
+    const recorder = fakeServer({
+      '/props': () => ({ payload: { chat_template: 'x', default_generation_settings: { n_ctx: nCtx } } }),
     });
-  };
+    await assert.rejects(
+      () => requireWatchShape(serverOf(recorder), 'a state'),
+      /default_generation_settings\.n_ctx/,
+      `n_ctx ${String(nCtx)} is not a window`,
+    );
+  }
+});
 
-  const seen = await requireServerShape(
-    serverOf(shapeOf({ vision: true, video: false, audio: false })),
-    SKELETON,
+test('a server with no chat template is refused for a generating turn, and asked once', async () => {
+  // The half that writes is rendered through the server's template, so a server with none
+  // reads a flat prompt and scores below chance — refused on what it says about itself,
+  // before a token is counted.
+  const recorder = fakeServer({ '/props': () => ({ payload: { default_generation_settings: { n_ctx: 8192 } } }) });
+  await assert.rejects(
+    () => requireChatShape(serverOf(recorder), { system: 's', user: 'u' }, 'the turn prompt'),
+    /renders no chat template/,
   );
-  assert.equal(seen.vision, true);
-  assert.equal(seen.nCtx, 4096);
-  assert.equal(seen.buildInfo, 'test');
+  assert.deepEqual(recorder.calls.map((call) => call.path), ['/props']);
+});
 
-  assert.equal(
-    (await requireServerShape(serverOf(shapeOf({ vision: false })), SKELETON)).vision,
-    false,
+test('a turn prompt that leaves no room to write is refused, on the templated bytes', async () => {
+  const recorder = fakeServer();
+  // Measured on the rendered prompt, not on the assembly: the template's own tail is what
+  // the model is charged for, and the boundary here is `>=` rather than `>`.
+  const rendered = await (async () => {
+    const probe = fakeServer();
+    const shape = await requireChatShape(
+      serverOf(probe),
+      { system: 'You are 小荷.', user: 'the batch failed' },
+      'the turn prompt',
+    );
+    assert.equal(shape.nCtx, 8192);
+    const counted = probe.calls.find((call) => call.path === '/tokenize');
+    return String(counted?.body.content);
+  })();
+  const cost = (rendered.match(/\s+|[^\s]+/g) ?? []).length;
+  assert.ok(rendered.endsWith(TEMPLATE_TAIL), 'counted after the template, where the model reads');
+  assert.ok(cost > 1);
+
+  const exact = fakeServer({ '/props': () => ({ payload: { chat_template: 'x', default_generation_settings: { n_ctx: cost } } }) });
+  await assert.rejects(
+    () => requireChatShape(serverOf(exact), { system: 'You are 小荷.', user: 'the batch failed' }, 'the turn prompt'),
+    /no room left to write a single token/,
   );
+  assert.ok(recorder.calls.length === 0);
+});
+
+// ---------------------------------------------------------------------------
+// A hosted endpoint: which model it serves, per its own list
+// ---------------------------------------------------------------------------
+
+test('the declared model is confirmed against the endpoint’s own list, window and all', async () => {
+  const recorder = fakeServer();
+  const endpoint = await requireDeclaredModel(
+    serverOf(recorder, { model: 'deepseek-flash', baseUrl: 'https://example.test/v1' }),
+  );
+
+  assert.deepEqual(recorder.calls.map((call) => call.path), ['/v1/models']);
   assert.equal(
-    (await requireServerShape(serverOf(shapeOf(undefined)), SKELETON)).vision,
-    false,
-    'no modalities reported is read as no projector',
+    recorder.calls[0].url,
+    'https://example.test/v1/models',
+    'one trailing /v1 is trimmed, so a base_url with it addresses the same origin',
+  );
+  assert.deepEqual(endpoint, {
+    model: 'deepseek-flash',
+    served: ['deepseek-flash'],
+    window: 1048576,
+  });
+});
+
+test('a name the endpoint does not serve is refused with the names it does', async () => {
+  const recorder = fakeServer();
+  await assert.rejects(
+    () => requireDeclaredModel(serverOf(recorder, { model: 'deepseek-flsh' })),
+    /serves 'deepseek-flash' and not 'deepseek-flsh'/,
   );
 });
+
+test('an endpoint that answers no model list is refused, because a name it cannot confirm is not a name it may use', async () => {
+  const recorder = fakeServer({ '/v1/models': () => ({ payload: {} }) });
+  await assert.rejects(
+    () => requireDeclaredModel(serverOf(recorder, { model: 'deepseek-flash' })),
+    /answered no model list at \/v1\/models/,
+  );
+});
+
+test('a model whose list entry declares no window does not get one invented', async () => {
+  const recorder = fakeServer({
+    '/v1/models': () => ({ payload: { data: [{ id: 'deepseek-flash' }] } }),
+  });
+  const endpoint = await requireDeclaredModel(serverOf(recorder, { model: 'deepseek-flash' }));
+  assert.equal(endpoint.window, null, 'absent is absent, not a plausible number');
+});
+
+// ---------------------------------------------------------------------------
+// The generating turn
+// ---------------------------------------------------------------------------
+
+test('a turn sends the model when the caller named one, and nothing when it did not', async () => {
+  const named = fakeServer();
+  await chatTurn(serverOf(named, { model: 'deepseek-flash' }), [
+    { role: 'system', content: 'You are 小荷.' },
+    { role: 'user', content: 'the batch failed' },
+  ]);
+  const [call] = named.calls;
+  assert.equal(call.path, '/v1/chat/completions');
+  assert.equal(call.body.model, 'deepseek-flash');
+  assert.equal(call.body.temperature, 0, 'two runs of one prompt answer the same');
+  assert.equal(call.body.tools, undefined, 'no tools, no tool_choice');
+  assert.deepEqual(call.body.messages, [
+    { role: 'system', content: 'You are 小荷.' },
+    { role: 'user', content: 'the batch failed' },
+  ]);
+
+  const local = fakeServer();
+  await chatTurn(serverOf(local), [{ role: 'user', content: 'hello' }]);
+  assert.equal(
+    Object.hasOwn(local.calls[0].body, 'model'),
+    false,
+    'a llama-server serves one model and is told nothing',
+  );
+});
+
+test('tools travel in the OpenAI shape, with the choice left to the model', async () => {
+  const recorder = fakeServer();
+  await chatTurn(
+    serverOf(recorder),
+    [{ role: 'user', content: 'say hello' }],
+    [{ name: 'say', description: 'post one message', parameters: { type: 'object' } }],
+  );
+  assert.deepEqual(recorder.calls[0].body.tools, [
+    {
+      type: 'function',
+      function: {
+        name: 'say',
+        description: 'post one message',
+        parameters: { type: 'object' },
+      },
+    },
+  ]);
+  assert.equal(recorder.calls[0].body.tool_choice, 'auto');
+});
+
+test('a turn reads both nestings of a tool call, because two builds have reported both', async () => {
+  const recorder = fakeServer({
+    '/v1/chat/completions': () => ({
+      payload: {
+        choices: [
+          {
+            message: {
+              content: 'working on it',
+              tool_calls: [
+                { function: { name: 'say', arguments: '{"text":"hello"}' } },
+                { name: 'say', arguments: { text: 'again' } },
+              ],
+            },
+          },
+        ],
+      },
+    }),
+  });
+  const turn = await chatTurn(serverOf(recorder), [{ role: 'user', content: 'go' }]);
+  assert.equal(turn.content, 'working on it', "the model's own working record is kept, not sent");
+  assert.deepEqual(turn.toolCalls, [
+    { name: 'say', arguments: '{"text":"hello"}' },
+    { name: 'say', arguments: '{"text":"again"}' },
+  ]);
+});
+
+test('a turn that answered no choices is a request that arrived nowhere, and throws', async () => {
+  const recorder = fakeServer({ '/v1/chat/completions': () => ({ payload: {} }) });
+  await assert.rejects(
+    () => chatTurn(serverOf(recorder), [{ role: 'user', content: 'go' }]),
+    /answered no choices/,
+  );
+});
+
+test('a tool call with no name is refused rather than skipped', async () => {
+  const recorder = fakeServer({
+    '/v1/chat/completions': () => ({
+      payload: { choices: [{ message: { tool_calls: [{ arguments: '{}' }] } }] },
+    }),
+  });
+  await assert.rejects(
+    () => chatTurn(serverOf(recorder), [{ role: 'user', content: 'go' }]),
+    /asked for a tool call with no name/,
+  );
+});
+
+test('the usage the server reported is what a turn records, and half a report is none', async () => {
+  const reported = fakeServer();
+  const turn = await chatTurn(serverOf(reported), [{ role: 'user', content: 'go' }]);
+  assert.deepEqual(turn.usage, { input_tokens: 722, output_tokens: 371 });
+
+  for (const usage of [undefined, {}, { prompt_tokens: 12 }, { completion_tokens: 3 }]) {
+    const recorder = fakeServer({
+      '/v1/chat/completions': () => ({ payload: { choices: [{ message: { content: '' } }], usage } }),
+    });
+    const quiet = await chatTurn(serverOf(recorder), [{ role: 'user', content: 'go' }]);
+    assert.equal(quiet.usage, null, `${JSON.stringify(usage)} is not a report of spend`);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// What every request carries
+// ---------------------------------------------------------------------------
 
 test('a credential reaches every request, and a blank one is no credential at all', async () => {
-  // Measured against the real binary rather than assumed: `llama-server --help` names
-  // `--api-key KEY`, and a server started with it refuses a request that carries no
-  // `Authorization` header. What this case pins is the other half — that the header goes
-  // out on every call this file makes, `/props` included, and that a variable set to
-  // nothing is absent rather than an empty `Bearer`. A blank credential is worse than
-  // none: the 401 it earns reads like a wrong key rather than a missing one.
-  const shapeOf = () =>
-    fakeServer({
-      '/props': () => ({
-        chat_template: 'a template',
-        build_info: 'test',
-        default_generation_settings: { n_ctx: 4096 },
-      }),
-      '/apply-template': () => ({ prompt: `${TEMPLATE_HEAD}a question${TEMPLATE_TAIL}` }),
-      '/tokenize': (body) => ({ tokens: makeVocab()(String(body.content)) }),
-    });
-
+  // Measured against the real binary rather than assumed: `llama-server --api-key KEY`
+  // refuses a request with no `Authorization` header. A blank credential is worse than none:
+  // the 401 it earns reads like a wrong key rather than a missing one.
   const cases: ReadonlyArray<{ said: string; key: string | undefined; sent: boolean }> = [
     { said: 'a key', key: 'sk-test-1234', sent: true },
     { said: 'an empty variable', key: '', sent: false },
@@ -788,22 +504,22 @@ test('a credential reaches every request, and a blank one is no credential at al
   ];
 
   for (const { said, key, sent } of cases) {
-    const recorder = shapeOf();
-    const server: LlamaServer = {
-      ...serverOf(recorder),
-      ...(key === undefined ? {} : { apiKey: key }),
-    };
-    await requireServerShape(server, SKELETON);
+    const recorder = fakeServer();
+    const server = serverOf(recorder, key === undefined ? {} : { apiKey: key });
+    await requireWatchShape(server, 'a state');
+    await llamaWatchModel(server).read(ask());
+    await chatTurn(server, [{ role: 'user', content: 'go' }]);
 
-    // Anti-vacuity: a preflight that made no call would satisfy every assertion below.
-    assert.ok(recorder.calls.length > 0, `${said}: the preflight made a request`);
+    // Anti-vacuity: a transport that made no call would satisfy every assertion below.
+    assert.ok(recorder.calls.length >= 4, `${said}: the requests were made`);
     for (const call of recorder.calls) {
+      assert.equal(
+        call.headers['Content-Type'],
+        'application/json',
+        `${said}: ${call.path} is JSON`,
+      );
       if (sent) {
-        assert.equal(
-          call.headers.Authorization,
-          `Bearer ${key ?? ''}`,
-          `${said}: ${call.path} carries the credential`,
-        );
+        assert.equal(call.headers.Authorization, `Bearer ${key}`, `${said}: ${call.path} carries it`);
       } else {
         assert.equal(
           'Authorization' in call.headers,
@@ -811,7 +527,6 @@ test('a credential reaches every request, and a blank one is no credential at al
           `${said}: ${call.path} carries no Authorization header at all`,
         );
       }
-      assert.equal(call.headers['Content-Type'], 'application/json', `${said}: ${call.path} is JSON`);
     }
   }
 });

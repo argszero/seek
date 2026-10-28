@@ -1,0 +1,124 @@
+{
+  "_what_this_is": "The nine cases in cases.json, each posted alone into a room by a human and pushed through the shipped gate: stage 0's rules (gate.ts), then stage 1's cut (watch.ts at the shipped threshold over the probability /v1/systemone answered with). One row per case, saying where the case stopped and what the model read if it was asked.",
+  "_why_this_file_exists": "The work table beside this file counts what a work model does with the nine cases, and that count is only a cost where the cases actually arrive. The work model is stage 2: a message reaches it when stage 0 fast-passes it or when stage 1 reads act, and is consumed with nothing spent otherwise. Without this reading, 'spoke when it should not 3/3' has no price and 'delivered 6/6' has no ceiling.",
+  "rig": {
+    "server": "llama-server b11946-8ca4060b7, Darwin arm64",
+    "flags": "-m <model.gguf> --alias <name> --host 127.0.0.1 --port <port> --no-webui --parallel 1 -c 8192 -b 8192 -ub 8192 -ngl 99, no projector",
+    "transport": "the kernel’s own, not a paraphrase: classify() from src/gate.ts decides each entry, watchAs() from src/watch.ts owns the cut, and llamaWatchModel() from src/llama.ts asks /v1/systemone for one choice question with two declared answers",
+    "not_re_implemented": "no threshold, no token binding and no probability arithmetic appears in the driver: it wraps the kernel’s model only to keep the number the kernel read",
+    "threshold": 0.6,
+    "artifact": "watch-v3",
+    "model": "d1-2B",
+    "window": 10,
+    "judgements": "one message per world, drained alone, so no case rides on another’s delta and each reading belongs to the text it is recorded against",
+    "sender": "a human, in a group room, to a bot named Echo described as the one who watches the nightly batch, because two cases name the bot and a mention is what makes stage 0 fast-pass them",
+    "determinism": "a decision model answers with a probability and generates no token, so there is nothing to sample. Two identical asks of the same state were measured at a 0.0000 difference"
+  },
+  "cases": {
+    "source": "calibration/work/cases.json",
+    "count": 9,
+    "note": "the same nine the work table was measured on, read from that file rather than repeated here — a second copy of a case set is a second thing to drift"
+  },
+  "table": {
+    "cases": 9,
+    "readByStage1": 7,
+    "speakReachesWork": 6,
+    "quietReachesWork": 1,
+    "quietStoppedByRules": 0,
+    "quietStoppedByStage1": 2
+  },
+  "rows": [
+    {
+      "label": "speak",
+      "text": "the nightly batch failed again — can you look at it?",
+      "mentions": false,
+      "stage0": "judge",
+      "actProbability": 0.9638,
+      "stage1": "act",
+      "reachesWork": true
+    },
+    {
+      "label": "speak",
+      "text": "@Echo what is the retry queue doing right now?",
+      "mentions": true,
+      "stage0": "act",
+      "stage1": null,
+      "reachesWork": true
+    },
+    {
+      "label": "speak",
+      "text": "did you finish the reconciliation you mentioned yesterday?",
+      "mentions": false,
+      "stage0": "judge",
+      "actProbability": 0.9585,
+      "stage1": "act",
+      "reachesWork": true
+    },
+    {
+      "label": "speak",
+      "text": "今天的对账跑完了吗？",
+      "mentions": false,
+      "stage0": "judge",
+      "actProbability": 0.9385,
+      "stage1": "act",
+      "reachesWork": true
+    },
+    {
+      "label": "speak",
+      "text": "@Echo 那条重试队列现在什么情况？",
+      "mentions": true,
+      "stage0": "act",
+      "stage1": null,
+      "reachesWork": true
+    },
+    {
+      "label": "speak",
+      "text": "批处理又挂了，你能看一眼吗？",
+      "mentions": false,
+      "stage0": "judge",
+      "actProbability": 0.9359,
+      "stage1": "act",
+      "reachesWork": true
+    },
+    {
+      "label": "quiet",
+      "text": "ok",
+      "mentions": false,
+      "stage0": "judge",
+      "actProbability": 0.4371,
+      "stage1": "ignore",
+      "reachesWork": false
+    },
+    {
+      "label": "quiet",
+      "text": "thanks!",
+      "mentions": false,
+      "stage0": "judge",
+      "actProbability": 0.7418,
+      "stage1": "act",
+      "reachesWork": true
+    },
+    {
+      "label": "quiet",
+      "text": "好的收到",
+      "mentions": false,
+      "stage0": "judge",
+      "actProbability": 0.5875,
+      "stage1": "ignore",
+      "reachesWork": false
+    }
+  ],
+  "files": {
+    "d1-2B-Q8_0.gguf": {
+      "bytes": 1846240576,
+      "sha256": "073313d92b53b0ac8193db6e906cb3c78a98183d244b15b7b8f5426115c6738c"
+    }
+  },
+  "what_was_not_measured": [
+    "Batching. Each case was judged alone with window 10. The runtime judges a room’s delta — a summary plus several entries — and a different box is a different prompt, so a case that reads one number here may read otherwise beside two others. This is a controlled reading of the cases, not a replay of a live room.",
+    "Any watch model but the shipped one. Stage 1 runs d1-2B, so these figures do not move with the work-model choice — they bound it. A different watch model is a different gate and needs its own reading.",
+    "Any cut but 0.6. Moving it is the host’s word, not this file’s.",
+    "Why stage 1 refuses a should-speak case. Nothing here isolates a cause; the row says what was read, and the text is kept beside it so a reader can judge the reading rather than the verdict.",
+    "Whether an accepted case is answered well. Reaching the work model is the whole claim; what the work model then does with it is the table in measured.json."
+  ]
+}

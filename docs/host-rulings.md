@@ -80,11 +80,11 @@ The watch model ships with the product, and the two free rules run ahead of it. 
 
 **Which model, for now.**
 *"Fine — use the 3B for now, and switch later when there is a smaller model."*
-The bundled watch model is the 3B class as it stands. **A smaller model replaces it when it clears the same measurement, not when one appears** — the target was withdrawn because it was met by a model that could not judge, and adopting the next small model on size alone would repeat that.
+**That was a placeholder, and the model that replaced it is `d1-2B`** — smaller, and it cleared the measurement rather than merely being smaller: in a room of four bots it names the one meant 16 of 16, and it separates set4 24 of 24 at the shipped cut. **A smaller model replaces this one on the same terms, not when one appears** — the target was withdrawn because it was met by a model that could not judge, and adopting the next small model on size alone would repeat that.
 
 **Multilingual and multimodal.**
 *"Because it is international, the small model must support Chinese + English + multimodal."*
-Both are requirements. With the size target withdrawn they no longer pull against anything, and **neither is settled by argument**: multilingual was measured, and only a model that clears the bar in both languages is eligible; multimodal is still to be measured, and until it is, the requirement stands unmet rather than dropped.
+Both are requirements. With the size target withdrawn they no longer pull against anything, and **neither is settled by argument**: multilingual was measured, and only a model that clears the bar in both languages is eligible; **multimodal is unmet, and it is no longer a question of measuring it** — the model that ships declares `modalities.vision: false`, so a picture inside a judgement's window is refused rather than judged from its caption, and the requirement stands unmet rather than dropped.
 
 **Write the requirements, choose later.**
 *"Write down the requirements first; choose later. There is no need to go looking now."*

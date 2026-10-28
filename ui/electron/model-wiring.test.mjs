@@ -15,7 +15,8 @@
  *
  * **Nothing here starts a model.** The transport is `LlamaServer.fetch`, the seam the
  * kernel's own `watch-server.test.ts` uses, so a fake answers `/props`, `/apply-template`,
- * `/tokenize` and `/completion` and records what it was asked. No socket is opened and no
+ * `/tokenize`, `/v1/systemone` and `/v1/chat/completions` and records what it was asked. No
+ * socket is opened and no
  * process is waited on.
  *
  * **A refusal is a reading, not a crash, and it is one bot's.** A server that cannot be used
@@ -95,8 +96,12 @@ function fakeServer(options = {}) {
       payload = { prompt: `${TEMPLATE_HEAD}${system}${TEMPLATE_MID}${user}${TEMPLATE_TAIL}` }
     } else if (path === '/tokenize') {
       payload = { tokens: tokenise(String(body.content)) }
-    } else if (path === '/completion') {
-      payload = { completion_probabilities: [{ top_logprobs: options.candidates ?? [] }] }
+    } else if (path === '/v1/systemone') {
+      // The judgement's route (`src/llama.ts`, `llamaWatchModel`): one named question of type
+      // `choice`, answered with a probability per declared answer. No text is generated and
+      // the real server reports `output_tokens: 0`; nothing in the kernel reads it, so nothing
+      // here carries it.
+      payload = { answers: { respond: { probabilities: options.probabilities ?? ACT } } }
     } else if (path === '/v1/chat/completions') {
       // Stage 2's route. `choices[0].message.tool_calls` is how a model asks to speak
       // (`src/llama.ts`, `chatTurn`), and `content` is deliberately empty: the working
@@ -120,11 +125,13 @@ function fakeServer(options = {}) {
   return { fetch, calls }
 }
 
-/** The reading a fixed cut has to be compared against: one `act`, one `ignore`. */
-const ACTS = [
-  { token: 'act', logprob: Math.log(0.9) },
-  { token: 'ignore', logprob: Math.log(0.05) },
-]
+/**
+ * The answer a fixed cut has to be compared against: one probability per declared answer.
+ *
+ * Both are probabilities rather than the logprobs the old token reading carried, because the
+ * endpoint this tree asks reports calibrated probabilities and generates no token at all.
+ */
+const ACT = { act: 0.9, ignore: 0.05 }
 
 /**
  * What a work server says, as the call a model makes: `say(room, text)`.
@@ -264,7 +271,7 @@ test('with no judgement of its own, a bot still answers what is addressed to it'
 
 test('a named watch server is asked, and its verdict is what acts', async () => {
   const w = await oneBotWorld()
-  const recorder = fakeServer({ candidates: ACTS })
+  const recorder = fakeServer({ probabilities: ACT })
   const host = await openHost(w.storeFile, {
     server: 'http://127.0.0.1:8080',
     window: '24',
@@ -274,13 +281,13 @@ test('a named watch server is asked, and its verdict is what acts', async () => 
     assert.equal(host.stage1.server, 'http://127.0.0.1:8080', 'the window can say which server')
     assert.equal(host.stage1.refusal, null)
     assert.deepEqual(host.stage1.quiet, [], 'and the half is bound for this bot')
-    const askedUpFront = recorder.calls.filter((call) => call.path === '/completion').length
+    const askedUpFront = recorder.calls.filter((call) => call.path === '/v1/systemone').length
     assert.equal(askedUpFront, 0, 'binding measures the ids; it does not judge anything yet')
 
     const snapshot = await postMessage(host, { roomId: w.world.room, text: 'the batch failed' })
 
     assert.ok(
-      recorder.calls.filter((call) => call.path === '/completion').length >= 1,
+      recorder.calls.filter((call) => call.path === '/v1/systemone').length >= 1,
       'the message reached the model, so the verdict is the model’s',
     )
     const room = snapshot.rooms.find((one) => one.id === w.world.room)
@@ -307,10 +314,7 @@ test('the same server answering below the shipped cut keeps the bot quiet', asyn
   // by a judge that acts on everything — which is what the placeholder does.
   const w = await oneBotWorld()
   const recorder = fakeServer({
-    candidates: [
-      { token: 'act', logprob: Math.log(0.55) },
-      { token: 'ignore', logprob: Math.log(0.3) },
-    ],
+    probabilities: { act: 0.55, ignore: 0.3 },
   })
   const host = await openHost(w.storeFile, {
     server: 'http://127.0.0.1:8080',
@@ -321,7 +325,7 @@ test('the same server answering below the shipped cut keeps the bot quiet', asyn
     const snapshot = await postMessage(host, { roomId: w.world.room, text: 'the batch failed' })
 
     assert.ok(
-      recorder.calls.some((call) => call.path === '/completion'),
+      recorder.calls.some((call) => call.path === '/v1/systemone'),
       'the model was asked — the silence is its answer, not a wiring that never called',
     )
     const messages = messagesIn(snapshot, w.world.room)
@@ -334,7 +338,7 @@ test('the same server answering below the shipped cut keeps the bot quiet', asyn
 
 test('a server serving another model leaves that bot quiet, and the store opens anyway', async () => {
   const w = await oneBotWorld()
-  const recorder = fakeServer({ candidates: ACTS, modelAlias: 'other', modelPath: null })
+  const recorder = fakeServer({ probabilities: ACT, modelAlias: 'other', modelPath: null })
   const host = await openHost(w.storeFile, {
     server: 'http://127.0.0.1:8080',
     window: '24',
@@ -401,7 +405,7 @@ test('every bot in the store is bound, and each answers for itself', async () =>
     const storeFile = join(dir, 'seek.json')
     await new SeekStore(world.store.data, storeFile).save()
 
-    const watch = fakeServer({ candidates: ACTS })
+    const watch = fakeServer({ probabilities: ACT })
     const work = fakeServer({ modelAlias: 'big', toolCalls: sayCall(world.room, 'on it') })
     const host = await openHost(storeFile, {
       server: 'http://127.0.0.1:8080',
@@ -444,7 +448,7 @@ test('a work server makes the words in the room the model’s, and the window na
   // Binding both to one origin is the shape this test rules
   // out by measuring it — the work row's claim would be checked against `gate` and refused.
   const w = await oneBotWorld()
-  const watch = fakeServer({ candidates: ACTS })
+  const watch = fakeServer({ probabilities: ACT })
   const work = fakeServer({ modelAlias: 'big', modelPath: '/models/big.gguf', toolCalls: sayCall(w.world.room, 'the batch failed on shard 3 — I am on it') })
   const host = await openHost(w.storeFile, {
     server: 'http://127.0.0.1:8080',
@@ -486,7 +490,7 @@ test('a refused words half leaves that bot quiet and the watch half working', as
   // that bot and stage 1 does not. The halves are read apart and reported apart — a bot left
   // with no words says nothing at all, and it must not be mistaken for a model that answered.
   const w = await oneBotWorld()
-  const watch = fakeServer({ candidates: ACTS })
+  const watch = fakeServer({ probabilities: ACT })
   const work = fakeServer({ modelAlias: 'other', modelPath: null })
   const host = await openHost(w.storeFile, {
     server: 'http://127.0.0.1:8080',
@@ -532,10 +536,7 @@ test('a work server is not asked for anything when the watch half kept the bot q
   // so a work server being named costs nothing on a message the bot was right to ignore.
   const w = await oneBotWorld()
   const watch = fakeServer({
-    candidates: [
-      { token: 'act', logprob: Math.log(0.55) },
-      { token: 'ignore', logprob: Math.log(0.3) },
-    ],
+    probabilities: { act: 0.55, ignore: 0.3 },
   })
   const work = fakeServer({ modelAlias: 'big', toolCalls: sayCall(w.world.room, 'should never be said') })
   const host = await openHost(w.storeFile, {
@@ -603,7 +604,7 @@ test('the words half writes through a hosted endpoint once its model is named', 
   // asked which names it serves. What the cut needs from that half — that what a turn says
   // reaches a room only through `say` — is unchanged, which is what the text below is.
   const w = await oneBotWorld()
-  const watch = fakeServer({ candidates: ACTS })
+  const watch = fakeServer({ probabilities: ACT })
   const work = fakeHosted({ toolCalls: sayCall(w.world.room, 'shard 3 is retrying now') })
   const host = await openHost(w.storeFile, {
     server: 'http://127.0.0.1:8080',
@@ -648,7 +649,7 @@ test('a model named with no server beside it is refused, and only that half is',
   // about a server, so a name with no origin names nothing to ask. The watch half is
   // served throughout — one refusal must not take the other half with it.
   const w = await oneBotWorld()
-  const watch = fakeServer({ candidates: ACTS })
+  const watch = fakeServer({ probabilities: ACT })
   const host = await openHost(w.storeFile, {
     server: 'http://127.0.0.1:8080',
     window: '24',
@@ -737,7 +738,7 @@ test('each half sends the key that belongs to its own origin, and no other', asy
   // credential leaving the only origin it belongs to. So this is measured on the wire rather
   // than argued: every request either half sent, and the header it carried.
   const w = await oneBotWorld()
-  const watch = fakeServer({ candidates: ACTS })
+  const watch = fakeServer({ probabilities: ACT })
   const work = fakeHosted({ toolCalls: sayCall(w.world.room, 'shard 3 is retrying now') })
   const seen = []
   const record = (half, recorder) => async (url, init) => {
@@ -772,7 +773,7 @@ test('one key, when only one was given, still reaches both halves', async () => 
   // The rule before this test existed, kept measurable: `SEEK_API_KEY` belongs to the origin a
   // person named, and with two halves on origins they run themselves it is the same person's.
   const w = await oneBotWorld()
-  const watch = fakeServer({ candidates: ACTS })
+  const watch = fakeServer({ probabilities: ACT })
   const work = fakeServer({ modelAlias: 'big', toolCalls: sayCall(w.world.room, 'on it') })
   const seen = []
   const record = (half, recorder) => async (url, init) => {

@@ -1,0 +1,342 @@
+{
+  "_what_this_is": "Every case in set4.json, and a four-by-four of the messages a room actually produces, read through the shipped judgement: watchAs() from src/watch.ts over llamaWatchModel() from src/llama.ts against /v1/systemone. One message per fresh world, so no case rides on another's delta. Each row keeps the exact state the endpoint was sent, so the figure watch-v3 advertises can be recomputed from this file alone.",
+  "_why_this_file_exists": "the cut watch-v3 ships is applied to a probability, and a probability is only meaningful together with the text that produced it. The previous records (calibration/measured.json, calibration/vision/server-transport.json) measured a different reading on a different model: one token sampled after a sentence ending \"Answer act or ignore\", summed over the spellings of the option. Nothing here sums anything — the endpoint answers with one probability per declared answer.",
+  "model": "d1-2B",
+  "file": "/Users/argszero/scm/github.com/argszero/seek/.emrg/sessions/seek-opensource-task/tmp/d1/d1-2B-Q8_0.gguf",
+  "build": "b11946-8ca4060b7",
+  "artifact": "watch-v3",
+  "transport": "/v1/systemone, one named question of type `choice`, two declared answers",
+  "question": {
+    "instructions": "Should you respond to this?",
+    "criteria": {
+      "act": "This message is for me — it asks me, or it is my job to handle it",
+      "ignore": "This message is not for me — it is for someone else, or it is just chatter"
+    }
+  },
+  "options": {
+    "act": "act",
+    "ignore": "ignore"
+  },
+  "threshold": 0.6,
+  "case_set": "calibration/set4.json",
+  "correct_at_cut": 24,
+  "cases": 24,
+  "lowest_act": 0.6254,
+  "highest_other": 0.5823,
+  "missed": [],
+  "readings": [
+    {
+      "label": "act",
+      "text": "对账任务今天凌晨跑失败了，需要人看一下",
+      "p_act": 0.6645,
+      "verdict": "act",
+      "state": "You are 小荷, one of the bots in this chat client.\nWhat you do here: 运维.\nThe other bots in this room: Echo, 小李, 小胖.\n\nRoom: 支付组\n\n[2026-10-28T09:05:03.494Z] 邵安清: 对账任务今天凌晨跑失败了，需要人看一下\n"
+    },
+    {
+      "label": "act",
+      "text": "The settlement batch failed at 03:00, nothing was sent to the bank.",
+      "p_act": 0.8761,
+      "verdict": "act",
+      "state": "You are 小荷, one of the bots in this chat client.\nWhat you do here: 运维.\nThe other bots in this room: Echo, 小李, 小胖.\n\nRoom: 支付组\n\n[2026-10-28T09:05:03.591Z] 邵安清: The settlement batch failed at 03:00, nothing was sent to the bank.\n"
+    },
+    {
+      "label": "act",
+      "text": "@ops-bot 退款申请一直卡在审核中，客户催了两次",
+      "p_act": 0.6254,
+      "verdict": "act",
+      "state": "You are 小荷, one of the bots in this chat client.\nWhat you do here: 运维.\nThe other bots in this room: Echo, 小李, 小胖.\n\nRoom: 支付组\n\n[2026-10-28T09:05:03.691Z] 邵安清: @ops-bot 退款申请一直卡在审核中，客户催了两次\n"
+    },
+    {
+      "label": "act",
+      "text": "We're getting 429s from the upstream PSP on every retry.",
+      "p_act": 0.9216,
+      "verdict": "act",
+      "state": "You are 小荷, one of the bots in this chat client.\nWhat you do here: 运维.\nThe other bots in this room: Echo, 小李, 小胖.\n\nRoom: 支付组\n\n[2026-10-28T09:05:03.792Z] 邵安清: We're getting 429s from the upstream PSP on every retry.\n"
+    },
+    {
+      "label": "act",
+      "text": "支付成功的订单没有回调，订单状态一直是待支付",
+      "p_act": 0.8377,
+      "verdict": "act",
+      "state": "You are 小荷, one of the bots in this chat client.\nWhat you do here: 运维.\nThe other bots in this room: Echo, 小李, 小胖.\n\nRoom: 支付组\n\n[2026-10-28T09:05:03.892Z] 邵安清: 支付成功的订单没有回调，订单状态一直是待支付\n"
+    },
+    {
+      "label": "act",
+      "text": "Can someone check why the CSV export is empty for yesterday?",
+      "p_act": 0.8378,
+      "verdict": "act",
+      "state": "You are 小荷, one of the bots in this chat client.\nWhat you do here: 运维.\nThe other bots in this room: Echo, 小李, 小胖.\n\nRoom: 支付组\n\n[2026-10-28T09:05:03.992Z] 邵安清: Can someone check why the CSV export is empty for yesterday?\n"
+    },
+    {
+      "label": "act",
+      "text": "线上支付页面白屏了，用户下不了单",
+      "p_act": 0.8247,
+      "verdict": "act",
+      "state": "You are 小荷, one of the bots in this chat client.\nWhat you do here: 运维.\nThe other bots in this room: Echo, 小李, 小胖.\n\nRoom: 支付组\n\n[2026-10-28T09:05:04.094Z] 邵安清: 线上支付页面白屏了，用户下不了单\n"
+    },
+    {
+      "label": "act",
+      "text": "Our nightly reconciliation is 3 hours late and still running.",
+      "p_act": 0.8583,
+      "verdict": "act",
+      "state": "You are 小荷, one of the bots in this chat client.\nWhat you do here: 运维.\nThe other bots in this room: Echo, 小李, 小胖.\n\nRoom: 支付组\n\n[2026-10-28T09:05:04.195Z] 邵安清: Our nightly reconciliation is 3 hours late and still running.\n"
+    },
+    {
+      "label": "act",
+      "text": "@ops-bot what's the retry policy for failed payouts?",
+      "p_act": 0.7845,
+      "verdict": "act",
+      "state": "You are 小荷, one of the bots in this chat client.\nWhat you do here: 运维.\nThe other bots in this room: Echo, 小李, 小胖.\n\nRoom: 支付组\n\n[2026-10-28T09:05:04.297Z] 邵安清: @ops-bot what's the retry policy for failed payouts?\n"
+    },
+    {
+      "label": "act",
+      "text": "Alert fired: dispute rate above threshold for merchant 8842.",
+      "p_act": 0.8447,
+      "verdict": "act",
+      "state": "You are 小荷, one of the bots in this chat client.\nWhat you do here: 运维.\nThe other bots in this room: Echo, 小李, 小胖.\n\nRoom: 支付组\n\n[2026-10-28T09:05:04.397Z] 邵安清: Alert fired: dispute rate above threshold for merchant 8842.\n"
+    },
+    {
+      "label": "act",
+      "text": "有个商户说钱扣了但订单没生成",
+      "p_act": 0.7834,
+      "verdict": "act",
+      "state": "You are 小荷, one of the bots in this chat client.\nWhat you do here: 运维.\nThe other bots in this room: Echo, 小李, 小胖.\n\nRoom: 支付组\n\n[2026-10-28T09:05:04.503Z] 邵安清: 有个商户说钱扣了但订单没生成\n"
+    },
+    {
+      "label": "act",
+      "text": "The webhook consumer is dead, no events processed since 09:14.",
+      "p_act": 0.9538,
+      "verdict": "act",
+      "state": "You are 小荷, one of the bots in this chat client.\nWhat you do here: 运维.\nThe other bots in this room: Echo, 小李, 小胖.\n\nRoom: 支付组\n\n[2026-10-28T09:05:04.604Z] 邵安清: The webhook consumer is dead, no events processed since 09:14.\n"
+    },
+    {
+      "label": "ignore",
+      "text": "我下周一到周三休假，有事找小李",
+      "p_act": 0.244,
+      "verdict": "ignore",
+      "state": "You are 小荷, one of the bots in this chat client.\nWhat you do here: 运维.\nThe other bots in this room: Echo, 小李, 小胖.\n\nRoom: 支付组\n\n[2026-10-28T09:05:04.702Z] 邵安清: 我下周一到周三休假，有事找小李\n"
+    },
+    {
+      "label": "ignore",
+      "text": "There's cake in the kitchen for the new hire.",
+      "p_act": 0.119,
+      "verdict": "ignore",
+      "state": "You are 小荷, one of the bots in this chat client.\nWhat you do here: 运维.\nThe other bots in this room: Echo, 小李, 小胖.\n\nRoom: 支付组\n\n[2026-10-28T09:05:04.801Z] 邵安清: There's cake in the kitchen for the new hire.\n"
+    },
+    {
+      "label": "ignore",
+      "text": "今天的例会取消",
+      "p_act": 0.5302,
+      "verdict": "ignore",
+      "state": "You are 小荷, one of the bots in this chat client.\nWhat you do here: 运维.\nThe other bots in this room: Echo, 小李, 小胖.\n\nRoom: 支付组\n\n[2026-10-28T09:05:04.901Z] 邵安清: 今天的例会取消\n"
+    },
+    {
+      "label": "ignore",
+      "text": "New badge policy starts next month, card needed at all doors.",
+      "p_act": 0.4559,
+      "verdict": "ignore",
+      "state": "You are 小荷, one of the bots in this chat client.\nWhat you do here: 运维.\nThe other bots in this room: Echo, 小李, 小胖.\n\nRoom: 支付组\n\n[2026-10-28T09:05:05.002Z] 邵安清: New badge policy starts next month, card needed at all doors.\n"
+    },
+    {
+      "label": "ignore",
+      "text": "笑死，这个 bug 的复现路径太离谱了",
+      "p_act": 0.4173,
+      "verdict": "ignore",
+      "state": "You are 小荷, one of the bots in this chat client.\nWhat you do here: 运维.\nThe other bots in this room: Echo, 小李, 小胖.\n\nRoom: 支付组\n\n[2026-10-28T09:05:05.101Z] 邵安清: 笑死，这个 bug 的复现路径太离谱了\n"
+    },
+    {
+      "label": "ignore",
+      "text": "Lunch order closes at 11:30.",
+      "p_act": 0.2417,
+      "verdict": "ignore",
+      "state": "You are 小荷, one of the bots in this chat client.\nWhat you do here: 运维.\nThe other bots in this room: Echo, 小李, 小胖.\n\nRoom: 支付组\n\n[2026-10-28T09:05:05.200Z] 邵安清: Lunch order closes at 11:30.\n"
+    },
+    {
+      "label": "ignore",
+      "text": "是谁把我的杯子拿走了",
+      "p_act": 0.5823,
+      "verdict": "ignore",
+      "state": "You are 小荷, one of the bots in this chat client.\nWhat you do here: 运维.\nThe other bots in this room: Echo, 小李, 小胖.\n\nRoom: 支付组\n\n[2026-10-28T09:05:05.299Z] 邵安清: 是谁把我的杯子拿走了\n"
+    },
+    {
+      "label": "ignore",
+      "text": "The offsite photos are uploaded to the shared album.",
+      "p_act": 0.2797,
+      "verdict": "ignore",
+      "state": "You are 小荷, one of the bots in this chat client.\nWhat you do here: 运维.\nThe other bots in this room: Echo, 小李, 小胖.\n\nRoom: 支付组\n\n[2026-10-28T09:05:05.398Z] 邵安清: The offsite photos are uploaded to the shared album.\n"
+    },
+    {
+      "label": "ignore",
+      "text": "明天上午十点全员会",
+      "p_act": 0.2978,
+      "verdict": "ignore",
+      "state": "You are 小荷, one of the bots in this chat client.\nWhat you do here: 运维.\nThe other bots in this room: Echo, 小李, 小胖.\n\nRoom: 支付组\n\n[2026-10-28T09:05:05.496Z] 邵安清: 明天上午十点全员会\n"
+    },
+    {
+      "label": "ignore",
+      "text": "刚看了下招聘进度，简历收了不少",
+      "p_act": 0.2864,
+      "verdict": "ignore",
+      "state": "You are 小荷, one of the bots in this chat client.\nWhat you do here: 运维.\nThe other bots in this room: Echo, 小李, 小胖.\n\nRoom: 支付组\n\n[2026-10-28T09:05:05.595Z] 邵安清: 刚看了下招聘进度，简历收了不少\n"
+    },
+    {
+      "label": "keep",
+      "text": "I'm looking into it now, will update in 30 min.",
+      "p_act": 0.2879,
+      "verdict": "ignore",
+      "state": "You are 小荷, one of the bots in this chat client.\nWhat you do here: 运维.\nThe other bots in this room: Echo, 小李, 小胖.\n\nRoom: 支付组\n\n[2026-10-28T09:05:05.694Z] 邵安清: I'm looking into it now, will update in 30 min.\n"
+    },
+    {
+      "label": "keep",
+      "text": "已经联系了银行，等他们回复",
+      "p_act": 0.4235,
+      "verdict": "ignore",
+      "state": "You are 小荷, one of the bots in this chat client.\nWhat you do here: 运维.\nThe other bots in this room: Echo, 小李, 小胖.\n\nRoom: 支付组\n\n[2026-10-28T09:05:05.793Z] 邵安清: 已经联系了银行，等他们回复\n"
+    }
+  ],
+  "four_bots": [
+    {
+      "text": "小荷，这个 bug 你来看一下",
+      "named": "小荷",
+      "readings": [
+        {
+          "bot": "小荷",
+          "p_act": 0.8788,
+          "verdict": "act",
+          "should_act": true,
+          "hit": true
+        },
+        {
+          "bot": "Echo",
+          "p_act": 0.4105,
+          "verdict": "ignore",
+          "should_act": false,
+          "hit": true
+        },
+        {
+          "bot": "小李",
+          "p_act": 0.3819,
+          "verdict": "ignore",
+          "should_act": false,
+          "hit": true
+        },
+        {
+          "bot": "小胖",
+          "p_act": 0.2587,
+          "verdict": "ignore",
+          "should_act": false,
+          "hit": true
+        }
+      ]
+    },
+    {
+      "text": "Echo，帮我看下这个接口报错",
+      "named": "Echo",
+      "readings": [
+        {
+          "bot": "小荷",
+          "p_act": 0.3586,
+          "verdict": "ignore",
+          "should_act": false,
+          "hit": true
+        },
+        {
+          "bot": "Echo",
+          "p_act": 0.9505,
+          "verdict": "act",
+          "should_act": true,
+          "hit": true
+        },
+        {
+          "bot": "小李",
+          "p_act": 0.3294,
+          "verdict": "ignore",
+          "should_act": false,
+          "hit": true
+        },
+        {
+          "bot": "小胖",
+          "p_act": 0.2842,
+          "verdict": "ignore",
+          "should_act": false,
+          "hit": true
+        }
+      ]
+    },
+    {
+      "text": "今天下午三点开会",
+      "named": null,
+      "readings": [
+        {
+          "bot": "小荷",
+          "p_act": 0.3219,
+          "verdict": "ignore",
+          "should_act": false,
+          "hit": true
+        },
+        {
+          "bot": "Echo",
+          "p_act": 0.3169,
+          "verdict": "ignore",
+          "should_act": false,
+          "hit": true
+        },
+        {
+          "bot": "小李",
+          "p_act": 0.3177,
+          "verdict": "ignore",
+          "should_act": false,
+          "hit": true
+        },
+        {
+          "bot": "小胖",
+          "p_act": 0.3087,
+          "verdict": "ignore",
+          "should_act": false,
+          "hit": true
+        }
+      ]
+    },
+    {
+      "text": "大家讨论一下",
+      "named": null,
+      "readings": [
+        {
+          "bot": "小荷",
+          "p_act": 0.4524,
+          "verdict": "ignore",
+          "should_act": false,
+          "hit": true
+        },
+        {
+          "bot": "Echo",
+          "p_act": 0.5758,
+          "verdict": "ignore",
+          "should_act": false,
+          "hit": true
+        },
+        {
+          "bot": "小李",
+          "p_act": 0.4382,
+          "verdict": "ignore",
+          "should_act": false,
+          "hit": true
+        },
+        {
+          "bot": "小胖",
+          "p_act": 0.4274,
+          "verdict": "ignore",
+          "should_act": false,
+          "hit": true
+        }
+      ]
+    }
+  ],
+  "four_bots_correct": 16,
+  "four_bots_total": 16,
+  "what_was_not_measured": [
+    "how the model behaves on pictures: it has no projector (`modalities.vision: false`), and a box carrying one is refused rather than read from its caption (src/watch.ts)",
+    "any language but the two in this set: twelve of the twenty-four are Chinese and twelve English, which is what the set holds rather than a language study",
+    "a second sampling run: a decision model produces a probability and no token, so there is nothing to sample. Two identical asks were measured at a 0.0000 difference"
+  ]
+}

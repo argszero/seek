@@ -128,5 +128,7 @@
     "count": 2,
     "identical": true,
     "recorded": "the second run's rows were compared field by field with the first before this file was written; they matched"
-  }
+  },
+  "superseded_by": "calibration/work/gate-d1.json",
+  "_superseded_note": "This reading was taken with the watch model that shipped before 2026-10-28 (LFM2.5-VL-3B), whose judgement was one token sampled after a sentence ending \"Answer act or ignore\" and summed over the spellings of the option. That model and that reading are gone from the tree: the judgement is now one call to /v1/systemone on d1-2B, which answers with one calibrated probability per declared answer and generates no token. The rows below are kept as the measurement they were — three of six should-speak cases reaching stage 2 and none of the three should-quiet ones — and they are not a description of what the shipped gate does today. gate-d1.json is, and it reads six of six and one of three."
 }

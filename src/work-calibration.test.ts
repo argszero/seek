@@ -370,7 +370,7 @@ interface GateRecord {
   files: Record<string, { bytes: number; sha256: string }>;
 }
 
-const GATE = 'calibration/work/gate.json';
+const GATE = 'calibration/work/gate-d1.json';
 
 test('the gate record counts the rows it holds, and each row agrees with itself', () => {
   const gate = read<GateRecord>(GATE);

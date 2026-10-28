@@ -19,7 +19,6 @@ import {
   stubJudge,
   transcriptOf,
 } from './main.ts';
-import { loadPromptArtifact } from './prompts.ts';
 import { applyRoster, readRosterFor } from './roster.ts';
 import { SeekStore } from './store.ts';
 import type { TurnContext } from './turn.ts';
@@ -88,8 +87,6 @@ function fakeModelServer(options: { act?: number } = {}): { fetch: Fetcher; aske
   };
   const act = options.act ?? 0.95;
   const head = '<|im_start|>system\n';
-  const mid = '<|im_end|>\n<|im_start|>user\n';
-  const tail = '<|im_end|>\n<|im_start|>assistant\n';
 
   const fetcher: Fetcher = async (url, init) => {
     const pathname = new URL(url).pathname;
@@ -104,23 +101,21 @@ function fakeModelServer(options: { act?: number } = {}): { fetch: Fetcher; aske
         build_info: 'test build',
         default_generation_settings: { n_ctx: 4096 },
       };
-    } else if (pathname === '/apply-template') {
-      const messages = (body.messages ?? []) as { role: string; content: string }[];
-      const system = messages.find((message) => message.role === 'system')?.content ?? '';
-      const user = messages.find((message) => message.role === 'user')?.content ?? '';
-      payload = { prompt: `${head}${system}${mid}${user}${tail}` };
     } else if (pathname === '/tokenize') {
       payload = { tokens: (String(body.content).match(/\s+|[^\s]+/g) ?? []).map(idOf) };
-    } else if (pathname === '/completion') {
+    } else if (pathname === '/v1/systemone') {
+      // The decision endpoint's own shape: one forward pass, a probability per declared
+      // answer, and nothing generated (`output_tokens: 0` is what the real binary reports).
       payload = {
-        completion_probabilities: [
-          {
-            top_logprobs: [
-              { token: ' act', logprob: Math.log(act) },
-              { token: ' ignore', logprob: Math.log(1 - act) },
-            ],
+        answers: {
+          respond: {
+            type: 'choice',
+            choice: act >= 0.5 ? 'act' : 'ignore',
+            probabilities: { act, ignore: 1 - act },
+            confidence: act,
           },
-        ],
+        },
+        usage: { input_tokens: 81, output_tokens: 0 },
       };
     } else {
       return { ok: false, status: 404, text: async () => 'no such route' };
@@ -484,7 +479,6 @@ test('a run pointed at a model server asks that server, and the report says stag
       timers: makeTimers(),
       watchServer: {
         baseUrl: 'http://127.0.0.1:8080',
-        artifact: loadPromptArtifact(),
         fetch: server.fetch,
       },
       window: 8,
@@ -495,8 +489,12 @@ test('a run pointed at a model server asks that server, and the report says stag
     // is handed, so a bot that spoke proves nothing until a server saying `ignore`
     // silences it. That pair is below.
     assert.equal(server.asked.includes('/props'), true, 'the server was read before it was asked');
-    assert.equal(server.asked.includes('/tokenize'), true, 'the option ids were measured on it');
-    assert.equal(server.asked.at(-1), '/completion', 'the last thing asked was the question');
+    assert.equal(server.asked.includes('/tokenize'), true, 'the state was counted on it');
+    assert.equal(
+      server.asked.at(-1),
+      '/v1/systemone',
+      'the last thing asked was the question, at the decision endpoint',
+    );
     assert.equal(run.stage1Server, 'http://127.0.0.1:8080');
     assert.equal(run.spoke, true, 'a server reading 0.95 for act is a bot that acts');
 
@@ -516,7 +514,6 @@ test('a run pointed at a model server asks that server, and the report says stag
       timers: makeTimers(),
       watchServer: {
         baseUrl: 'http://127.0.0.1:8080',
-        artifact: loadPromptArtifact(),
         fetch: server.fetch,
       },
       window: 8,
@@ -537,7 +534,6 @@ test('a stage one the caller built itself is not overruled by a server it also n
       judge: () => [],
       watchServer: {
         baseUrl: 'http://127.0.0.1:8080',
-        artifact: loadPromptArtifact(),
         fetch: server.fetch,
       },
       window: 8,
@@ -561,7 +557,6 @@ test('a server named without the box’s budget is refused before anything is de
           timers: makeTimers(),
           watchServer: {
             baseUrl: 'http://127.0.0.1:8080',
-            artifact: loadPromptArtifact(),
             fetch: server.fetch,
           },
         }),

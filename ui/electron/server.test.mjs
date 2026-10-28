@@ -26,16 +26,11 @@ import {
 } from './server.js'
 
 /** Two small files with the shape the real pair has: a model and its projector. */
-function pair(modelBytes = 64, mmprojBytes = 32) {
+/** The one weight file a first run wants, as a body and as its declaration. */
+function weights(modelBytes = 64) {
   return {
-    files: [
-      { name: 'model.gguf', bytes: modelBytes },
-      { name: 'mmproj.gguf', bytes: mmprojBytes },
-    ],
-    bodies: {
-      'model.gguf': Buffer.alloc(modelBytes, 7),
-      'mmproj.gguf': Buffer.alloc(mmprojBytes, 3),
-    },
+    files: [{ name: 'model.gguf', bytes: modelBytes }],
+    bodies: { 'model.gguf': Buffer.alloc(modelBytes, 7) },
   }
 }
 
@@ -130,11 +125,11 @@ test('a build with no server in it says so, and starts nothing', async () => {
   const room = await area()
   const { calls, spawnImpl } = spawnStandIn(await standIn(room.dir, 'answer'))
   try {
-    await putWeights(room.weightsDir, pair().bodies)
+    await putWeights(room.weightsDir, weights().bodies)
     const result = await startBundledServer({
       binaryPath: join(room.dir, 'absent', 'llama-server'),
       weightsDir: room.weightsDir,
-      files: pair().files,
+      files: weights().files,
       spawnImpl,
     })
 
@@ -149,7 +144,7 @@ test('a build with no server in it says so, and starts nothing', async () => {
 
 test('weights that are not there, or not the declared size, are a sentence not a crash', async () => {
   const room = await area()
-  const { files, bodies } = pair()
+  const { files, bodies } = weights()
   try {
     const missing = await weightsTrouble(room.weightsDir, files)
     assert.match(missing, /model\.gguf is not in/, 'it names the file that is gone')
@@ -177,11 +172,11 @@ test('the origin comes back only once the server answers, and stopping it ends t
   // outcome a test must never have.
   let result = null
   try {
-    await putWeights(room.weightsDir, pair().bodies)
+    await putWeights(room.weightsDir, weights().bodies)
     result = await startBundledServer({
       binaryPath: room.binaryPath,
       weightsDir: room.weightsDir,
-      files: pair().files,
+      files: weights().files,
       spawnImpl,
       deadlineMs: 20_000,
     })
@@ -191,7 +186,10 @@ test('the origin comes back only once the server answers, and stopping it ends t
     assert.equal(result.props.model_alias, 'stand-in', 'answered /props before the origin was handed back')
 
     const args = calls[0].args
-    assert.ok(args.includes('--model') && args.includes('--mmproj'), 'started with both weight files')
+    assert.ok(args.includes('--model'), 'started with the weight file it was given')
+    // The model this app carries is a decision model and reports no vision modality, so a
+    // projector would name a file nothing fetches; `d1-2B` needs none.
+    assert.ok(!args.includes('--mmproj'), 'and with no projector it was never given')
     assert.equal(args[args.indexOf('--host') + 1], '127.0.0.1', 'on the loopback, not on every interface')
     assert.equal(args[args.indexOf('--port') + 1], String(result.port), 'on the port it was given')
 
@@ -212,12 +210,12 @@ test('a server that never answers is refused within the deadline and leaves no o
   const { spawnImpl } = spawnStandIn(script)
   let pid = null
   try {
-    await putWeights(room.weightsDir, pair().bodies)
+    await putWeights(room.weightsDir, weights().bodies)
     const started = Date.now()
     const result = await startBundledServer({
       binaryPath: room.binaryPath,
       weightsDir: room.weightsDir,
-      files: pair().files,
+      files: weights().files,
       spawnImpl,
       deadlineMs: 1500,
     })
@@ -248,11 +246,11 @@ test('a server that dies on start-up is refused with its own last words', async 
   const script = await standIn(room.dir, 'die')
   const { spawnImpl } = spawnStandIn(script)
   try {
-    await putWeights(room.weightsDir, pair().bodies)
+    await putWeights(room.weightsDir, weights().bodies)
     const result = await startBundledServer({
       binaryPath: room.binaryPath,
       weightsDir: room.weightsDir,
-      files: pair().files,
+      files: weights().files,
       spawnImpl,
       deadlineMs: 20_000,
     })

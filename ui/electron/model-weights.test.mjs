@@ -369,14 +369,12 @@ test('a file of the wrong size is replaced rather than resumed', async () => {
   }
 })
 
-test('the two files a first run wants are the two the issue measured', () => {
-  // The sizes are what make "whole" checkable, so they are a fact rather than a detail: they
-  // are the counts issue #89 measured on the release these were read from.
+test('the one file a first run wants is the one the record was measured on', () => {
+  // The size is what makes "whole" checkable, so it is a fact rather than a detail: it is the
+  // count measured on the file `calibration/set4-d1.json` read its numbers from.
   assert.deepEqual(
     WEIGHT_FILES.map((file) => [file.name, file.bytes]),
-    [
-      ['LFM2.5-VL-3B-Q4_0.gguf', 1593894944],
-      ['mmproj-LFM2.5-VL-3B-Q8_0.gguf', 583109984],
-    ],
+    [['d1-2B-Q8_0.gguf', 1846240576]],
   )
+  assert.equal(WEIGHT_FILES.length, 1, 'and there is no second file: this model needs no projector')
 })

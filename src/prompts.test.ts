@@ -16,38 +16,14 @@ import {
   shippedWorkPromptPath,
   skeletonOf,
   type PromptArtifact,
+  type PromptLine,
 } from './prompts.ts';
-import type { Id } from './types.ts';
-import { watchAs, type Tokeniser, type WatchInput, type WatchReading } from './watch.ts';
+import { watchAs, type WatchInput, type WatchReading } from './watch.ts';
 
-// The head as the shipped file writes it, with the bot's own name in place: this
-// is the sentence the host refused on 2026-10-28, when it described an ops bot of a
-// payments team rather than whichever bot the judgement was for.
-const SYSTEM = (bot: string) =>
-  `You are ${bot}, one of the bots in this chat client. You answer for what you ` +
-  'yourself would do in the room, and for nothing anybody else would do.';
-const QUESTION = 'Do you need to do something about this message? Answer act or ignore.';
-
-/** The dispatched stub tokeniser: one id per space-delimited chunk. */
-function makeTokeniser(): Tokeniser {
-  let next = 5000;
-  const ids = new Map<string, number>();
-  return {
-    encode(text: string): number[] {
-      const out: number[] = [];
-      for (const chunk of text.match(/ ?[^ ]+/g) ?? []) {
-        let id = ids.get(chunk);
-        if (id === undefined) {
-          id = next;
-          next += 1;
-          ids.set(chunk, id);
-        }
-        out.push(id);
-      }
-      return out;
-    },
-  };
-}
+// The head as the shipped file writes it, with the bot's own name in place: this is the
+// sentence the host refused on 2026-10-28, when it described an ops bot of a payments
+// team rather than whichever bot the judgement was for.
+const SYSTEM = (bot: string) => `You are ${bot}, one of the bots in this chat client.`;
 
 function stub(answer: WatchReading) {
   const seen: WatchInput[] = [];
@@ -66,6 +42,15 @@ function say(world: World, texts: string[]): void {
   for (const text of texts) deliver(world.store, { roomId: world.room, senderId: world.me, text });
 }
 
+/** Box lines the way the runtime builds them: the text, who said it, when. */
+function lines(...texts: string[]): PromptLine[] {
+  return texts.map((text) => ({
+    text,
+    sender: '邵安清',
+    at: '2026-10-28T15:44:08+08:00',
+  }));
+}
+
 /** A second artifact, written somewhere else, so the text cannot be a literal. */
 const PERMUTED: PromptArtifact = {
   version: 'test-v9',
@@ -74,96 +59,137 @@ const PERMUTED: PromptArtifact = {
   parts: [
     { name: 'message', text: 'Message: {text}', after: '\n', when: 'always', each: 'observation' },
     { name: 'summary', text: 'Room memory: {summary}', after: '\n', when: 'summary' },
-    {
-      name: 'question',
-      text: 'Does this room need you to act? Answer act or ignore.',
-      after: ' ',
-      when: 'always',
-    },
+    { name: 'tail', text: 'End of the box.', after: '\n', when: 'always' },
   ],
+  question: {
+    instructions: 'Does this room need you to act?',
+    criteria: {
+      act: 'this room needs me now',
+      ignore: 'this room does not need me now',
+    },
+  },
   operatingPoint: { threshold: 0.75, measuredOn: 'not measured: a fixture' },
 };
 
 test('the shipped artifact is the shape that was measured', () => {
   const artifact = loadPromptArtifact();
 
-  assert.equal(artifact.version, 'watch-v1');
+  assert.equal(artifact.version, 'watch-v3');
   assert.equal(artifact.operatingPoint?.threshold, 0.6, 'the cut ships as a declared default');
-  assert.match(artifact.operatingPoint?.measuredOn ?? '', /calibration\/measured\.json/);
+  assert.match(artifact.operatingPoint?.measuredOn ?? '', /set4/);
 
-  // Verbatim, and in this order: system, the room's memory, the message, the
-  // question — the last of them followed by the space the option is appended at.
+  // Verbatim, and in this order: the bot, what it does here, the other bots, the room,
+  // the room's memory, then one line per entry. The two answers are the artifact's, and
+  // they are what the endpoint is asked to choose between.
   assert.equal(
     assemblePrompt(artifact, {
       bot: 'Echo',
+      position: '运维',
+      others: '小荷, 小李',
+      room: '支付组',
       summary: 'a release is being arranged',
-      texts: ['deploy is red'],
+      lines: lines('deploy is red'),
     }),
-    `${SYSTEM('Echo')}\n\nRoom memory: a release is being arranged\n\nMessage: deploy is red\n${QUESTION} `,
+    `${SYSTEM('Echo')}\n` +
+      'What you do here: 运维.\n' +
+      'The other bots in this room: 小荷, 小李.\n' +
+      '\nRoom: 支付组\n' +
+      '\nRoom memory: a release is being arranged\n' +
+      '\n[2026-10-28T15:44:08+08:00] 邵安清: deploy is red\n',
   );
-  // No summary yet is a room whose first judgement is cold, not a room with an
-  // empty memory: the part is skipped with its separator, not rendered blank.
+  assert.deepEqual(artifact.question, {
+    instructions: 'Should you respond to this?',
+    criteria: {
+      act: 'This message is for me — it asks me, or it is my job to handle it',
+      ignore: 'This message is not for me — it is for someone else, or it is just chatter',
+    },
+  });
+
+  // No summary, no name for what the bot does, no neighbours, no room name: a room whose
+  // first judgement is cold is asked the same question without the lines it has no facts
+  // for — skipped with their separators, not rendered blank.
   assert.equal(
-    assemblePrompt(artifact, { bot: 'Echo', texts: ['deploy is red'] }),
-    `${SYSTEM('Echo')}\n\nMessage: deploy is red\n${QUESTION} `,
+    assemblePrompt(artifact, { bot: 'Echo', lines: lines('deploy is red') }),
+    `${SYSTEM('Echo')}\n` + '\n[2026-10-28T15:44:08+08:00] 邵安清: deploy is red\n',
   );
 });
 
 test('two bots are asked two different questions, and a card that says nothing stays out', () => {
-  // The defect this replaced: every bot in an organization was handed one fixed head
-  // — an ops bot of a payments team, whoever it was — so four bots read the same words
-  // and answered alike, and a room either woke all of them or none.
+  // The defect this replaced: every bot in an organization was handed one fixed head — an
+  // ops bot of a payments team, whoever it was — so four bots read the same words and
+  // answered alike, and a room either woke all of them or none.
   const artifact = loadPromptArtifact();
-  const texts = ['大家讨论一下这个app做什么'];
+  const box = lines('大家讨论一下这个app做什么');
 
-  const echo = assemblePrompt(artifact, { bot: 'Echo', texts });
-  const xiaoli = assemblePrompt(artifact, { bot: '小李', position: '产品经理', texts });
+  const echo = assemblePrompt(artifact, { bot: 'Echo', lines: box });
+  const xiaoli = assemblePrompt(artifact, {
+    bot: '小李',
+    position: '产品经理',
+    others: 'Echo',
+    lines: box,
+  });
   assert.notEqual(echo, xiaoli, 'who is asked is part of the question');
   assert.ok(echo.includes('You are Echo,'), 'the first line names the bot being asked');
   assert.ok(xiaoli.includes('You are 小李,'));
 
-  // The position is a line of its own, and only when the card says one: a card that
-  // says nothing is asked the same question without an empty sentence in the middle.
-  assert.ok(xiaoli.includes('\n\nWhat you do here: 产品经理.\n\n'));
+  // The position is a line of its own, and only when the card says one: a card that says
+  // nothing is asked the same question without an empty sentence in the middle.
+  assert.ok(xiaoli.includes('What you do here: 产品经理.\n'));
   assert.equal(echo.includes('What you do here'), false);
 });
 
-test('the mask is measured on an assembly that ends where every assembly ends', () => {
+test('the neighbours are what makes "is this for me" answerable, and they are a line of the file', () => {
+  // Measured, and the reason the line is not decoration: without it four bots read one
+  // named message as addressed to each of them (act 0.64–0.73 for all four) and a room
+  // either woke all of them or none; with it the named bot reads 0.89 and the others
+  // 0.21–0.36. A file that dropped the part would still assemble, which is why it is
+  // asserted here rather than only measured once.
+  const artifact = loadPromptArtifact();
+  const part = artifact.parts.find((one) => one.name === 'others');
+  assert.ok(part, 'the shipped artifact still has the line');
+  assert.equal(part.when, 'others', 'and it is skipped when the bot has no neighbours');
+  assert.equal(
+    assemblePrompt(artifact, { bot: 'Echo', others: '小荷', lines: [] }).includes(
+      'The other bots in this room: 小荷.\n',
+    ),
+    true,
+  );
+});
+
+test('the skeleton is the artifact with nothing in the box, and it is what a server is measured against', () => {
   const artifact = loadPromptArtifact();
   const skeleton = skeletonOf(artifact);
 
   assert.equal(skeleton.version, artifact.version);
-  // The skeleton is the same text with nothing in the box. Its last character is
-  // the one an option is appended after, so the ids read there are the ids a full
-  // room reads its answer at.
-  // No name: the skeleton is where the question ends, and who is asked only moves
-  // the head of the text, never its last token.
-  assert.equal(skeleton.text, `${SYSTEM('')}\n\n${QUESTION} `);
-  const full = assemblePrompt(artifact, {
-    bot: 'Echo',
-    position: '研发',
-    summary: 'anything at all',
-    texts: ['one', 'two', 'three'],
-  });
-  assert.ok(full.endsWith(skeleton.text.slice(-QUESTION.length - 1)), 'the same end, whatever the box holds');
+  // No bot named, no room, no entries: the smallest state every real judgement contains,
+  // which is what a window has to hold before any judgement can be served.
+  assert.equal(skeleton.text, `${SYSTEM('')}\n`);
+  assert.ok(
+    assemblePrompt(artifact, { bot: 'Echo', room: 'room', lines: lines('one') }).startsWith(
+      SYSTEM('Echo'),
+    ),
+    'and every real state begins with the same head',
+  );
 });
 
 test('a room message cannot write the front of its own prompt', () => {
-  // One pass over the templates. A message that contained the other placeholder is
-  // text, not a substitution site — otherwise a room could place a "memory" it
-  // never had, or fill the question slot.
+  // One pass over the templates. A message that contained another placeholder is text, not
+  // a substitution site — otherwise a room could place a "memory" it never had.
   const artifact = loadPromptArtifact();
   const text = assemblePrompt(artifact, {
     bot: 'Echo',
     summary: 'quiet',
-    texts: ['{summary} and {text} are what this line says'],
+    lines: lines('{summary} and {text} are what this line says'),
   });
 
-  assert.ok(text.includes('Message: {summary} and {text} are what this line says\n'));
+  assert.ok(
+    text.includes('{summary} and {text} are what this line says\n'),
+    'the message is text, not a substitution site',
+  );
   assert.equal(text.match(/Room memory:/g)?.length, 1, 'the memory is rendered once, from the digest');
 });
 
-test('the order is the file\'s, all the way through the runtime', async () => {
+test("the order is the file's, all the way through the runtime", async () => {
   const directory = await mkdtemp(join(tmpdir(), 'seek-prompt-'));
   try {
     const path = join(directory, 'permuted.json');
@@ -178,16 +204,15 @@ test('the order is the file\'s, all the way through the runtime', async () => {
     await watchAs(world.store, world.botA, model, {
       window: 10,
       prompt: artifact,
-      tokeniser: makeTokeniser(),
     })(await world.store.drain(world.botA));
 
-    const text = seen[0].prompt.text;
+    const state = seen[0].prompt.state;
     assert.equal(seen[0].prompt.version, 'test-v9');
     assert.ok(
-      text.indexOf('Message: deploy is red') < text.indexOf('Does this room need you to act?'),
-      'the message comes before the question, as this file lists them',
+      state.indexOf('Message: deploy is red') < state.indexOf('End of the box.'),
+      'a part the file lists second comes second',
     );
-    assert.ok(text.startsWith('You watch one room.\n'), 'and the system block is its head');
+    assert.ok(state.startsWith('You watch one room.\n'), 'and the system block is its head');
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -198,25 +223,43 @@ test('an artifact the runtime cannot honour is refused, and says why', async () 
   try {
     const cases: [string, unknown, RegExp][] = [
       [
-        'a per-observation part with nothing after it',
-        { ...PERMUTED, parts: [PERMUTED.parts[1], PERMUTED.parts[0]] },
-        /repeats per observation/,
-      ],
-      [
-        'a conditional last part',
-        { ...PERMUTED, parts: [PERMUTED.parts[0], PERMUTED.parts[1]] },
-        /is conditional/,
-      ],
-      [
-        'a placeholder with nothing to fill it',
+        'a per-observation part with nothing to fill it',
         {
           ...PERMUTED,
-          parts: [
-            { name: 'message', text: 'Message: {text}', after: '\n', when: 'always' },
-            PERMUTED.parts[2],
-          ],
+          parts: [{ name: 'message', text: 'Message: {text}', after: '\n', when: 'always' }],
         },
         /without `each: "observation"`/,
+      ],
+      [
+        'a part that quotes the room and renders anyway',
+        {
+          ...PERMUTED,
+          parts: [{ name: 'room', text: 'Room: {room}', after: '\n', when: 'always' }],
+        },
+        /fills \{room\} but is rendered when the room may have no name/,
+      ],
+      [
+        'a condition nothing here reads',
+        {
+          ...PERMUTED,
+          parts: [{ name: 'p', text: 'Say something.', after: '\n', when: 'mood' }],
+        },
+        /when must be "always"/,
+      ],
+      [
+        'no question at all',
+        { ...PERMUTED, question: undefined },
+        /`question` must be an object/,
+      ],
+      [
+        'a question that asks nothing',
+        { ...PERMUTED, question: { instructions: '  ', criteria: PERMUTED.question.criteria } },
+        /question\.instructions/,
+      ],
+      [
+        'an answer with no meaning',
+        { ...PERMUTED, question: { instructions: 'Well?', criteria: { act: '' } } },
+        /question\.criteria\.act/,
       ],
       [
         'a cut at an edge',
@@ -245,29 +288,33 @@ test('the shipped file is the one the runtime loads by default', () => {
   const artifact = loadPromptArtifact();
   const shipped = shippedPromptPath();
 
-  assert.match(shipped.pathname, /src\/prompts\/watch-v1\.json$/);
+  assert.match(shipped.pathname, /src\/prompts\/watch-v3\.json$/);
   assert.equal(loadPromptArtifact(shipped).version, artifact.version);
   assert.deepEqual(skeletonOf(artifact), skeletonOf(loadPromptArtifact(shipped)));
+  assert.deepEqual(
+    loadPromptArtifact(shipped).question,
+    artifact.question,
+    'the question is the file\'s too, not a sentence that lives in the code',
+  );
 });
 
 test('an artifact with no declared cut and no supplied one is refused, not guessed', async () => {
   const world = makeWorld();
   const undecided: PromptArtifact = {
-    version: 'watch-v2',
+    version: 'test-v8',
     system: 'You watch one room.',
     afterSystem: '\n',
     parts: PERMUTED.parts,
+    question: PERMUTED.question,
   };
   say(world, ['one']);
   const { model } = stub({ probabilities: { act: 0.9, ignore: 0.1 } });
 
   await assert.rejects(
     async () =>
-      watchAs(world.store, world.botA as Id, model, {
-        window: 10,
-        prompt: undecided,
-        tokeniser: makeTokeniser(),
-      })(await world.store.drain(world.botA)),
+      watchAs(world.store, world.botA, model, { window: 10, prompt: undecided })(
+        await world.store.drain(world.botA),
+      ),
     /declares no operating point and none was supplied/,
     '0.5 would always fit, which is why it cannot be the fallback',
   );
@@ -277,12 +324,12 @@ test('the accuracy the artifact advertises is the one its record gives at that c
   const artifact = loadPromptArtifact();
   const stated = artifact.operatingPoint?.measuredOn ?? '';
 
-  // The sentence is the provenance of a threshold a verdict is read against, so the
-  // figure inside it has to be one a reader can recompute — and it was not. It said
-  // "100% at this cut" while the per-case record gives 20/24: the best cut's accuracy,
-  // written down as this cut's. A provenance line nobody can check is the same defect
-  // as a number with no set behind it, one layer up.
-  const fraction = /(\d+)\/(\d+) correct at this cut/.exec(stated);
+  // The sentence is the provenance of a threshold a verdict is read against, so the figure
+  // inside it has to be one a reader can recompute — and it was not, once: it said "100% at
+  // this cut" while the per-case record gave 20/24, the best cut's accuracy written down as
+  // this cut's. A provenance line nobody can check is the same defect as a number with no
+  // set behind it, one layer up.
+  const fraction = /(\d+) of (\d+) at 0\.600/.exec(stated);
   assert.ok(
     fraction !== null,
     'the artifact states its accuracy at the cut in the form this check reads — a ' +
@@ -290,50 +337,39 @@ test('the accuracy the artifact advertises is the one its record gives at that c
   );
 
   interface Recorded {
-    readonly cases: ReadonlyArray<{
-      readonly label: string;
-      readonly p_act_recorded: number;
-      readonly p_act_server: number;
-    }>;
+    readonly readings: ReadonlyArray<{ readonly label: string; readonly p_act: number }>;
   }
   const record = JSON.parse(
-    readFileSync(new URL('../calibration/vision/server-transport.json', import.meta.url), 'utf8'),
+    readFileSync(new URL('../calibration/set4-d1.json', import.meta.url), 'utf8'),
   ) as Recorded;
-  assert.ok(record.cases.length >= 24, 'the per-case record was read, not skipped');
+  assert.ok(record.readings.length >= 24, 'the per-case record was read, not skipped');
 
   const cut = artifact.operatingPoint?.threshold ?? 0;
-  const correct = (key: 'p_act_recorded' | 'p_act_server'): number =>
-    record.cases.filter((entry) => (entry[key] >= cut) === (entry.label === 'act')).length;
+  const correct = record.readings.filter(
+    (entry) => (entry.p_act >= cut) === (entry.label === 'act'),
+  ).length;
 
-  // The figure in the shipped sentence is the figure this cut earns, counted from the
-  // cases rather than quoted from a summary of them.
+  // The figure in the shipped sentence is the figure this cut earns, counted from the cases
+  // rather than quoted from a summary of them.
   assert.equal(
-    `${fraction[1]}/${fraction[2]}`,
-    `${correct('p_act_recorded')}/${record.cases.length}`,
+    `${fraction[1]} of ${fraction[2]}`,
+    `${correct} of ${record.readings.length}`,
     'the shipped sentence and the per-case record disagree about this cut',
   );
 
-  // Two readers agree, so the figure is the reading's and not one rig's arithmetic.
-  assert.equal(
-    correct('p_act_server'),
-    correct('p_act_recorded'),
-    'the server and the one-shot rig disagree about how many cases this cut gets right',
-  );
-
-  // The invariant that outlives the number: a cut scores every case exactly when it
-  // lies inside the interval the two classes leave open. Stated as a relationship, so
-  // the day the host moves the cut this test still means something — and so a "24/24"
-  // claim is never accepted on a cut that cannot produce it.
-  const acts = record.cases.filter((entry) => entry.label === 'act').map((e) => e.p_act_recorded);
-  const ignores = record.cases
+  // Two readings a cut cannot get right and be a coincidence: the lowest `act` has to be
+  // above the cut, and the highest of everything else below it, or the number above is an
+  // accident of how many cases each class happens to hold.
+  const acts = record.readings
+    .filter((entry) => entry.label === 'act')
+    .map((entry) => entry.p_act);
+  const others = record.readings
     .filter((entry) => entry.label !== 'act')
-    .map((e) => e.p_act_recorded);
-  const lowestAct = Math.min(...acts);
-  const highestIgnore = Math.max(...ignores);
-  assert.equal(
-    correct('p_act_recorded') === record.cases.length,
-    cut > highestIgnore && cut <= lowestAct,
-    `a cut scores every case only inside (${highestIgnore}, ${lowestAct}]; this one is ${cut}`,
+    .map((entry) => entry.p_act);
+  assert.ok(Math.min(...acts) > 0.6, `the lowest act is ${Math.min(...acts)}`);
+  assert.ok(
+    Math.max(...others) < Math.min(...acts),
+    'the two classes are separated at this cut rather than mixed through it',
   );
 });
 
