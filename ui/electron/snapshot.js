@@ -103,6 +103,45 @@ function weightsOf(value) {
 }
 
 /**
+ * A list of names as a reading: strings, no duplicates, `[]` when there is nothing to say.
+ *
+ * Validated rather than trusted, like everything else on this edge — a name that is not a
+ * string is no name, and the renderer is handed a list it can join without asking what is
+ * in it.
+ */
+function namesOf(value) {
+  if (!Array.isArray(value)) return []
+  const names = []
+  for (const one of value) {
+    const name = textOrNull(one)
+    if (name === null || names.includes(name)) continue
+    names.push(name)
+  }
+  return names
+}
+
+/**
+ * What a missing model costs, in the two things a person can tell apart.
+ *
+ * **Not one fact per half, and not one fact for both.** Which half of the kernel a bot is
+ * missing is a developer's distinction (`docs/host-rulings.md`, "The window does not speak
+ * to a developer"), but what it costs the person is not: a bot with no words **cannot
+ * answer at all**, while a bot with no judgement answers whatever is addressed to it and
+ * nothing else, because a direct room, a mention and a reply to its own message are settled
+ * by the rules (`gate.ts` row 2). Two sentences follow from that and both are true; a single
+ * sentence would have to be wrong about one of them.
+ *
+ * A bot both halves left out is counted once, in the stronger group — it cannot answer.
+ * `null` when every bot is served, so a window with a working model draws nothing extra.
+ */
+function modelNotReadyOf(one, two) {
+  const cannotAnswer = two.quiet
+  const namedOnly = one.quiet.filter((name) => !cannotAnswer.includes(name))
+  if (cannotAnswer.length === 0 && namedOnly.length === 0) return null
+  return { cannotAnswer, namedOnly }
+}
+
+/**
  * Which stage 1 the window is looking at, in the two facts the interface may show.
  *
  * `server` is the origin the bot's judgement is bound to, or `null` when the run is the
@@ -120,6 +159,10 @@ function stageOneOf(stage1) {
   return {
     server: typeof stage1?.server === 'string' && stage1.server !== '' ? stage1.server : null,
     refusal: typeof stage1?.refusal === 'string' && stage1.refusal !== '' ? stage1.refusal : null,
+    // **Which bots this half has nothing for.** Not a refusal and not a failure of the
+    // store: an install with no model named is a state, and the names are what the window
+    // needs to say so about the bots it affects (`namesOf`).
+    quiet: namesOf(stage1?.quiet),
     // A third reading, and it is not a failure: the weights are still arriving, and this is how
     // far. It is a field of its own rather than a soft refusal because the window draws the two
     // in different colours, and a download in progress painted in the error colour would report
@@ -144,6 +187,7 @@ function stageTwoOf(stage2) {
   return {
     server: typeof stage2?.server === 'string' && stage2.server !== '' ? stage2.server : null,
     refusal: typeof stage2?.refusal === 'string' && stage2.refusal !== '' ? stage2.refusal : null,
+    quiet: namesOf(stage2?.quiet),
     pending: pendingOf(stage2?.pending),
     // A missing weights directory starves both halves, so stage 2 reads them the same way stage
     // 1 does — the words half survives when somebody named one, and it still has to say why the
@@ -320,14 +364,22 @@ const NOTHING_SPENT = { turns: 0, input_tokens: 0, output_tokens: 0, bots: [] }
  * layer down). Both are strings or `null`, so the renderer still holds no error object.
  */
 function snapshotOf(store, storeFile, stage1 = null, stage2 = null, storeRefusal = null) {
+  // Read once, so the halves and the one fact drawn from both cannot disagree — a window
+  // that listed a quiet bot in one field and not the other would be two readings of one
+  // state.
+  const one = stageOneOf(stage1)
+  const two = stageTwoOf(stage2)
+  const modelNotReady = modelNotReadyOf(one, two)
+
   if (!store) {
     return {
       rooms: [],
       people: [],
       me: null,
       storeFile: null,
-      stage1: stageOneOf(stage1),
-      stage2: stageTwoOf(stage2),
+      stage1: one,
+      stage2: two,
+      modelNotReady,
       storeRefusal,
       // The rule a person is shown on the bot's card is a fact about the product, not about
       // this store, so it is here even on a window that never opened one: a refusal is when a
@@ -470,8 +522,11 @@ function snapshotOf(store, storeFile, stage1 = null, stage2 = null, storeRefusal
     named: namedOf(store),
     me,
     storeFile,
-    stage1: stageOneOf(stage1),
-    stage2: stageTwoOf(stage2),
+    stage1: one,
+    stage2: two,
+    // The two facts above, put into the shapes the window words itself: the bots that cannot
+    // answer, the bots that answer only when named, or `null` when every bot is served.
+    modelNotReady,
     // A store that opened has nothing to refuse; the field is present so a window reading
     // it never has to ask whether its absence means "fine" or "not asked".
     storeRefusal: null,

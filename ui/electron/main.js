@@ -1039,7 +1039,7 @@ async function reopenHost() {
   host = opened.host
   storeRefusal = opened.refusal
   if (storeRefusal) console.error(`seek: the store was not opened after a settings change — ${storeRefusal}`)
-  if (host?.stage2?.refusal) console.error(`seek: the work server was not used — ${host.stage2.refusal}`)
+  if (host?.stage2?.refusal) console.error(`seek: a bot has no words model — ${host.stage2.refusal}`)
   pushChanged()
 }
 
@@ -1212,11 +1212,13 @@ async function start() {
   // app was started, and in the window, where they are looking. The window is the one that
   // matters; this line is what makes a refusal visible in a terminal that has no window
   // attached to it yet. Each half is said on its own, because either can refuse alone.
+  // One line each, and each refuses per bot: the sentences inside name the bot whose roster
+  // row was refused, so three bots that refused for three reasons are three lines.
   if (host?.stage1?.refusal) {
-    console.error(`seek: the watch server was not used — ${host.stage1.refusal}`)
+    console.error(`seek: a bot has no watch model — ${host.stage1.refusal}`)
   }
   if (host?.stage2?.refusal) {
-    console.error(`seek: the work server was not used — ${host.stage2.refusal}`)
+    console.error(`seek: a bot has no words model — ${host.stage2.refusal}`)
   }
   // The window was made before any of this, so what is left is telling it what it now knows:
   // the store is open, the halves are bound or refused, or the store itself was refused.

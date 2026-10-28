@@ -6,8 +6,12 @@
  * asserting that a function was called. `openHost` runs under plain `node --test`; no
  * Electron is involved, which is why `host.js` exists apart from `main.js`.
  *
- * The answer is the kernel's stub (`STUB_REPLY`), not a model's: no model is wired to
- * the interface yet, and a test that pretended otherwise would be the one lie here.
+ * **The bot's half is handed in, and that is what makes these tests about this layer.** What
+ * each one measures is a room, a membership or a delete — what this interface does with a
+ * verdict — and none of them is a measurement of a model. So `openHost` is given the kernel's
+ * own placeholders (`stubJudge` acts on everything, `stubDecide` says `STUB_REPLY`), exactly
+ * as a test hands it a transport with `fetch`; the real model path and the silence a missing
+ * one leaves behind are `model-wiring.test.mjs`'s subject.
  */
 import assert from 'node:assert/strict'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
@@ -16,7 +20,7 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 
 import { applyRoster } from '../../src/roster.ts'
-import { seedOneRoom, STUB_REPLY } from '../../src/main.ts'
+import { seedOneRoom, STUB_REPLY, stubDecide, stubJudge } from '../../src/main.ts'
 import { emptyData, SeekStore } from '../../src/store.ts'
 import { addMember, closeHost, createRoom, deleteBot, openHost, postMessage } from './host.js'
 
@@ -47,7 +51,7 @@ async function world() {
   ])
   await store.save()
 
-  const host = await openHost(storeFile)
+  const host = await openHost(storeFile, { judge: stubJudge, decide: stubDecide })
   return {
     host,
     scene,

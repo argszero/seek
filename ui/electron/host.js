@@ -21,10 +21,19 @@
  * **The bot's answer is a model's when a work server is named.** The kernel has two
  * halves, and each is bound separately: stage 1 decides *whether* the bot acts
  * (`judge`, `watch-server.ts`) and stage 2 writes *what* it says (`decide`,
- * `work-server.ts`). With no server named, both are the kernel's own placeholders —
- * `stubJudge` acting on everything and `stubDecide` saying one fixed line
- * (`src/main.ts`, `STUB_REPLY`) — taken from the kernel so that "no model is wired"
- * stays one fact in one place.
+ * `work-server.ts`). With no server named, neither half is bound and **the bot says
+ * nothing** — an empty room is the honest state of an install with no model, and a line
+ * standing in for one would be the one sentence this interface must never write
+ * (`docs/host-rulings.md`, "A bot whose model is not ready says nothing, and the window
+ * says why"). The kernel's placeholders (`stubJudge`, `stubDecide`, `src/main.ts`) stay
+ * where they belong: in the kernel's own command line, whose report says its words are a
+ * stub.
+ *
+ * **Every bot in the store is bound, and a bot that could not be is silent alone.** The
+ * facts each binding checks — the `model` a roster row claims, the box a judgement reads —
+ * belong to one bot, so a store of several bots spends one binding per bot. A bot whose
+ * binding refused is left out of the two dispatchers below rather than taking the others
+ * with it, and its name is what the window says is quiet.
  *
  * **Two servers, not one, because a server serves one model.** `SEEK_SERVER` names the
  * watch half's server and `SEEK_WORK_SERVER` the work half's, and the reason is
@@ -179,15 +188,20 @@ async function seedFirstRun(mods, store, rows) {
 }
 
 /**
- * Who decides whether the bot acts: the kernel's placeholder, or the measured watch model
- * over a server the person named.
+ * Who decides whether a bot acts: the measured watch model over a server named for this
+ * half, one binding per bot.
  *
  * **This is stage 1, and only stage 1.** The kernel has two halves: the cheap judgement
  * that says whether a message is worth acting on (`judge`, below) and the turn that then
- * says something (`decide`, still `stubDecide`). Reading a real model for the first half
- * makes the bot speak when it judges it should rather than on every message; it does not
- * change a word of what it says, which is `STUB_REPLY` until a turn has a model. Naming
- * both in one breath is the confusion this comment exists to prevent.
+ * says something (`decide`). Reading a real model for the first half makes a bot act when
+ * it judges it should rather than on every message; it does not change a word of what it
+ * says. Naming both in one breath is the confusion this comment exists to prevent.
+ *
+ * **With nothing named there is no judgement at all, and that is not a placeholder.** A
+ * bot acts on what the rules settle (a direct room, a mention, a reminder) and on nothing
+ * else, so a group room with no model behind it stays quiet rather than answering
+ * everything — and the name of each bot left without this half is returned as `quiet`,
+ * which is what the window puts into a sentence a person can act on.
  *
  * **Nothing here is invented.** `watch-server.ts` is the seam the kernel's own command
  * line goes through, and it is called with the same two facts it is given there: the
@@ -202,20 +216,28 @@ async function seedFirstRun(mods, store, rows) {
  * writing down a budget no measurement stands behind. The knobs are named in the refusal
  * because refusing is only useful to whoever turned one.
  *
- * Returns the kernel's `Judge` and, when a server was named, its origin — so the window
- * can say which of the two it is looking at. A reader who cannot tell a measured verdict
- * from a placeholder is reading a stub as a bot that thought (`src/main.ts`,
- * `MilestoneRun.stage1Server`).
+ * Returns the kernel's `Judge` (or nothing, when no bot could be bound), the origin the
+ * half was pointed at, the reason each refused bot refused — for the log, never the screen
+ * — and the names of the bots left quiet.
  */
-async function stageOneFor(mods, store, options) {
+async function stageOneFor(mods, store, standing, options) {
   // A server the app meant to supply and could not — a build with no binary, a first run with
   // no weights, a child that died on start-up — arrives here as a sentence rather than as an
-  // origin. It is refused before anything is bound, because there is nothing to bind to: the
-  // strip says which server was not used and why, in exactly the shape a named server's
-  // refusal has had since PR #88. Without this the app would fall back to the placeholder in
-  // silence, and "no model server" would be drawn over a server that was supposed to be there.
+  // origin. It is refused before anything is bound, because there is nothing to bind to, and
+  // the sentence reaches the log where whoever configured this install is looking
+  // (`main.js`). Without this the half would look unnamed rather than broken, and a server
+  // that was supposed to be there would be reported as one nobody asked for.
   if (typeof options?.serverRefusal === 'string' && options.serverRefusal !== '') {
     throw new Error(options.serverRefusal);
+  }
+
+  // **A test's own judgement, the way `options.fetch` is a test's own transport.** What a
+  // test of a room, a membership or a delete measures is what this layer does with a
+  // verdict; how a model reaches one is `model-wiring.test.mjs`'s subject and needs a
+  // server's worth of fakes. An injected half wins over a named server for the same reason
+  // it does in `src/main.ts`: a caller that bound its own stage 1 has already decided.
+  if (typeof options?.judge === 'function') {
+    return { judge: options.judge, server: null, refusal: null, quiet: [] };
   }
 
   const server = typeof options?.server === 'string' && options.server !== '' ? options.server : undefined;
@@ -232,7 +254,13 @@ async function stageOneFor(mods, store, options) {
     );
   }
 
-  if (server === undefined) return { judge: mods.main.stubJudge };
+  // Nothing named: no bot can be judged, so no bot acts on its own — a direct room's
+  // message and a mention are still settled by the rules (`gate.ts` row 2), and what they
+  // wake says nothing (§2, and stage 2 is what would speak). `quiet` is every bot, because
+  // this half is missing for every bot.
+  if (server === undefined) {
+    return { judge: undefined, server: null, refusal: null, quiet: standing.map(nameOf) };
+  }
 
   if (!/^[1-9][0-9]*$/.test(rawWindow)) {
     throw new Error(
@@ -241,19 +269,80 @@ async function stageOneFor(mods, store, options) {
     );
   }
 
-  const judge = await mods.watchServer.watchOverServer(
-    store,
-    onlyBotId(store),
-    {
-      baseUrl: server,
-      ...(apiKeyOf(options) === undefined ? {} : { apiKey: apiKeyOf(options) }),
-      artifact: mods.prompts.loadPromptArtifact(),
-      ...(options?.fetch === undefined ? {} : { fetch: options.fetch }),
-    },
-    { window: Number(rawWindow) },
-  );
+  // One binding per bot, and one bot's refusal is that bot's. `watchOverServer` binds the
+  // bot whose roster row it checks and whose box a judgement reads, so a store holding
+  // several cannot be served by one call — and refusing the store, which is what this
+  // layer used to do, took every bot down over one row.
+  const bound = new Map();
+  const quiet = [];
+  const refusals = [];
+  for (const bot of standing) {
+    try {
+      bound.set(
+        bot.id,
+        await mods.watchServer.watchOverServer(
+          store,
+          bot.id,
+          {
+            baseUrl: server,
+            ...(apiKeyOf(options) === undefined ? {} : { apiKey: apiKeyOf(options) }),
+            artifact: mods.prompts.loadPromptArtifact(),
+            ...(options?.fetch === undefined ? {} : { fetch: options.fetch }),
+          },
+          { window: Number(rawWindow) },
+        ),
+      );
+    } catch (error) {
+      // Named, because a sentence about a roster row is only actionable to whoever knows
+      // which bot's row it is — and this sentence goes to the log, not the screen.
+      quiet.push(nameOf(bot));
+      refusals.push(`${nameOf(bot)}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
 
-  return { judge, server };
+  return {
+    judge: judgeOver(bound),
+    server,
+    // Every refusal, one per line: the log is where a diagnosis goes, and three bots that
+    // refused for three reasons are three lines rather than one.
+    refusal: refusals.length === 0 ? null : refusals.join('\n'),
+    quiet,
+  };
+}
+
+/**
+ * A bot's name as a person reads it, for the two places a bot is named: the log's sentence
+ * about a refused half, and the window's about a bot left quiet.
+ *
+ * A bot with no name is drawn by its id everywhere else in the store (`snapshotOf`), and
+ * here too — there is nothing else to call it.
+ */
+function nameOf(bot) {
+  return typeof bot.name === 'string' && bot.name !== '' ? bot.name : bot.id;
+}
+
+/**
+ * Every bot that got a judgement, and silence for the ones that did not.
+ *
+ * **The silence is a decision, not a fallback.** A bot whose watch half could not be bound
+ * acts on nothing, which is exactly what a bot whose model answered "not about me" does —
+ * so one row claiming a model the server does not serve leaves the other bots talking,
+ * instead of the whole store falling back to something that acts on everything.
+ */
+function judgeOver(bound) {
+  return (botId, entries) => {
+    const own = bound.get(botId);
+    return own === undefined ? [] : own(entries);
+  };
+}
+
+/** The same table for the half that writes: a bot with no turn to run adds no line. */
+function decideOver(bound) {
+  return (context) => {
+    const own = bound.get(context.botId);
+    if (own === undefined) return undefined;
+    return own(context);
+  };
 }
 
 /**
@@ -305,11 +394,18 @@ const WORK_MODEL_WITHOUT_SERVER =
  * serve it. All four fail here rather than mid-turn, and `openHost` turns each into a
  * fact the window shows.
  */
-async function stageTwoFor(mods, store, options) {
+async function stageTwoFor(mods, store, standing, options) {
   // The same fact as stage 1's, on the half that writes the words. Each half is refused on its
   // own so that one answer does not decide the other (`openHost`'s comment says why).
   if (typeof options?.workServerRefusal === 'string' && options.workServerRefusal !== '') {
     throw new Error(options.workServerRefusal);
+  }
+
+  // The same seam as stage 1's, on the half that writes: a test that gives this layer a
+  // turn has said what the bot's model would have said, and standing up a server to say it
+  // is a fake measuring the fake.
+  if (typeof options?.decide === 'function') {
+    return { decide: options.decide, server: null, refusal: null, quiet: [] };
   }
 
   const server =
@@ -324,50 +420,52 @@ async function stageTwoFor(mods, store, options) {
     throw new Error(WORK_MODEL_WITHOUT_SERVER);
   }
 
-  if (server === undefined) return { decide: mods.main.stubDecide };
+  // Nothing named, so no bot has words: every turn this store wakes runs and says nothing.
+  // The turn is still on the ledger, which is what "woken and silent" reads as.
+  if (server === undefined) {
+    return { decide: undefined, server: null, refusal: null, quiet: standing.map(nameOf) };
+  }
 
-  const decide = await mods.workServer.workOverServer(
-    store,
-    onlyBotId(store),
-    {
-      baseUrl: server,
-      ...(model === undefined ? {} : { model }),
-      ...(workApiKeyOf(options) === undefined ? {} : { apiKey: workApiKeyOf(options) }),
-      // Stage 2 reads this for nothing — `work-server.ts` takes the words from its own
-      // artifact (`src/prompts/work-v1.json`) and uses the server for what it reports
-      // (`/props`, or `/v1/models` on a hosted one — never both) and the chat call. It is
-      // here because `LlamaServer` requires it, and passing a made-up one would be a second
-      // artifact nobody measured.
-      artifact: mods.prompts.loadPromptArtifact(),
-      ...(options?.workFetch === undefined ? {} : { fetch: options.workFetch }),
-    },
-    { prompt: mods.prompts.loadWorkArtifact() },
-  );
+  // One binding per bot, for the reason stage 1 has one: the row whose `model` claim is
+  // checked against this server belongs to one bot, and a turn is filled from that bot's
+  // own name and card (`work-server.ts`, `valuesOf`).
+  const bound = new Map();
+  const quiet = [];
+  const refusals = [];
+  for (const bot of standing) {
+    try {
+      bound.set(
+        bot.id,
+        await mods.workServer.workOverServer(
+          store,
+          bot.id,
+          {
+            baseUrl: server,
+            ...(model === undefined ? {} : { model }),
+            ...(workApiKeyOf(options) === undefined ? {} : { apiKey: workApiKeyOf(options) }),
+            // Stage 2 reads this for nothing — `work-server.ts` takes the words from its own
+            // artifact (`src/prompts/work-v1.json`) and uses the server for what it reports
+            // (`/props`, or `/v1/models` on a hosted one — never both) and the chat call. It is
+            // here because `LlamaServer` requires it, and passing a made-up one would be a second
+            // artifact nobody measured.
+            artifact: mods.prompts.loadPromptArtifact(),
+            ...(options?.workFetch === undefined ? {} : { fetch: options.workFetch }),
+          },
+          { prompt: mods.prompts.loadWorkArtifact() },
+        ),
+      );
+    } catch (error) {
+      quiet.push(nameOf(bot));
+      refusals.push(`${nameOf(bot)}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
 
-  return { decide, server };
-}
-
-/**
- * The one bot stage 1 is bound to.
- *
- * `watchOverServer` binds **one** bot, because two of the facts it checks are that bot's:
- * the `model` its watch row declares and the identity its
- * agents are told. `Kernel` takes a single `judge` for every bot it drains, so this build
- * can bind exactly one. A store holding more than one is therefore refused rather than
- * bound to whichever key came first — that would check one bot's claim and then let every
- * other bot be served by whatever is in front of the port, which is the failure the claim check
- * exists to stop. The store a first run makes holds one bot, which is why this build is
- * exact there.
- */
-function onlyBotId(store) {
-  const ids = Object.keys(store.data.bots);
-  if (ids.length === 1) return ids[0];
-  throw new Error(
-    ids.length === 0
-      ? 'this store holds no bot, so there is nothing to bind a model server to'
-      : `this store holds ${ids.length} bots, and stage 1 is bound per bot: this build binds ` +
-          'one, so a server is refused rather than read for one bot and applied to all of them',
-  );
+  return {
+    decide: decideOver(bound),
+    server,
+    refusal: refusals.length === 0 ? null : refusals.join('\n'),
+    quiet,
+  };
 }
 
 /**
@@ -452,15 +550,23 @@ async function openHost(storeFile, options = {}) {
   // fallback would lose, and it is why the reason is a returned fact rather than a caught
   // error nobody reads. `main.js` logs it too, so a refusal is visible where the app was
   // started from as well as in the window.
-  let stage1 = { judge: mods.main.stubJudge, server: null, refusal: null }
+  // **Which bots this store has, standing.** A deleted bot keeps its row — its messages
+  // name it — so a reader that walked the table bound a half for somebody the organization
+  // no longer has, and counted the graveyard into the bargain (`src/bots.ts`,
+  // `standingBots`).
+  const standing = mods.bots.standingBots(store)
+
+  let stage1 = { judge: undefined, server: null, refusal: null, quiet: standing.map(nameOf) }
   try {
-    const bound = await stageOneFor(mods, store, options)
-    stage1 = { judge: bound.judge, server: bound.server ?? null, refusal: null }
+    stage1 = await stageOneFor(mods, store, standing, options)
   } catch (error) {
+    // One binding for the whole half — a server named without a budget, a build with no
+    // binary — so every bot is left without it, and the reason is the half's, not a bot's.
     stage1 = {
-      judge: mods.main.stubJudge,
+      judge: undefined,
       server: null,
       refusal: error instanceof Error ? error.message : String(error),
+      quiet: standing.map(nameOf),
     }
   }
 
@@ -468,21 +574,24 @@ async function openHost(storeFile, options = {}) {
   // server with its own roster row to check: one half refusing must not take the other
   // with it. A store whose watch row is served and whose work row is not is a real state,
   // and the window says exactly that rather than closing or pretending both are fine.
-  let stage2 = { decide: mods.main.stubDecide, server: null, refusal: null }
+  let stage2 = { decide: undefined, server: null, refusal: null, quiet: standing.map(nameOf) }
   try {
-    const bound = await stageTwoFor(mods, store, options)
-    stage2 = { decide: bound.decide, server: bound.server ?? null, refusal: null }
+    stage2 = await stageTwoFor(mods, store, standing, options)
   } catch (error) {
     stage2 = {
-      decide: mods.main.stubDecide,
+      decide: undefined,
       server: null,
       refusal: error instanceof Error ? error.message : String(error),
+      quiet: standing.map(nameOf),
     }
   }
 
+  // A half nobody bound is left out rather than passed as nothing: the kernel's own default
+  // is the honest one for a missing half — a judgement that acts on nothing and a turn that
+  // says nothing — and both are what a bot with no model does.
   const kernel = new mods.kernel.Kernel(store, {
-    decide: stage2.decide,
-    judge: stage1.judge,
+    ...(stage2.decide === undefined ? {} : { decide: stage2.decide }),
+    ...(stage1.judge === undefined ? {} : { judge: stage1.judge }),
   })
   // Nothing is woken by starting: this arms the one comparator for rows that came due
   // (`§12 (c)`), and a delivery is what wakes a bot.

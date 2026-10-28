@@ -1,23 +1,28 @@
 /**
- * Stage 1 is a real model when one is named, and the window is told which one it got.
+ * Which model each bot's two halves are bound to, per bot, and what a missing one leaves.
  *
- * The interface's whole claim so far was a room that answers; the answer was the kernel's
- * stub and the *decision* to answer was a stub too, so a bot spoke on every message. What
- * this file measures is the half that changed: with `SEEK_SERVER`/`SEEK_WINDOW` set, the
- * verdict comes from the watch model over that server — so the bot speaks when the model
- * says to and stays quiet when it says not to. What it says is still `STUB_REPLY`, and
- * that is the other thing pinned here: this slice wires stage 1 only.
+ * A bot acts when the watch model over its server says to, and it speaks with what the work
+ * model writes (`say`) — one binding per bot, because the `model` a roster row claims and
+ * the box a judgement reads belong to a bot rather than to the store.
+ *
+ * **With nothing ready the bot says nothing.** The room keeps the person's own message and
+ * no line is posted on the bot's behalf, which is the ruling this file exists to hold: an
+ * empty room is the honest state of an install with no model, and what a person gets instead
+ * of an invented sentence is the window saying which bots are quiet and why
+ * (`docs/host-rulings.md`, "A bot whose model is not ready says nothing, and the window says
+ * why"). Nothing here asserts a placeholder: the kernel's `stubJudge`/`stubDecide` stay in
+ * the kernel's own command line.
  *
  * **Nothing here starts a model.** The transport is `LlamaServer.fetch`, the seam the
  * kernel's own `watch-server.test.ts` uses, so a fake answers `/props`, `/apply-template`,
  * `/tokenize` and `/completion` and records what it was asked. No socket is opened and no
  * process is waited on.
  *
- * **A refusal is a reading, not a crash.** A server that cannot be used does not stop the
- * window opening: the store is local and its messages are still there, so the app falls
- * back to the placeholder and says *which* server it did not use and why. The last tests
- * here are the refused cases, and each one asserts both halves — the reason, and an app
- * that still works.
+ * **A refusal is a reading, not a crash, and it is one bot's.** A server that cannot be used
+ * does not stop the window opening: the store is local and its messages are still there, the
+ * bot whose row refused is left quiet by name, and every other bot goes on working. The
+ * refused cases below each assert both — the reason (in `refusal`, which is the log's) and an
+ * app that still works.
  */
 import assert from 'node:assert/strict'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
@@ -163,35 +168,101 @@ function messagesIn(snapshot, roomId) {
   return snapshot.rooms.find((room) => room.id === roomId)?.messages ?? []
 }
 
-test('with no server named, the placeholder decides and the window is told there is none', async () => {
+test('with nothing named, the bot says nothing and the window says which bots are quiet', async () => {
   const w = await oneBotWorld()
   const host = await openHost(w.storeFile)
   try {
-    assert.equal(host.stage1.server, null, 'no server, so stage 1 is the kernel placeholder')
+    assert.equal(host.stage1.server, null, 'no server, so no judgement is bound')
     assert.equal(host.stage1.refusal, null, 'and nothing was refused — this is the shipped state')
+    assert.deepEqual(host.stage1.quiet, ['A'], 'the bot this half has nothing for, by name')
 
     const snapshot = await postMessage(host, { roomId: w.world.room, text: 'the deploy is red' })
 
     assert.deepEqual(
       snapshot.stage1,
-      { server: null, refusal: null, pending: null, weights: null },
+      { server: null, refusal: null, quiet: ['A'], pending: null, weights: null },
       'the window carries it too',
     )
     assert.deepEqual(
       snapshot.stage2,
-      { server: null, refusal: null, pending: null, weights: null },
-      'and stage 2 is the placeholder too — nothing named, nothing refused',
+      { server: null, refusal: null, quiet: ['A'], pending: null, weights: null },
+      'and stage 2 is quiet for the same bot — nothing named, nothing refused',
     )
-    const messages = messagesIn(snapshot, w.world.room)
-    assert.equal(messages.length, 2, 'what was typed, and the placeholder acting on it')
-    assert.equal(messages[1].text, STUB_REPLY, "and the line is the kernel's stub")
+    assert.deepEqual(
+      snapshot.modelNotReady,
+      { cannotAnswer: ['A'], namedOnly: [] },
+      'the model is not ready, and this bot has nothing to answer with either way',
+    )
+    assert.deepEqual(
+      messagesIn(snapshot, w.world.room).map((one) => one.text),
+      ['the deploy is red'],
+      'nothing was posted on the bot’s behalf — no line stands in for an answer',
+    )
+    assert.equal(
+      host.store.messagesOf(w.world.room).length,
+      1,
+      'and nothing was invented into the store either',
+    )
   } finally {
     closeHost(host)
     await rm(w.dir, { recursive: true, force: true })
   }
 })
 
-test('a server named with a window asks the model, and its verdict is what makes the bot speak', async () => {
+test('with no judgement of its own, a bot still answers what is addressed to it', async () => {
+  // The missing half here is stage 1: no server named, so nothing judges. But a mention is
+  // settled by the rules (`gate.ts` row 2), and that entry reaches stage 2 without asking
+  // anything — so this bot answers when it is addressed and stays quiet when it is not. That
+  // is the fact the window words second: a bot left without a judgement is not a bot that
+  // cannot answer, and saying so would be false about the room it is standing in.
+  const w = await oneBotWorld()
+  const work = fakeServer({ modelAlias: 'big', toolCalls: sayCall(w.world.room, 'the build is fine') })
+  const host = await openHost(w.storeFile, {
+    workServer: 'http://127.0.0.1:8081',
+    workFetch: work.fetch,
+  })
+  try {
+    assert.equal(host.stage1.server, null, 'no judgement is bound')
+    assert.deepEqual(host.stage1.quiet, ['A'], 'this half has nothing for the bot')
+    assert.deepEqual(host.stage2.quiet, [], 'and the words half is served')
+
+    // A room of three, said to nobody in particular: the rules cannot settle it, and there is
+    // nothing to ask.
+    const unnamed = await postMessage(host, { roomId: w.world.room, text: 'the deploy is red' })
+    assert.deepEqual(
+      messagesIn(unnamed, w.world.room).map((one) => one.text),
+      ['the deploy is red'],
+      'nothing answered a message that named nobody',
+    )
+    assert.deepEqual(
+      unnamed.modelNotReady,
+      { cannotAnswer: [], namedOnly: ['A'] },
+      'and the window says what naming it would do',
+    )
+
+    // The same room, with the bot named: row 2 acts with no model at all, and stage 2 speaks.
+    const named = await postMessage(host, {
+      roomId: w.world.room,
+      text: '@A the deploy is red',
+      mentions: [{ id: w.world.botA, name: 'A' }],
+    })
+    assert.deepEqual(
+      messagesIn(named, w.world.room).map((one) => one.text),
+      ['the deploy is red', '@A the deploy is red', 'the build is fine'],
+      'a mention is settled by the rules, so the bot answers with no judgement behind it',
+    )
+    assert.deepEqual(
+      named.modelNotReady,
+      { cannotAnswer: [], namedOnly: ['A'] },
+      'and the reading does not change: it still has no judgement of its own',
+    )
+  } finally {
+    closeHost(host)
+    await rm(w.dir, { recursive: true, force: true })
+  }
+})
+
+test('a named watch server is asked, and its verdict is what acts', async () => {
   const w = await oneBotWorld()
   const recorder = fakeServer({ candidates: ACTS })
   const host = await openHost(w.storeFile, {
@@ -202,6 +273,7 @@ test('a server named with a window asks the model, and its verdict is what makes
   try {
     assert.equal(host.stage1.server, 'http://127.0.0.1:8080', 'the window can say which server')
     assert.equal(host.stage1.refusal, null)
+    assert.deepEqual(host.stage1.quiet, [], 'and the half is bound for this bot')
     const askedUpFront = recorder.calls.filter((call) => call.path === '/completion').length
     assert.equal(askedUpFront, 0, 'binding measures the ids; it does not judge anything yet')
 
@@ -211,10 +283,18 @@ test('a server named with a window asks the model, and its verdict is what makes
       recorder.calls.filter((call) => call.path === '/completion').length >= 1,
       'the message reached the model, so the verdict is the model’s',
     )
-    const messages = messagesIn(snapshot, w.world.room)
-    assert.equal(messages.length, 2, 'the model said act, so the bot answers')
-    assert.equal(messages[1].text, STUB_REPLY, 'and what it says is still stage 2’s placeholder')
-    assert.equal(snapshot.stage1.server, 'http://127.0.0.1:8080', 'a send keeps the reading')
+    const room = snapshot.rooms.find((one) => one.id === w.world.room)
+    assert.equal(room.spend.turns, 1, 'the model said act, so a turn ran for the bot')
+    assert.deepEqual(
+      room.messages.map((one) => one.text),
+      ['the batch failed'],
+      'and no line came of it: the half that writes has no model, so nothing writes one',
+    )
+    assert.deepEqual(
+      snapshot.modelNotReady,
+      { cannotAnswer: ['A'], namedOnly: [] },
+      'what the window says: the judgement is served, the words are not, so it cannot answer',
+    )
   } finally {
     closeHost(host)
     await rm(w.dir, { recursive: true, force: true })
@@ -252,7 +332,7 @@ test('the same server answering below the shipped cut keeps the bot quiet', asyn
   }
 })
 
-test('a server serving another model is refused, and the window opens on the placeholder', async () => {
+test('a server serving another model leaves that bot quiet, and the store opens anyway', async () => {
   const w = await oneBotWorld()
   const recorder = fakeServer({ candidates: ACTS, modelAlias: 'other', modelPath: null })
   const host = await openHost(w.storeFile, {
@@ -261,16 +341,25 @@ test('a server serving another model is refused, and the window opens on the pla
     fetch: recorder.fetch,
   })
   try {
-    assert.equal(host.stage1.server, null, 'the refused server is not the one in use')
+    assert.equal(host.stage1.server, 'http://127.0.0.1:8080', 'the half was bound to the origin named')
     assert.match(host.stage1.refusal, /serves 'other'/, "the reason names what the server serves")
     assert.match(host.stage1.refusal, /gate/, 'and what the roster claimed')
+    assert.match(host.stage1.refusal, /^A: /, 'and which bot’s row claimed it')
+    assert.deepEqual(host.stage1.quiet, ['A'], 'the bot it left without a judgement')
 
     const snapshot = await postMessage(host, { roomId: w.world.room, text: 'the deploy is red' })
 
-    const messages = messagesIn(snapshot, w.world.room)
-    assert.equal(messages.length, 2, 'the app still works: the placeholder answers')
-    assert.equal(messages[1].text, STUB_REPLY)
-    assert.match(snapshot.stage1.refusal, /serves 'other'/, 'and the window keeps saying why')
+    assert.deepEqual(
+      messagesIn(snapshot, w.world.room).map((one) => one.text),
+      ['the deploy is red'],
+      'the app still works, and nothing answered the message',
+    )
+    assert.deepEqual(
+      snapshot.modelNotReady,
+      { cannotAnswer: ['A'], namedOnly: [] },
+      'the window says the bot cannot answer',
+    )
+    assert.match(snapshot.stage1.refusal, /serves 'other'/, 'while the reading keeps the reason')
   } finally {
     closeHost(host)
     await rm(w.dir, { recursive: true, force: true })
@@ -300,24 +389,47 @@ test('half of the pair is refused rather than guessed, and the refusal names the
   }
 })
 
-test('a store holding two bots is refused rather than bound to whichever came first', async () => {
-  // `watchOverServer` binds one bot, because the model it checks is that bot's watch row
-  // and the identity its agents are told is that bot's. `Kernel` takes a single `judge`, so
-  // a second bot would be served by the same server without its own claim being checked —
-  // the failure the claim check exists to stop, one bot over.
+test('every bot in the store is bound, and each answers for itself', async () => {
+  // The store the window opens over can hold several bots, and the rows a binding checks are
+  // one bot's: the `model` its watch row claims, the box its judgement reads, the name and
+  // card a turn is filled from. So the binding is per bot — a build that bound one bot and
+  // served the rest from it refused this store outright, which is what the store the host's
+  // own machine carries used to hit.
   const dir = await mkdtemp(join(tmpdir(), 'seek-ui-model-'))
   try {
+    const world = makeWorld()
     const storeFile = join(dir, 'seek.json')
-    await new SeekStore(makeWorld().store.data, storeFile).save()
+    await new SeekStore(world.store.data, storeFile).save()
 
+    const watch = fakeServer({ candidates: ACTS })
+    const work = fakeServer({ modelAlias: 'big', toolCalls: sayCall(world.room, 'on it') })
     const host = await openHost(storeFile, {
       server: 'http://127.0.0.1:8080',
       window: '24',
-      fetch: fakeServer({ candidates: ACTS }).fetch,
+      fetch: watch.fetch,
+      workServer: 'http://127.0.0.1:8081',
+      workFetch: work.fetch,
     })
     try {
-      assert.equal(host.stage1.server, null)
-      assert.match(host.stage1.refusal, /holds 2 bots/)
+      assert.equal(host.stage1.refusal, null, 'neither bot’s watch row was refused')
+      assert.deepEqual(host.stage1.quiet, [], 'both are bound to the watch model')
+      assert.deepEqual(host.stage2.quiet, [], 'and both have words')
+
+      const snapshot = await postMessage(host, { roomId: world.room, text: 'the batch failed' })
+
+      const room = snapshot.rooms.find((one) => one.id === world.room)
+      assert.equal(room.messages.length, 3, 'the message, and one answer from each bot')
+      assert.deepEqual(
+        room.messages.map((one) => one.sender).sort(),
+        [world.me, world.botA, world.botB].sort(),
+        'each bot answered as itself, and the person is the third voice',
+      )
+      assert.equal(room.spend.turns, 2, 'two turns: one per bot, not one for the store')
+      assert.deepEqual(
+        room.spend.bots.map((one) => one.id).sort(),
+        [world.botA, world.botB].sort(),
+        'and the ledger names both of them',
+      )
     } finally {
       closeHost(host)
     }
@@ -369,12 +481,10 @@ test('a work server makes the words in the room the model’s, and the window na
   }
 })
 
-test('the work half refusing does not take the watch half with it', async () => {
-  // The fixture's work row claims `big`; this server serves `other`, so stage 2 is refused
-  // and stage 1 is not. The two halves are read apart and reported apart, because a bot that
-  // still answers — `stubDecide` having taken over — is exactly the state that must not be
-  // mistaken for a model that answered: the window draws neither, and `main.js` writes the
-  // refusal to stderr.
+test('a refused words half leaves that bot quiet and the watch half working', async () => {
+  // The fixture's work row claims `big`; this server serves `other`, so stage 2 refuses for
+  // that bot and stage 1 does not. The halves are read apart and reported apart — a bot left
+  // with no words says nothing at all, and it must not be mistaken for a model that answered.
   const w = await oneBotWorld()
   const watch = fakeServer({ candidates: ACTS })
   const work = fakeServer({ modelAlias: 'other', modelPath: null })
@@ -387,16 +497,29 @@ test('the work half refusing does not take the watch half with it', async () => 
   })
   try {
     assert.equal(host.stage1.server, 'http://127.0.0.1:8080', 'stage 1 is served')
-    assert.equal(host.stage2.server, null, 'stage 2 is not')
+    assert.deepEqual(host.stage1.quiet, [], 'and bound for the bot in the room')
     assert.match(host.stage2.refusal, /serves 'other'/, 'the reason names what the server serves')
     assert.match(host.stage2.refusal, /big/, 'and what the work row claimed')
+    assert.deepEqual(host.stage2.quiet, ['A'], 'the bot left without words, by name')
 
     const snapshot = await postMessage(host, { roomId: w.world.room, text: 'the batch failed' })
 
-    const messages = messagesIn(snapshot, w.world.room)
-    assert.equal(messages.length, 2, 'the window still works: the placeholder answers')
-    assert.equal(messages[1].text, STUB_REPLY, 'and that answer is visibly the kernel’s line')
-    assert.match(snapshot.stage2.refusal, /serves 'other'/, 'while the snapshot keeps saying why')
+    assert.deepEqual(
+      messagesIn(snapshot, w.world.room).map((one) => one.text),
+      ['the batch failed'],
+      'nothing answered it: the half that writes could not be bound',
+    )
+    assert.equal(
+      snapshot.rooms.find((one) => one.id === w.world.room).spend.turns,
+      1,
+      'the bot did act — the judgement was served',
+    )
+    assert.deepEqual(
+      snapshot.modelNotReady,
+      { cannotAnswer: ['A'], namedOnly: [] },
+      'and the window says the bot cannot answer',
+    )
+    assert.match(snapshot.stage2.refusal, /serves 'other'/, 'while the reading keeps saying why')
     assert.equal(snapshot.stage1.server, 'http://127.0.0.1:8080', 'and stage 1 is still named')
   } finally {
     closeHost(host)
@@ -540,11 +663,17 @@ test('a model named with no server beside it is refused, and only that half is',
 
     const snapshot = await postMessage(host, { roomId: w.world.room, text: 'the batch failed' })
 
-    assert.equal(
-      messagesIn(snapshot, w.world.room)[1].text,
-      STUB_REPLY,
-      'the window still answers, and visibly with the kernel’s line',
+    assert.deepEqual(
+      messagesIn(snapshot, w.world.room).map((one) => one.text),
+      ['the batch failed'],
+      'nothing answered: a model name with no server names nothing to ask',
     )
+    assert.deepEqual(
+      snapshot.modelNotReady,
+      { cannotAnswer: ['A'], namedOnly: [] },
+      'and the window says the bot cannot answer',
+    )
+    assert.equal(snapshot.stage1.server, 'http://127.0.0.1:8080', 'while stage 1 is untouched')
   } finally {
     closeHost(host)
     await rm(w.dir, { recursive: true, force: true })

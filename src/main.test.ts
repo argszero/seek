@@ -437,9 +437,10 @@ test('the stubs answer without reading, and a reminder’s turn says nothing', a
     await stubDecide({ ...context, roomId: undefined } as TurnContext);
     assert.deepEqual(said, []);
 
-    // Stage 1's stub acts on everything it is given, and reads none of it.
+    // Stage 1's stub acts on everything it is given, and reads none of it — including
+    // the bot it is asked about, which it takes and ignores.
     const entries = [{ id: 'ob_1' }, { id: 'ob_2' }] as never;
-    assert.equal(stubJudge(entries, context).length, 2);
+    assert.equal(stubJudge(world.bot, entries).length, 2);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

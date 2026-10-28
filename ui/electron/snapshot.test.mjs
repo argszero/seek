@@ -199,11 +199,25 @@ test('a store that is not open yet says so instead of throwing', () => {
   assert.deepEqual(snapshot.rooms, [])
   assert.match(snapshot.error, /not open yet/)
   // Both halves are read out of the same absent host, so a window that opened before the
-  // store carries two placeholder readings rather than two missing fields — a reading whose
-  // fact is `undefined` is left to whatever the renderer does with `undefined`, which is how a
-  // fallback starts looking like a configuration.
-  assert.deepEqual(snapshot.stage1, { server: null, refusal: null, pending: null, weights: null })
-  assert.deepEqual(snapshot.stage2, { server: null, refusal: null, pending: null, weights: null })
+  // store carries two readings rather than two missing fields — a reading whose fact is
+  // `undefined` is left to whatever the renderer does with `undefined`, which is how a
+  // fallback starts looking like a configuration. `quiet: []` because no store means no bot
+  // to name, and `modelNotReady: null` because there is nobody to be quiet about.
+  assert.deepEqual(snapshot.stage1, {
+    server: null,
+    refusal: null,
+    quiet: [],
+    pending: null,
+    weights: null,
+  })
+  assert.deepEqual(snapshot.stage2, {
+    server: null,
+    refusal: null,
+    quiet: [],
+    pending: null,
+    weights: null,
+  })
+  assert.equal(snapshot.modelNotReady, null)
 })
 
 /**
@@ -218,7 +232,7 @@ test('the snapshot says which stage 1 it is, and a refusal is not the same readi
   const off = snapshotOf(seeded(), '/tmp/seek.json')
   assert.deepEqual(
     off.stage1,
-    { server: null, refusal: null, pending: null, weights: null },
+    { server: null, refusal: null, quiet: [], pending: null, weights: null },
     'nothing named, nothing refused',
   )
 
@@ -226,6 +240,7 @@ test('the snapshot says which stage 1 it is, and a refusal is not the same readi
   assert.deepEqual(bound.stage1, {
     server: 'http://127.0.0.1:8080',
     refusal: null,
+    quiet: [],
     pending: null,
     weights: null,
   })
@@ -234,12 +249,55 @@ test('the snapshot says which stage 1 it is, and a refusal is not the same readi
   assert.deepEqual(refused.stage1, {
     server: null,
     refusal: 'it serves another model',
+    quiet: [],
     pending: null,
     weights: null,
   })
 
   const shut = snapshotOf(null, null, { refusal: 'why not' })
   assert.equal(shut.stage1.refusal, 'why not', 'a store that is not open still says why')
+})
+
+/**
+ * What a missing model costs, in the two groups a person can tell apart.
+ *
+ * **Not one fact per half, and not one fact for both.** Which half of the kernel a bot is
+ * missing is a developer's distinction (`docs/host-rulings.md`, "The window does not speak
+ * to a developer"), but what it costs the person is not: a bot with no words cannot answer
+ * at all, while a bot with no judgement answers what is addressed to it and nothing else,
+ * because a direct room, a mention and a reply to its own message are settled by the rules
+ * (`gate.ts` row 2). Two sentences follow and both are true; a single sentence would have to
+ * be wrong about one of them.
+ *
+ * A bot both halves left out is counted once, in the group that cannot answer. A list is
+ * de-duplicated and validated here rather than in the renderer: a name that is not a string
+ * is no name, and a bot named twice is one bot.
+ */
+test('the window is told which bots cannot answer and which answer only when named', () => {
+  const quiet = (stage1, stage2) => snapshotOf(seeded(), '/tmp/seek.json', stage1, stage2).modelNotReady
+
+  assert.deepEqual(
+    quiet({ quiet: ['Echo'] }, { quiet: [] }),
+    { cannotAnswer: [], namedOnly: ['Echo'] },
+    'no judgement: named it answers, unnamed it stays quiet',
+  )
+  assert.deepEqual(
+    quiet({ quiet: [] }, { quiet: ['Scout'] }),
+    { cannotAnswer: ['Scout'], namedOnly: [] },
+    'no words: there is nothing for it to answer with',
+  )
+  assert.deepEqual(
+    quiet({ quiet: ['Echo', 'Scout'] }, { quiet: ['Echo'] }),
+    { cannotAnswer: ['Echo'], namedOnly: ['Scout'] },
+    'a bot both halves left out is counted once, in the group that cannot answer',
+  )
+  assert.equal(quiet({ quiet: [] }, { quiet: [] }), null, 'every bot served is not a state to draw')
+  assert.equal(quiet(undefined, undefined), null, 'and no reading at all is not one either')
+  assert.deepEqual(
+    quiet({ quiet: ['', null, 3, 'Echo', 'Echo'] }, {}),
+    { cannotAnswer: [], namedOnly: ['Echo'] },
+    'a name that is not a name is dropped, and the rest is not drawn twice',
+  )
 })
 
 /**
