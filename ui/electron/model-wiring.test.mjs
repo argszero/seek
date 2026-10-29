@@ -34,7 +34,23 @@ import { test } from 'node:test'
 import { makeWorld } from '../../src/fixtures.ts'
 import { STUB_REPLY } from '../../src/main.ts'
 import { SeekStore } from '../../src/store.ts'
-import { closeHost, openHost, postMessage } from './host.js'
+import { closeHost, openHost, hostSnapshot, postMessage } from './host.js'
+
+/**
+ * Send, and wait for the room to answer.
+ *
+ * `postMessage()` hands its snapshot back as soon as the message is written, because a bot
+ * answers on its own time — that is what keeps the composer usable while it talks
+ * (`ui/electron/host.js`). A test about the answer is therefore a test about what happens
+ * after that: this waits for the kernel and then reads the room again, which is the same
+ * two steps `main.js` takes before it tells the window the facts changed.
+ */
+async function postAndWait(host, input) {
+  await postMessage(host, input)
+  await host.kernel.whenIdle()
+  return hostSnapshot(host)
+}
+
 
 /** The template this fake model uses: a fixed head and tail, so the ends are stable. */
 const TEMPLATE_HEAD = '<|im_start|>system\n'
@@ -183,7 +199,7 @@ test('with nothing named, the bot says nothing and the window says which bots ar
     assert.equal(host.stage1.refusal, null, 'and nothing was refused — this is the shipped state')
     assert.deepEqual(host.stage1.quiet, ['A'], 'the bot this half has nothing for, by name')
 
-    const snapshot = await postMessage(host, { roomId: w.world.room, text: 'the deploy is red' })
+    const snapshot = await postAndWait(host, { roomId: w.world.room, text: 'the deploy is red' })
 
     assert.deepEqual(
       snapshot.stage1,
@@ -235,7 +251,7 @@ test('with no judgement of its own, a bot still answers what is addressed to it'
 
     // A room of three, said to nobody in particular: the rules cannot settle it, and there is
     // nothing to ask.
-    const unnamed = await postMessage(host, { roomId: w.world.room, text: 'the deploy is red' })
+    const unnamed = await postAndWait(host, { roomId: w.world.room, text: 'the deploy is red' })
     assert.deepEqual(
       messagesIn(unnamed, w.world.room).map((one) => one.text),
       ['the deploy is red'],
@@ -248,7 +264,7 @@ test('with no judgement of its own, a bot still answers what is addressed to it'
     )
 
     // The same room, with the bot named: row 2 acts with no model at all, and stage 2 speaks.
-    const named = await postMessage(host, {
+    const named = await postAndWait(host, {
       roomId: w.world.room,
       text: '@A the deploy is red',
       mentions: [{ id: w.world.botA, name: 'A' }],
@@ -284,7 +300,7 @@ test('a named watch server is asked, and its verdict is what acts', async () => 
     const askedUpFront = recorder.calls.filter((call) => call.path === '/v1/systemone').length
     assert.equal(askedUpFront, 0, 'binding measures the ids; it does not judge anything yet')
 
-    const snapshot = await postMessage(host, { roomId: w.world.room, text: 'the batch failed' })
+    const snapshot = await postAndWait(host, { roomId: w.world.room, text: 'the batch failed' })
 
     assert.ok(
       recorder.calls.filter((call) => call.path === '/v1/systemone').length >= 1,
@@ -322,7 +338,7 @@ test('the same server answering below the shipped cut keeps the bot quiet', asyn
     fetch: recorder.fetch,
   })
   try {
-    const snapshot = await postMessage(host, { roomId: w.world.room, text: 'the batch failed' })
+    const snapshot = await postAndWait(host, { roomId: w.world.room, text: 'the batch failed' })
 
     assert.ok(
       recorder.calls.some((call) => call.path === '/v1/systemone'),
@@ -351,7 +367,7 @@ test('a server serving another model leaves that bot quiet, and the store opens 
     assert.match(host.stage1.refusal, /^A: /, 'and which bot’s row claimed it')
     assert.deepEqual(host.stage1.quiet, ['A'], 'the bot it left without a judgement')
 
-    const snapshot = await postMessage(host, { roomId: w.world.room, text: 'the deploy is red' })
+    const snapshot = await postAndWait(host, { roomId: w.world.room, text: 'the deploy is red' })
 
     assert.deepEqual(
       messagesIn(snapshot, w.world.room).map((one) => one.text),
@@ -419,7 +435,7 @@ test('every bot in the store is bound, and each answers for itself', async () =>
       assert.deepEqual(host.stage1.quiet, [], 'both are bound to the watch model')
       assert.deepEqual(host.stage2.quiet, [], 'and both have words')
 
-      const snapshot = await postMessage(host, { roomId: world.room, text: 'the batch failed' })
+      const snapshot = await postAndWait(host, { roomId: world.room, text: 'the batch failed' })
 
       const room = snapshot.rooms.find((one) => one.id === world.room)
       assert.equal(room.messages.length, 3, 'the message, and one answer from each bot')
@@ -462,7 +478,7 @@ test('a work server makes the words in the room the model’s, and the window na
     assert.equal(host.stage2.server, 'http://127.0.0.1:8081', 'the two halves are two origins')
     assert.equal(host.stage2.refusal, null)
 
-    const snapshot = await postMessage(host, { roomId: w.world.room, text: 'the batch failed' })
+    const snapshot = await postAndWait(host, { roomId: w.world.room, text: 'the batch failed' })
 
     const messages = messagesIn(snapshot, w.world.room)
     assert.equal(messages.length, 2, 'the model said act, so the bot answered')
@@ -506,7 +522,7 @@ test('a refused words half leaves that bot quiet and the watch half working', as
     assert.match(host.stage2.refusal, /big/, 'and what the work row claimed')
     assert.deepEqual(host.stage2.quiet, ['A'], 'the bot left without words, by name')
 
-    const snapshot = await postMessage(host, { roomId: w.world.room, text: 'the batch failed' })
+    const snapshot = await postAndWait(host, { roomId: w.world.room, text: 'the batch failed' })
 
     assert.deepEqual(
       messagesIn(snapshot, w.world.room).map((one) => one.text),
@@ -547,7 +563,7 @@ test('a work server is not asked for anything when the watch half kept the bot q
     workFetch: work.fetch,
   })
   try {
-    const snapshot = await postMessage(host, { roomId: w.world.room, text: 'the batch failed' })
+    const snapshot = await postAndWait(host, { roomId: w.world.room, text: 'the batch failed' })
 
     assert.deepEqual(
       messagesIn(snapshot, w.world.room).map((one) => one.text),
@@ -620,7 +636,7 @@ test('the words half writes through a hosted endpoint once its model is named', 
     assert.equal(host.stage2.refusal, null, 'a name its own list carries is not a refusal')
     assert.equal(host.stage2.server, 'http://127.0.0.1:8081/v1', 'the snapshot names it as it was given')
 
-    const snapshot = await postMessage(host, { roomId: w.world.room, text: 'the batch failed' })
+    const snapshot = await postAndWait(host, { roomId: w.world.room, text: 'the batch failed' })
 
     assert.equal(
       messagesIn(snapshot, w.world.room)[1].text,
@@ -662,7 +678,7 @@ test('a model named with no server beside it is refused, and only that half is',
     assert.match(host.stage2.refusal, /SEEK_WORK_MODEL/, 'the reason names the variable that said it')
     assert.match(host.stage2.refusal, /SEEK_WORK_SERVER/, 'and the one that was missing')
 
-    const snapshot = await postMessage(host, { roomId: w.world.room, text: 'the batch failed' })
+    const snapshot = await postAndWait(host, { roomId: w.world.room, text: 'the batch failed' })
 
     assert.deepEqual(
       messagesIn(snapshot, w.world.room).map((one) => one.text),
@@ -756,7 +772,7 @@ test('each half sends the key that belongs to its own origin, and no other', asy
     workFetch: record('work', work),
   })
   try {
-    const snapshot = await postMessage(host, { roomId: w.world.room, text: 'the batch failed' })
+    const snapshot = await postAndWait(host, { roomId: w.world.room, text: 'the batch failed' })
     assert.equal(messagesIn(snapshot, w.world.room)[1].text, 'shard 3 is retrying now')
 
     const auths = (half) => [...new Set(seen.filter((one) => one.half === half).map((one) => one.auth))]
@@ -789,7 +805,7 @@ test('one key, when only one was given, still reaches both halves', async () => 
     workFetch: record('work', work),
   })
   try {
-    await postMessage(host, { roomId: w.world.room, text: 'the batch failed' })
+    await postAndWait(host, { roomId: w.world.room, text: 'the batch failed' })
     const auths = (half) => [...new Set(seen.filter((one) => one.half === half).map((one) => one.auth))]
     assert.deepEqual(auths('watch'), ['Bearer the-one-key'])
     assert.deepEqual(auths('work'), ['Bearer the-one-key'])

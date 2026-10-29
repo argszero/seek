@@ -310,6 +310,10 @@ Nothing is posted on its behalf and nothing is invented. Silence in the room is 
 *"In Bots, why is there still a `someone else` that cannot be deleted? … A first launch does not need to create a person called `someone else`."* — the implementer's wording, quoting the host.
 The screen the rail calls 机器人 lists this organization's bots and nothing else, so a person is never a row there: there is no third thing to do with one, since a person is not made, messaged into a direct one-to-one by mistake or deleted. **The same rule governs every list that offers somebody to a room** — creating a chat, creating a group, adding a member: what is offered is this organization's one person and its bots, so a person another seed wrote is offered nowhere. A room already holding such a person still lists them, because a member the window cannot show is a member nobody can take out. The world a first launch makes is one person, one bot and the room they talk in — two members, which is a direct message, and a direct message is the one room where the bot answers without a model having to decide whether the line was meant for it. A stranger in that room was the harness's requirement, not the product's, and the harness makes its own.
 
+**A message is sent when it is written, not when the room has answered.**
+*"How could there be such a basic mistake? … Our goal is the same experience as a real Feishu group chat. Sending a message is sending a message: a person can send at any time, and a bot can speak at any time."* — the implementer's translation of the host's own words, 2026-10-29.
+Pressing send writes the words and draws them; the room answers on its own time, and its answer arrives afterwards as one more change. The composer is never held while a bot talks, and two things a person says are never queued one behind the other. **What this replaced was a send that waited for the whole turn**: the box disabled and the person's own line off the screen for as long as a model took to speak — a window that stops accepting words while somebody else is typing, which is how an app that has hung looks.
+
 ## How to work
 
 **One question at a time.**

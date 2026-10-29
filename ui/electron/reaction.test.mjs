@@ -25,7 +25,24 @@ import { test } from 'node:test'
 import { seedOneRoom } from '../../src/main.ts'
 import { applyRoster, parseRoster } from '../../src/roster.ts'
 import { emptyData, SeekStore } from '../../src/store.ts'
-import { closeHost, createRoom, openHost, postMessage, reactToMessage } from './host.js'
+import { closeHost, createRoom, openHost, hostSnapshot, postMessage, reactToMessage } from './host.js'
+
+/**
+ * Send, and wait for the room to answer.
+ *
+ * `postMessage()` hands its snapshot back as soon as the message is written, because a bot
+ * answers on its own time — that is what keeps the composer usable while it talks
+ * (`ui/electron/host.js`). A test about a message that was sent is therefore a test about
+ * what happens after it: this waits for the kernel and then reads the room again, which is
+ * the same two steps `main.js` takes before it tells the window the facts changed. Nothing
+ * is still writing to the disk when it returns, which is what a teardown needs.
+ */
+async function postAndWait(host, input) {
+  await postMessage(host, input)
+  await host.kernel.whenIdle()
+  return hostSnapshot(host)
+}
+
 
 /**
  * A store with the seeded world and a roster beside it.
@@ -81,7 +98,7 @@ function messageIn(snapshot, roomId, messageId) {
 test('a reaction lands in the store and comes back in the snapshot', async () => {
   const w = await world()
   try {
-    const posted = await postMessage(w.host, { roomId: w.scene.room, text: 'look at this' })
+    const posted = await postAndWait(w.host, { roomId: w.scene.room, text: 'look at this' })
     const messageId = roomIn(posted, w.scene.room).messages.at(-1).id
 
     const after = await reactToMessage(w.host, {
@@ -109,7 +126,7 @@ test('a reaction lands in the store and comes back in the snapshot', async () =>
 test('the same emoji again takes the reaction back and leaves no row behind', async () => {
   const w = await world()
   try {
-    const posted = await postMessage(w.host, { roomId: w.scene.room, text: 'second thoughts' })
+    const posted = await postAndWait(w.host, { roomId: w.scene.room, text: 'second thoughts' })
     const messageId = roomIn(posted, w.scene.room).messages.at(-1).id
     const react = () =>
       reactToMessage(w.host, { roomId: w.scene.room, messageId, emojiType: 'THUMBSUP' })
@@ -133,7 +150,7 @@ test('the same emoji again takes the reaction back and leaves no row behind', as
 test('a reaction with no emoji is refused in the kernel’s own words', async () => {
   const w = await world()
   try {
-    const posted = await postMessage(w.host, { roomId: w.scene.room, text: 'react to what?' })
+    const posted = await postAndWait(w.host, { roomId: w.scene.room, text: 'react to what?' })
     const messageId = roomIn(posted, w.scene.room).messages.at(-1).id
 
     await assert.rejects(
@@ -158,7 +175,7 @@ test('a reaction with no emoji is refused in the kernel’s own words', async ()
 test('a forward names the room its original is in and carries its words', async () => {
   const w = await world()
   try {
-    const posted = await postMessage(w.host, {
+    const posted = await postAndWait(w.host, {
       roomId: w.scene.room,
       text: 'the numbers are in the sheet',
     })
@@ -176,7 +193,7 @@ test('a forward names the room its original is in and carries its words', async 
 
     // An empty box and nothing else: a forward's words are the original's, so this is the one
     // post that must get past the composer's "an empty message is not a message".
-    const forwarded = await postMessage(w.host, {
+    const forwarded = await postAndWait(w.host, {
       roomId: made.roomId,
       text: '',
       forwardOf: { roomId: w.scene.room, messageId: original.id },
@@ -202,7 +219,7 @@ test('a forward names the room its original is in and carries its words', async 
 test('a half forward address is refused rather than sent as an empty message', async () => {
   const w = await world()
   try {
-    const posted = await postMessage(w.host, { roomId: w.scene.room, text: 'something' })
+    const posted = await postAndWait(w.host, { roomId: w.scene.room, text: 'something' })
     const original = roomIn(posted, w.scene.room).messages.at(-1)
 
     await assert.rejects(

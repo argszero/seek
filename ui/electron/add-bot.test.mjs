@@ -27,7 +27,23 @@ import { test } from 'node:test'
 import { seedOneRoom, STUB_REPLY, stubDecide, stubJudge } from '../../src/main.ts'
 import { applyRoster, parseRoster } from '../../src/roster.ts'
 import { emptyData, SeekStore } from '../../src/store.ts'
-import { addBot, closeHost, createRoom, openHost, postMessage } from './host.js'
+import { addBot, closeHost, createRoom, openHost, hostSnapshot, postMessage } from './host.js'
+
+/**
+ * Send, and wait for the room to answer.
+ *
+ * `postMessage()` hands its snapshot back as soon as the message is written, because a bot
+ * answers on its own time — that is what keeps the composer usable while it talks
+ * (`ui/electron/host.js`). A test about the answer is therefore a test about what happens
+ * after that: this waits for the kernel and then reads the room again, which is the same
+ * two steps `main.js` takes before it tells the window the facts changed.
+ */
+async function postAndWait(host, input) {
+  await postMessage(host, input)
+  await host.kernel.whenIdle()
+  return hostSnapshot(host)
+}
+
 
 /**
  * A store with the seeded world and a roster **file** beside it.
@@ -124,7 +140,7 @@ test('the new bot answers in a room, which is what its two roster rows are for',
       members: [w.scene.me, made.botId],
     })
 
-    const snapshot = await postMessage(w.host, {
+    const snapshot = await postAndWait(w.host, {
       roomId: room.roomId,
       text: '排期发我一份',
     })

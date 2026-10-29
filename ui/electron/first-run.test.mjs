@@ -20,7 +20,23 @@ import { test } from 'node:test'
 import { seedOneRoom, STUB_REPLY, stubDecide, stubJudge } from '../../src/main.ts'
 import { applyRoster, parseRoster, ROSTER_FILE } from '../../src/roster.ts'
 import { emptyData, SeekStore } from '../../src/store.ts'
-import { closeHost, openHost, postMessage } from './host.js'
+import { closeHost, openHost, hostSnapshot, postMessage } from './host.js'
+
+/**
+ * Send, and wait for the room to answer.
+ *
+ * `postMessage()` hands its snapshot back as soon as the message is written, because a bot
+ * answers on its own time — that is what keeps the composer usable while it talks
+ * (`ui/electron/host.js`). A test about the answer is therefore a test about what happens
+ * after that: this waits for the kernel and then reads the room again, which is the same
+ * two steps `main.js` takes before it tells the window the facts changed.
+ */
+async function postAndWait(host, input) {
+  await postMessage(host, input)
+  await host.kernel.whenIdle()
+  return hostSnapshot(host)
+}
+
 
 /** An empty directory — what a fresh install has — and its clean-up. */
 async function freshDirectory() {
@@ -96,7 +112,7 @@ test('a directory with nothing in it opens on a room whose bot answers', async (
     const agents = Object.values(host.store.data.agents).filter((agent) => agent.bot_id === botId)
     assert.deepEqual(agents.map((agent) => agent.role).sort(), ['watch', 'work'])
 
-    const snapshot = await postMessage(host, { roomId, text: 'is this thing on' })
+    const snapshot = await postAndWait(host, { roomId, text: 'is this thing on' })
     const room = snapshot.rooms.find((one) => one.id === roomId)
     assert.deepEqual(
       room.messages.map((message) => message.text),
