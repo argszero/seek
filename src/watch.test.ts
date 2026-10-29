@@ -256,7 +256,7 @@ test('a room memory is rendered where the artifact puts it, from the digest', as
   );
 });
 
-test('a picture in the window is refused rather than judged from its caption', async () => {
+test('a picture it cannot read is counted, and the room is judged anyway', async () => {
   const world = makeWorld();
   deliver(world.store, {
     roomId: world.room,
@@ -265,17 +265,27 @@ test('a picture in the window is refused rather than judged from its caption', a
     text: '看这张',
     media: { key: 'blobs/screen.png', mime: 'image/png' },
   });
-  const entries = await world.store.drain(world.botA);
+  const picture = await world.store.drain(world.botA);
 
   const { model, seen } = stub({ probabilities: { act: 0.99, ignore: 0.01 } });
-  await assert.rejects(
-    async () => bind(world, model)(entries),
-    /cannot see/,
-    'a verdict read from the caption would look exactly like one reached with the ' +
-      'picture in front of the model',
+  const judge = bind(world, model);
+
+  assert.equal((await judge(picture)).length, 1, 'the verdict is reached, and opens its turn');
+  assert.equal(seen.length, 1, 'the question is put: one unread picture does not end the room');
+  assert.equal(
+    judge.last?.unreadPictures,
+    1,
+    'and the picture it could not read is on the record rather than dropped in silence',
   );
-  assert.equal(seen.length, 0, 'and the question is never put');
-  assert.equal(entries[0].verdict, undefined, 'nor is a verdict written off it');
+
+  // The half a refusal took away: the picture stays in the box, so the plain message
+  // posted after it was refused exactly as the picture was, and the room went mute for as
+  // long as the picture stayed in the window.
+  deliver(world.store, { roomId: world.room, senderId: world.me, text: 'and then words' });
+  const later = await world.store.drain(world.botA);
+  assert.equal((await judge(later)).length, 1, 'the room keeps answering after the picture');
+  assert.equal(seen.length, 2, 'one question per room per tick, and this room is still asked');
+  assert.equal(judge.last?.unreadPictures, 1, 'the picture is still in the window, and still counted');
 });
 
 // ---------------------------------------------------------------------------

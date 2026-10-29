@@ -25,10 +25,16 @@
  * **The picture path is gone with the model, and that is a loss.** `d1-2B` is text: the
  * endpoint takes a `state` string, and the server reports `modalities.vision: false`. The
  * previous model was a vision-language one and its images were a measured route
- * (`calibration/vision/`). A box carrying a picture is therefore refused rather than read
- * from its caption, because a verdict reached from a caption while the reading looks like one
- * reached with the picture in front of the model is the worst of the three possibilities.
- * Restoring it needs a projector and a measured image route for this model; neither exists.
+ * (`calibration/vision/`). A picture in a judgement's window is therefore neither read nor
+ * sent: the state has no place to put bytes, so `watch.ts` counts it in
+ * `WatchOutcome.unreadPictures` and judges the room on its words. Restoring it needs a
+ * projector and a measured image route for this model; neither exists.
+ *
+ * **`/props` is not read for `modalities` here.** It was, into a `ServerShape.vision`
+ * field whose comment claimed a box carrying a picture would be refused when it was false —
+ * and nothing read the field, because that refusal belonged to a transport that no longer
+ * has a picture route to refuse. A fact no caller acts on is not a fact this file should
+ * report, so the field is gone rather than left claiming something.
  *
  * **The writing half is unchanged.** A turn is still one `/v1/chat/completions` call with
  * tools, and everything it checks about a server — a template in effect, a window big enough
@@ -188,14 +194,6 @@ export interface ServerShape {
   modelAlias: string;
   /** The weights file it loaded, as the server reports it. */
   modelPath: string;
-  /**
-   * Whether a projector is loaded, so an image could be seen at all.
-   *
-   * Read from `/props` and acted on: a box that carries a picture is refused when this
-   * is `false`, because the image part would be dropped on the way in and the reading
-   * would come from the caption alone (`readWithPictures`).
-   */
-  vision: boolean;
 }
 
 /**
@@ -617,17 +615,7 @@ async function propsOf(server: LlamaServer): Promise<ServerShape> {
     // not a server that agreed.
     modelAlias: typeof props.model_alias === 'string' ? props.model_alias : '',
     modelPath: typeof props.model_path === 'string' ? props.model_path : '',
-    // `/props` reports this as an object of booleans (`{vision, video, audio}`); a
-    // server too old to report it is read as unable to see, which is the safe way
-    // round: it refuses rather than claims a capability nobody confirmed.
-    vision: visionOf(props.modalities),
   };
-}
-
-/** `modalities.vision`, read as a fact about the server rather than as a promise. */
-function visionOf(modalities: unknown): boolean {
-  if (typeof modalities !== 'object' || modalities === null) return false;
-  return (modalities as { vision?: unknown }).vision === true;
 }
 
 /** One POST, refused loudly when it did not arrive. */

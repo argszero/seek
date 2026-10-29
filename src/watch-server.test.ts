@@ -477,9 +477,9 @@ test('a roster row that names no model is not a claim, so nothing is compared', 
 });
 
 test('a server that names itself not at all cannot confirm a claim, so it is refused', async () => {
-  // Silence is not agreement — the direction `visionOf` reads `modalities` in. A server that
-  // cannot say which model it serves cannot confirm that it is the one the roster named, and
-  // treating that as a pass is the silent lie this check exists to stop.
+  // Silence is not agreement: an absent name is an absent answer, never the roster's. A
+  // server that cannot say which model it serves cannot confirm that it is the one the
+  // roster named, and treating that as a pass is the silent lie this check exists to stop.
   const world = makeWorld();
   const recorder = fakeServer({ modelAlias: null, modelPath: null });
 
