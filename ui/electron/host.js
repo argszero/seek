@@ -662,13 +662,38 @@ async function openHost(storeFile, options = {}) {
     ...(stage2.decide === undefined ? {} : { decide: stage2.decide }),
     ...(stage1.judge === undefined ? {} : { judge: stage1.judge }),
     ...(stage2.summarise === undefined ? {} : { summarise: stage2.summarise }),
+    ...(options.onError === undefined ? {} : { onError: options.onError }),
     compactLines: { maxObservations: NOTE_AFTER },
   })
   // Nothing is woken by starting: this arms the one comparator for rows that came due
   // (`§12 (c)`), and a delivery is what wakes a bot.
   await kernel.start()
 
-  return { store, kernel, storeFile, stage1, stage2 }
+  // **The two ways a bot answers without being asked twice.** A send starts its wakes and
+  // returns (`postMessage`); `onChanged` is what says they have settled, so the window can
+  // draw an answer that arrived after the person's own line was already on screen. `onError`
+  // is the same hook for the wakes that threw — the kernel's comparator and a person's send
+  // both report there, so the main process has one place to log them.
+  return {
+    store,
+    kernel,
+    storeFile,
+    stage1,
+    stage2,
+    onChanged: options.onChanged,
+    onError: options.onError,
+  }
+}
+
+/**
+ * Everything the window may see, read off an open host.
+ *
+ * The same read `seek:snapshot` and `seek:changed` carry, exported because a caller with no
+ * window still has to ask what a room holds *now* — which after `postMessage` is a different
+ * answer from the snapshot it returned, because a bot answers on its own time.
+ */
+function hostSnapshot(host) {
+  return snapshotOf(host.store, host.storeFile, host.stage1, host.stage2)
 }
 
 /**
@@ -778,16 +803,26 @@ function mentionsOf(mentions) {
  *    answer that reached the disk while the message it answers did not would be a
  *    room whose order is wrong after a restart.
  * 3. **One wake per bot that received an entry**, through `Kernel.tick()` — the single
- *    wake path, which consults stage 0 first and opens a turn only for what survives
- *    it. A turn that threw comes back out of `tick()` and therefore out of here: the
- *    kernel hands a wake's failure to the caller that started that wake, and
- *    `kernel.failures` is where the *comparator's* own background wakes are recorded
- *    (`src/kernel.ts`). The message the person typed is already on disk by then, which
- *    is why the interface shows the refusal it gets rather than claiming nothing
- *    happened.
+ *    wake path, which consults stage 0 first and opens a turn only for what survives it.
  *
- * What it returns is the snapshot to draw, taken after `whenIdle()` — so the bot's
- * answer is in it, not in the next one.
+ * **The wake is started here and awaited by nobody.** A message is sent when it is written,
+ * and step 2 is the writing; the room answering afterwards is the room's business, on its own
+ * time. Until 2026-10-29 this call awaited the whole turn, so the composer sat disabled for
+ * as long as a model took to talk and the person's own line did not appear until the bot had
+ * finished — a chat window that stops accepting words while somebody else types, which is not
+ * how any room behaves and which reads on screen as the app hanging.
+ *
+ * So the snapshot it returns is the room *now*: the person's message, and whatever was
+ * already there. A bot's answer is not in it, because at that instant the bot has not been
+ * asked yet. `host.onChanged` is called once the wakes have settled, and `main.js` answers
+ * that by sending a fresh snapshot to the window — the same `seek:changed` every other write
+ * broadcasts, so an answer arrives the way it does in any room.
+ *
+ * **A wake nobody awaited still cannot fail silently.** The kernel hands a wake's failure to
+ * the caller that started that wake, so the caller is here: it goes on `kernel.failures`
+ * beside the comparator's own background wakes (`src/kernel.ts`) and is named to
+ * `host.onError`, which the main process logs. The room stays quiet, the message stays on
+ * disk, and nothing is taken back — there is nothing to take back.
  */
 /**
  * A forward's address, as `{roomId, messageId}` — or a refusal.
@@ -883,11 +918,32 @@ async function postMessage(host, input) {
   })
   await host.store.save()
 
+  // The message is on disk, and that is the whole of "it was sent". The bots it was delivered
+  // to are asked now and answered for later — one wake each, all of them started at once,
+  // because a room's bots do not take turns in a queue behind each other.
   const recipients = new Set(sent.observations.map((entry) => entry.bot_id))
-  for (const botId of recipients) await host.kernel.tick(botId)
-  // A wake is not awaited by `tick`'s own compaction, and "the interface is done
-  // writing" has exactly one answer in the kernel.
-  await host.kernel.whenIdle()
+  const answers = [...recipients].map((botId) =>
+    host.kernel.tick(botId).catch((error) => {
+      // A turn that threw is recorded where the kernel records the wakes it started itself,
+      // and the room goes quiet: the message it would have answered is already written.
+      host.kernel.failures.push({ botId, error })
+      host.onError?.(error, botId)
+    }),
+  )
+  // **Not `whenIdle()`.** A tick also starts its own compaction, and waiting for that would
+  // put a summary's request between a bot's answer and the window that draws it. What the
+  // window is told about here is the answers, and nothing else.
+  if (answers.length > 0) {
+    void Promise.all(answers).then(() => {
+      // A window that closed while a bot was answering is not a failure of the room, so this
+      // is caught rather than left as a rejection on a promise nobody holds.
+      try {
+        host.onChanged?.()
+      } catch (error) {
+        host.onError?.(error, undefined)
+      }
+    })
+  }
 
   // The same facts the window's first snapshot carried, for both halves: a send replaces
   // the whole snapshot in the renderer, so leaving either out here would make its strip
@@ -1120,6 +1176,7 @@ module.exports = {
   deleteMessage,
   deleteRoom,
   deleteThread,
+  hostSnapshot,
   openHost,
   openHostOrRefuse,
   postMessage,

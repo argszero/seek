@@ -303,6 +303,27 @@ function pushChanged() {
   if (win && !win.isDestroyed()) win.webContents.send('seek:changed', snapshotNow())
 }
 
+/**
+ * What the host calls when a bot answers without being asked twice.
+ *
+ * `postMessage()` hands the person's message back as soon as it is written and lets the room
+ * answer on its own time, so an answer is not in the snapshot a send returns. **This is what
+ * puts it on screen**: the same broadcast every other write makes, sent when the wakes have
+ * settled.
+ *
+ * `onError` is the other half of that deal. A wake nobody awaits still has to be said
+ * somewhere, and a terminal is where a diagnostic belongs: the window already draws a room's
+ * refusals, and a bot whose turn threw has nothing to add to them — the person's message is
+ * on disk and the room simply stays quiet.
+ */
+const hostCallbacks = {
+  onChanged: pushChanged,
+  onError: (error, botId) =>
+    console.error(
+      `seek: a wake for ${botId ?? 'a bot'} threw — ${error instanceof Error ? error.message : String(error)}`,
+    ),
+}
+
 ipcMain.handle('seek:snapshot', () => snapshotNow())
 ipcMain.handle('seek:data-path', () => STORE_FILE)
 ipcMain.handle('seek:settings-path', () => SETTINGS_FILE)
@@ -396,6 +417,7 @@ async function openOrganization(id) {
   // creating an organization needs no seeding of its own.
   const words = await wordsFacts()
   const opened = await openHostOrRefuse(STORE_FILE, {
+    ...hostCallbacks,
     server,
     window: serverWindow,
     workServer: words.filesNamed ? words.workServer : server,
@@ -521,6 +543,11 @@ ipcMain.handle('seek:llm-save', async (_event, input) => {
  * or sent into a room that does not exist, is the one failure a chat window cannot
  * have. The kernel's own errors (`unknown room`, `sender is not a member`, an empty
  * text) are already sentences, so they are passed through rather than re-worded here.
+ *
+ * **What comes back is the room as it stood when the message was written**, not as it
+ * stands after the bots have answered — a send is not a request for an answer. The answers
+ * arrive later, through `hostCallbacks.onChanged`, which is the same broadcast this handler
+ * makes: one shape for "the store changed", whoever changed it.
  */
 ipcMain.handle('seek:post', async (_event, input) => {
   try {
@@ -1023,6 +1050,7 @@ async function reopenHost() {
   const serverForHost = words.filesNamed ? words.workServer : server
   closeHost(host)
   const opened = await openHostOrRefuse(STORE_FILE, {
+    ...hostCallbacks,
     server,
     window: serverWindow,
     workServer: serverForHost,
@@ -1191,6 +1219,7 @@ async function start() {
   }
 
   const opened = await openHostOrRefuse(STORE_FILE, {
+    ...hostCallbacks,
     server,
     window: serverWindow,
     workServer,

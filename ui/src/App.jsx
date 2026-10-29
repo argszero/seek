@@ -423,23 +423,29 @@ export default function App() {
   const messagesEnd = useRef(null)
   const threadEnd = useRef(null)
 
+  /**
+   * **One rule for every snapshot, because the first one may have nothing in it.** The
+   * window is made before the store is opened (`ui/electron/main.js`), so this snapshot
+   * can arrive while there is no store and answer `rooms: []`; the one sent when the store
+   * opens is then the first that has a room to offer. A handler that picked the room only
+   * out of the first answer would open nothing for the rest of the session — the rooms
+   * listed, none of them open, no composer (issue #120). `roomToOpen` is that one rule,
+   * and it fills only a `null`, so a room somebody is already reading is never taken from
+   * them by a later snapshot.
+   */
+  const adopt = (next) => {
+    setSnap(next)
+    setActiveId((current) => roomToOpen(current, next.rooms))
+  }
+
   useEffect(() => {
-    // **One rule for every snapshot, because the first one may have nothing in it.** The
-    // window is made before the store is opened (`ui/electron/main.js`), so this snapshot
-    // can arrive while there is no store and answer `rooms: []`; the one sent when the store
-    // opens is then the first that has a room to offer. A handler that picked the room only
-    // out of the first answer would open nothing for the rest of the session — the rooms
-    // listed, none of them open, no composer (issue #120). `roomToOpen` is that one rule,
-    // and it fills only a `null`, so a room somebody is already reading is never taken from
-    // them by a later snapshot.
-    const adopt = (next) => {
-      setSnap(next)
-      setActiveId((current) => roomToOpen(current, next.rooms))
-    }
     window.seekHost.snapshot().then(adopt)
-    // The kernel changes the store by itself when a bot answers. Without this the
-    // window would only be right immediately after *you* typed.
+    // The kernel changes the store by itself when a bot answers — and a send comes back
+    // before it does (`ui/electron/host.js`), so this is what puts the answer on screen.
+    // Without it the window would only be right immediately after *you* typed.
     return window.seekHost.onChanged(adopt)
+    // `adopt` is not in the list: it is made fresh on every render and holds a stable pair of
+    // setters, while re-subscribing on each render would drop the changes in between.
   }, [])
 
   const active = snap?.rooms.find((room) => room.id === activeId) ?? null
@@ -526,7 +532,13 @@ export default function App() {
         ...(quoting ? { quoteOf: quoting.messageId } : {}),
       })
       if (result.ok) {
-        setSnap(result.snapshot)
+        // **The newest snapshot, not the one that came back with the call.** A send returns the
+        // room as it stood when the words were written, and the answer to it arrives as its own
+        // `seek:changed`; if that change landed while this promise was in flight, drawing the
+        // returned snapshot would put the room back to before the answer — a bot's line that
+        // shows and then goes away, or never shows at all. One read costs a round trip and
+        // cannot lose a message.
+        window.seekHost.snapshot().then(adopt)
         // The quotation belonged to the message that just went out; a strip left behind
         // would quietly quote the same person into the next message as well.
         setQuoting(null)

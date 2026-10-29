@@ -24,7 +24,24 @@ import {
   deleteThread,
   openHost,
   postMessage,
+  hostSnapshot,
 } from './host.js'
+
+/**
+ * Send, and wait for the room to answer.
+ *
+ * `postMessage()` hands its snapshot back as soon as the message is written, because a bot
+ * answers on its own time — that is what keeps the composer usable while it talks
+ * (`ui/electron/host.js`). A test about the answer is therefore a test about what happens
+ * after that: this waits for the kernel and then reads the room again, which is the same
+ * two steps `main.js` takes before it tells the window the facts changed.
+ */
+async function postAndWait(host, input) {
+  await postMessage(host, input)
+  await host.kernel.whenIdle()
+  return hostSnapshot(host)
+}
+
 
 /** The window's own world: one seeded room, one bot with a work agent that can answer. */
 async function world() {
@@ -53,7 +70,7 @@ async function world() {
 test('a deleted message is still in the snapshot, and its words are gone from the file', async () => {
   const w = await world()
   try {
-    const snapshot = await postMessage(w.host, { roomId: w.scene.room, text: 'send it before I think' })
+    const snapshot = await postAndWait(w.host, { roomId: w.scene.room, text: 'send it before I think' })
     const sent = snapshot.rooms.find((one) => one.id === w.scene.room).messages[0]
     assert.equal(sent.text, 'send it before I think')
 
@@ -90,9 +107,9 @@ test('a deleted message is still in the snapshot, and its words are gone from th
 test('a thread is deleted whole through the bridge, and the room it was in still reads', async () => {
   const w = await world()
   try {
-    const first = await postMessage(w.host, { roomId: w.scene.room, text: 'the deploy is red' })
+    const first = await postAndWait(w.host, { roomId: w.scene.room, text: 'the deploy is red' })
     const root = first.rooms.find((one) => one.id === w.scene.room).messages[0]
-    const answered = await postMessage(w.host, {
+    const answered = await postAndWait(w.host, {
       roomId: w.scene.room,
       text: 'which service?',
       rootId: root.id,
@@ -123,7 +140,7 @@ test('a thread is deleted whole through the bridge, and the room it was in still
 test('a deleted room leaves the list, and a message into it is refused', async () => {
   const w = await world()
   try {
-    await postMessage(w.host, { roomId: w.scene.room, text: 'one last thing' })
+    await postAndWait(w.host, { roomId: w.scene.room, text: 'one last thing' })
 
     const gone = await deleteRoom(w.host, { roomId: w.scene.room })
 
@@ -150,7 +167,7 @@ test('a deleted room leaves the list, and a message into it is refused', async (
 test('the picture a deleted message carried is handed back, so its bytes can go too', async () => {
   const w = await world()
   try {
-    const snapshot = await postMessage(w.host, {
+    const snapshot = await postAndWait(w.host, {
       roomId: w.scene.room,
       text: '',
       kind: 'image',

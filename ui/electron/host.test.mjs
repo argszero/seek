@@ -22,7 +22,23 @@ import { test } from 'node:test'
 import { applyRoster } from '../../src/roster.ts'
 import { seedOneRoom, STUB_REPLY, stubDecide, stubJudge } from '../../src/main.ts'
 import { emptyData, SeekStore } from '../../src/store.ts'
-import { addMember, closeHost, createRoom, deleteBot, openHost, postMessage } from './host.js'
+import { addMember, closeHost, createRoom, deleteBot, openHost, hostSnapshot, postMessage } from './host.js'
+
+
+/**
+ * Send, and wait for the room to answer.
+ *
+ * `postMessage()` hands its snapshot back as soon as the message is written, because a bot
+ * answers on its own time — that is what keeps the composer usable while it talks
+ * (`ui/electron/host.js`). A test about the answer is therefore a test about what happens
+ * after that: this waits for the kernel and then reads the room again, which is the same
+ * two steps `main.js` takes before it tells the window the facts changed.
+ */
+async function postAndWait(host, input) {
+  await postMessage(host, input)
+  await host.kernel.whenIdle()
+  return hostSnapshot(host)
+}
 
 /**
  * A second person, for the tests about a room that holds somebody besides the reader and the
@@ -67,7 +83,7 @@ async function world() {
 test('a message the person sends is in the store, and the bot in the room answers it', async () => {
   const w = await world()
   try {
-    const snapshot = await postMessage(w.host, { roomId: w.scene.room, text: 'the deploy is red' })
+    const snapshot = await postAndWait(w.host, { roomId: w.scene.room, text: 'the deploy is red' })
     const room = snapshot.rooms.find((one) => one.id === w.scene.room)
 
     assert.equal(room.messages.length, 2, 'what was typed, and the answer to it')
@@ -89,7 +105,7 @@ test('a message the person sends is in the store, and the bot in the room answer
 test('the message and its answer are on disk, in that order, before anything is drawn', async () => {
   const w = await world()
   try {
-    await postMessage(w.host, { roomId: w.scene.room, text: 'is anyone there' })
+    await postAndWait(w.host, { roomId: w.scene.room, text: 'is anyone there' })
 
     const reloaded = await SeekStore.load(w.storeFile)
     const messages = reloaded.messagesOf(w.scene.room)
@@ -173,7 +189,7 @@ test('an attached file goes into the store and comes back out of the snapshot', 
       size: 18_432,
       mime: 'application/pdf',
     }
-    const snapshot = await postMessage(w.host, { roomId: w.scene.room, text: '', kind: 'file', file })
+    const snapshot = await postAndWait(w.host, { roomId: w.scene.room, text: '', kind: 'file', file })
     const room = snapshot.rooms.find((one) => one.id === w.scene.room)
     const sent = room.messages[0]
 
@@ -218,10 +234,10 @@ test('an attachment on a text message is refused by the kernel, not dropped in s
 test('a reply posted under a message lands in that message\'s thread, on disk', async () => {
   const w = await world()
   try {
-    const first = await postMessage(w.host, { roomId: w.scene.room, text: 'the deploy is red' })
+    const first = await postAndWait(w.host, { roomId: w.scene.room, text: 'the deploy is red' })
     const parent = first.rooms.find((one) => one.id === w.scene.room).messages[0]
 
-    const second = await postMessage(w.host, {
+    const second = await postAndWait(w.host, {
       roomId: w.scene.room,
       text: 'looking into it',
       rootId: parent.id,
@@ -269,7 +285,7 @@ test('a reply naming a message that is not in the room is refused, and nothing i
 test('a stubbed interface still respects who is in the room', async () => {
   const w = await world()
   try {
-    const snapshot = await postMessage(w.host, { roomId: w.scene.room, text: 'hello room' })
+    const snapshot = await postAndWait(w.host, { roomId: w.scene.room, text: 'hello room' })
     const room = snapshot.rooms.find((one) => one.id === w.scene.room)
     const bots = room.members.filter((member) => member.bot).map((member) => member.id)
     assert.deepEqual(bots, [w.scene.bot], 'one bot, and it is the seeded one')
@@ -348,7 +364,7 @@ test('the room the interface made is one the bot answers in, like any other', as
       name: 'a room with the bot',
       members: [w.scene.me, w.scene.bot],
     })
-    const snapshot = await postMessage(w.host, { roomId: made.roomId, text: 'anyone here' })
+    const snapshot = await postAndWait(w.host, { roomId: made.roomId, text: 'anyone here' })
     const room = snapshot.rooms.find((one) => one.id === made.roomId)
 
     assert.deepEqual(
@@ -525,7 +541,7 @@ test('a bot added to a room answers in it, which is what a membership is for', a
   try {
     const made = await createRoom(w.host, { name: 'me alone', members: [w.scene.me] })
 
-    const before = await postMessage(w.host, { roomId: made.roomId, text: 'anyone here' })
+    const before = await postAndWait(w.host, { roomId: made.roomId, text: 'anyone here' })
     assert.deepEqual(
       before.rooms.find((one) => one.id === made.roomId).messages.map((m) => m.sender),
       [w.scene.me],
@@ -534,7 +550,7 @@ test('a bot added to a room answers in it, which is what a membership is for', a
 
     await addMember(w.host, { roomId: made.roomId, principalId: w.scene.bot })
 
-    const after = await postMessage(w.host, { roomId: made.roomId, text: 'and now' })
+    const after = await postAndWait(w.host, { roomId: made.roomId, text: 'and now' })
     const messages = after.rooms.find((one) => one.id === made.roomId).messages
     assert.deepEqual(
       messages.slice(-2).map((message) => message.sender),
@@ -632,7 +648,7 @@ test('adding somebody who is already in the room is refused, because a second ro
 test('a message the person addresses to a bot carries the mention into the store and the snapshot', async () => {
   const w = await world()
   try {
-    const snapshot = await postMessage(w.host, {
+    const snapshot = await postAndWait(w.host, {
       roomId: w.scene.room,
       text: 'are you there',
       mentions: [{ id: w.scene.bot, name: 'Echo' }],
@@ -662,7 +678,7 @@ test('a message the person addresses to a bot carries the mention into the store
 test('a mention that names nobody is stored as no mention rather than as a broken pair', async () => {
   const w = await world()
   try {
-    const snapshot = await postMessage(w.host, {
+    const snapshot = await postAndWait(w.host, {
       roomId: w.scene.room,
       text: 'nobody in particular',
       mentions: [{ id: 42 }, null, 'x', { name: 'no-id' }],
@@ -712,7 +728,7 @@ test('a bot the store stamped with the older spelling is still deleted when the 
 
   const second = await openHost(storeFile)
   try {
-    const snapshot = await postMessage(second, { roomId: scene.room, text: 'is anybody there' })
+    const snapshot = await postAndWait(second, { roomId: scene.room, text: 'is anybody there' })
     assert.equal(
       snapshot.people.some((one) => one.id === scene.bot),
       false,
@@ -784,7 +800,7 @@ test('a room of more than twenty new observations is compacted into a note', asy
   const w = await worldWithNote('the batch is still failing; nobody has looked at the queue')
   try {
     for (let i = 1; i <= 21; i += 1) {
-      await postMessage(w.host, { roomId: w.scene.room, text: `message ${i}` })
+      await postAndWait(w.host, { roomId: w.scene.room, text: `message ${i}` })
     }
 
     assert.equal(w.asked.length, 1, 'one compaction ran, and it ran once')
@@ -806,7 +822,7 @@ test('a room of a few observations has no note, and none is invented', async () 
   const w = await worldWithNote('a note nobody should have asked for')
   try {
     for (let i = 1; i <= 5; i += 1) {
-      await postMessage(w.host, { roomId: w.scene.room, text: `message ${i}` })
+      await postAndWait(w.host, { roomId: w.scene.room, text: `message ${i}` })
     }
     assert.equal(w.asked.length, 0, 'five observations are under the line')
     const digests = Object.values(w.host.store.data.memories ?? {}).filter(
