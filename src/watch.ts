@@ -172,6 +172,15 @@ export interface WatchOutcome {
    */
   unparsed: number;
   /**
+   * Pictures the judgement was handed and could not read.
+   *
+   * The shipped model is text (`d1-2B`, `modalities.vision: false`) and the endpoint takes
+   * a `state` string, so a picture's bytes have nowhere to go. This is counted rather than
+   * dropped so that the fact is on the record — an earlier version refused the whole room
+   * instead, which is the trade this field replaced (see the fill in `watchAs`).
+   */
+  unreadPictures: number;
+  /**
    * Entries with no room, which a per-room judgement cannot ask about.
    *
    * A reminder has no room and is settled by stage 0 (a due reminder acts), so
@@ -235,6 +244,7 @@ export function watchAs(
       acting: [],
       ignored: 0,
       unparsed: 0,
+      unreadPictures: 0,
       roomless: [],
     };
 
@@ -264,21 +274,28 @@ export function watchAs(
       if (options.weigh) boxOptions.weigh = options.weigh;
       const box = buildBox(store, botId, roomId, boxOptions);
 
-      // **A picture in the box is refused, not judged from its caption.** The model this
-      // app ships is text (`d1-2B`: `modalities.vision: false`), and `/v1/systemone` takes a
-      // `state` string, so a picture's bytes have nowhere to go. Judging the entry from the
-      // message's text would produce a verdict that reads exactly like one reached with the
-      // picture in front of the model, which is the worst of the three possibilities — and
-      // it is what `box.ts` warns about when it says an entry alone cannot prevent it.
-      // Refusing keeps the judgement from *looking* like it saw something.
-      if (box.media.length > 0) {
-        throw new Error(
-          `room ${roomId} holds ${box.media.length} picture(s) in this judgement's window ` +
-            'and the model behind this seam cannot see: a verdict read from the caption ' +
-            'would be indistinguishable from one reached with the picture in front of the ' +
-            'model. Teaching it to see needs a model with a projector, not a smaller prompt',
-        );
-      }
+      // **A picture this seam cannot read is counted, and the room is still judged.** The
+      // model this app ships is text (`d1-2B`: `modalities.vision: false`) and
+      // `/v1/systemone` takes a `state` string, so a picture's bytes have nowhere to go —
+      // that much has not changed. What changed is what is done about it.
+      //
+      // This used to throw, and the cost was not one judgement. The box is built per room,
+      // so a picture anywhere in the window stopped this bot judging **that room** for as
+      // long as the picture stayed inside it — every later text message included — and the
+      // window said nothing at all, because a background wake's failure goes to the log and
+      // nowhere else. Measured on a room holding one picture: the picture was refused, and
+      // so was the plain text message posted after it. A room that goes silently mute for a
+      // reason nobody is told is the failure this whole slice exists to stop, and it is
+      // worse than the thing the refusal was protecting against.
+      //
+      // What that refusal was protecting is answered rather than dropped. The state the
+      // model reads never held the picture, so nothing in it says one was there, and the
+      // verdict is one of two words — the judgement cannot claim to have seen an image it
+      // was never given. The gap that remains is that it cannot know a picture arrived at
+      // all, and it is stated here rather than hidden: that is the price of a text model,
+      // not of this file. Reopening the picture route needs a model with a projector
+      // (`llama.ts`, `modalities.vision`), not a longer prompt.
+      if (box.media.length > 0) outcome.unreadPictures += box.media.length;
 
       // What this judgement is asked. The record keeps a message's body on the message
       // and an observation only names it, so the bodies are read once per room — read,

@@ -26,9 +26,10 @@
  * a `llama-server` somebody else is running; where the weights live and who supervises that
  * process is stated by no ruling and no measurement, so it is not decided in this file.
  *
- * **No picture can reach this path.** `d1-2B` is a text model and the endpoint takes a
- * `state` string, so a box carrying an image is refused upstream rather than read from its
- * caption (`box.ts`, `llama.ts`). Restoring the picture route needs a model that has one.
+ * **No picture reaches the model.** `d1-2B` is a text model and the endpoint takes a
+ * `state` string, so a box carrying an image is neither read nor sent: `watch.ts` counts it
+ * in `WatchOutcome.unreadPictures` and judges the room on its words. Restoring the picture
+ * route needs a model that has one.
  */
 import type { Judge } from './inbox.ts';
 import { llamaWatchModel, requireWatchShape, type LlamaServer } from './llama.ts';

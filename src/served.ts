@@ -31,8 +31,8 @@
  * `--alias`, which is what that flag is for.
  *
  * **A server that names itself not at all cannot confirm a claim, and that is a
- * refusal rather than a pass.** It is the same direction `visionOf` reads `modalities`
- * in: silence is not agreement.
+ * refusal rather than a pass.** Silence is not agreement: an absent name is read as an
+ * absent answer, never as the one the roster declared.
  */
 
 /**
