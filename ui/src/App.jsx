@@ -2398,6 +2398,44 @@ function Spend({ spend }) {
 }
 
 /**
+ * Why a bot said nothing, under the message it passed on.
+ *
+ * A bot that decides not to answer leaves no message, so before this the two readings a person
+ * could take from the screen — *it read this and it was not for it* and *it is broken* — were
+ * the same nothing. `docs/design/agent-lifecycle.md` §8 asks for exactly this expansion.
+ *
+ * **The sentence is the verdict's, and no reason is invented for it.** The kernel records
+ * `ignore` on the entry it judged and no `reason` at all — a decision model produces no
+ * sentence (`src/llama.ts`) — so what the window can honestly say is what `ignore` means: the
+ * message was not addressed to that bot, because rule 2 of the gate acts on a mention, a reply
+ * and a direct message before anything else reads the entry (`src/gate.ts`). Nothing here is a
+ * probability, a field name or a word coined for the screen.
+ *
+ * Closed by default: a room where several bots pass on a message should not open with several
+ * lines of explanation, and the question is asked when an answer did not come.
+ */
+function SilenceLine({ who }) {
+  const [open, setOpen] = useState(false)
+  const names = joinList(who.map((one) => one.name))
+  return (
+    <span className="msg-silent" data-silent-count={who.length}>
+      <button className="msg-silent-mark" onClick={() => setOpen(!open)}>
+        {t('ui.chat.silent', { names })}
+      </button>
+      {open && (
+        <span className="msg-silent-why">
+          {who.map((one) => (
+            <span className="msg-silent-one" data-silent-bot={one.id} key={one.id}>
+              {t('ui.chat.silent-why', { name: one.name })}
+            </span>
+          ))}
+        </span>
+      )}
+    </span>
+  )
+}
+
+/**
  * One message, drawn the same way in the room and in the panel.
  *
  * `chip` is the thread's way in: a count when the chain has replies, and an invitation
@@ -2496,6 +2534,10 @@ function Line({ message, sender, replies, inThread, onOpen, chip = false, me = n
             })}
           </span>
         )}
+        {/* Who read this and said nothing — the snapshot's own list, never a count this file
+            worked out: a bot is on it because the kernel wrote `ignore` on the entry it
+            judged. See `SilenceLine` for what the sentence is and is not. */}
+        {message.silent.length > 0 && <SilenceLine who={message.silent} />}
         {/* The thread's way in belongs to the message that **roots** the chain: the count is the
             chain's, so a chip on every reply would be one number drawn four times (Feishu draws
             it once, on the root). **A tombstone with no replies gets neither an invitation nor a

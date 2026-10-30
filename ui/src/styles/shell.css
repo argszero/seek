@@ -659,6 +659,44 @@ body {
    The reaction row, the quotation a reply kept and the line a forward came from. All three
    are drawn from the kernel's own fields (`src/types.ts`); nothing here is derived from the
    words of the message. */
+
+/* Who read a message and said nothing (`SilenceLine` in `App.jsx`). One quiet line under the
+   message, and the explanation only when it is asked for — a room where several bots pass on a
+   message should not open with several lines of prose. It sits at caption size and `--N600`
+   because it is a reading a person goes looking for when no answer came, not a claim on the
+   message itself. */
+.msg-silent {
+  display: block;
+  margin-top: 6px;
+}
+
+.msg-silent-mark {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--N600);
+  cursor: pointer;
+}
+
+.msg-silent-mark:hover {
+  color: var(--B500);
+}
+
+.msg-silent-why {
+  display: block;
+  margin-top: 2px;
+}
+
+.msg-silent-one {
+  display: block;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--N600);
+}
+
 .msg-reactions {
   display: flex;
   flex-wrap: wrap;

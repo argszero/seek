@@ -17,6 +17,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
 import { deliver, toggleReaction } from '../../src/delivery.ts'
+import { gate } from '../../src/gate.ts'
 import { emptyData, SeekStore } from '../../src/store.ts'
 import { runTurn } from '../../src/turn.ts'
 import { snapshotOf } from './snapshot.js'
@@ -784,4 +785,72 @@ test('a reply and a forward arrive carrying the snapshots the kernel took', () =
     'argszero',
     'the quoted name is the one the reply carries',
   )
+})
+
+/**
+ * **A bot that read a message and stayed out is on the record and reached no window** (#126).
+ *
+ * Its decision is a verdict on the entry it judged, and the inbox is append-only, so a room's
+ * log can say who passed on a message — and nothing said it: the renderer received a message
+ * map of twelve fields and not one of them was the judgement, so *it read this and it was not
+ * for it* and *it is broken* were the same nothing on screen.
+ *
+ * The verdicts here are written by the kernel's own `gate()`, never by this test. A fixture
+ * that writes `verdict` by hand is this file's idea of the shape, which is exactly the drift
+ * this file's header records.
+ */
+test('a bot that read a message and stayed out reaches the window, and one that acted does not', () => {
+  const store = new SeekStore(emptyData())
+  store.data.principals['pr_me'] = { id: 'pr_me', kind: 'human', name: 'argszero' }
+  store.data.bots['bo_loud'] = { id: 'bo_loud', name: 'Loud' }
+  store.data.bots['bo_quiet'] = { id: 'bo_quiet', name: 'Quiet' }
+  store.data.rooms['rm_ops'] = { id: 'rm_ops', name: 'Ops room', chat_mode: 'group', created_at: AT }
+  store.data.memberships['mb_1'] = {
+    id: 'mb_1',
+    room_id: 'rm_ops',
+    principal_id: 'pr_me',
+    joined_at: AT,
+    role: 'owner',
+  }
+  store.data.memberships['mb_2'] = {
+    id: 'mb_2',
+    room_id: 'rm_ops',
+    principal_id: 'bo_loud',
+    joined_at: AT,
+    role: 'member',
+  }
+  store.data.memberships['mb_3'] = {
+    id: 'mb_3',
+    room_id: 'rm_ops',
+    principal_id: 'bo_quiet',
+    joined_at: AT,
+    role: 'member',
+  }
+
+  const sent = deliver(store, {
+    roomId: 'rm_ops',
+    senderId: 'pr_me',
+    text: '@Loud can you take a look at the build',
+    mentions: [{ id: 'bo_loud', name: 'Loud' }],
+    now: AT,
+  })
+
+  // One bot is named, so the rules act on it for free; the other has muted this room, so the
+  // rules settle it as `ignore`. `gate()` is what writes the verdict, and it is the only writer
+  // this test uses.
+  store.data.memberships.mb_3.muted = true
+  gate(store, 'bo_loud', store.pending('bo_loud'))
+  gate(store, 'bo_quiet', store.pending('bo_quiet'))
+
+  const message = snapshotOf(store, '/tmp/seek.json')
+    .rooms[0].messages.find((one) => one.id === sent.message.id)
+
+  // The bot that acted is not on the list, and the one that stayed out is, with the name it was
+  // written with — a room's log says who passed on a message without opening every inbox.
+  assert.deepEqual(message.silent, [{ id: 'bo_quiet', name: 'Quiet' }])
+
+  // Nothing to explain is `[]` rather than a missing list, for the reason `reactions` is: a
+  // renderer facing two kinds of nothing draws whatever `undefined` does.
+  const plain = snapshotOf(seeded(), '/tmp/seek.json').rooms[0].messages[0]
+  assert.deepEqual(plain.silent, [], 'a message nobody passed on says so rather than leaving it off')
 })

@@ -50,6 +50,9 @@ const COUNTS = [0, 1, 2, 3, 5, 11, 21, 1000]
 const SAMPLES = {
   path: '/tmp/seek-i18n/store.json',
   name: 'Design',
+  // The bots that stayed out of a message, already joined by `joinList()` for the same reason
+  // `bots` below is: a list's form is this layer's, so the entry receives the phrase.
+  names: 'Echo and Scout',
   model: 'a-model',
   tail: '0f3c',
   length: 33,

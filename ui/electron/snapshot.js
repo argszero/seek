@@ -353,6 +353,46 @@ function spendByRoom(store) {
 const NOTHING_SPENT = { turns: 0, input_tokens: 0, output_tokens: 0, bots: [] }
 
 /**
+ * Who read a message and said nothing, per room and per message.
+ *
+ * A bot that decided not to answer left no message behind, so nothing in the room's log says
+ * it was ever there. What says so is the verdict the kernel wrote on the entry it judged —
+ * `gate.ts` for the rules, `watch.ts` for the judgement — and the inbox is append-only, so
+ * that entry stays (`Observation.verdict`).
+ *
+ * **`ignore` is the whole test.** `act` is a bot that is answering, and an entry with no
+ * verdict is one the rules fast-passed (a mention, a reply, a direct message) or one no half
+ * has reached yet — neither is a silence, and drawing either as one would report a bot that is
+ * working as a bot that refused.
+ *
+ * **Read once per room, not once per message.** The inbox is unbounded — "no entry has to be
+ * silently dropped to keep it small" — so asking this per message is quadratic in a room's
+ * life; this is the index that makes it one pass.
+ *
+ * **A bot no longer in the room is not read.** Its verdict is still on the record, but "it
+ * stayed out of this" printed over a room that does not hold it is a sentence about someone
+ * who is not there.
+ */
+function silenceByRoom(store) {
+  const byRoom = new Map()
+  for (const room of Object.values(store.data.rooms)) {
+    const byMessage = new Map()
+    for (const membership of store.membershipsOf(room.id)) {
+      const bot = store.data.bots[membership.principal_id]
+      if (bot === undefined) continue
+      for (const entry of store.inbox(bot.id)) {
+        if (entry.verdict !== 'ignore' || entry.message_id === undefined) continue
+        const row = byMessage.get(entry.message_id) ?? []
+        row.push({ id: bot.id, name: typeof bot.name === 'string' && bot.name !== '' ? bot.name : bot.id })
+        byMessage.set(entry.message_id, row)
+      }
+    }
+    byRoom.set(room.id, byMessage)
+  }
+  return byRoom
+}
+
+/**
  * What the interface is allowed to see, in one plain object.
  *
  * `storeRefusal` is why the kernel would not open the store, as the kernel said it, or
@@ -390,6 +430,8 @@ function snapshotOf(store, storeFile, stage1 = null, stage2 = null, storeRefusal
   }
 
   const spent = spendByRoom(store)
+  // Read once, for the same reason `spent` is: one table read beats one read per message.
+  const silences = silenceByRoom(store)
   // **The list is the rooms this person is in.** It was every room in the store, which was the
   // same list while a membership could only be *added*; `removeMember()` and the panel's `Leave`
   // (2026-10-27) made a room somebody is not in reachable, and the window went on listing the
@@ -511,6 +553,13 @@ function snapshotOf(store, storeFile, stage1 = null, stage2 = null, storeRefusal
       rootId: message.root_id ?? null,
       chain: message.chain,
       depth: message.depth,
+      // **Who read this and said nothing, and that is all the window is given.** A bot that
+      // stayed out leaves no message, so this list is the only trace of it the room's log can
+      // carry; `null` reason beside it is honest — the judgement writes no sentence
+      // (`src/llama.ts`), so what the window can say is what `ignore` means, and `ignore`
+      // means the message was not addressed to that bot (`src/gate.ts`: an @, a reply and a
+      // direct message act before the judgement is ever asked).
+      silent: silences.get(room.id)?.get(message.id) ?? [],
     })),
   }))
 
