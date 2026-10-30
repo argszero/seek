@@ -35,6 +35,8 @@
     "ui.chat.copy": "Copy text",
     "ui.chat.delete": "Delete",
     "ui.chat.deleted": "This message was deleted",
+    "ui.chat.silent": "{names} did not answer",
+    "ui.chat.silent-why": "{name} did not answer: this was not addressed to it",
     "ui.chat.delete-ask": "Delete this message? What it says goes out of this room for everybody in it, and nothing here can bring it back.",
     "ui.chat.create": "Create",
     "ui.chat.forward-hint": "Forward to another room",

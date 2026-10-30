@@ -74,6 +74,10 @@ function message(fields) {
     forwardedFrom: null,
     rootId: null,
     depth: 0,
+    // The bots that read this and said nothing. `[]` here because the demo has no judgement to
+    // record one — the field is drawn from the snapshot's own list, so the two sides agree on
+    // the twelfth-and-a-half field exactly as they do on the other twelve.
+    silent: [],
     ...fields,
     // A message that caused nothing roots its own chain, which is the kernel's own rule
     // (`src/delivery.ts`) and the reason the window groups a thread by `chain`.

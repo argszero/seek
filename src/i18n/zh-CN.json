@@ -33,6 +33,8 @@
     "ui.chat.copy": "复制文字",
     "ui.chat.delete": "删除",
     "ui.chat.deleted": "这条消息已删除",
+    "ui.chat.silent": "{names} 没有回答这条",
+    "ui.chat.silent-why": "{name} 没有回答：这条不是对它说的",
     "ui.chat.delete-ask": "删除这条消息？它说的话在这个房间里就都没有了，这里也没有办法恢复。",
     "ui.chat.create": "创建",
     "ui.chat.forward-hint": "转发到另一个房间",

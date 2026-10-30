@@ -220,6 +220,7 @@ export const fakeHost = {
       rootId: parent ? parent.id : null,
       chain: parent ? parent.chain : id,
       depth: parent ? parent.depth + 1 : 0,
+      silent: [],
     })
     emit()
     return written()
