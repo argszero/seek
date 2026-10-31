@@ -67,7 +67,11 @@
   --bg-body: var(--N00);
   --bg-body-overlay: var(--N50);
   --bg-base: var(--N100);
-  --bg-content-base: #f8f9fa;
+  /* The canvas the messages sit on, measured off the client's own screenshot: wherever
+     words or bubbles sit in an open room it reads `#FCFCFC`, the same surface as the two
+     columns below. `#F8F9FA` is a real reading too, but of something else — it fills the
+     client only when no room is selected, and it stood here as this canvas for a while. */
+  --bg-content-base: #fcfcfc;
   /* The two columns beside the rail — the conversation list and the room — are **one
      surface**, both measured `rgb(252, 252, 252)` on the live client. They were two here
      (a grey list against a white room), which moved the seam every time either changed.
