@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { deliver } from './delivery.ts';
 import { makeWorld, type World } from './fixtures.ts';
 import type { Fetcher, LlamaServer } from './llama.ts';
-import { loadWorkArtifact, type WorkArtifact } from './prompts.ts';
+import { loadCompactArtifact, loadWorkArtifact, type WorkArtifact } from './prompts.ts';
 import { parseRoster } from './roster.ts';
 import { runTurn } from './turn.ts';
 import type { Id, Observation } from './types.ts';
@@ -388,6 +388,82 @@ test('a picture reaches the turn in words, and a wordless one is not a blank lin
   // byte and with no annotation on it.
   const plain = lines.find((line) => line.includes('and this one is only words'));
   assert.match(String(plain), /^\[\S+\] me: and this one is only words$/);
+});
+
+/**
+ * The same two facts, at the half that writes the room's note.
+ *
+ * Issue #177, on the request body the note was written from: a picture that came with no
+ * words arrived as `- me: ` — the line an empty message makes — and two messages a week
+ * apart arrived as two lines of the same shape, with neither stamp in the body at all.
+ * The note is where that reading gets expensive: it is stored, and `box.ts` hands it back
+ * as the room's summary, so every later turn reads those two messages only as the note
+ * describes them.
+ */
+test('the note is written from when each message landed, and from the picture that came with one', async () => {
+  const world = makeWorld();
+  const week = '2026-10-24T02:00:00.000Z';
+  const today = '2026-10-31T02:00:00.000Z';
+  const media = { key: 'blobs/screen.png', mime: 'image/png' };
+  deliver(world.store, {
+    roomId: world.room,
+    senderId: world.me,
+    text: 'the deploy is red',
+    now: week,
+  });
+  deliver(world.store, {
+    roomId: world.room,
+    senderId: world.me,
+    kind: 'image',
+    text: '',
+    media,
+    now: week,
+  });
+  deliver(world.store, {
+    roomId: world.room,
+    senderId: world.me,
+    text: 'it is green again',
+    now: today,
+  });
+  const entries = await world.store.drain(world.botA);
+
+  const recorder = fakeServer({ content: 'the deploy went red and came back green.' });
+  const digest = digestOver(world.store, world.botA, serverOf(recorder));
+  await digest({
+    botId: world.botA,
+    agentId: world.agentA2,
+    roomId: world.room,
+    delta: entries,
+    previous: undefined,
+  });
+
+  const chat = recorder.calls.find((call) => call.path === '/v1/chat/completions');
+  assert.ok(chat, 'the model was asked');
+  const asked = JSON.stringify(chat.body);
+  const lines = (chat.body.messages as { content: string }[])
+    .map((message) => message.content)
+    .join('\n')
+    .split('\n');
+  const lineOf = (said: string): string | undefined =>
+    lines.find((line) => line.includes(said));
+
+  // Both moments, and not the same shape twice: a note that cannot tell them apart is
+  // the note every later turn reads instead of the messages themselves.
+  assert.equal(lineOf('the deploy is red'), `- [${week}] me: the deploy is red`);
+  assert.equal(lineOf('it is green again'), `- [${today}] me: it is green again`);
+
+  // The picture, in the same three readings #176 took of a turn: the body says one came,
+  // the line it says so on is not blank, and the blob's key stayed home.
+  const pictureLine = loadCompactArtifact().pictureLine;
+  assert.ok(pictureLine, 'the shipped note artifact says what a picture is, in its own words');
+  assert.ok(asked.includes(pictureLine.trim()), 'the note is told a picture came with a message');
+  const said = lines.find((line) => line.includes(pictureLine.trim()));
+  assert.match(
+    String(said),
+    /^- \[\S+\] me: +\S/,
+    'nothing was consolidated away, and the line is not blank',
+  );
+  assert.equal(asked.includes(media.key), false, 'the blob key is not part of what the model reads');
 });
 
 /**
