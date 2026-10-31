@@ -59,7 +59,7 @@ measures the prompt the reader has; `LLAMA=<path>` names another `llama-server` 
 `src/prompts/work-v1.json` changed, which is what makes the rows comparable: the only
 variable left is the model.
 
-**The tree now ships `work-v6.json`, and every row below was measured on `work-v1.json`.** A
+**The tree now ships `work-v7.json`, and every row below was measured on `work-v1.json`.** A
 prompt is versioned rather than edited in place, so v1 stays in the tree exactly as it was
 measured. v2 adds two parts — what the bot does in its organization, and how it talks and
 works — and both are skipped when a bot's card says nothing; v3 adds one part, the note the
@@ -87,8 +87,7 @@ inherits from v4 ask it to say when it will know a thing works and when it looks
 driver's rows hand over no time at all, so they still assemble the v1 text; this record
 measures nothing about v5.
 
-**v6 is the same kind of gap closed on the other side of a picture, and it is the last version
-this record does not cover.** The judgement is handed a message's picture and refuses it
+**v6 is the same kind of gap closed on the other side of a picture.** The judgement is handed a message's picture and refuses it
 (`box.ts`, `docs/host-rulings.md`: the model that ships declares `modalities.vision: false`),
 and the turn that answers was handed nothing at all — measured on the request body, a message
 whose whole content was a picture reached the prompt as `me:`, one line indistinguishable from
@@ -97,6 +96,15 @@ found nothing. v6 carries `pictureLine`, the file's own words for the fact, and 
 says `{picture}` where they go: an entry with a picture says so, an entry without one is the v5
 line byte for byte, and a picture with no caption is no longer a blank entry. The driver's rows
 hand over no picture, so they still assemble the v1 text; this record measures nothing about v6.
+
+**v7 changes one sentence and no part, and it is the last version this record does not cover.**
+The fact under v6's sentence changed: the turn that answers is now handed the pictures its box
+holds (`TurnBox.media`, and a byte loader the client supplies), so a line saying "a picture came
+and you cannot see it" would be a lie about a request that carries the picture. v7's
+`pictureLine` says the picture is attached and names the case where it is not — one line with no
+image to match it is a picture this turn cannot see — and every other part, every other word and
+the `say` tool are v6's, byte for byte. The driver's rows hand over no picture, so they still
+assemble the v1 text; this record measures nothing about v7.
 
 **Tools reached the model in every row.** This build enables the Jinja engine by default
 (`--help` reports `--jinja, --no-jinja … (default: enabled)`), so each GGUF's own chat

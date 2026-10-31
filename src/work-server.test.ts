@@ -53,6 +53,15 @@ function fakeServer(
     nCtx?: number;
     modelAlias?: string | null;
     modelPath?: string | null;
+    /**
+     * Whether this server says it can see a picture, in `/props` `modalities.vision`.
+     *
+     * False by default, because that is what the bundled server says: it is started without
+     * an `--mmproj`, so an image part would be dropped on the way in and the transport
+     * refuses one rather than sending it into a hole. A test that wants the picture to
+     * travel has to stand up a server that claims a projector, exactly as a person would.
+     */
+    vision?: boolean;
   } = {},
 ): { fetch: Fetcher; calls: Call[] } {
   const calls: Call[] = [];
@@ -69,6 +78,7 @@ function fakeServer(
       payload = {
         chat_template: '<|im_start|>system\n',
         build_info: 'test build',
+        modalities: { vision: options.vision === true },
         default_generation_settings: { n_ctx: options.nCtx ?? 4096 },
         ...(alias === null ? {} : { model_alias: alias }),
         ...(modelPath === null ? {} : { model_path: modelPath }),
@@ -331,14 +341,17 @@ test('the request says when each entry arrived, so a week apart does not read as
 /**
  * A picture, as the half that answers receives it.
  *
- * Issue #172, measured on the request body: a message whose whole content was a picture
- * arrived at the prompt as `me:` — the same line an empty message would have made — and
- * searching the whole body for `picture`, `image`, `media` or the blob's own key found
- * nothing. The judgement is handed the bytes and refuses them (`box.ts`,
- * `docs/host-rulings.md`); the turn that answers is handed nothing, so the picture has
- * to arrive as words or not at all. This is the reading that says it arrives.
+ * Issue #172 measured the first half of this: a message whose whole content was a picture
+ * arrived at the prompt as `me:` — the same line an empty message makes — and searching the
+ * body for `picture`, `image`, `media` or the blob's own key found nothing. `work-v6` then
+ * gave it words. What it did not have was the picture: `TurnBox` handed the turn entries and
+ * not their media, so the bytes stopped one layer before the half that writes (issue #179).
+ *
+ * This is the reading that says the whole distance is travelled — the loader is asked for
+ * the picture the box holds, and the request carries it — and that the words are still
+ * there, because an image somewhere in a request does not say which message it came with.
  */
-test('a picture reaches the turn in words, and a wordless one is not a blank line', async () => {
+test('a picture reaches the turn as an image, and the words still say which line it came with', async () => {
   const world = makeWorld();
   const media = { key: 'blobs/screen.png', mime: 'image/png' };
   deliver(world.store, {
@@ -355,39 +368,105 @@ test('a picture reaches the turn in words, and a wordless one is not a blank lin
   });
   const entries = await world.store.drain(world.botA);
 
-  const recorder = fakeServer({});
-  const decide = await workOverServer(world.store, world.botA, serverOf(recorder), {
-    prompt: ARTIFACT,
-  });
+  const recorder = fakeServer({ vision: true });
+  const bytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47]);
+  const loaded: string[] = [];
+  const decide = await workOverServer(
+    world.store,
+    world.botA,
+    {
+      ...serverOf(recorder),
+      loadMedia: async (picture) => {
+        loaded.push(picture.key);
+        return bytes;
+      },
+    },
+    { prompt: ARTIFACT },
+  );
   await turnWith(world, decide, entries);
 
   const chat = recorder.calls.find((call) => call.path === '/v1/chat/completions');
   assert.ok(chat, 'the model was asked');
-  const asked = JSON.stringify(chat.body);
-  const lines = (chat.body.messages as { content: string }[])
-    .map((message) => message.content)
-    .join('\n')
-    .split('\n');
+  const sent = chat.body.messages as { role: string; content: unknown }[];
+  const user = sent.find((message) => message.role === 'user');
+  assert.ok(user, 'the turn asked one user message');
 
+  // The box's picture, asked for by the reference the box holds and nothing else — the
+  // transport names a key and a mime because a key is all the kernel keeps (`box.ts`).
+  assert.deepEqual(loaded, [media.key], 'the loader was asked for the picture the box holds');
+
+  const parts = user.content as {
+    type: string;
+    text?: string;
+    image_url?: { url: string };
+  }[];
+  assert.ok(Array.isArray(parts), 'a turn carrying a picture sends parts, not a string');
+  const images = parts.filter((part) => part.type === 'image_url');
+  assert.equal(images.length, 1, 'exactly one picture rode this request');
+  assert.equal(
+    images[0]?.image_url?.url,
+    `data:${media.mime};base64,${Buffer.from(bytes).toString('base64')}`,
+    'the picture is the bytes the loader handed over, in the form the endpoint takes',
+  );
+
+  // The text half, unchanged: the artifact's own sentence on the line the picture came
+  // with, and the blob's key nowhere in what the model reads.
   const pictureLine = ARTIFACT.pictureLine;
   assert.ok(pictureLine, 'the shipped artifact says what a picture is, in its own words');
-
-  // The criterion the issue was opened with, read the way a reader of the request reads
-  // it: the body alone says a picture was in the room.
-  assert.ok(asked.includes(pictureLine.trim()), 'the body says a picture came with a message');
-
-  // And the line itself: the wordless message is not a blank entry, and the picture's
-  // own key stayed home — what the model is told is that a picture is there, not where
-  // this client keeps its files.
-  const said = lines.find((line) => line.includes(pictureLine.trim()));
+  const text = parts
+    .filter((part) => part.type === 'text')
+    .map((part) => part.text ?? '')
+    .join('\n');
+  assert.ok(text.includes(pictureLine.trim()), 'the body says a picture came with a message');
+  const said = text.split('\n').find((line) => line.includes(pictureLine.trim()));
   assert.ok(said, 'the picture has a line of its own');
   assert.match(said, /^\[\S+\] me: +\S/, 'nothing was consolidated away, and the line is not blank');
-  assert.equal(asked.includes(media.key), false, 'the blob key is not part of what the model reads');
+  assert.equal(JSON.stringify(chat.body).includes(media.key), false, 'the blob key is not part of what the model reads');
 
-  // The other direction: an entry with no picture is the line v5 rendered, byte for
-  // byte and with no annotation on it.
-  const plain = lines.find((line) => line.includes('and this one is only words'));
+  const plain = text.split('\n').find((line) => line.includes('and this one is only words'));
   assert.match(String(plain), /^\[\S+\] me: and this one is only words$/);
+});
+
+/**
+ * The other direction: a turn with nothing to place sends exactly what it sent before.
+ *
+ * Parts exist to say where a picture goes, so a box with no picture must not acquire a
+ * one-part list of its own — and the loader must not be asked for bytes, because a caller
+ * that reads a disk per turn for no reason is a cost nobody measured.
+ */
+test('a turn whose box holds no picture sends the string it sent before', async () => {
+  const world = makeWorld();
+  deliver(world.store, {
+    roomId: world.room,
+    senderId: world.me,
+    text: 'this one is only words',
+  });
+  const entries = await world.store.drain(world.botA);
+
+  const recorder = fakeServer({});
+  let askedForBytes = 0;
+  const decide = await workOverServer(
+    world.store,
+    world.botA,
+    {
+      ...serverOf(recorder),
+      loadMedia: async () => {
+        askedForBytes += 1;
+        return null;
+      },
+    },
+    { prompt: ARTIFACT },
+  );
+  await turnWith(world, decide, entries);
+
+  const chat = recorder.calls.find((call) => call.path === '/v1/chat/completions');
+  assert.ok(chat, 'the model was asked');
+  const user = (chat.body.messages as { role: string; content: unknown }[]).find(
+    (message) => message.role === 'user',
+  );
+  assert.ok(user, 'the turn asked one user message');
+  assert.equal(typeof user.content, 'string', 'no picture in the box, so no parts');
+  assert.equal(askedForBytes, 0, 'and the loader was never asked for a byte');
 });
 
 /**

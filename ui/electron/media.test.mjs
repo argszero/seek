@@ -29,6 +29,7 @@ import {
   mediaDirFor,
   mimeForPath,
   pathForKey,
+  readBytes,
   readMedia,
   saveAttachment,
   saveMedia,
@@ -62,6 +63,32 @@ test('a picture is written beside the store and read back from its reference alo
       Uint8Array.from(Buffer.from(payload, 'base64')),
       PNG,
       'the bytes that come back are the bytes that went in',
+    )
+  })
+})
+
+test('the bytes a turn needs come back as bytes, and not as the string a window draws', () => {
+  withStore((storeFile) => {
+    const saved = saveMedia(storeFile, { bytes: PNG, mime: 'image/png', name: 'shot.png' })
+
+    // The second reader of the same file, and the one that exists because the half that
+    // answers takes bytes (`LlamaServer.loadMedia`) while the window takes a `data:` URL.
+    // Encoding here only for it to be decoded again would be two formats for one fact.
+    assert.deepEqual(
+      Uint8Array.from(readBytes(storeFile, saved.key)),
+      PNG,
+      'these are the file’s own bytes, unencoded',
+    )
+
+    // And it is one refusal, not two: a key with no file behind it is the same `PICTURE_GONE`
+    // the window reads, because both paths share the read.
+    rmSync(join(mediaDirFor(storeFile), saved.key))
+    assert.throws(
+      () => readBytes(storeFile, saved.key),
+      (error) => {
+        assert.equal(error.reason, PICTURE_GONE)
+        return true
+      },
     )
   })
 })

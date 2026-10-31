@@ -33,7 +33,7 @@
  * two turns rather than one turn with two rooms in it.
  */
 
-import { buildBox } from './box.ts';
+import { buildBox, type BoxMedia } from './box.ts';
 import { bumpAgentTurns } from './chain.ts';
 import { identityFor, type AgentIdentity } from './identity.ts';
 import type { RunTurn } from './inbox.ts';
@@ -123,6 +123,18 @@ export interface TurnBox {
   summary?: string;
   /** Every observation since it, oldest first. */
   entries: HandedEntry[];
+  /**
+   * The pictures those observations carry, in the same order.
+   *
+   * The same references the judgement is handed (`BoxMedia`), never the bytes: a key is
+   * opaque here and loading it is the client's, so what a turn is owed is that the
+   * picture it is about to answer *for* can be named at all. Until this list existed the
+   * box's pictures stopped one layer before the half that writes — the judgement counted
+   * them (`watch.ts`) and the answer was told, in words, that a picture had come and it
+   * could not see it (`work-v6`). Which of them a request may actually carry is decided
+   * further out, in `messagesWithPictures`, because that is where bytes exist.
+   */
+  media: BoxMedia[];
 }
 
 /**
@@ -434,7 +446,12 @@ function handOver(entry: Observation): HandedEntry {
  */
 function boxFor(store: SeekStore, botId: Id, roomId: Id): TurnBox {
   const built = buildBox(store, botId, roomId, { window: Number.POSITIVE_INFINITY });
-  const box: TurnBox = { entries: [...built.delta].reverse().map(handOver) };
+  // Both lists are reversed together: `buildBox` fills them newest-first, and a picture
+  // reversed on its own would be read against the wrong line of the conversation.
+  const box: TurnBox = {
+    entries: [...built.delta].reverse().map(handOver),
+    media: [...built.media].reverse(),
+  };
   if (built.summary !== undefined) box.summary = built.summary;
   return box;
 }

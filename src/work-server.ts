@@ -59,6 +59,7 @@ import {
   type DeclaredEndpoint,
   type LlamaServer,
   type ToolCall,
+  type TurnPart,
 } from './llama.ts';
 import {
   assembleCompactPrompt,
@@ -207,6 +208,7 @@ export async function workOverServer(
   return async (context: TurnContext): Promise<TokenUsage | void> => {
     const values = valuesOf(store, context);
     const assembled = assembleWorkPrompt(artifact, values);
+    const pictures = picturesOf(context);
 
     // A refusal rather than a truncation. This prompt is longer than the one measured
     // at bind time — it carries this turn's entries — and a prompt that overflows is
@@ -232,7 +234,16 @@ export async function workOverServer(
       server,
       [
         { role: 'system', content: assembled.system },
-        { role: 'user', content: assembled.rest },
+        {
+          role: 'user',
+          // A turn whose box holds no picture sends the string it sent before, byte for
+          // byte: parts exist to say where a picture goes, and a request with no picture
+          // has nothing to say with them.
+          content:
+            pictures.length === 0
+              ? assembled.rest
+              : [{ type: 'text', text: assembled.rest }, ...pictures],
+        },
       ],
       tools,
     );
@@ -337,6 +348,33 @@ function replyOf(context: TurnContext): { replyTo: Id } | undefined {
   if (woken.length !== 1 || context.entries.length !== 1) return undefined;
   const rootId = woken[0].message_id;
   return rootId === undefined ? undefined : { replyTo: rootId };
+}
+
+/**
+ * The pictures this turn's transcript is about, as parts for its one user message.
+ *
+ * **This is the half `work-v6` could only describe.** A room's pictures reach the box
+ * (`box.ts`, `BoxMedia`) and, from here, reach the model as images — the sentence the
+ * artifact writes over each such line is now an account of a picture that arrives rather
+ * than a note that one did not. The list is the box's own, in the box's order, so it lines
+ * up with the entry lines that carry `{picture}` one for one.
+ *
+ * **Taken from the box only when the box is what was read.** `valuesOf` answers from the
+ * box's entries, and falls back to the waking entries for a reminder or for entries the
+ * record no longer holds; those wakings never came with a media list, so this hands over
+ * nothing rather than a picture the transcript no longer has a line for.
+ *
+ * **Which of them travel is not decided here.** A picture is only in a request if its
+ * bytes were read and if the request could hold them, and both of those live in
+ * `messagesWithPictures` — the one layer that has the bytes.
+ */
+function picturesOf(context: TurnContext): TurnPart[] {
+  const box = context.box;
+  if (box === undefined || box.entries.length === 0) return [];
+  return box.media.map((picture) => ({
+    type: 'picture',
+    picture: { key: picture.key, mime: picture.mime },
+  }));
 }
 
 /**

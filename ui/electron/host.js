@@ -48,6 +48,7 @@
 const { readFile, writeFile } = require('node:fs/promises')
 
 const { meOf, snapshotOf } = require('./snapshot.js')
+const { PICTURE_GONE, readBytes } = require('./media.js')
 
 /** The kernel's modules, imported once. Electron's Node strips TypeScript itself. */
 let modules = null
@@ -396,6 +397,33 @@ const WORK_MODEL_WITHOUT_SERVER =
 const NOTE_AFTER = 20;
 
 /**
+ * A picture's bytes, for the half that answers to read.
+ *
+ * `LlamaServer.loadMedia` is the kernel asking *what are these bytes I was handed a key
+ * to*, and this is the only layer that can answer: the key is a bare file name inside the
+ * `media/` directory beside the store (`media.js` says why it is a name and not a path).
+ *
+ * **A picture whose bytes are not there is answered `null`, not thrown.** A store copied
+ * without its `media/` directory, or a file removed by hand, is a room in a state — and a
+ * throw would be every turn that opens that box failing on the same missing file, which is
+ * a room that never answers again over one picture. `null` says *this picture does not
+ * ride*, which the transport states in words rather than silently dropping.
+ *
+ * Anything else — a key that is not a plain name, a directory where a file should be — is
+ * thrown: those are not a picture that has gone, they are a store that is wrong.
+ */
+function pictureLoader(storeFile) {
+  return async (picture) => {
+    try {
+      return readBytes(storeFile, picture.key)
+    } catch (error) {
+      if (error && error.reason === PICTURE_GONE) return null
+      throw error
+    }
+  }
+}
+
+/**
  * Who writes what the bot says: the kernel's placeholder, or the work model over the
  * server `SEEK_WORK_SERVER` names.
  *
@@ -495,6 +523,12 @@ async function stageTwoFor(mods, store, standing, options) {
         // artifact nobody measured.
         artifact: mods.prompts.loadPromptArtifact(),
         ...(options?.workFetch === undefined ? {} : { fetch: options.workFetch }),
+        // **The pictures the turn is about, as bytes.** `box.ts` hands a turn a key and a
+        // mime and never the bytes — how a client names a file is its business — so the
+        // loader has to come from the one layer that knows where this store keeps its
+        // `media/`. Absent here, a turn whose box held a picture would refuse rather than
+        // answer from the words alone, which is the right refusal and the wrong app.
+        loadMedia: pictureLoader(store.path),
       };
       bound.set(
         bot.id,
@@ -1187,6 +1221,7 @@ module.exports = {
   hostSnapshot,
   openHost,
   openHostOrRefuse,
+  pictureLoader,
   postMessage,
   reactToMessage,
   deleteBot,

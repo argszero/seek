@@ -157,8 +157,16 @@ export interface LlamaServer {
    * whose message named a picture and whose transport could not read its bytes used to be
    * a prompt that dropped it, and a dropped picture reads exactly like one the model
    * answered with the picture in front of it (`messagesWithPictures`).
+   *
+   * **`null` is an answer, and it is the caller's.** A picture the client kept a reference
+   * to and whose bytes are no longer beside the store is a state a room can be in — the
+   * store was copied without its `media/` directory, or the file was removed by hand — and
+   * it is not a bug in this file. Throwing would turn one missing file into a room that
+   * never answers again, because every turn that opens that box would fail on the same
+   * picture; answering `null` says *this picture does not ride*, which is the same outcome
+   * as one too large to carry and is described to the model by the same sentence.
    */
-  loadMedia?: (picture: PictureRef) => Promise<Uint8Array>;
+  loadMedia?: (picture: PictureRef) => Promise<Uint8Array | null>;
   /** What to call instead of `globalThis.fetch`. A test's recorder. */
   fetch?: Fetcher;
 }
@@ -613,6 +621,34 @@ export async function chatTurn(
 }
 
 /**
+ * What one turn may carry in pictures, counted in the bytes on disk.
+ *
+ * **A picture that rides a turn rides every turn.** The box hands the turn every picture
+ * its delta still holds, and the request is base64, so one picture's standing cost is its
+ * size times 4/3, per turn, for as long as it stays in the delta. Measured on 2026-10-30
+ * off the files themselves:
+ *
+ * | what a room might carry | on disk | added to every turn |
+ * |---|---|---|
+ * | this repository's own image cases | 16–30 KB | 23–40 KB |
+ * | a 1200×800 screenshot | 180 KB | 240 KB |
+ * | a 2560×1600 retina screenshot | 700 KB | 933 KB |
+ * | a phone photo | 2.5 MB | 3.3 MB |
+ *
+ * 512 KiB is where this line falls, and what it buys is the difference between a picture and
+ * a camera: every figure this repository has measured fits, with room for several at once, a
+ * screenshot people actually paste fits, and a retina screenshot or a phone photo does not.
+ * A picture over the line is not silently absent — the artifact's `pictureLine` is written so
+ * that a line with no image to match it is a picture the model knows it cannot see, and says
+ * so. Sending it instead would put roughly a megabyte of base64 on the wire on every turn of
+ * every bot in the room.
+ *
+ * Counted on disk rather than in the encoded string because the file's size is the fact a
+ * person can check; what goes on the wire is this times 4/3.
+ */
+export const PICTURE_BYTES_PER_TURN = 512 * 1024;
+
+/**
  * The messages as the request carries them: a picture part resolved into the `data:` URL
  * the chat endpoint takes, and a message with no picture left exactly as it was.
  *
@@ -684,6 +720,23 @@ async function messagesWithPictures(
     );
   }
 
+  // **What this one request may carry.** The loader is asked for every picture because a
+  // size is only knowable from the bytes — a `PictureRef` is a key and a mime and nothing
+  // more — and a picture that would cross the line is left out rather than ending the
+  // list, because the one behind it may be small enough. `null` is the caller's "these
+  // bytes are not beside the store any more" and is left out for the same reason a big one
+  // is: a picture that does not ride is described in words, one that fails the turn would
+  // cost the room every turn it opens that box.
+  const carried = new Map<PictureRef, Uint8Array>();
+  let spent = 0;
+  for (const picture of pictures) {
+    if (spent >= PICTURE_BYTES_PER_TURN) break;
+    const bytes = await load(picture);
+    if (bytes === null || spent + bytes.length > PICTURE_BYTES_PER_TURN) continue;
+    carried.set(picture, bytes);
+    spent += bytes.length;
+  }
+
   const out: unknown[] = [];
   for (const message of messages) {
     if (typeof message.content === 'string') {
@@ -695,12 +748,20 @@ async function messagesWithPictures(
       if (part.type === 'text') {
         parts.push({ type: 'text', text: part.text });
       } else {
+        const bytes = carried.get(part.picture);
+        // A picture this request cannot carry. Left out of the parts and out of nothing
+        // else: the transcript line that names it stays, and the artifact says what a line
+        // with no image to match it means.
+        if (bytes === undefined) continue;
         parts.push({
           type: 'image_url',
-          image_url: { url: dataUriOf(part.picture, await load(part.picture)) },
+          image_url: { url: dataUriOf(part.picture, bytes) },
         });
       }
     }
+    // Every picture dropped from a message that was nothing but pictures. An empty part
+    // list is a message with no content at all, so what is left is an empty text part.
+    if (parts.length === 0) parts.push({ type: 'text', text: '' });
     out.push({ role: message.role, content: parts });
   }
   return out;

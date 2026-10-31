@@ -614,13 +614,16 @@ export interface WorkArtifact {
    * the same sentence that a reader finds in `work-v6.json` is the sentence that
    * reached the model — nothing between the two invents phrasing.
    *
-   * **A picture reaches the half that answers as this line and nothing else.** The
-   * judgement is handed the bytes (`box.ts`, `BoxMedia`) and refuses them, because the
-   * model that ships declares `modalities.vision: false` (`docs/host-rulings.md`); the
-   * turn that answers was handed no picture at all, so before v6 a wordless picture
-   * arrived as `me:` and a picture with a caption arrived as its caption — measured on
-   * the request body, where `picture`, `image`, `media` and the blob's own key appeared
-   * nowhere. Absent on v1–v5, where an entry line carries no such fact.
+   * **In v6 this line was the picture's whole journey, and in v7 it is not.** v6 was
+   * written when the turn was handed no picture at all, so the sentence said so: a
+   * wordless picture arrived as `me:` before it, and a picture with a caption arrived as
+   * its caption — measured on the request body, where `picture`, `image`, `media` and the
+   * blob's own key appeared nowhere. The wiring behind `box.ts`'s `BoxMedia` now puts the
+   * pictures themselves in the request, so v7's sentence describes a picture that
+   * arrives, and covers the one that does not: a line with no image to match it is a
+   * picture the turn cannot see. The judgement is unchanged and still refuses one, because
+   * the model that ships declares `modalities.vision: false` (`docs/host-rulings.md`).
+   * Absent on v1–v5, where an entry line carries no such fact.
    */
   pictureLine?: string;
   /** The parts, in the order they are rendered. */
@@ -723,7 +726,7 @@ export interface WorkValues {
 /**
  * The shipped turn artifact's location, beside this module.
  *
- * `work-v6.json` ships; `work-v1.json` through `work-v5.json` stay beside it. A prompt is
+ * `work-v7.json` ships; `work-v1.json` through `work-v6.json` stay beside it. A prompt is
  * versioned rather than edited in place, because `calibration/work/` measured v1 and a
  * record that quotes a prompt the tree has changed describes a run nobody can re-read
  * — `work-calibration.test.ts` holds that pair together. What v2 added is the two parts
@@ -736,10 +739,13 @@ export interface WorkValues {
  * answers can tell a reply from an answer to something said last week. What v6 adds is
  * `pictureLine` and the `{picture}` site on that same entry line: a picture arrives at
  * the half that answers as words, and an entry with one stops being indistinguishable
- * from an entry with nothing in it.
+ * from an entry with nothing in it. What v7 changes is that sentence alone, and it changes
+ * because the fact under it changed: the turn now carries the box's pictures, so the line
+ * says a picture is attached, and names the case where one is not — the same file, still
+ * one `{picture}` site, still filled from the same fact (`entryOf`).
  */
 export function shippedWorkPromptPath(): URL {
-  return new URL('./prompts/work-v6.json', import.meta.url);
+  return new URL('./prompts/work-v7.json', import.meta.url);
 }
 
 /**
@@ -1147,7 +1153,9 @@ export interface CompactValues {
  * a description of the other. What v2 adds is the arrival time on every entry line and
  * the `{picture}` site with its `pictureLine` — the same two facts `work-v5` and
  * `work-v6` gave the half that answers, given to the half that writes the note the
- * answer is later read from.
+ * answer is later read from. **This file still describes a picture it cannot see, and
+ * that is still true of it**: nothing supplies the note's writer with bytes, so `work-v7`'s
+ * sentence would be a claim this path cannot keep.
  */
 export function shippedCompactPromptPath(): URL {
   return new URL('./prompts/compact-v2.json', import.meta.url);

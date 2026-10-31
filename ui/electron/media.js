@@ -144,10 +144,23 @@ function saveMedia(storeFile, { bytes, mime, name }) {
  * a second guess here could disagree with it.
  */
 function readMedia(storeFile, { key, mime }) {
+  const bytes = readBytes(storeFile, key)
+  const type = typeof mime === 'string' && mime !== '' ? mime : 'application/octet-stream'
+  return { dataUrl: `data:${type};base64,${bytes.toString('base64')}` }
+}
+
+/**
+ * A picture's bytes, for the half that answers — not for drawing.
+ *
+ * The same read and the same refusal as `readMedia`, minus the encoding: the kernel asks for
+ * bytes (`LlamaServer.loadMedia`), and encoding them into a `data:` URL here only for it to
+ * be decoded again would be two formats for one fact. The refusal stays one function so a key
+ * that is not beside the store is the same state on both paths.
+ */
+function readBytes(storeFile, key) {
   const path = pathForKey(storeFile, key)
-  let bytes
   try {
-    bytes = readFileSync(path)
+    return readFileSync(path)
   } catch (error) {
     if (error && error.code === 'ENOENT') {
       // A refusal that carries which refusal it is. The sentence stays a diagnostic — it names
@@ -164,8 +177,6 @@ function readMedia(storeFile, { key, mime }) {
     }
     throw error
   }
-  const type = typeof mime === 'string' && mime !== '' ? mime : 'application/octet-stream'
-  return { dataUrl: `data:${type};base64,${bytes.toString('base64')}` }
 }
 
 /**
@@ -294,6 +305,7 @@ module.exports = {
   mediaDirFor,
   mimeForPath,
   pathForKey,
+  readBytes,
   readMedia,
   saveMedia,
 }
