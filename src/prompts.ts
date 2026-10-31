@@ -714,9 +714,8 @@ export interface WorkValues {
    *
    * `picture` says the message carried one. A boolean rather than a sentence, because
    * the sentence is the artifact's `pictureLine`: this field reports the fact, the file
-   * decides how to say it. Absent reads as no picture, which is what every caller that
-   * does not report it — the calibration driver's rows, `compact-v1`'s own note-writer —
-   * actually knows.
+   * decides how to say it. Absent reads as no picture, which is what a caller that does
+   * not report it — the calibration driver's rows — actually knows.
    */
   entries: { sender: string; text: string; at: string; picture?: boolean }[];
 }
@@ -1090,7 +1089,7 @@ function placeholdersIn(template: string): string[] {
  * together, either one would have to say "except when" about the other's first line.
  */
 export interface CompactArtifact {
-  /** The identity this file is. `compact-v1` is the shipped one. */
+  /** The identity this file is. `compact-v2` is the shipped one. */
   version: string;
   /** The head of the text, before the rest. Filled with `{bot}`. */
   system: string;
@@ -1100,8 +1099,22 @@ export interface CompactArtifact {
   previousLine: string;
   /** What stands over this delta, when there is one. */
   transcriptLine: string;
-  /** One observation, as `{sender}` and `{text}`. */
+  /**
+   * One observation, as `{at}`, `{sender}`, `{text}` and `{picture}`.
+   *
+   * The same four facts the turn's own entry line carries, for the same reasons: a note
+   * that cannot tell a reply from an answer to something said a week earlier hands the
+   * later self a room with no time in it, and an entry with a picture in it reads as an
+   * empty message when the picture has no word of its own.
+   */
   entryLine: string;
+  /**
+   * What the note says about a message that came with a picture it cannot see.
+   *
+   * Present only in an artifact whose entry line quotes `{picture}`, and the two are
+   * checked together: a site with no sentence to fill it would say nothing at all.
+   */
+  pictureLine?: string;
   /** What the model is asked to do, after the observations. */
   ask: string;
 }
@@ -1114,13 +1127,30 @@ export interface CompactValues {
   room: string;
   /** The note this one replaces, when the room already has one. */
   previous?: string;
-  /** The observations being folded in, **oldest first**. */
-  entries: { sender: string; text: string }[];
+  /**
+   * The observations being folded in, **oldest first**.
+   *
+   * The same four facts the turn's entries carry — `entryOf` in `work-server.ts` hands
+   * the same value to both halves, so the note is never written from less than the turn
+   * was shown. `at` is the entry's own `delivered_at` and `picture` reports that the
+   * message came with one; how either is said is the artifact's business.
+   */
+  entries: { sender: string; text: string; at: string; picture: boolean }[];
 }
 
-/** The shipped note artifact's location, beside this module. */
+/**
+ * The shipped note artifact's location, beside this module.
+ *
+ * `compact-v2.json` ships; `compact-v1.json` stays beside it. A prompt is versioned
+ * rather than edited in place, for `shippedWorkPromptPath`'s reason: a note written by
+ * v1 and a note written by v2 are different notes, and a record that quotes one is not
+ * a description of the other. What v2 adds is the arrival time on every entry line and
+ * the `{picture}` site with its `pictureLine` — the same two facts `work-v5` and
+ * `work-v6` gave the half that answers, given to the half that writes the note the
+ * answer is later read from.
+ */
 export function shippedCompactPromptPath(): URL {
-  return new URL('./prompts/compact-v1.json', import.meta.url);
+  return new URL('./prompts/compact-v2.json', import.meta.url);
 }
 
 /**
@@ -1173,6 +1203,47 @@ export function loadCompactArtifact(
       );
     }
   }
+  const pictureLine = file.pictureLine;
+  if (
+    pictureLine !== undefined &&
+    (typeof pictureLine !== 'string' || pictureLine.trim() === '')
+  ) {
+    throw new Error(
+      `the note prompt artifact at ${String(source)} has a \`pictureLine\` that is not a ` +
+        'non-empty string: leave it out when the entry line has no {picture} to fill',
+    );
+  }
+
+  // The entry line may quote the four per-entry facts and nothing else — a name nothing
+  // fills would reach the model as `{thatword}`, which is how a prompt starts describing
+  // its own plumbing instead of the room.
+  const entrySites = placeholdersIn(file.entryLine as string);
+  for (const name of entrySites) {
+    if (name !== 'sender' && name !== 'text' && name !== 'at' && name !== 'picture') {
+      throw new Error(
+        `the note prompt artifact at ${String(source)} names {${name}} on its entry line, ` +
+          'which nothing here fills',
+      );
+    }
+  }
+
+  // Both halves of one rule, as `assertWorkArtifact` holds them on a turn prompt: a
+  // `{picture}` site with no sentence in the file can only be filled with `''`, so a
+  // wordless picture would arrive at the note as an empty message again; and a sentence
+  // no site quotes is one the file wrote for a model that never reads it.
+  if (entrySites.includes('picture') && pictureLine === undefined) {
+    throw new Error(
+      `the note prompt artifact at ${String(source)} fills {picture} and declares no ` +
+        "`pictureLine`: the word for a picture is the file's to say",
+    );
+  }
+  if (pictureLine !== undefined && !entrySites.includes('picture')) {
+    throw new Error(
+      `the note prompt artifact at ${String(source)} declares \`pictureLine\` and its entry ` +
+        'line says no {picture} to put it in',
+    );
+  }
+
   return {
     version: file.version as string,
     system: file.system as string,
@@ -1180,6 +1251,7 @@ export function loadCompactArtifact(
     previousLine: file.previousLine as string,
     transcriptLine: file.transcriptLine as string,
     entryLine: file.entryLine as string,
+    ...(pictureLine === undefined ? {} : { pictureLine }),
     ask: file.ask as string,
   };
 }
@@ -1208,7 +1280,17 @@ export function assembleCompactPrompt(
   }
   out.push(artifact.transcriptLine, '\n');
   for (const entry of values.entries) {
-    out.push(fill(artifact.entryLine, { sender: entry.sender, text: entry.text }), '\n');
+    out.push(
+      fill(artifact.entryLine, {
+        at: entry.at,
+        sender: entry.sender,
+        text: entry.text,
+        // The fact is `entry.picture`; the sentence is the file's. An entry with no
+        // picture fills nothing at all, so its line is byte for byte what v1 wrote.
+        picture: entry.picture === true ? (artifact.pictureLine ?? '') : '',
+      }),
+      '\n',
+    );
   }
   out.push('\n', artifact.ask);
   return {

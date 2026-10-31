@@ -27,6 +27,11 @@ import { watchAs, type WatchInput, type WatchReading } from './watch.ts';
 // team rather than whichever bot the judgement was for.
 const SYSTEM = (bot: string) => `You are ${bot}, one of the bots in this chat client.`;
 
+// Two moments a week apart, as the store writes them: an entry carries the stamp it was
+// delivered with, and these are the two the tests below have to tell apart.
+const WEEK = '2026-10-24T02:00:00.000Z';
+const TODAY = '2026-10-31T02:00:00.000Z';
+
 function stub(answer: WatchReading) {
   const seen: WatchInput[] = [];
   return {
@@ -691,14 +696,14 @@ test('a part that quotes a card field depends on exactly that field', async () =
 
 test('the note artifact is asked about one room, and says the room by its name', () => {
   const artifact = loadCompactArtifact();
-  assert.equal(artifact.version, 'compact-v1');
+  assert.equal(artifact.version, 'compact-v2');
 
   const first = assembleCompactPrompt(artifact, {
     bot: '小荷',
     room: '支付组',
     entries: [
-      { sender: '邵安清', text: '对账任务今天凌晨跑失败了' },
-      { sender: '小荷', text: '我看一下重试队列' },
+      { sender: '邵安清', text: '对账任务今天凌晨跑失败了', at: WEEK, picture: false },
+      { sender: '小荷', text: '我看一下重试队列', at: TODAY, picture: false },
     ],
   });
 
@@ -719,10 +724,90 @@ test('the note artifact is asked about one room, and says the room by its name',
     bot: '小荷',
     room: '支付组',
     previous: '对账在对账组，还没修好。',
-    entries: [{ sender: '邵安清', text: '今天能修完吗' }],
+    entries: [{ sender: '邵安清', text: '今天能修完吗', at: TODAY, picture: false }],
   });
   assert.match(second.rest, /对账在对账组，还没修好。/);
   assert.match(second.rest, new RegExp(artifact.previousLine));
+});
+
+/**
+ * The note, as the half that writes it is handed the room.
+ *
+ * Issue #177, measured on the assembled prompt: two messages a week apart arrived as
+ * two lines of the same shape with neither stamp in the text, and a message whose whole
+ * content was a picture arrived as `- me: ` — the line an empty message makes. Unlike a
+ * turn, the note has no second chance: once it is stored it *becomes* the room's summary
+ * (`box.ts`), so everything the answering half later knows about those messages is what
+ * this prompt let it write down.
+ */
+test('a note entry says when it arrived, and a picture is not a blank line', () => {
+  const artifact = loadCompactArtifact();
+  const pictureLine = artifact.pictureLine;
+  assert.ok(pictureLine, 'the shipped artifact says what a picture is, in its own words');
+
+  const { rest } = assembleCompactPrompt(artifact, {
+    bot: '小荷',
+    room: '支付组',
+    entries: [
+      { sender: '邵安清', text: 'the deploy is red', at: WEEK, picture: false },
+      { sender: '邵安清', text: '', at: WEEK, picture: true },
+      { sender: '小荷', text: 'it is green again', at: TODAY, picture: false },
+    ],
+  });
+
+  // Two messages a week apart no longer read as one shape: each line carries the moment
+  // it landed, as the record writes it.
+  const lines = rest.split('\n');
+  const lineOf = (said: string): string | undefined =>
+    lines.find((line) => line.includes(said));
+  assert.equal(lineOf('the deploy is red'), `- [${WEEK}] 邵安清: the deploy is red`);
+  assert.equal(lineOf('it is green again'), `- [${TODAY}] 小荷: it is green again`);
+
+  // And the wordless picture is not an empty entry: the one line that says a picture
+  // came is the picture's own line, and the blob's key stays home.
+  const said = lines.filter((line) => line.includes(pictureLine.trim()));
+  assert.equal(said.length, 1, 'exactly one entry came with a picture');
+  assert.match(said[0] as string, /^- \[\S+\] 邵安清: +\S/, 'the line is not blank');
+});
+
+test('the note artifact’s picture word and its entry line are checked together', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'seek-note-picture-'));
+  const loose = join(dir, 'compact.json');
+  const shape = {
+    version: 'compact-v2',
+    system: 'You are {bot}.',
+    roomLine: 'Room: {room}',
+    previousLine: 'Before:',
+    transcriptLine: 'Since then:',
+    ask: 'Write the note.',
+  };
+  try {
+    // A `{picture}` site with no sentence in the file can only be filled with `''`, so
+    // the wordless picture would arrive at the note as an empty message a second time.
+    await writeFile(
+      loose,
+      JSON.stringify({ ...shape, entryLine: '- {sender}: {text}{picture}' }),
+    );
+    assert.throws(() => loadCompactArtifact(loose), /declares no `pictureLine`/);
+
+    // The other half: a sentence no site quotes is one the file wrote for a model that
+    // never reads it.
+    await writeFile(
+      loose,
+      JSON.stringify({
+        ...shape,
+        entryLine: '- {sender}: {text}',
+        pictureLine: ' [a picture came]',
+      }),
+    );
+    assert.throws(() => loadCompactArtifact(loose), /\{picture\} to put it in/);
+
+    // And a name nothing fills is refused rather than reaching the model as `{when}`.
+    await writeFile(loose, JSON.stringify({ ...shape, entryLine: '- {when}: {text}' }));
+    assert.throws(() => loadCompactArtifact(loose), /which nothing here fills/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test('a note artifact missing a line is refused rather than half assembled', async () => {
