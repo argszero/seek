@@ -1,6 +1,6 @@
 # src — the kernel
 
-The kernel is written: `store`, `roster`, `identity`, `rooms`, `erase`, `delivery`, `gate`, `chain`, `schedule`, `say`, `turn`, `compact`, `box`, `prompts`, `i18n`, `watch`, `llama`, `watch-server`, `work-server`, `served`, `inbox`, `kernel`, the comparator, the seam that binds stage 2 to a server so a model writes the reply, and a runnable first milestone (`npm start`), with 419 tests over them, and **no interface**. By rule 1 in `CONTRIBUTING.md`: **settle the data model before the interface.**
+The kernel is written: `store`, `roster`, `identity`, `rooms`, `erase`, `delivery`, `gate`, `chain`, `schedule`, `say`, `turn`, `compact`, `box`, `prompts`, `i18n`, `watch`, `llama`, `watch-server`, `work-server`, `served`, `inbox`, `kernel`, the comparator, the seam that binds stage 2 to a server so a model writes the reply, and a runnable first milestone (`npm start`), with 421 tests over them, and **no interface**. By rule 1 in `CONTRIBUTING.md`: **settle the data model before the interface.**
 
 ## Checklist
 

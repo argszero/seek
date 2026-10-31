@@ -570,7 +570,10 @@ export type OptionalFact = 'description' | 'gender' | 'position' | 'personality'
 export interface WorkPart {
   /** The part's own name, for the error messages and for a reader of the file. */
   name: string;
-  /** Its template, with `{bot}`, `{room}`, `{roster}`, `{sender}`, `{text}` or `{at}`. */
+  /**
+   * Its template, with `{bot}`, `{room}`, `{roster}`, or one of the per-entry names
+   * `{sender}`, `{text}`, `{at}` and `{picture}`.
+   */
   text: string;
   /** What follows the part, verbatim. */
   after: string;
@@ -603,6 +606,23 @@ export interface WorkArtifact {
   system: string;
   /** What follows the system block. */
   afterSystem: string;
+  /**
+   * What an entry line says when the message it stands for came with a picture.
+   *
+   * The words live in the file rather than in `work-server.ts` for the reason every
+   * other word the model reads does: what a turn is told is a versioned artifact, so
+   * the same sentence that a reader finds in `work-v6.json` is the sentence that
+   * reached the model — nothing between the two invents phrasing.
+   *
+   * **A picture reaches the half that answers as this line and nothing else.** The
+   * judgement is handed the bytes (`box.ts`, `BoxMedia`) and refuses them, because the
+   * model that ships declares `modalities.vision: false` (`docs/host-rulings.md`); the
+   * turn that answers was handed no picture at all, so before v6 a wordless picture
+   * arrived as `me:` and a picture with a caption arrived as its caption — measured on
+   * the request body, where `picture`, `image`, `media` and the blob's own key appeared
+   * nowhere. Absent on v1–v5, where an entry line carries no such fact.
+   */
+  pictureLine?: string;
   /** The parts, in the order they are rendered. */
   parts: WorkPart[];
   /**
@@ -691,14 +711,20 @@ export interface WorkValues {
    * a clock reading at assembly time, which is a separate question this artifact does
    * not answer (a `now` is not in the values, and the no-copy rule below is the same
    * rule — the record's own words rather than this module's).
+   *
+   * `picture` says the message carried one. A boolean rather than a sentence, because
+   * the sentence is the artifact's `pictureLine`: this field reports the fact, the file
+   * decides how to say it. Absent reads as no picture, which is what every caller that
+   * does not report it — the calibration driver's rows, `compact-v1`'s own note-writer —
+   * actually knows.
    */
-  entries: { sender: string; text: string; at: string }[];
+  entries: { sender: string; text: string; at: string; picture?: boolean }[];
 }
 
 /**
  * The shipped turn artifact's location, beside this module.
  *
- * `work-v5.json` ships; `work-v1.json` through `work-v4.json` stay beside it. A prompt is
+ * `work-v6.json` ships; `work-v1.json` through `work-v5.json` stay beside it. A prompt is
  * versioned rather than edited in place, because `calibration/work/` measured v1 and a
  * record that quotes a prompt the tree has changed describes a run nobody can re-read
  * — `work-calibration.test.ts` holds that pair together. What v2 added is the two parts
@@ -708,10 +734,13 @@ export interface WorkValues {
  * same way: a room with no note is asked the v2 text byte for byte, which the same test
  * checks against v2. What v5 adds is the arrival time on every entry line, in the shape
  * `watch-v3` already renders the same fact (`[{at}] {sender}: {text}`), so the half that
- * answers can tell a reply from an answer to something said last week.
+ * answers can tell a reply from an answer to something said last week. What v6 adds is
+ * `pictureLine` and the `{picture}` site on that same entry line: a picture arrives at
+ * the half that answers as words, and an entry with one stops being indistinguishable
+ * from an entry with nothing in it.
  */
 export function shippedWorkPromptPath(): URL {
-  return new URL('./prompts/work-v5.json', import.meta.url);
+  return new URL('./prompts/work-v6.json', import.meta.url);
 }
 
 /**
@@ -801,6 +830,10 @@ export function assembleWorkPrompt(
             sender: entry.sender,
             text: entry.text,
             at: entry.at,
+            // Always filled, with `''` for the entries that carry no picture: `fill`
+            // leaves an unknown placeholder whole, so a site left out would print
+            // `{picture}` at a model rather than say nothing.
+            picture: entry.picture === true ? (artifact.pictureLine ?? '') : '',
           }),
           part.after,
         );
@@ -881,6 +914,12 @@ function assertWorkArtifact(value: unknown, source: string): WorkArtifact {
   if (typeof artifact.afterSystem !== 'string') {
     return fail('`afterSystem` must be a string (use "" to join the system block directly)');
   }
+  if (
+    artifact.pictureLine !== undefined &&
+    (typeof artifact.pictureLine !== 'string' || artifact.pictureLine.trim() === '')
+  ) {
+    return fail('`pictureLine` must be a non-empty string when present, or be left out');
+  }
   if (!Array.isArray(artifact.parts) || artifact.parts.length === 0) {
     return fail('`parts` must be a non-empty array');
   }
@@ -943,10 +982,19 @@ function assertWorkArtifact(value: unknown, source: string): WorkArtifact {
     }
 
     for (const name of placeholdersIn(row.text)) {
-      if (name === 'sender' || name === 'text' || name === 'at') {
+      if (name === 'sender' || name === 'text' || name === 'at' || name === 'picture') {
         if (row.each !== 'entry') {
           return fail(
             `${where} fills {${name}} without \`each: "entry"\`, so it has nothing to fill from`,
+          );
+        }
+        // A per-entry fact with no word for it in the file is a site the assembly can
+        // only fill with `''`: the entry would say nothing at all about the picture,
+        // and nothing would fail. The word lives in `pictureLine` or nowhere.
+        if (name === 'picture' && artifact.pictureLine === undefined) {
+          return fail(
+            `${where} fills {picture}, and this artifact declares no \`pictureLine\` to put ` +
+              "there: the word for a picture is the file's to say",
           );
         }
         continue;
@@ -964,6 +1012,16 @@ function assertWorkArtifact(value: unknown, source: string): WorkArtifact {
     };
     if (row.each) normalised.each = row.each;
     parts.push(normalised);
+  }
+
+  // The other half of the rule above: a picture line no part quotes is a sentence the
+  // file wrote for a model that never reads it — the defect v6 exists to remove, put
+  // back where nothing else would notice it.
+  if (
+    artifact.pictureLine !== undefined &&
+    !parts.some((part) => placeholdersIn(part.text).includes('picture'))
+  ) {
+    return fail('the artifact declares `pictureLine` and no part says {picture} to put it in');
   }
 
   // A per-entry part with nothing after it would glue one message onto the next,
@@ -1010,6 +1068,7 @@ function assertWorkArtifact(value: unknown, source: string): WorkArtifact {
     version: artifact.version,
     system: artifact.system,
     afterSystem: artifact.afterSystem,
+    ...(artifact.pictureLine === undefined ? {} : { pictureLine: artifact.pictureLine }),
     parts,
     tools,
   };

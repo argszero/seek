@@ -329,6 +329,68 @@ test('the request says when each entry arrived, so a week apart does not read as
 });
 
 /**
+ * A picture, as the half that answers receives it.
+ *
+ * Issue #172, measured on the request body: a message whose whole content was a picture
+ * arrived at the prompt as `me:` — the same line an empty message would have made — and
+ * searching the whole body for `picture`, `image`, `media` or the blob's own key found
+ * nothing. The judgement is handed the bytes and refuses them (`box.ts`,
+ * `docs/host-rulings.md`); the turn that answers is handed nothing, so the picture has
+ * to arrive as words or not at all. This is the reading that says it arrives.
+ */
+test('a picture reaches the turn in words, and a wordless one is not a blank line', async () => {
+  const world = makeWorld();
+  const media = { key: 'blobs/screen.png', mime: 'image/png' };
+  deliver(world.store, {
+    roomId: world.room,
+    senderId: world.me,
+    kind: 'image',
+    text: '',
+    media,
+  });
+  deliver(world.store, {
+    roomId: world.room,
+    senderId: world.me,
+    text: 'and this one is only words',
+  });
+  const entries = await world.store.drain(world.botA);
+
+  const recorder = fakeServer({});
+  const decide = await workOverServer(world.store, world.botA, serverOf(recorder), {
+    prompt: ARTIFACT,
+  });
+  await turnWith(world, decide, entries);
+
+  const chat = recorder.calls.find((call) => call.path === '/v1/chat/completions');
+  assert.ok(chat, 'the model was asked');
+  const asked = JSON.stringify(chat.body);
+  const lines = (chat.body.messages as { content: string }[])
+    .map((message) => message.content)
+    .join('\n')
+    .split('\n');
+
+  const pictureLine = ARTIFACT.pictureLine;
+  assert.ok(pictureLine, 'the shipped artifact says what a picture is, in its own words');
+
+  // The criterion the issue was opened with, read the way a reader of the request reads
+  // it: the body alone says a picture was in the room.
+  assert.ok(asked.includes(pictureLine.trim()), 'the body says a picture came with a message');
+
+  // And the line itself: the wordless message is not a blank entry, and the picture's
+  // own key stayed home — what the model is told is that a picture is there, not where
+  // this client keeps its files.
+  const said = lines.find((line) => line.includes(pictureLine.trim()));
+  assert.ok(said, 'the picture has a line of its own');
+  assert.match(said, /^\[\S+\] me: +\S/, 'nothing was consolidated away, and the line is not blank');
+  assert.equal(asked.includes(media.key), false, 'the blob key is not part of what the model reads');
+
+  // The other direction: an entry with no picture is the line v5 rendered, byte for
+  // byte and with no annotation on it.
+  const plain = lines.find((line) => line.includes('and this one is only words'));
+  assert.match(String(plain), /^\[\S+\] me: and this one is only words$/);
+});
+
+/**
  * The clock: a room that has been at it for a while is told so, and a fresh one is not.
  *
  * This is the number that was missing when a room of four settled its plan in ten messages

@@ -402,18 +402,43 @@ function turnValues(card: {
   };
 }
 
-test('the shipped turn artifact is v5, and its entries say when they arrived', () => {
+test('the shipped turn artifact is v6, and a picture reaches the turn in words', () => {
   const shipped = loadWorkArtifact();
-  assert.equal(shipped.version, 'work-v5');
-  assert.match(shippedWorkPromptPath().pathname, /work-v5\.json$/);
+  assert.equal(shipped.version, 'work-v6');
+  assert.match(shippedWorkPromptPath().pathname, /work-v6\.json$/);
+
+  // v6 adds one fact to the entry line and one line to the file to say it with: a
+  // message that came with a picture is no longer indistinguishable from an empty one.
+  // The words are the artifact's, so what a reader finds here is what the model read.
+  const pictureLine = shipped.pictureLine;
+  assert.ok(pictureLine, 'the file says what a picture is, in its own words');
+  const withPicture = assembleWorkPrompt(shipped, {
+    ...turnValues({}),
+    entries: [
+      { sender: '邵安清', text: '', at: '2026-10-31T02:00:00.000Z', picture: true },
+      { sender: '邵安清', text: 'nothing attached', at: '2026-10-31T02:01:00.000Z' },
+    ],
+  });
+  const lineAt = (at: string): string | undefined =>
+    withPicture.rest.split('\n').find((line) => line.startsWith(`[${at}]`));
+  assert.equal(
+    lineAt('2026-10-31T02:00:00.000Z'),
+    `[2026-10-31T02:00:00.000Z] 邵安清: ${pictureLine}`,
+    'the entry that carries a picture says so, and has no caption invented for it',
+  );
+  assert.equal(
+    lineAt('2026-10-31T02:01:00.000Z'),
+    '[2026-10-31T02:01:00.000Z] 邵安清: nothing attached',
+    'an entry with no picture is exactly the line v5 rendered',
+  );
 
   // v5 adds one fact to the entry line — the arrival time — in the shape `watch-v3`
   // already renders it, so the half that answers can tell a reply from an answer to
   // something said a week earlier. What v4 did is still what this test was written
   // for and it has not changed: it rewrites the opening, the system line and the ask,
   // so the byte-for-byte agreement with v1 that v2 and v3 kept is gone on purpose —
-  // and no row in `calibration/work/` covers v4 or v5, which both prose halves there
-  // say.
+  // and no row in `calibration/work/` covers v4, v5 or v6, which both prose halves
+  // there say.
   //
   // What it adds is the ability to address someone. `delivery.ts` wakes a bot on a
   // mention, a reply or a direct message, and nothing scans a message body for an `@`:
@@ -464,6 +489,77 @@ test('two entries a week apart do not read alike, because each line says when it
     turn.rest.indexOf(String(older)) < turn.rest.indexOf(String(newer)),
     'oldest first, as the box is read',
   );
+});
+
+test('a picture with no words of its own is refused rather than left as a blank', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'seek-work-picture-'));
+  const tools = [{ name: 'say', description: 'post one message', parameters: { type: 'object' } }];
+  const end = { name: 'end', text: 'Say something now.', after: '', when: 'always' };
+  const artifactWith = async (
+    part: Record<string, unknown>,
+    pictureLine: string | undefined,
+    index: number,
+  ) => {
+    const file = join(dir, `work-${index}.json`);
+    await writeFile(
+      file,
+      JSON.stringify({
+        version: 'test-v1',
+        system: 'You are {bot}.',
+        afterSystem: '\n',
+        ...(pictureLine === undefined ? {} : { pictureLine }),
+        parts: [part, end],
+        tools,
+      }),
+    );
+    return file;
+  };
+
+  try {
+    // A picture is a fact about one message, so it cannot sit in a part the turn
+    // renders once — the assembly has no entry to take it from.
+    const everywhere = await artifactWith(
+      { name: 'p', text: 'Somebody sent a picture: {picture}', after: '\n', when: 'always' },
+      ' [a picture]',
+      1,
+    );
+    assert.throws(
+      () => loadWorkArtifact(everywhere),
+      /fills \{picture\} without `each: "entry"`/,
+    );
+
+    // The site with nothing in the file to fill it: the assembly has only `''` to put
+    // there, so the picture would be announced by nothing and nothing would fail —
+    // which is the defect v6 exists to remove, with a site standing where it was.
+    const wordless = await artifactWith(
+      {
+        name: 'p',
+        text: '[{at}] {sender}: {text}{picture}',
+        after: '\n',
+        when: 'always',
+        each: 'entry',
+      },
+      undefined,
+      2,
+    );
+    assert.throws(
+      () => loadWorkArtifact(wordless),
+      /declares no `pictureLine` to put there/,
+    );
+
+    // And the words with no site: a sentence written for a model that never reads it.
+    const unread = await artifactWith(
+      { name: 'p', text: '[{at}] {sender}: {text}', after: '\n', when: 'always', each: 'entry' },
+      ' [a picture]',
+      3,
+    );
+    assert.throws(
+      () => loadWorkArtifact(unread),
+      /declares `pictureLine` and no part says \{picture\}/,
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test('the room’s note reaches the turn, and an uncompacted room is told nothing about it', () => {
