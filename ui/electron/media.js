@@ -33,6 +33,17 @@ const { dirname, join } = require('node:path')
 const MEDIA_DIR_NAME = 'media'
 
 /**
+ * The one refusal on this edge a person can meet, as a word rather than a sentence.
+ *
+ * A message may name a picture whose bytes are no longer beside the store. What the window does
+ * with that is say so in the language it is running in, so what crosses to the renderer is
+ * *which* refusal this is and never the wording — `docs/host-rulings.md`, "The window does not
+ * speak to a developer", keeps the diagnosis in the log. The sentence this module throws with is
+ * therefore written for whoever reads stderr: a store moved without its `media/` directory.
+ */
+const PICTURE_GONE = 'gone'
+
+/**
  * The extension each mime writes, and the mime each extension reads back.
  *
  * A closed list rather than a derived one: the kernel refuses a `media.mime` that does not
@@ -139,11 +150,17 @@ function readMedia(storeFile, { key, mime }) {
     bytes = readFileSync(path)
   } catch (error) {
     if (error && error.code === 'ENOENT') {
-      throw new Error(
+      // A refusal that carries which refusal it is. The sentence stays a diagnostic — it names
+      // the store's directory, which is a fact about a filesystem rather than something a person
+      // reading a room can do anything with — and `main.js` answers the renderer the `reason`
+      // instead of it. Nothing but a log ever reads the message.
+      const gone = new Error(
         `the picture ${JSON.stringify(key)} is not beside this store any more: the message ` +
           `is the store's and the bytes are the client's, so a store moved without its ` +
           `${MEDIA_DIR_NAME}/ directory keeps the sentence and loses the picture`,
       )
+      gone.reason = PICTURE_GONE
+      throw gone
     }
     throw error
   }
@@ -266,6 +283,7 @@ function dropMedia(storeFile, key) {
 
 module.exports = {
   dropMedia,
+  PICTURE_GONE,
   ATTACHMENT_TYPES,
   BY_EXT,
   BY_MIME,

@@ -57,6 +57,8 @@
     "ui.chat.open-thread-hint": "打开这个话题",
     "ui.chat.opening-picture": "正在打开图片…",
     "ui.chat.opening-store": "正在打开存储…",
+    "ui.chat.picture-gone": "这张图片不在了",
+    "ui.chat.picture-unreadable": "这张图片打不开",
     "ui.chat.quote-hint": "引用回复",
     "ui.chat.react-hint": "给这条消息加表情",
     "ui.chat.reply": "回复",

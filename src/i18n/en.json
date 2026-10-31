@@ -59,6 +59,8 @@
     "ui.chat.open-thread-hint": "Open this thread",
     "ui.chat.opening-picture": "opening the picture…",
     "ui.chat.opening-store": "opening the store…",
+    "ui.chat.picture-gone": "this picture is no longer here",
+    "ui.chat.picture-unreadable": "this picture could not be opened",
     "ui.chat.quote-hint": "Reply with a quote",
     "ui.chat.react-hint": "React to this message",
     "ui.chat.reply": "Reply",
