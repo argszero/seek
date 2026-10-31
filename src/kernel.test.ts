@@ -658,3 +658,191 @@ test('a reminder belongs to no room, so it is folded into nobody’s summary', a
   assert.equal(summarised, 0, 'a reminder is no room’s conversation');
   assert.equal(world.store.memoriesOf(world.agentA2).length, 0);
 });
+
+/**
+ * The room's tempo: a bot is told at one instant and reads at another.
+ *
+ * Without it, four bots delivered the same message in the same millisecond began a model
+ * call in the same millisecond, so a person got four answers arriving together and then a
+ * room that never spoke again. The wait is what makes the second bot able to answer the
+ * first — which is the whole difference between a chorus and a conversation.
+ */
+test('a wake waits for the room’s tempo, and what arrives while it waits is read once', async () => {
+  const world = makeWorld();
+  const turns: Observation[][] = [];
+  const decide: Decide = (context) => {
+    turns.push(context.entries);
+  };
+  const { kernel, timers } = makeKernel(world.store, {
+    decide,
+    // A person's message in a group room addresses nobody, so stage 0 ignores it and
+    // only stage 1 can open a turn: this test is about the wait, not about the gate.
+    judge: (_botId, entries) => entries,
+    wakeDelay: () => 90_000,
+  });
+
+  deliver(world.store, { roomId: world.room, senderId: world.me, text: 'first' });
+  const first = kernel.wake(world.botA);
+
+  deliver(world.store, { roomId: world.room, senderId: world.me, text: 'second' });
+  const second = kernel.wake(world.botA);
+
+  assert.deepEqual(timers.armed, [90_000], 'one wait, not one per message');
+  await settle();
+  assert.equal(turns.length, 0, 'the bot has not looked yet — that is the tempo');
+
+  timers.fire();
+  await first;
+  await second;
+
+  assert.equal(turns.length, 1, 'both arrivals were read by the one turn');
+  assert.equal(turns[0].length, 2, 'and it read both of them');
+});
+
+test('a bot that was named is read sooner than a room that was not talking to it', async () => {
+  const world = makeWorld();
+  const arrivals: boolean[] = [];
+  const { kernel } = makeKernel(world.store, {
+    wakeDelay: (arrived) => {
+      arrivals.push(arrived.addressed);
+      return 0;
+    },
+  });
+
+  deliver(world.store, { roomId: world.room, senderId: world.me, text: 'anybody here' });
+  await kernel.wake(world.botA);
+
+  deliver(world.store, {
+    roomId: world.room,
+    senderId: world.me,
+    text: 'B, you take this one',
+    mentions: [{ id: world.botB, name: 'B' }],
+  });
+  await kernel.wake(world.botB);
+
+  assert.deepEqual(
+    arrivals,
+    [false, true],
+    'a room talking among itself is ambient; a bot named is addressed',
+  );
+});
+
+test('a bot’s message wakes the bots it names, and nobody else', async () => {
+  const world = makeWorld();
+  const spoke: Id[] = [];
+  const decide: Decide = (context) => {
+    spoke.push(context.botId);
+    if (context.botId === world.botA && context.roomId !== undefined) {
+      context.say(context.roomId, 'B, look at the schema before you start', {
+        mentions: [{ id: world.botB, name: 'B' }],
+      });
+    }
+  };
+  const { kernel } = makeKernel(world.store, { decide, judge: (_botId, entries) => entries });
+
+  deliver(world.store, { roomId: world.room, senderId: world.me, text: 'get started' });
+  await kernel.wake(world.botA);
+  await kernel.whenIdle();
+
+  assert.deepEqual(spoke, [world.botA, world.botB], 'the named bot was woken by the naming');
+});
+
+test('a bot that names nobody is talking to the room, and wakes no one', async () => {
+  const world = makeWorld();
+  const spoke: Id[] = [];
+  const decide: Decide = (context) => {
+    spoke.push(context.botId);
+    if (context.botId === world.botA && context.roomId !== undefined) {
+      context.say(context.roomId, 'I will start on the schema');
+    }
+  };
+  const { kernel } = makeKernel(world.store, { decide, judge: (_botId, entries) => entries });
+
+  deliver(world.store, { roomId: world.room, senderId: world.me, text: 'get started' });
+  await kernel.wake(world.botA);
+  await kernel.whenIdle();
+
+  assert.deepEqual(spoke, [world.botA], 'a broadcast is not an address');
+  assert.equal(world.store.hasPending(world.botB), true, 'B still has it to read when it wakes');
+});
+
+test('two bots alone in a room do not answer each other forever', async () => {
+  const world = makeWorld();
+  // A room of exactly two, which the kernel reads as a direct message — so every line
+  // either of them says addresses the other, and the chain wall would be the only thing
+  // that ever stopped them. What keeps this finite is that a wake is a naming.
+  const room = 'oc_direct_a_b';
+  world.store.data.rooms[room] = { id: room, name: '', chat_mode: 'group', created_at: MORNING };
+  for (const principal of [world.botA, world.botB]) {
+    const id = `mb_${principal}`;
+    world.store.data.memberships[id] = { id, room_id: room, principal_id: principal, role: 'member' };
+  }
+
+  const spoke: Id[] = [];
+  const decide: Decide = (context) => {
+    spoke.push(context.botId);
+    if (context.roomId !== undefined) context.say(context.roomId, 'still here');
+  };
+  const { kernel } = makeKernel(world.store, { decide });
+
+  deliver(world.store, { roomId: room, senderId: world.botA, text: 'are you there' });
+  await kernel.wake(world.botB);
+  await kernel.whenIdle();
+
+  assert.deepEqual(spoke, [world.botB], 'B answered once, and A was not woken by it');
+});
+
+test('a bot still waiting when the kernel stops opens no turn', async () => {
+  const world = makeWorld();
+  const turns: Observation[][] = [];
+  const { kernel, timers } = makeKernel(world.store, {
+    decide: (context) => {
+      turns.push(context.entries);
+    },
+    wakeDelay: () => 60_000,
+  });
+
+  deliver(world.store, { roomId: world.room, senderId: world.me, text: 'later' });
+  const waiting = kernel.wake(world.botA);
+  assert.deepEqual(timers.armed, [60_000]);
+
+  kernel.stop();
+  timers.fire();
+
+  const result = await waiting;
+  assert.equal(result.woke, false, 'a wait the kernel ended opened nothing');
+  assert.equal(turns.length, 0);
+  assert.equal(world.store.hasPending(world.botA), true, 'and the entry is still there to read');
+});
+
+test('a bot that answers another bot without naming it does not call it back', async () => {
+  const world = makeWorld();
+  const spoke: Id[] = [];
+  const decide: Decide = (context) => {
+    spoke.push(context.botId);
+    // The turn was woken by A's message, so `replyOf` makes this an answer to it — and it
+    // names nobody. That is what the last word in a room looks like, and it has to be
+    // possible: with the reply edge waking, every closing sentence wakes the person it
+    // closes with and the room cannot stop.
+    if (context.botId === world.botB && context.roomId !== undefined) {
+      context.say(context.roomId, 'understood, the schema is mine');
+    }
+  };
+  const { kernel } = makeKernel(world.store, { decide });
+
+  deliver(world.store, {
+    roomId: world.room,
+    senderId: world.botA,
+    text: 'B, take the schema',
+    mentions: [{ id: world.botB, name: 'B' }],
+  });
+  await kernel.wake(world.botB);
+  await kernel.whenIdle();
+
+  assert.deepEqual(spoke, [world.botB], 'B answered, and A was not called back');
+  assert.equal(
+    world.store.hasPending(world.botA),
+    true,
+    'A still has the answer in its box, addressed, for whenever it is next woken',
+  );
+});

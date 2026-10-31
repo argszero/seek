@@ -55,7 +55,7 @@ const OTHER = 'ou_a_second_person'
  * A store with the kernel's own seeded world beside a roster that gives its bot a work
  * agent able to speak — the same two pieces `runFirstMilestone` composes.
  */
-async function world() {
+async function world(options = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'seek-ui-host-'))
   const storeFile = join(dir, 'seek.json')
   const store = new SeekStore(emptyData(), storeFile)
@@ -67,7 +67,7 @@ async function world() {
   ])
   await store.save()
 
-  const host = await openHost(storeFile, { judge: stubJudge, decide: stubDecide })
+  const host = await openHost(storeFile, { judge: stubJudge, decide: stubDecide, ...options })
   return {
     host,
     scene,
@@ -76,6 +76,36 @@ async function world() {
     async done() {
       closeHost(host)
       await rm(dir, { recursive: true, force: true })
+    },
+  }
+}
+
+/**
+ * Timers a test fires by hand.
+ *
+ * The room's tempo is real time — a bot waits a minute and a half before it reads what
+ * arrived — so a test about it cannot wait for a timer. This hands the kernel the timers
+ * instead, and `fireAll()` is what the world does when the minute is up.
+ */
+function manualTimers() {
+  const armed = []
+  const pending = new Map()
+  let next = 0
+  return {
+    armed,
+    set(delayMs, run) {
+      const handle = (next += 1)
+      armed.push(delayMs)
+      pending.set(handle, run)
+      return handle
+    },
+    clear(handle) {
+      pending.delete(handle)
+    },
+    fireAll() {
+      const waiting = [...pending.values()]
+      pending.clear()
+      for (const run of waiting) run()
     },
   }
 }
@@ -829,6 +859,46 @@ test('a room of a few observations has no note, and none is invented', async () 
       (row) => row.level === 'room_digest',
     )
     assert.equal(digests.length, 0, 'and no empty note stands in for one')
+  } finally {
+    await w.done()
+  }
+})
+
+/**
+ * The tempo, measured where a person meets it: a send answers at once, and the bot answers
+ * when a person would have read the message.
+ *
+ * This is the defect the host reported in the room of four — every bot told in the same
+ * millisecond, so four answers arrived together and then nobody spoke again. The send must
+ * not wait for the pause (that is `postMessage`'s own rule, measured in
+ * `send-does-not-wait.test.mjs`), and the answer must arrive when the pause ends.
+ */
+test('the bot reads the message after the room’s tempo, not in the instant it was sent', async () => {
+  const timers = manualTimers()
+  const arrivals = []
+  const w = await world({
+    timers,
+    wakeDelay: (arrived) => {
+      arrivals.push(arrived.addressed)
+      return 90_000
+    },
+  })
+  try {
+    await postMessage(w.host, { roomId: w.scene.room, text: 'the deploy is red' })
+
+    const sent = hostSnapshot(w.host)
+    const quiet = sent.rooms.find((one) => one.id === w.scene.room)
+    assert.equal(quiet.messages.length, 1, 'the person’s line, and no answer yet')
+    assert.deepEqual(timers.armed, [90_000], 'the bot is waiting, and for the tempo’s length')
+    assert.deepEqual(arrivals, [true], 'a room of two is somebody being spoken to directly')
+
+    timers.fireAll()
+    await w.host.kernel.whenIdle()
+
+    const answered = hostSnapshot(w.host)
+    const room = answered.rooms.find((one) => one.id === w.scene.room)
+    assert.equal(room.messages.length, 2, 'and the answer is there once the wait ends')
+    assert.equal(room.messages[1].sender, w.scene.bot)
   } finally {
     await w.done()
   }

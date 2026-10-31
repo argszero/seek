@@ -49,6 +49,7 @@
  * executed in the order the model asked for them.
  */
 
+import { agentTurnsIn } from './chain.ts';
 import type { AgentIdentity } from './identity.ts';
 import {
   chatTurn,
@@ -280,7 +281,7 @@ function run(store: SeekStore, context: TurnContext, call: ToolCall): void {
     throw new Error(`the model called ${call.name} with ${call.arguments}, which names no arguments`);
   }
 
-  const args = parsed as { room?: unknown; text?: unknown };
+  const args = parsed as { room?: unknown; text?: unknown; mentions?: unknown };
   if (typeof args.room !== 'string' || typeof args.text !== 'string') {
     throw new Error(
       `the model called ${call.name} without a room and a text, which are the two ` +
@@ -310,7 +311,15 @@ function run(store: SeekStore, context: TurnContext, call: ToolCall): void {
 
   // The text goes to `say()` as the model wrote it. This is not a place that trims,
   // reformats or drops a message — including the empty one, which `say()` refuses.
-  context.say(args.room, args.text, replyOf(context));
+  //
+  // **The names it asked to be answered by are resolved here, not stored as written.**
+  // A message wakes a bot when it names that bot, replies to it or is direct
+  // (`delivery.ts`), and nothing scans the text for an `@`: a model that wrote
+  // `@小荷` in the body and no mention would have addressed nobody. So the names go
+  // through the room's own membership, and a name that is not in the room is refused
+  // rather than dropped — a mention aimed at nobody is a message the sender believed
+  // was addressed.
+  context.say(args.room, args.text, { ...replyOf(context), ...mentionsOf(store, args.mentions, context) });
 }
 
 /**
@@ -355,6 +364,8 @@ function valuesOf(store: SeekStore, context: TurnContext): WorkValues {
     gender: bot.gender ?? '',
     room: context.roomId ?? '',
     roster: rosterOf(context.identity),
+    others: othersOf(store, context, bot.id),
+    turns: context.roomId === undefined ? undefined : turnsSincePerson(store, context.roomId),
     summary: box?.summary ?? '',
     entries: readable.map((entry) => entryOf(store, bot.name, entry)),
   };
@@ -378,6 +389,116 @@ function rosterOf(identity: AgentIdentity): string {
         `home=${own.home} self=${own.self}`,
     )
     .join('\n');
+}
+
+/**
+ * The other bots in this room, by name — the same list the judgement is given.
+ *
+ * `watch.ts` states why that line is load-bearing on its side: without it four bots read
+ * one name as addressed to each of them. Here it answers a different question — *who can
+ * I ask* — and a room where the bot is alone contributes nothing, so the part that quotes
+ * it leaves the prompt rather than saying "the other bots in this room: ".
+ */
+/**
+ * How long this room has been talking without the person, once it is worth saying.
+ *
+ * **A meeting ends by the clock, not by the topic running out.** Measured: a room of four
+ * with a real question settled its plan in the first ten messages and then spent fifteen
+ * more agreeing on the same three things — nobody was tired, because nothing in the prompt
+ * said the room had been at it for a while. The count is the room's own record
+ * (`chain.ts`), not a count of this turn's box: a note may have folded earlier messages
+ * away, and the record still knows how long the run has been.
+ *
+ * Absent below the mark, because a room that has just started is not a room to be told to
+ * wrap up. The number is the whole fact; what it means for the turn is the artifact's.
+ */
+const ROOM_HAS_BEEN_TALKING = 8;
+
+function turnsSincePerson(store: SeekStore, roomId: Id): string | undefined {
+  const turns = agentTurnsIn(store, roomId);
+  return turns < ROOM_HAS_BEEN_TALKING ? undefined : String(turns);
+}
+
+function othersOf(store: SeekStore, context: TurnContext, botId: Id): string {
+  if (context.roomId === undefined) return '';
+  return store
+    .botsIn(context.roomId)
+    .filter((bot) => bot.id !== botId)
+    .map((bot) => {
+      const name = bot.name === '' ? bot.id : bot.name;
+      // What each of them does, when the card says: a bot that is asked to name
+      // somebody has to be able to tell which somebody, and a list of bare names makes
+      // "@小荷, you take the database" as likely as the reverse. The position is the
+      // card's own field and nothing is added to it.
+      const position = (bot.position ?? '').trim();
+      return position === '' ? name : `${name} (${position})`;
+    })
+    .join(', ');
+}
+
+/**
+ * The names a `say` call asked to be answered by, resolved against this room.
+ *
+ * Three refusals, and each stands for a way the mention would otherwise be a lie:
+ *
+ * - **Not a list of names.** The schema says an array of strings; anything else is a
+ *   call the runtime cannot read, and `run()`'s rule is that an unreadable call is an
+ *   error rather than a shrug dressed as a quiet turn.
+ * - **A turn with no room.** A reminder wakes a bot for its own work (§12); a mention
+ *   names people in a room, so there is nothing to resolve against.
+ * - **A name nobody here has.** Dropping it would post a message its sender believed was
+ *   addressed to someone; the room's own names are listed in the refusal, because the
+ *   fix is one word and the model can only make it if it is told which words exist.
+ *
+ * A leading `@` is stripped first: the answer is a name, and a model that formats it the
+ * way the room reads (`@小荷`) meant the same person.
+ */
+function mentionsOf(
+  store: SeekStore,
+  raw: unknown,
+  context: TurnContext,
+): { mentions: { id: Id; name: string }[] } | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  if (!Array.isArray(raw)) {
+    throw new Error(
+      `the model called say with mentions=${JSON.stringify(raw)}, which is not a list of ` +
+        'names: the tool declares an array of the names in this room',
+    );
+  }
+  if (context.roomId === undefined) {
+    throw new Error(
+      'the model named who should answer in a turn with no room: a mention resolves ' +
+        'against the members of the room the message goes into, and this turn has none',
+    );
+  }
+  const members = store
+    .membershipsOf(context.roomId)
+    .map((membership) => membership.principal_id)
+    .map((id) => ({ id, name: nameOf(store, id) }));
+  const out: { id: Id; name: string }[] = [];
+  for (const one of raw) {
+    const asked = typeof one === 'string' ? one.replace(/^@+/, '').trim() : '';
+    const member = members.find((who) => who.name === asked || who.id === asked);
+    if (member === undefined) {
+      throw new Error(
+        `the model named ${JSON.stringify(one)} in a say call and nobody by that name is in ` +
+          `this room: a mention is who the message is addressed to, so an unmatched name ` +
+          `would be a message aimed at nobody. The names here are ` +
+          `${members.map((who) => who.name).join(', ')}`,
+      );
+    }
+    if (!out.some((who) => who.id === member.id)) out.push(member);
+  }
+  return { mentions: out };
+}
+
+/** How the store names one principal: its own name, or its id when nobody named it. */
+function nameOf(store: SeekStore, id: Id): string {
+  const bot = store.data.bots[id];
+  if (bot) return bot.name === '' ? bot.id : bot.name;
+  const person = store.data.principals[id];
+  if (person) return person.name === '' ? person.id : person.name;
+  return id;
 }
 
 /**

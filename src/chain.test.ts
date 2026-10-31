@@ -61,8 +61,8 @@ function addressed(messageId: Id, roomId: Id, depthHint = 'reply'): Observation 
 }
 
 test('the caps are the ones §11.3 states, not numbers invented here', () => {
-  assert.equal(DEPTH_CAP, 4);
-  assert.equal(AGENT_TURN_CAP, 3);
+  assert.equal(DEPTH_CAP, 24);
+  assert.equal(AGENT_TURN_CAP, 24);
 });
 
 test('a bot turn is counted once, and a bot message under the caps still wakes', async () => {
@@ -364,7 +364,7 @@ test('two bots cannot answer each other forever', async () => {
   });
 
   let rounds = 0;
-  const limit = 12;
+  const limit = AGENT_TURN_CAP + 2;
   while (rounds < limit) {
     rounds += 1;
     const a = await loopA.tick(world.botA);

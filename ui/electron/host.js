@@ -663,6 +663,12 @@ async function openHost(storeFile, options = {}) {
     ...(stage1.judge === undefined ? {} : { judge: stage1.judge }),
     ...(stage2.summarise === undefined ? {} : { summarise: stage2.summarise }),
     ...(options.onError === undefined ? {} : { onError: options.onError }),
+    // How long a bot takes to look at what just arrived. The window's caller decides it
+    // (`main.js` says what a person's tempo is), and a caller that says nothing gets no
+    // wait at all — which is what every test of this layer wants, since what it measures
+    // is a room and never a clock.
+    ...(options.wakeDelay === undefined ? {} : { wakeDelay: options.wakeDelay }),
+    ...(options.timers === undefined ? {} : { timers: options.timers }),
     compactLines: { maxObservations: NOTE_AFTER },
   })
   // Nothing is woken by starting: this arms the one comparator for rows that came due
@@ -920,10 +926,12 @@ async function postMessage(host, input) {
 
   // The message is on disk, and that is the whole of "it was sent". The bots it was delivered
   // to are asked now and answered for later — one wake each, all of them started at once,
-  // because a room's bots do not take turns in a queue behind each other.
+  // because the room's bots were all told at the same instant. What each of them does with
+  // that instant is the tempo's business: `kernel.wake()` waits before it reads, and two bots
+  // that were told together do not answer together.
   const recipients = new Set(sent.observations.map((entry) => entry.bot_id))
   const answers = [...recipients].map((botId) =>
-    host.kernel.tick(botId).catch((error) => {
+    host.kernel.wake(botId).catch((error) => {
       // A turn that threw is recorded where the kernel records the wakes it started itself,
       // and the room goes quiet: the message it would have answered is already written.
       host.kernel.failures.push({ botId, error })
