@@ -422,10 +422,28 @@ body {
    it: one surface with one seam, not a white page in a grey frame. */
 .main-col { display: flex; flex-direction: column; min-width: 0; background: var(--bg-list); }
 
-/* 68px, measured, and **no rule under it** — the client separates the header from the
-   messages by space, and a hairline here drew a second seam the window next to it did not
-   have. The room's name is 16px at weight 600, which is the one place the client goes
-   heavier than the list's 500: this is the title of the page, and that one is a label. */
+/* 68px tall, and **one 1px line under it**. Both numbers are read off the reference
+   window: the room's column is `#FBFCFC` from the window's edge down to y=72, `#DEDFE0`
+   on y=73 alone, and `#FCFCFC` from y=74 — so the band is 67px of fill and the line is
+   the 68th, which is what `height: 68px` with the border inside the box draws. The line
+   runs the column's whole width and stops where the column does: measured at the same
+   height, the conversation list beside it is plain `#FCFCFC` with no line of its own.
+
+   This rule used to say the opposite — "no rule under it … a hairline here drew a second
+   seam" — which was never a reading of anything. The edge the client draws is this one,
+   under the room's head alone, and the window that omitted it was the one that differed.
+
+   The line is `--N300`, the hairline token this stylesheet already draws its edges with.
+   The client's own `#DEDFE0` is that token a shade bluer; the gap is under three units a
+   channel, so a token is used rather than a colour of its own.
+
+   The settings page hangs the same head on the same column, so it takes the line too. The
+   client opens its settings in a dialogue rather than in this column, so there is no
+   reference to match there — and one rule for one column head is what keeps the two screens
+   from drifting apart.
+
+   The room's name is 16px at weight 600, which is the one place the client goes heavier
+   than the list's 500: this is the title of the page, and that one is a label. */
 .main-head {
   display: flex;
   align-items: center;
@@ -433,6 +451,7 @@ body {
   height: 68px;
   padding: 0 20px;
   box-sizing: border-box;
+  border-bottom: 1px solid var(--N300);
 }
 
 .main-head h2 { margin: 0; font-size: 16px; font-weight: 600; line-height: 24px; }
