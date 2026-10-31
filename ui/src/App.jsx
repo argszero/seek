@@ -1184,22 +1184,20 @@ export default function App() {
         view === 'settings' ? ' with-settings' : ''
       }`}
     >
-      {/* The prototype's column, in the prototype's order (`renderRail()`,
-          `prototype/src/js/app.js`): the avatar as *who this is*, four navigation rows, a
-          spacer, then the theme toggle and settings at the foot.
+      {/* The column in the order it was specified: the avatar as *who this is*, four
+          navigation rows, a spacer, then the theme toggle and settings at the foot.
 
           **Rooms are not here.** They were, one initial per room, and that was not the
           prototype: its rail is fixed navigation, and the rooms live in the conversation list
           column beside it (`chatRow()`). A column of rooms where the spec has five fixed rows
           is a different window, and it left no way to reach *messages* at all.
           The host named this column on 2026-10-27: 左侧头像／消息／机器人／话题导航、图标、
-          位置 — all of it from the prototype. */}
+          位置 — and that naming is the specification this column is drawn to. */}
       <nav className="rail">
         {/* The top of the column: who this is, and the mark that makes things.
-            The avatar is **not** a button — the prototype says so in as many words (`app.js`:
-            左上角头像只是个「这是谁」，不是按钮), and changing organization is on the settings
-            page. The dot is its green presence mark, decoration rather than a fact this store
-            keeps.
+            The avatar is **not** a button — 左上角头像只是个「这是谁」，不是按钮 — and changing
+            organization is on the settings page. The dot is its green presence mark, decoration
+            rather than a fact this store keeps.
 
             The ring at the other end is measured off the client (2026-10-27): 24×24, rounded
             6, a 16px glyph, 12px in from the column's right edge, and centred on the avatar's

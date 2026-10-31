@@ -1,21 +1,22 @@
 /**
  * The rail's icons, and they are the prototype's own shapes rather than a set drawn here.
  *
- * `docs/host-rulings.md` §Design precedes code: the earlier build in `prototype/` is the
+ * `docs/host-rulings.md` §Design precedes code: the earlier build in `prototype/` was the
  * spec, and the host restated it on 2026-10-27 about this column by name — the avatar, the
- * navigation, the icons and their positions all come from there. `prototype/src/js/icons.js`
- * holds those shapes; each entry below is one `PATHS` entry from it, transcribed with the
- * same element and the same attributes.
+ * navigation, the icons and their positions all come from there. Each entry below was
+ * transcribed from that build's icon table with the same element and the same attributes;
+ * issue #138 deleted the table with its copy of the window, so the shapes live here now and
+ * no second file holds them.
  *
- * **Transcribed rather than approximated, because a test compares the two.** A hand-drawn
- * glyph looks close enough in a screenshot and is a different icon; `electron/rail.test.mjs`
- * reads `PATHS` out of the prototype and requires the markup here to equal it once
- * whitespace is normalised. That is why every icon is a list of elements: one entry, one
- * entry in the prototype, and the comparison has a fixed shape to walk.
+ * **What is checked is the frame and the presence, not the curve.** `electron/rail.test.mjs`
+ * takes every icon the rail names and requires an entry carrying a path, plus the 24×24 box,
+ * the 1.6px stroke and `fill="none"`. Whether a line matches the client's is a screenshot's
+ * business, and it became that on the day there was nothing left to compare against.
  *
- * The frame is the prototype's too — a 24×24 box, 1.6px stroke, round caps, `currentColor`
- * (`icon()` at `prototype/src/js/icons.js`). Sizes are not decided here: the rail passes
- * 22px for the navigation and 20px for the two at its foot, as `renderRail()` does.
+ * The frame is the prototype's too — a 24×24 box, 1.6px stroke, round caps, `currentColor`.
+ * The size is not, and is not decided here: the client draws a rail glyph at 16px, 11px in
+ * from the row's left edge and 8px before the word, so `rail.mjs` hands the number in through
+ * `NAV_ICON`/`TAIL_ICON` and this file has no opinion about how big a glyph is.
  */
 const ICONS = {
   message: [
@@ -141,16 +142,14 @@ const ICONS = {
 /**
  * One icon at one size.
  *
- * `aria-hidden` because the button that holds it carries the title (`renderRail()` in the
- * prototype sets `title` on the button, not on the glyph): a screen reader announcing
- * "message" beside "Messages" says the same thing twice.
+ * `aria-hidden` because the button that holds it carries the title, not the glyph: a screen
+ * reader announcing "message" beside "Messages" says the same thing twice.
  *
- * Stroked, not filled — the prototype's `icon()` paints these with
- * `fill="none" stroke="currentColor"`, which is what `1.6` refers to. The one exception is
+ * Stroked, not filled — these are painted with `fill="none" stroke="currentColor"`, which is
+ * what `1.6` refers to. The one exception is
  * `add`, whose ring-and-plus is a single filled shape (`fill="currentColor"` on the path
  * itself, which wins over the frame's `fill="none"`). A name this file does
- * not carry draws nothing rather than a box, the way `icon()` returns `''` for one it has
- * never heard of.
+ * not carry draws nothing rather than a box.
  */
 export default function Icon({ name, size = 20 }) {
   const shapes = ICONS[name]

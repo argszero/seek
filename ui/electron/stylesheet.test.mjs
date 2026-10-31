@@ -4,8 +4,9 @@
  * The reading it closes: `ui/src/styles/shell.css` was rewritten whole while the rail was
  * redrawn — 1,150 lines came out as 301, and 862 lines of window styles went with them. Both
  * suites stayed green. `ui/electron/rail.test.mjs` does read the sheet, but for one purpose:
- * the six numbers the rail compares against `prototype/src/css/app.css` (`.rail`, `.rail-btn`,
- * `.rail-avatar`, `.presence`, `.app`). The message column, the composer, the store, the
+ * the numbers the rail is drawn at — the 156px column, its 8px insets, the 32px rows rounded
+ * at 8, the 16px glyphs and the 6px gutter — read out of `.rail`, `.rail-btn` and `.gutter`
+ * and from the tokens those rules name. The message column, the composer, the store, the
  * thread panel and the settings page had no reader at all, so nothing in the repository would
  * have noticed had the loss been theirs instead.
  *

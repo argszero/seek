@@ -7,10 +7,11 @@ import { topicKeyOf as keyOf, topicsOf } from './topics-of.mjs'
 /**
  * The topics view: every thread in this store, whichever room it started in.
  *
- * **The prototype is the spec** (`prototype/src/js/app.js`): the rail row it labels 话题, the
- * list `renderList()` draws for `view === 'topics'`, the pane `renderTopicsPane()` draws, and
- * what a click on a row does (`openTopic()` — into the room, with that thread open). What
- * differs here is what this store forces, not a choice of this file.
+ * **This view's shape was the prototype's**: the rail row it labels 话题, the list that row
+ * opens, the pane beside it, and what a click on a row does — into the room, with that thread
+ * open. The file that drew them was deleted with the prototype's copy of the window (issue
+ * #138), so what is fixed here is the shape and not a source. What differs from it is what
+ * this store forces, not a choice of this file.
  *
  * **Which messages are topics, and what one is called, are `topics-of.mjs`'s answers.** The
  * rule moved out of this file for the reason `room-to-open.mjs` did: there is no harness for the

@@ -1,19 +1,15 @@
 /**
  * The navigation rail: what it holds, in what order, and at what size.
  *
- * **This is the prototype's list, not a list that resembles it.** `renderRail()` in
- * `prototype/src/js/app.js` declares
+ * **Four rows, then two at the foot.** The column draws the avatar as *who this is*, these
+ * four rows, a `flex: 1` spacer, and the theme toggle and settings past it.
  *
- *     const RAIL = [
- *       { view: 'chat',     icon: 'message',  label: '消息' },
- *       { view: 'contacts', icon: 'contacts', label: '机器人' },
- *       { view: 'groups',   icon: 'users',    label: '群组' },
- *       { view: 'topics',   icon: 'topic',    label: '话题' }
- *     ]
- *
- * and then draws a theme toggle and a settings button at the foot of the column, past a
- * `flex: 1` spacer. The four, the order, the icons and the two at the foot are what
- * `electron/rail.test.mjs` holds `RAIL` and `RAIL_TAIL` to, by reading that file.
+ * The list came from the prototype, and issue #138 deleted that copy of the window along with
+ * the file that declared it; what stands behind it now is the client itself — a live Feishu
+ * messenger read at a 1912×829 window on 2026-10-27, whose numbers `electron/rail.test.mjs`
+ * carries in its own header — and the four destinations are the ones this product has. The
+ * four, the order, the icons and the two at the foot are what that test holds `RAIL` and
+ * `RAIL_TAIL` to, by reading this file, `App.jsx` and the stylesheet.
  *
  * **Why this lives in a `.mjs` rather than in `App.jsx`.** A `.jsx` file cannot be imported by
  * the suite, and a list that no test can read is a list that drifts back to whatever the
@@ -85,9 +81,9 @@ export const ADD_MENU = [
 export const ADD_TITLE = 'ui.rail.add'
 
 /**
- * The two words the theme toggle wears, and they name the action rather than the state:
- * `renderRail()` titles the button `切换到深色` while the window is light. So the key is
- * chosen by what the window is about to become, not by what it is.
+ * The two words the theme toggle wears, and they name the action rather than the state: a
+ * button that said 深色 while the window was dark would be a label for the state it is
+ * leaving. So the key is chosen by what the window is about to become, not by what it is.
  */
 export const THEME_TO_DARK = 'ui.rail.theme-dark'
 export const THEME_TO_LIGHT = 'ui.rail.theme-light'

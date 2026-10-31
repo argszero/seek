@@ -168,10 +168,11 @@ body {
 /* What stands between the four navigation rows and the two at the foot. */
 .rail-spacer { flex: 1; }
 
-/* The top of the column. Measured off the client (2026-10-27): the avatar sits 32px from the
-   top's left inset, the add ring 12px in from the right edge, and both are centred on one line
-   — which is why this is a row rather than the avatar alone. The 12px under it is the gap the
-   column leaves before its first navigation row. */
+/* The top of the column. Measured off the client (2026-10-27): a 32px avatar 4px in from the
+   column's own inset, so its left edge lands 12px from the column's, the add ring 12px in from
+   the right edge, and both centred on one line — which is why this is a row rather than the
+   avatar alone. Under it the 12px margin and the column's own 4px gap are the 16px the column
+   leaves before its first navigation row. */
 .rail-top {
   position: relative;
   display: flex;
