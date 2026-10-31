@@ -283,6 +283,51 @@ test('the prompt carries the entry and not the watch side’s verdict', async ()
   );
 });
 
+test('the request says when each entry arrived, so a week apart does not read as one shape', async () => {
+  const world = makeWorld();
+  // The clock is injected rather than waited on: two observations a week apart is the
+  // measurement issue #173 was opened with, and nothing here needs a real week.
+  const week = '2026-10-24T02:00:00.000Z';
+  const today = '2026-10-31T02:00:00.000Z';
+  deliver(world.store, {
+    roomId: world.room,
+    senderId: world.me,
+    text: 'the deploy is red',
+    now: week,
+  });
+  deliver(world.store, {
+    roomId: world.room,
+    senderId: world.me,
+    text: 'it is green again',
+    now: today,
+  });
+  const entries = await world.store.drain(world.botA);
+
+  const recorder = fakeServer({});
+  const decide = await workOverServer(world.store, world.botA, serverOf(recorder), {
+    prompt: ARTIFACT,
+  });
+  await turnWith(world, decide, entries);
+
+  const chat = recorder.calls.find((call) => call.path === '/v1/chat/completions');
+  assert.ok(chat, 'the model was asked');
+  const asked = JSON.stringify(chat.body);
+
+  // The judgement criterion the issue was opened with, read the way a reader of the
+  // request reads it: nothing but the body, and the room's own two messages must not
+  // arrive as two lines of the same shape.
+  assert.ok(asked.includes(week), 'the older message is dated where it landed');
+  assert.ok(asked.includes(today), 'and so is the newer one');
+  const lineOf = (said: string): string | undefined =>
+    (chat.body.messages as { content: string }[])
+      .map((message) => message.content)
+      .join('\n')
+      .split('\n')
+      .find((line) => line.includes(said));
+  assert.equal(lineOf('the deploy is red'), `[${week}] me: the deploy is red`);
+  assert.equal(lineOf('it is green again'), `[${today}] me: it is green again`);
+});
+
 /**
  * The clock: a room that has been at it for a while is told so, and a fresh one is not.
  *

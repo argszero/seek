@@ -502,7 +502,7 @@ function nameOf(store: SeekStore, id: Id): string {
 }
 
 /**
- * One entry as `{sender, text}`.
+ * One entry as `{sender, text, at}`.
  *
  * A reminder has no message behind it, and its `text` is the note itself, written by
  * the bot to its future self (§12) — so the sender is the bot, and the text is
@@ -515,23 +515,32 @@ function nameOf(store: SeekStore, id: Id): string {
  * sender with no principal row is named by its own id, which is what a client shows for
  * a stranger; a message that is no longer there contributes an empty line, exactly as
  * the watch half treats a missing body.
+ *
+ * `at` is the entry's own `delivered_at`, and it is the one fact here that does not
+ * come off the message: the entry is stamped when it reaches this bot, so a reminder,
+ * a message and a message whose body has been erased all carry the time they arrived
+ * even when nothing else about them survives. It is handed over as the record writes
+ * it — never rephrased as "a week ago", which would need a clock reading here and is
+ * the separate question `agent-lifecycle.md` leaves open.
  */
 function entryOf(
   store: SeekStore,
   botName: string,
   entry: HandedEntry,
-): { sender: string; text: string } {
+): { sender: string; text: string; at: string } {
+  const at = entry.delivered_at;
   const messageId = entry.message_id;
-  if (messageId === undefined) return { sender: botName, text: entry.text ?? '' };
+  if (messageId === undefined) return { sender: botName, text: entry.text ?? '', at };
 
   const message =
     entry.room_id === undefined
       ? undefined
       : store.messagesOf(entry.room_id).find((own) => own.id === messageId);
-  if (!message) return { sender: '', text: '' };
+  if (!message) return { sender: '', text: '', at };
   return {
     sender: store.principal(message.sender_id)?.name ?? message.sender_id,
     text: message.text,
+    at,
   };
 }
 

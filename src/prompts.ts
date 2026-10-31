@@ -570,7 +570,7 @@ export type OptionalFact = 'description' | 'gender' | 'position' | 'personality'
 export interface WorkPart {
   /** The part's own name, for the error messages and for a reader of the file. */
   name: string;
-  /** Its template, with `{bot}`, `{room}`, `{roster}`, `{sender}` or `{text}`. */
+  /** Its template, with `{bot}`, `{room}`, `{roster}`, `{sender}`, `{text}` or `{at}`. */
   text: string;
   /** What follows the part, verbatim. */
   after: string;
@@ -677,14 +677,28 @@ export interface WorkValues {
    * fact — the count and what it means, no instruction beyond what the artifact says.
    */
   turns?: string;
-  /** The observations since that note, **oldest first**. */
-  entries: { sender: string; text: string }[];
+  /**
+   * The observations since that note, **oldest first**.
+   *
+   * Each carries when it landed, as the record timestamps it (`Observation.delivered_at`),
+   * because `agent-lifecycle.md` line 201 says an observation carries "its room, who
+   * spoke, **when** and what" and the half that answers was handed the other three. Two
+   * messages a week apart arrived as two lines of the same shape, so a bot could not tell
+   * a reply from an answer to something said seven days earlier — and `work-v5`'s own
+   * parts ask it to say when it will know something works and when it looks again.
+   *
+   * The value is the stored stamp and never a phrase like "a week ago": that would need
+   * a clock reading at assembly time, which is a separate question this artifact does
+   * not answer (a `now` is not in the values, and the no-copy rule below is the same
+   * rule — the record's own words rather than this module's).
+   */
+  entries: { sender: string; text: string; at: string }[];
 }
 
 /**
  * The shipped turn artifact's location, beside this module.
  *
- * `work-v4.json` ships; `work-v1.json`, `work-v2.json` and `work-v3.json` stay beside it. A prompt is
+ * `work-v5.json` ships; `work-v1.json` through `work-v4.json` stay beside it. A prompt is
  * versioned rather than edited in place, because `calibration/work/` measured v1 and a
  * record that quotes a prompt the tree has changed describes a run nobody can re-read
  * — `work-calibration.test.ts` holds that pair together. What v2 added is the two parts
@@ -692,10 +706,12 @@ export interface WorkValues {
  * v1 text byte for byte, which `prompts.test.ts` checks against v1 itself. What v3 adds
  * is the note the bot wrote about the room last time (`compact.ts`), conditional the
  * same way: a room with no note is asked the v2 text byte for byte, which the same test
- * checks against v2.
+ * checks against v2. What v5 adds is the arrival time on every entry line, in the shape
+ * `watch-v3` already renders the same fact (`[{at}] {sender}: {text}`), so the half that
+ * answers can tell a reply from an answer to something said last week.
  */
 export function shippedWorkPromptPath(): URL {
-  return new URL('./prompts/work-v4.json', import.meta.url);
+  return new URL('./prompts/work-v5.json', import.meta.url);
 }
 
 /**
@@ -779,7 +795,15 @@ export function assembleWorkPrompt(
     if (part.when !== 'always' && !values[part.when]) continue;
     if (part.each === 'entry') {
       for (const entry of values.entries) {
-        out.push(fill(part.text, { ...facts, sender: entry.sender, text: entry.text }), part.after);
+        out.push(
+          fill(part.text, {
+            ...facts,
+            sender: entry.sender,
+            text: entry.text,
+            at: entry.at,
+          }),
+          part.after,
+        );
       }
       continue;
     }
@@ -834,7 +858,8 @@ function isSkippable(name: unknown): boolean {
  *
  * Every check here answers a way the file could ask something nobody fills: a
  * `{sender}` on a part that does not repeat has no sender to name, `{text}` outside
- * a per-entry part has no message to quote, and a placeholder no one here fills is
+ * a per-entry part has no message to quote, `{at}` outside one has no arrival to
+ * date, and a placeholder no one here fills is
  * rendered literally into the prompt, where it reads as part of the instruction.
  * `{description}` is the conditional case and gets the same treatment the watch
  * artifact gives `{summary}`: a part that names it must be skipped when there is
@@ -918,7 +943,7 @@ function assertWorkArtifact(value: unknown, source: string): WorkArtifact {
     }
 
     for (const name of placeholdersIn(row.text)) {
-      if (name === 'sender' || name === 'text') {
+      if (name === 'sender' || name === 'text' || name === 'at') {
         if (row.each !== 'entry') {
           return fail(
             `${where} fills {${name}} without \`each: "entry"\`, so it has nothing to fill from`,
