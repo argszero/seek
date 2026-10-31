@@ -109,6 +109,11 @@ The box is the bot's and not a room's, so the judgement input is per bot and is 
 Asked once whether compaction runs when the delta crosses a threshold or on every new message, the host answered *"A"* — anything but every message; when he later settled the three roads out of a judgement, one of them is *"2. (the observations have piled up and need compacting) call the work agent"*.
 Nothing compacts per message, and a judgement never waits for a compaction. When one is due is the judgement's to say: it reads the box, and one of its three answers is that the observations have piled up and the agent that works should compact them. Compaction is single-flight: at most one runs at a time, and it commits the new summary and the point it consumed to atomically, so a concurrent arrival is either inside the new compaction or still among the observations after it, never lost. **Compaction is a runtime action and not a turn** — a room that never needs a word said still has to be compactable.
 
+**The count came later, and on timing the count is what governs.**
+*"When there are more than twenty new messages, compact."* The host gave that number on 2026-10-28, in Chinese; it is carried here in English, and it is his own, not a figure anyone measured. It was implemented the same evening (`7f0c4fc`, 18:56:43): the runtime gives the room a compaction once twenty observations have arrived since the last one (`ui/electron/host.js`, `NOTE_AFTER = 20`).
+The paragraph above was written down six hours earlier, on the same day (`d67f881`, 12:36:16). On **when** a compaction is due it is the earlier word and is superseded: the judgement is not asked whether one is due, and a compaction may start without one having asked for it. Everything else about compaction stands — never per message, single-flight, one atomic write of the summary and the point it consumed, and a runtime action rather than a turn.
+The third road out of a judgement — *"2. (the observations have piled up and need compacting) call the work agent"* — is therefore **not built**, and it stays unbuilt until a cut point for it can be calibrated on a labelled set. A number nobody sourced is the one thing that does not go into a prompt.
+
 ---
 
 ## One bot, one agent, and a judgement that is not one
