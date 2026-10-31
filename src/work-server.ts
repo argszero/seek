@@ -527,20 +527,29 @@ function entryOf(
   store: SeekStore,
   botName: string,
   entry: HandedEntry,
-): { sender: string; text: string; at: string } {
+): { sender: string; text: string; at: string; picture: boolean } {
   const at = entry.delivered_at;
   const messageId = entry.message_id;
-  if (messageId === undefined) return { sender: botName, text: entry.text ?? '', at };
+  if (messageId === undefined) {
+    return { sender: botName, text: entry.text ?? '', at, picture: false };
+  }
 
   const message =
     entry.room_id === undefined
       ? undefined
       : store.messagesOf(entry.room_id).find((own) => own.id === messageId);
-  if (!message) return { sender: '', text: '', at };
+  if (!message) return { sender: '', text: '', at, picture: false };
   return {
     sender: store.principal(message.sender_id)?.name ?? message.sender_id,
     text: message.text,
     at,
+    // The one fact about a message that has no text of its own. A picture is carried
+    // as `Message.media` (`types.ts`), which `box.ts` hands to the judgement and which
+    // the half that answers was never told about: measured on the request body before
+    // `work-v6`, a message containing only a picture reached the prompt as `me:` and
+    // could be told apart from an empty message by nothing at all. The words for it
+    // are the artifact's `pictureLine` — this is the fact, not the sentence.
+    picture: message.media !== undefined,
   };
 }
 

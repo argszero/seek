@@ -59,7 +59,7 @@ measures the prompt the reader has; `LLAMA=<path>` names another `llama-server` 
 `src/prompts/work-v1.json` changed, which is what makes the rows comparable: the only
 variable left is the model.
 
-**The tree now ships `work-v5.json`, and every row below was measured on `work-v1.json`.** A
+**The tree now ships `work-v6.json`, and every row below was measured on `work-v1.json`.** A
 prompt is versioned rather than edited in place, so v1 stays in the tree exactly as it was
 measured. v2 adds two parts — what the bot does in its organization, and how it talks and
 works — and both are skipped when a bot's card says nothing; v3 adds one part, the note the
@@ -86,6 +86,17 @@ not tell a reply from an answer to something said seven days earlier, and the pa
 inherits from v4 ask it to say when it will know a thing works and when it looks again. The
 driver's rows hand over no time at all, so they still assemble the v1 text; this record
 measures nothing about v5.
+
+**v6 is the same kind of gap closed on the other side of a picture, and it is the last version
+this record does not cover.** The judgement is handed a message's picture and refuses it
+(`box.ts`, `docs/host-rulings.md`: the model that ships declares `modalities.vision: false`),
+and the turn that answers was handed nothing at all — measured on the request body, a message
+whose whole content was a picture reached the prompt as `me:`, one line indistinguishable from
+an empty message, and searching that body for `picture`, `image`, `media` or the blob's own key
+found nothing. v6 carries `pictureLine`, the file's own words for the fact, and the entry line
+says `{picture}` where they go: an entry with a picture says so, an entry without one is the v5
+line byte for byte, and a picture with no caption is no longer a blank entry. The driver's rows
+hand over no picture, so they still assemble the v1 text; this record measures nothing about v6.
 
 **Tools reached the model in every row.** This build enables the Jinja engine by default
 (`--help` reports `--jinja, --no-jinja … (default: enabled)`), so each GGUF's own chat
