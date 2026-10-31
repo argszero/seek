@@ -489,6 +489,145 @@ test('the usage the server reported is what a turn records, and half a report is
 });
 
 // ---------------------------------------------------------------------------
+// A picture in a turn
+// ---------------------------------------------------------------------------
+
+/** One picture as a caller names it: a key this file may not resolve, and a mime. */
+const PICTURE = { key: 'media/ab12cd34.png', mime: 'image/png' };
+
+/** Four bytes standing in for a PNG header, so an encoding can be checked against them. */
+const BYTES = Uint8Array.from([0x89, 0x50, 0x4e, 0x47]);
+
+/** The `/props` payload a server that can see reports, and one that cannot differs in one field. */
+function propsSaying(vision: boolean): () => { payload?: unknown } {
+  return () => ({
+    payload: {
+      chat_template: '<|im_start|>system\n{{ messages }}',
+      build_info: 'b11946-test',
+      model_alias: 'vision-test',
+      model_path: '/models/vision-test.gguf',
+      modalities: { vision, video: false, audio: false },
+      default_generation_settings: { n_ctx: 8192 },
+    },
+  });
+}
+
+test('a picture in a message reaches the request as bytes, where the caller put it', async () => {
+  const recorder = fakeServer();
+  const server = serverOf(recorder, {
+    model: 'deepseek-flash',
+    loadMedia: async () => BYTES,
+  });
+  await chatTurn(server, [
+    { role: 'system', content: 'You are 小荷.' },
+    {
+      role: 'user',
+      content: [
+        { type: 'text', text: 'what is this?' },
+        { type: 'picture', picture: PICTURE },
+      ],
+    },
+  ]);
+
+  const [call] = recorder.calls;
+  assert.equal(call.path, '/v1/chat/completions');
+  const messages = call.body.messages as { role: string; content: unknown }[];
+  assert.equal(messages[0].content, 'You are 小荷.', 'a message with no picture is not touched');
+  assert.deepEqual(messages[1].content, [
+    { type: 'text', text: 'what is this?' },
+    { type: 'image_url', image_url: { url: `data:image/png;base64,${Buffer.from(BYTES).toString('base64')}` } },
+  ]);
+
+  // Anti-vacuity: a `data:` URL whose payload was not these bytes would satisfy the shape
+  // above, and the picture the model was sent would not be the picture in the room.
+  const parts = messages[1].content as { image_url: { url: string } }[];
+  const encoded = parts[1].image_url.url.slice('data:image/png;base64,'.length);
+  assert.deepEqual([...Buffer.from(encoded, 'base64')], [...BYTES]);
+});
+
+test('a picture and no way to read its bytes is refused, and the request never goes out', async () => {
+  const recorder = fakeServer();
+  await assert.rejects(
+    () =>
+      chatTurn(serverOf(recorder, { model: 'deepseek-flash' }), [
+        { role: 'user', content: [{ type: 'picture', picture: PICTURE }] },
+      ]),
+    /loadMedia/,
+  );
+  assert.equal(recorder.calls.length, 0, 'a refusal is a request that was never made');
+});
+
+test('a llama-server with no projector refuses a picture rather than dropping it', async () => {
+  const recorder = fakeServer();
+  let loads = 0;
+  await assert.rejects(
+    () =>
+      chatTurn(
+        serverOf(recorder, {
+          loadMedia: async () => {
+            loads += 1;
+            return BYTES;
+          },
+        }),
+        [{ role: 'user', content: [{ type: 'picture', picture: PICTURE }] }],
+      ),
+    /--mmproj/,
+  );
+  assert.deepEqual(
+    recorder.calls.map((call) => call.path),
+    ['/props'],
+    'the question was asked and the picture-bearing POST was not sent',
+  );
+  assert.equal(loads, 0, 'the cheap question is asked before the bytes are read');
+});
+
+test('a llama-server that reports a projector carries the picture', async () => {
+  const recorder = fakeServer({ '/props': propsSaying(true) });
+  await chatTurn(
+    serverOf(recorder, { loadMedia: async () => BYTES }),
+    [{ role: 'user', content: [{ type: 'picture', picture: PICTURE }] }],
+  );
+  assert.deepEqual(
+    recorder.calls.map((call) => call.path),
+    ['/props', '/v1/chat/completions'],
+  );
+});
+
+test('a hosted endpoint is not asked for a projector it cannot report', async () => {
+  const recorder = fakeServer();
+  await chatTurn(
+    serverOf(recorder, { model: 'deepseek-flash', loadMedia: async () => BYTES }),
+    [{ role: 'user', content: [{ type: 'picture', picture: PICTURE }] }],
+  );
+  assert.deepEqual(
+    recorder.calls.map((call) => call.path),
+    ['/v1/chat/completions'],
+    'there is no /props to ask, so the nothing-sent-nothing-called rule applies instead',
+  );
+});
+
+test('a turn with no picture asks nothing extra and loads nothing', async () => {
+  let loads = 0;
+  const recorder = fakeServer();
+  await chatTurn(
+    serverOf(recorder, {
+      loadMedia: async () => {
+        loads += 1;
+        return BYTES;
+      },
+    }),
+    [{ role: 'user', content: 'go' }],
+  );
+  assert.deepEqual(recorder.calls.map((call) => call.path), ['/v1/chat/completions']);
+  assert.equal(loads, 0, 'a loader is not called for a picture nobody named');
+  assert.equal(
+    typeof (recorder.calls[0].body.messages as { content: unknown }[])[0].content,
+    'string',
+    'the text path still sends a string, not a one-part list',
+  );
+});
+
+// ---------------------------------------------------------------------------
 // What every request carries
 // ---------------------------------------------------------------------------
 

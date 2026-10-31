@@ -22,24 +22,34 @@
  * the answers are named, the answer is calibrated, and the state says who the bot is and who
  * else is in the room.
  *
- * **The picture path is gone with the model, and that is a loss.** `d1-2B` is text: the
- * endpoint takes a `state` string, and the server reports `modalities.vision: false`. The
- * previous model was a vision-language one and its images were a measured route
- * (`calibration/vision/`). A picture in a judgement's window is therefore neither read nor
- * sent: the state has no place to put bytes, so `watch.ts` counts it in
- * `WatchOutcome.unreadPictures` and judges the room on its words. Restoring it needs a
- * projector and a measured image route for this model; neither exists.
+ * **One half can be sent a picture and the other still cannot, and neither guesses.**
+ * `d1-2B` is text: the judgement's endpoint takes a `state` string, and a picture in a
+ * judgement's window is therefore neither read nor sent — the state has no place to put
+ * bytes, so `watch.ts` counts it in `WatchOutcome.unreadPictures` and judges the room on
+ * its words. Restoring that needs a projector and a measured image route for this model;
+ * neither exists.
  *
- * **`/props` is not read for `modalities` here.** It was, into a `ServerShape.vision`
- * field whose comment claimed a box carrying a picture would be refused when it was false —
- * and nothing read the field, because that refusal belonged to a transport that no longer
- * has a picture route to refuse. A fact no caller acts on is not a fact this file should
- * report, so the field is gone rather than left claiming something.
+ * **The writing half has the road, and no traffic on it yet.** A generating turn's message
+ * can carry a picture part (`TurnPart`); the bytes come from a loader the caller supplies,
+ * because a `key` is opaque here and a store's layout is not a chat template's reader's to
+ * know; and a `llama-server` that reports no projector refuses the turn in a sentence
+ * **before** the request is made. A picture that reached a server which would have dropped
+ * it is the defect this refusal exists for: the answer looks exactly like one the model
+ * reached with the picture in front of it, and only the content differs. Nothing supplies
+ * bytes today — `turn.ts`'s box hands a turn its entries and not their media — so what
+ * lands here is the route, and putting a picture on it is a separate decision.
  *
- * **The writing half is unchanged.** A turn is still one `/v1/chat/completions` call with
- * tools, and everything it checks about a server — a template in effect, a window big enough
- * for the prompt — is still checked, because a chat model fed a flat prompt scores below
- * chance and an over-long one is truncated silently.
+ * **`/props` `modalities.vision` is read again, and now something acts on it.** It was read
+ * into `ServerShape.vision` and then removed, correctly, because no caller acted on the
+ * field; `messagesWithPictures` is that caller, so the field is back with a reader rather
+ * than with a claim.
+ *
+ * **The writing half's text path is unchanged.** A turn is still one
+ * `/v1/chat/completions` call with tools, and everything it checks about a server — a
+ * template in effect, a window big enough for the prompt — is still checked, because a chat
+ * model fed a flat prompt scores below chance and an over-long one is truncated silently. A
+ * turn whose messages carry no picture makes exactly the requests it made before, and its
+ * body is byte for byte the body it built before.
  */
 
 import { Buffer } from 'node:buffer';
@@ -59,6 +69,47 @@ export type Fetcher = (
   url: string,
   init: { method: string; headers: Record<string, string>; body?: string },
 ) => Promise<{ ok: boolean; status: number; text(): Promise<string> }>;
+
+/**
+ * Where a picture's bytes are, and what they are.
+ *
+ * `key` is opaque on purpose — `box.ts` says how a client names a file is its business —
+ * so this type is the whole of what this file knows about a picture: enough to ask the
+ * caller for the bytes and to tell the server what they are, and not enough to go looking
+ * for them. `BoxMedia` is this shape with two ids beside it, so a box's picture is handed
+ * over as it stands.
+ */
+export interface PictureRef {
+  /** The blob's address, opaque here. */
+  key: string;
+  /** What the bytes are — `image/png` — since a reader has to know before loading. */
+  mime: string;
+}
+
+/**
+ * One piece of a message: the words, or a picture.
+ *
+ * A picture part carries the reference and not the bytes. The bytes are the caller's to
+ * produce (`LlamaServer.loadMedia`), because the only layer that knows where a store keeps
+ * its `media/` is the client, and a transport that guessed a path would be inventing a
+ * layout it does not own.
+ */
+export type TurnPart =
+  | { type: 'text'; text: string }
+  | { type: 'picture'; picture: PictureRef };
+
+/**
+ * One message a turn is asked with.
+ *
+ * `content` is a string for every turn that carries no picture, which is every turn taken
+ * today, so the request a caller builds is the request it built before. It becomes parts
+ * only to say where the picture goes, and the part list is then the caller's own statement
+ * of that placement rather than something this file infers.
+ */
+export interface TurnMessage {
+  role: 'system' | 'user';
+  content: string | TurnPart[];
+}
 
 /** Where the model is. */
 export interface LlamaServer {
@@ -95,6 +146,19 @@ export interface LlamaServer {
    * replaces them is stated where each one is skipped, and nothing is faked to fill a gap.
    */
   model?: string;
+  /**
+   * The bytes behind a picture a turn's message names, when one does.
+   *
+   * Handing over the picture is the kernel's; loading the bytes is not (`box.ts`). The
+   * client is the only layer that knows where a store keeps its `media/`, so the caller
+   * loads and this file encodes and sends.
+   *
+   * Optional, and its absence is a **refusal** rather than a text-only reading: a turn
+   * whose message named a picture and whose transport could not read its bytes used to be
+   * a prompt that dropped it, and a dropped picture reads exactly like one the model
+   * answered with the picture in front of it (`messagesWithPictures`).
+   */
+  loadMedia?: (picture: PictureRef) => Promise<Uint8Array>;
   /** What to call instead of `globalThis.fetch`. A test's recorder. */
   fetch?: Fetcher;
 }
@@ -194,6 +258,15 @@ export interface ServerShape {
   modelAlias: string;
   /** The weights file it loaded, as the server reports it. */
   modelPath: string;
+  /**
+   * Whether a projector is loaded, so an image part could be encoded at all.
+   *
+   * Read from `/props` and **acted on**: a turn whose message names a picture is refused
+   * when this is not true, because the image part would be dropped on the way in and the
+   * answer would come from the words alone (`messagesWithPictures`). Not read as a promise
+   * that a picture *is* sent — nothing sends one unless a caller puts it in a message.
+   */
+  vision: boolean;
 }
 
 /**
@@ -463,15 +536,23 @@ export interface ChatTurn {
  * answer does not change between two runs of the same prompt, which is what makes a
  * turn's test reproducible at all.
  *
- * The route is `/v1/chat/completions`, the same one the picture path takes and for the
- * same reason: only the chat endpoint takes roles, tools and content parts.
+ * **A picture travels only if the caller put one there, and the request always says what
+ * it actually carried.** `messagesWithPictures` resolves every picture part before the
+ * body is built, so a turn either sends the bytes or fails before it is sent — there is no
+ * third state where the prompt goes out a picture short.
+ *
+ * The route is `/v1/chat/completions`: only the chat endpoint takes roles, tools and
+ * content parts, so it is the one route a picture could travel on.
  */
 export async function chatTurn(
   server: LlamaServer,
-  messages: { role: 'system' | 'user'; content: string }[],
+  messages: TurnMessage[],
   tools: ChatTool[] = [],
 ): Promise<ChatTurn> {
-  const body: Record<string, unknown> = { messages, temperature: 0 };
+  const body: Record<string, unknown> = {
+    messages: await messagesWithPictures(server, messages),
+    temperature: 0,
+  };
   // **Which model, when the caller named one.** A `llama-server` serves a single model and
   // is told nothing; a hosted endpoint serves many and answers a request that carries no
   // name with its own error rather than with a guess. The name sent is the one
@@ -529,6 +610,105 @@ export async function chatTurn(
   }
 
   return { content, toolCalls, usage: readUsage(answer) };
+}
+
+/**
+ * The messages as the request carries them: a picture part resolved into the `data:` URL
+ * the chat endpoint takes, and a message with no picture left exactly as it was.
+ *
+ * **Two refusals, one per way a picture-bearing turn could still go out carrying half the
+ * evidence.** They are refusals rather than repairs because a prompt that dropped its
+ * picture reads exactly like one the model answered with the picture in front of it — the
+ * same argument the judgement half settled on, one layer out.
+ *
+ * 1. **The caller can produce the bytes.** A picture in a message and no `loadMedia`:
+ *    refuse, and make no request at all. This file cannot resolve a `key` and will not
+ *    invent a path — where a store keeps its blobs is the client's business (`box.ts`).
+ * 2. **A `llama-server` reports a projector.** `/props` `modalities.vision` is the
+ *    server's own statement that an image part will be encoded rather than skipped, and a
+ *    server started without `--mmproj` answers `false` — which is what the bundled server
+ *    does. Sending anyway would be a data URL into a hole.
+ *
+ * **A hosted endpoint is not asked, and the silence is the honest answer.** It answers no
+ * `/props` at all, so there is no modality to read — the same reason `requireChatShape` is
+ * skipped for one, and the same rule applies: nothing is faked to fill the gap. That such
+ * an endpoint can read a picture was measured rather than assumed — the shipped words half
+ * answered `Orange` for an orange picture and `blue` for a blue one on 2026-10-30, and said
+ * it had no vision when the same prompt carried none.
+ *
+ * **The projector is asked before the bytes are loaded**, which is the cheap question
+ * first, and both before the POST. That ordering is what makes a refusal mean the request
+ * never went out rather than that it went out and its answer was thrown away.
+ *
+ * `propsOf` is reused rather than a bare `modalities` read, so a picture-bearing turn gets
+ * the window and template checks too — the ones a turn carrying an image is in more need of
+ * than one that is not.
+ */
+async function messagesWithPictures(
+  server: LlamaServer,
+  messages: TurnMessage[],
+): Promise<unknown[]> {
+  const pictures: PictureRef[] = [];
+  for (const message of messages) {
+    if (typeof message.content === 'string') continue;
+    for (const part of message.content) {
+      if (part.type === 'picture') pictures.push(part.picture);
+    }
+  }
+  // The text path, unchanged: the same objects, in the same order, with `content` still a
+  // string. Not rebuilt into a one-part list, because a caller that sent a string should
+  // get back a request carrying that string.
+  if (pictures.length === 0) return messages;
+
+  const load = server.loadMedia;
+  if (load === undefined) {
+    const first = pictures[0] as PictureRef;
+    throw new Error(
+      `this turn's message carries a picture (${JSON.stringify(first.mime)} at ` +
+        `${JSON.stringify(first.key)}) and this transport was given no way to read its ` +
+        'bytes: a picture key is opaque here, so the caller supplies a loader ' +
+        '(LlamaServer.loadMedia) rather than have a file path guessed in this file. ' +
+        'Sending the turn without it would answer from the words alone while looking like ' +
+        'an answer reached with the picture in front of the model',
+    );
+  }
+  // Asked of a `llama-server` only: a hosted endpoint has no `/props` to answer it.
+  if (server.model === undefined && !(await propsOf(server)).vision) {
+    const first = pictures[0] as PictureRef;
+    throw new Error(
+      `this turn's message carries a picture (${JSON.stringify(first.mime)} at ` +
+        `${JSON.stringify(first.key)}) and this server reports no projector: /props ` +
+        'modalities.vision is not true, so the image part would be dropped on the way in ' +
+        'and the answer would come from the words alone. Start the server with an mmproj ' +
+        '(`--mmproj`) so it can see one',
+    );
+  }
+
+  const out: unknown[] = [];
+  for (const message of messages) {
+    if (typeof message.content === 'string') {
+      out.push(message);
+      continue;
+    }
+    const parts: unknown[] = [];
+    for (const part of message.content) {
+      if (part.type === 'text') {
+        parts.push({ type: 'text', text: part.text });
+      } else {
+        parts.push({
+          type: 'image_url',
+          image_url: { url: dataUriOf(part.picture, await load(part.picture)) },
+        });
+      }
+    }
+    out.push({ role: message.role, content: parts });
+  }
+  return out;
+}
+
+/** The picture, as the `data:` URL the chat endpoint takes. */
+function dataUriOf(picture: PictureRef, bytes: Uint8Array): string {
+  return `data:${picture.mime};base64,${Buffer.from(bytes).toString('base64')}`;
 }
 
 /**
@@ -615,7 +795,18 @@ async function propsOf(server: LlamaServer): Promise<ServerShape> {
     // not a server that agreed.
     modelAlias: typeof props.model_alias === 'string' ? props.model_alias : '',
     modelPath: typeof props.model_path === 'string' ? props.model_path : '',
+    // `/props` reports this as an object of booleans (`{vision, video, audio}`); a server
+    // too old to report it, or one started without `--mmproj`, is read as unable to see,
+    // which is the safe way round: it refuses a picture rather than claiming a capability
+    // nobody confirmed.
+    vision: visionOf(props.modalities),
   };
+}
+
+/** `modalities.vision`, read as a fact about the server rather than as a promise. */
+function visionOf(modalities: unknown): boolean {
+  if (typeof modalities !== 'object' || modalities === null) return false;
+  return (modalities as { vision?: unknown }).vision === true;
 }
 
 /** One POST, refused loudly when it did not arrive. */
