@@ -422,6 +422,13 @@ body {
    it: one surface with one seam, not a white page in a grey frame. */
 .main-col { display: flex; flex-direction: column; min-width: 0; background: var(--bg-list); }
 
+/* With no room open the client paints that whole area `#F8F9FA` — 51,436 samples of
+   51,436 — one shade below the `#FCFCFC` a room sits on. The modifier is on the column
+   rather than on the `.empty` placeholder inside it because the placeholder is not the
+   surface: a store refusal or a weights strip is drawn above it, and a background on the
+   placeholder alone would leave those on the other colour, as a stripe across the column. */
+.main-col.no-room { background: var(--bg-empty); }
+
 /* 68px tall, and **one 1px line under it**. Both numbers are read off the reference
    window: the room's column is `#FBFCFC` from the window's edge down to y=72, `#DEDFE0`
    on y=73 alone, and `#FCFCFC` from y=74 — so the band is 67px of fill and the line is
