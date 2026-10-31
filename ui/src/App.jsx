@@ -2672,10 +2672,12 @@ function lastLineOf(message) {
  *
  * - **shown** — the bytes are beside the store and are drawn.
  * - **opening** — the read is in flight. Nothing is claimed yet.
- * - **missing** — the bytes are not there, and the kernel's sentence says so. A message
+ * - **missing** — the bytes are not there, and the window says so in its own words. A message
  *   that names a picture it cannot show is still a message; drawing a broken frame would
  *   make it look like a rendering accident instead of a file that is gone
- *   (`media.js`, on a store moved without its `media/` directory).
+ *   (`media.js`, on a store moved without its `media/` directory). What crosses from the main
+ *   process is *which* refusal this is — `gone` or `unreadable` — and never the sentence behind
+ *   it: `docs/host-rulings.md`, "The window does not speak to a developer".
  */
 function Picture({ media }) {
   const [src, setSrc] = useState(null)
@@ -2688,7 +2690,7 @@ function Picture({ media }) {
     window.seekHost.media(media).then((read) => {
       if (!live) return
       if (read.ok) setSrc(read.dataUrl)
-      else setMissing(read.error)
+      else setMissing(read.reason === 'gone' ? 'gone' : 'unreadable')
     })
     // The reference's two strings are the dependency, not the object: a snapshot is a new
     // object every time the store changes, and re-reading every picture on every message
@@ -2699,9 +2701,12 @@ function Picture({ media }) {
   }, [media.key, media.mime])
 
   if (missing) {
+    // Two facts a person can tell apart, each said in the language this window runs in: the
+    // bytes are no longer beside the store, or they are there and would not read.
+    const words = missing === 'gone' ? t('ui.chat.picture-gone') : t('ui.chat.picture-unreadable')
     return (
-      <span className="msg-pic-missing" data-picture="missing">
-        {missing}
+      <span className="msg-pic-missing" data-picture="missing" data-picture-why={missing}>
+        {words}
       </span>
     )
   }

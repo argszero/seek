@@ -23,6 +23,7 @@ import { test } from 'node:test'
 
 import {
   MEDIA_DIR_NAME,
+  PICTURE_GONE,
   attachmentMimeFor,
   isSupportedImage,
   mediaDirFor,
@@ -100,10 +101,40 @@ test('a picture’s bytes that are gone say so, and do not read as an empty pict
   withStore((storeFile) => {
     const saved = saveMedia(storeFile, { bytes: PNG, mime: 'image/png' })
     rmSync(join(mediaDirFor(storeFile), saved.key))
+    // The refusal carries **which refusal it is** as well as the sentence that explains it:
+    // `main.js` answers the renderer `PICTURE_GONE` and the window writes the words, so the
+    // sentence below never reaches a person (`docs/host-rulings.md`, "The window does not
+    // speak to a developer"). Asserting both is what keeps the mark from being dropped in a
+    // later edit — the message alone would still pass.
     assert.throws(
       () => readMedia(storeFile, { key: saved.key, mime: saved.mime }),
-      /is not beside this store any more/,
-      'a store moved without its media directory keeps the message and loses the picture',
+      (error) => {
+        assert.match(error.message, /is not beside this store any more/)
+        assert.equal(
+          error.reason,
+          PICTURE_GONE,
+          'a store moved without its media directory keeps the message and loses the picture',
+        )
+        return true
+      },
+    )
+  })
+})
+
+test('a picture that is there and will not read is not the same fact as one that is gone', () => {
+  // The other half of the mark. Only a missing file is `gone`; a key that names a directory, a
+  // permission that is not there and a key that is not a file name at all are all *there and
+  // unreadable*, and `main.js` turns an unmarked refusal into that second word. Without this
+  // reading, a `reason` set on every refusal would pass the test above.
+  withStore((storeFile) => {
+    const saved = saveMedia(storeFile, { bytes: PNG, mime: 'image/png' })
+    const path = join(mediaDirFor(storeFile), saved.key)
+    rmSync(path)
+    mkdirSync(path)
+    assert.throws(
+      () => readMedia(storeFile, { key: saved.key, mime: saved.mime }),
+      (error) => error.reason === undefined,
+      'only the bytes being missing is `gone`',
     )
   })
 })

@@ -39,6 +39,7 @@ const {
 } = require('./host.js')
 const {
   BY_MIME,
+  PICTURE_GONE,
   dropMedia,
   mimeForPath,
   pathForKey,
@@ -910,7 +911,14 @@ ipcMain.handle('seek:media', (_event, reference) => {
   try {
     return { ok: true, ...readMedia(STORE_FILE, reference ?? {}) }
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    // **Which refusal this is, not the sentence that explains it.** The window says what
+    // happened in the language it runs in, so the renderer receives a word and the diagnosis
+    // stays here: `docs/host-rulings.md` — "The window does not speak to a developer" — and the
+    // same shape `readMedia` already throws with (`media.js`, `PICTURE_GONE`). A key that names
+    // no file, a directory where the bytes should be, a permission that is not there: each is
+    // something that could not be read, which is the other of the two facts.
+    const reason = error && error.reason === PICTURE_GONE ? PICTURE_GONE : 'unreadable'
+    return { ok: false, reason }
   }
 })
 
