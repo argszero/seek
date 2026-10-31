@@ -1429,7 +1429,7 @@ export default function App() {
           used to be pinned, with the grid still reserving a 6px track that nothing occupied. */}
       <Gutter pane="list" />
 
-      <section className="main-col">
+      <section className={`main-col${active ? '' : ' no-room'}`}>
         {/* The one notice here that is about this person's own data: a store the kernel
             would not open is why every list under it is empty, and the kernel's own
             paragraph is the only place the way out of it is written down. */}

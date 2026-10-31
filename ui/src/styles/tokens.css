@@ -77,6 +77,11 @@
      (a grey list against a white room), which moved the seam every time either changed.
      What separates them in the client is a gutter and a hairline, not a change of colour. */
   --bg-list: #fcfcfc;
+  /* The surface where a room would be, with none open. Measured off the client's own
+     screenshot: that whole area reads `#F8F9FA`, 51,436 samples of 51,436, while an open
+     room reads `#FCFCFC`. One shade apart, and the shade is the difference between "this
+     room is blank" and "no room is open". */
+  --bg-empty: #f8f9fa;
   --bg-float: var(--N00);
   --bg-float-overlay: var(--N50);
   --bg-float-push: rgba(255, 255, 255, 0.8);
@@ -193,6 +198,9 @@
      body surface rather than a colour of its own: the dark client was **not** measured, and
      a value nobody read off a screen is a value that looks like a measurement. */
   --bg-list: var(--N50);
+  /* The dark client was not measured, so the empty column keeps the surface the columns
+     already have rather than a shade nobody read off a screen. */
+  --bg-empty: var(--N50);
   --bg-float: var(--N100);
   --bg-float-overlay: var(--N200);
   --bg-float-push: rgba(41, 41, 41, 0.8);
