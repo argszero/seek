@@ -117,6 +117,26 @@ body {
   transition: background-color 120ms ease;
 }
 
+/* **The two seams beside the list are the navigation column's colour.** Measured off the
+   reference window on 2026-11-01, the 6px band between the conversation list and the room
+   there is `#465069` — exactly the rail's own slab — while this window painted the page's
+   `#FFFFFF`, so the seam read as a gap cut through an otherwise continuous surface.
+
+   The list's left seam is that colour for the opposite reason: **the client has no seam
+   there at all.** Its navigation column ends and the list's own inset begins, so the column
+   head's first ink stands 174px from the window's edge — 18px past a 156px rail. This window
+   keeps a 6px grab handle in that place, because a column has to be draggable, and painting
+   it the rail's colour is what makes it read as the rail's own last 6px rather than as a
+   second gap: the ink then stands 17px past the dark mass, one pixel from the client's 18.
+
+   The third seam — beside a thread or room-info panel — is left as it was. The client
+   separates those two columns *inside* the room with a hairline, not with the navigation
+   column's slab, and a colour measured at the list's edge is no evidence about that one. */
+.gutter[data-gutter="rail"],
+.gutter[data-gutter="list"] {
+  background: var(--rail-bg);
+}
+
 .gutter:hover,
 .gutter:active {
   background: var(--N300);
