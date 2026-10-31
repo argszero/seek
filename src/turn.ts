@@ -77,6 +77,16 @@ export interface TurnSpec {
    * test, for one.
    */
   onScheduleWritten?: (row: ScheduleRow) => void;
+  /**
+   * Called when this turn's `say` tool puts a message in a room.
+   *
+   * A message is what wakes whoever it addresses — the same thing a person's message
+   * does — and that wake belongs to whoever owns the loop. This is the seam that says
+   * "this bot has spoken", so the caller can hand the message to the wake path without
+   * this file knowing there is one. Absent when nothing owns a kernel, as in a bare
+   * `runTurn` in a test.
+   */
+  onSaid?: (message: Message) => void;
   /** An injectable clock, so a test does not depend on wall time. */
   now?: string;
 }
@@ -252,6 +262,7 @@ export async function runTurn(
   const say = sayAs(store, agent.bot_id, agent.id, (message) => {
     produced.push(message);
     turn.produced.push(message.id);
+    spec.onSaid?.(message);
   });
   // §12: the tool over the one table, bound the same way. A row written here is
   // saved with the turn — the `store.save()` in the `finally` below makes both
@@ -323,6 +334,7 @@ export function makeTurn(
   botId: Id,
   decide: Decide = sayNothing,
   onScheduleWritten?: (row: ScheduleRow) => void,
+  onSaid?: (message: Message) => void,
 ): RunTurn {
   return async (entries: Observation[]) => {
     if (entries.length === 0) return;
@@ -347,7 +359,7 @@ export function makeTurn(
     for (const [roomId, group] of byRoom) {
       await runTurn(
         store,
-        { agentId: agent.id, roomId, entries: group, onScheduleWritten },
+        { agentId: agent.id, roomId, entries: group, onScheduleWritten, onSaid },
         decide,
       );
     }

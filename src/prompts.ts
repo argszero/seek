@@ -50,8 +50,13 @@ import { readFileSync } from 'node:fs';
  * is the same rule applied to the room: a room may be nameless (`rooms.ts` — an
  * empty name is no name), and a nameless room is asked where the message went by
  * the line being absent rather than by a blank after a colon.
+ *
+ * `turns` is the fourth: how long this room has been talking without the person, present
+ * only once it is long enough to matter. A part that quotes a count is skipped while the
+ * count is nothing, so an opening exchange reads the short prompt and a room that has been
+ * at it for a while is told so.
  */
-export type PartCondition = 'always' | 'summary' | 'position' | 'room' | 'others';
+export type PartCondition = 'always' | 'summary' | 'position' | 'room' | 'others' | 'turns';
 
 /** One part of the assembly, in the order the file lists it. */
 export interface PromptPart {
@@ -390,11 +395,12 @@ function assertArtifact(value: unknown, source: string): PromptArtifact {
       row.when !== 'summary' &&
       row.when !== 'position' &&
       row.when !== 'room' &&
-      row.when !== 'others'
+      row.when !== 'others' &&
+      row.when !== 'turns'
     ) {
       return fail(
-        `${where}.when must be "always", "summary", "position", "room" or "others", ` +
-          `got ${JSON.stringify(row.when)}`,
+        `${where}.when must be "always", "summary", "position", "room", "others" or ` +
+          `"turns", got ${JSON.stringify(row.when)}`,
       );
     }
     if (row.each !== undefined && row.each !== 'observation') {
@@ -414,6 +420,9 @@ function assertArtifact(value: unknown, source: string): PromptArtifact {
       }
       if (name === 'others' && row.when !== 'others') {
         return fail(`${where} fills {others} but is rendered when the bot may be alone`);
+      }
+      if (name === 'turns' && row.when !== 'turns') {
+        return fail(`${where} fills {turns} but is rendered when the room has only just begun`);
       }
       if ((name === 'text' || name === 'sender' || name === 'at') && row.each !== 'observation') {
         return fail(
@@ -639,6 +648,15 @@ export interface WorkValues {
   /** The bot's own agents, as facts rather than as prose (`identity.ts`). */
   roster: string;
   /**
+   * The other bots in the room, named, or absent when this bot is alone in it.
+   *
+   * Absent rather than `''` for the reason `summary` is: the part that quotes them is
+   * skipped without them, so a bot in a room by itself is never told about companions
+   * it does not have. This is the line that makes a mention possible at all — a model
+   * that does not know who is here cannot name anyone.
+   */
+  others?: string;
+  /**
    * The note the bot wrote about this room last time, or the empty string.
    *
    * It is the box's first part (`box.ts`), and the reason a turn can carry a
@@ -647,6 +665,18 @@ export interface WorkValues {
    * leaves the prompt rather than quoting a blank.
    */
   summary: string;
+  /**
+   * How many bot messages in a row this room has had without the person — absent until
+   * the room has been going long enough to be told.
+   *
+   * **A meeting ends by the clock, not by the topic running out.** Left alone, a room of
+   * bots answers every point with another point and agrees on its three next steps three
+   * times over: measured, a room of four with a real question produced twenty-five
+   * messages and settled the same plan in the first ten. Nothing in the prompt said how
+   * long they had been at it, because nothing told them. This is that fact and only that
+   * fact — the count and what it means, no instruction beyond what the artifact says.
+   */
+  turns?: string;
   /** The observations since that note, **oldest first**. */
   entries: { sender: string; text: string }[];
 }
@@ -654,7 +684,7 @@ export interface WorkValues {
 /**
  * The shipped turn artifact's location, beside this module.
  *
- * `work-v3.json` ships; `work-v1.json` and `work-v2.json` stay beside it. A prompt is
+ * `work-v4.json` ships; `work-v1.json`, `work-v2.json` and `work-v3.json` stay beside it. A prompt is
  * versioned rather than edited in place, because `calibration/work/` measured v1 and a
  * record that quotes a prompt the tree has changed describes a run nobody can re-read
  * — `work-calibration.test.ts` holds that pair together. What v2 added is the two parts
@@ -665,7 +695,7 @@ export interface WorkValues {
  * checks against v2.
  */
 export function shippedWorkPromptPath(): URL {
-  return new URL('./prompts/work-v3.json', import.meta.url);
+  return new URL('./prompts/work-v4.json', import.meta.url);
 }
 
 /**
@@ -731,6 +761,8 @@ export function assembleWorkPrompt(
     room: values.room,
     roster: values.roster,
     summary: values.summary,
+    others: values.others ?? '',
+    turns: values.turns ?? '',
   };
 
   // `afterSystem` opens the user turn rather than closing the system block: it is
@@ -771,6 +803,8 @@ const WORK_FACTS = [
   'room',
   'roster',
   'summary',
+  'others',
+  'turns',
 ] as const;
 
 /** The four a bot may simply not have, in the order an error message lists them. */
@@ -792,7 +826,7 @@ function isOptionalFact(name: unknown): name is OptionalFact {
  * after a colon is the same defect as quoting an empty position.
  */
 function isSkippable(name: unknown): boolean {
-  return name === 'summary' || isOptionalFact(name);
+  return name === 'summary' || name === 'others' || name === 'turns' || isOptionalFact(name);
 }
 
 /**

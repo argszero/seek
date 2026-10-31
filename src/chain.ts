@@ -44,11 +44,27 @@ import type { ChainBlockReason, Id, Message, Observation, Room } from './types.t
 
 export type { ChainBlockReason };
 
-/** §11.3: at the cap the agent may end or escalate; it may not continue. */
-export const DEPTH_CAP = 4;
+/**
+ * §11.3: at the cap the agent may end or escalate; it may not continue.
+ *
+ * `host-rulings.md`: "A chain's length and a room's burst are still bounded, but by two
+ * numbers that are not the host's: they are the implementer's defaults". These are
+ * those defaults, and they are twenty-four because of what twelve measured: a room of four
+ * bots with a real question reached a workable plan in twelve messages, and the twelve was
+ * the wall rather than the room — the last bot message was cut off mid-discussion, so what
+ * ended the meeting was the limit and not the people in it. A wall is a backstop; the room
+ * is supposed to end itself, and a backstop that arrives first hides whether it can.
+ */
+export const DEPTH_CAP = 24;
 
-/** §11.3: three bot turns in a row in one room, and further bot messages stop waking. */
-export const AGENT_TURN_CAP = 3;
+/**
+ * §11.3: twenty-four bot turns in a row in one room, and further bot messages stop waking.
+ *
+ * Still bounded — a few bots trading remarks after a decision must not keep a room awake
+ * all afternoon — and a person's next message resets the run. Twenty-four leaves a room of
+ * four about six messages each to find a place to stop.
+ */
+export const AGENT_TURN_CAP = 24;
 
 /**
  * Whether this entry is held back by the chain wall — and why.

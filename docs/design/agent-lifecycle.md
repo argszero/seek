@@ -477,7 +477,7 @@ A bot may already open a conversation with a **person**; forbidding the identica
 ### 11.3 One wall that counts hops
 
 1. **Depth** — every message carries `caused_by`, `chain` and `depth` (data-model rule 11). Each agent turn in a chain adds one hop. **Cap: 4.** At the cap the agent may end or escalate; it may not continue the chain.
-2. **The room's consecutive-agent-turn cap** (§11.4) — three bot turns in a row in one room, and further bot messages stop waking bots there. This is what bounds a burst; depth alone never did, because a burst of short exchanges uses few hops.
+2. **The room's consecutive-agent-turn cap** (§11.4) — twenty-four bot turns in a row in one room, and further bot messages stop waking bots there. This is what bounds a burst; depth alone never did, because a burst of short exchanges uses few hops.
 
 There is **no chain budget**. A chain's cost is recorded like anything else, per turn, and is readable — but nothing stops it. The depth cap is the only numeric limit on a chain, and it is not a financial one: it exists to stop a loop, not a bill. It is read off the message data rather than kept in a counter, on purpose — a counter has to be restored after a crash, and the one time it is restored wrong is the one time it matters.
 
@@ -485,13 +485,17 @@ The **consecutive-agent-turn counter lives on the Room**, not on an agent: no si
 
 ### 11.4 Wake rules
 
-A bot message wakes a bot only when **all** of these hold:
+**A bot wakes another bot by naming it.** A bot message starts a wake for a bot only when **all** of these hold:
 
-- it @-mentions that bot, replies to one of its messages, or is a **direct message** (a DM is addressed by construction);
+- it @-mentions that bot;
 - the chain depth is below the cap;
-- the room's consecutive-agent-turn counter is below 3.
+- the room's consecutive-agent-turn counter is below twenty-four.
 
 Otherwise the message still lands in that bot's inbox, at zero cost, marked `hints.chainBlocked = reason`, to be reconsidered the next time a human touches the room. Nothing is lost and nothing is spent.
+
+**Why a naming and not a reply.** The three edges — mention, reply, direct — are what makes an entry *addressed*, and `gate.ts` row 2 still fast-passes an addressed entry, so a reply or a DM is not ignored when the bot is woken by something else. What a reply cannot be is the thing that starts the wake. Measured, with all three edges waking: two bots settle a plan, one answers the other, and the answer is a reply — which wakes its author, whose answer is a reply in turn. Eight minutes and twelve messages later the room was still going, no message named anybody, and the same three commitments had been agreed six times. A room ends when somebody has the last word, and a reply edge makes the last word impossible: every closing sentence wakes the person it closes with.
+
+So the reply and the direct edges still address an entry, and only a name calls one back.
 
 ### 11.5 Who pays
 

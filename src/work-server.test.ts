@@ -283,6 +283,39 @@ test('the prompt carries the entry and not the watch side’s verdict', async ()
   );
 });
 
+/**
+ * The clock: a room that has been at it for a while is told so, and a fresh one is not.
+ *
+ * This is the number that was missing when a room of four settled its plan in ten messages
+ * and then spent fifteen more agreeing on the same three things — nobody was tired, because
+ * nothing said how long they had been going. The count is the room's own
+ * (`Room.consecutive_agent_turns`), and what it means is the artifact's to say.
+ */
+test('a room that has been talking a while is told how long, and a fresh one is not', async () => {
+  const world = makeWorld();
+  const recorder = fakeServer({});
+  const decide = await workOverServer(world.store, world.botA, serverOf(recorder), {
+    prompt: ARTIFACT,
+  });
+
+  const askedOf = () => {
+    const chat = recorder.calls.filter((call) => call.path === '/v1/chat/completions').at(-1);
+    assert.ok(chat, 'the model was asked');
+    const messages = chat.body.messages as { role: string; content: string }[];
+    return messages.map((message) => message.content).join('\n');
+  };
+
+  await turnWith(world, decide, await entriesOf(world, 'the batch failed'));
+  assert.doesNotMatch(askedOf(), /bot messages in a row/, 'a room just started is not told to wrap up');
+
+  // A person's message resets the run, so the count is set after the delivery and before
+  // the turn that reads it — the same order a live room produces.
+  const later = await entriesOf(world, 'still going');
+  world.store.data.rooms[world.room].consecutive_agent_turns = 8;
+  await turnWith(world, decide, later);
+  assert.match(askedOf(), /8 bot messages in a row/, 'and a long one is told how long');
+});
+
 test('what the model reads is the room’s box: the note, and the message before the one that woke it', async () => {
   const world = makeWorld();
   deliver(world.store, {

@@ -59,15 +59,23 @@ measures the prompt the reader has; `LLAMA=<path>` names another `llama-server` 
 `src/prompts/work-v1.json` changed, which is what makes the rows comparable: the only
 variable left is the model.
 
-**The tree now ships `work-v3.json`, and every row below was measured on `work-v1.json`.** A
+**The tree now ships `work-v4.json`, and every row below was measured on `work-v1.json`.** A
 prompt is versioned rather than edited in place, so v1 stays in the tree exactly as it was
 measured. v2 adds two parts — what the bot does in its organization, and how it talks and
 works — and both are skipped when a bot's card says nothing; v3 adds one part, the note the
 bot wrote about the room before the messages it reads, skipped while the room has no note.
-So a bot with an empty card, in a room nothing has been compacted in, is asked the v1 text
-byte for byte (`src/prompts.test.ts` compares the two assemblies). Nothing below was
-measured on v2 or v3: the driver hands over a description, no card and no note, so it still
-assembles the v1 text, and a run that filled either in would be a new row set.
+So a bot with an empty card, in a room nothing has been compacted in, was asked the v1 text
+byte for byte for as long as v2 and v3 shipped (`src/prompts.test.ts` compared the two
+assemblies, and says why it no longer can).
+
+**v4 is the first version this record does not cover, and it says so instead of looking
+measured.** It rewrites the system line, the opening and the ask; it adds the two parts that
+make a bot speak as one person in a meeting rather than as an assistant — the stake it pays
+and collects, and the single move it makes this turn; and it gives `say` a `mentions`
+argument, so a bot can address the others by name and a room of bots can answer itself.
+Nothing below was measured on v2, v3 or v4: the driver hands over a description, no card and
+no note, so it still assembles the v1 text, and a run on any later version would be a new row
+set.
 
 **Tools reached the model in every row.** This build enables the Jinja engine by default
 (`--help` reports `--jinja, --no-jinja … (default: enabled)`), so each GGUF's own chat

@@ -317,8 +317,38 @@ function pushChanged() {
  * refusals, and a bot whose turn threw has nothing to add to them — the person's message is
  * on disk and the room simply stays quiet.
  */
+/**
+ * How long a bot takes to look at what just arrived.
+ *
+ * **A room of people does not answer on one instant.** Without this, four bots were told
+ * about a message in the same millisecond and each began a model call in the same
+ * millisecond: what the person got was four answers arriving together, then silence — a
+ * room where everyone talks at once and nobody replies to anybody. The pause is what turns
+ * one instant of delivery into a conversation, because a bot that starts later reads what
+ * the earlier ones already said.
+ *
+ * Two tempos, because there are two situations:
+ *
+ * - **Addressed** — named, replied to, or alone in the room with the sender. Somebody who
+ *   hears their name looks up: seconds, not minutes. Wide and random, so that two bots
+ *   named in one sentence still do not speak at the same moment.
+ * - **Ambient** — a room talking and this bot not the one being spoken to. There is no
+ *   reason to be quick and every reason not to: this is where the person stops being
+ *   answered in chorus. The wait is long and drawn from a range, so the room drifts apart
+ *   instead of ticking.
+ */
+const WAKE_SECONDS = {
+  addressed: [3, 25],
+  ambient: [45, 120],
+}
+
+function waitIn([low, high]) {
+  return (low + Math.random() * (high - low)) * 1000
+}
+
 const hostCallbacks = {
   onChanged: pushChanged,
+  wakeDelay: (arrived) => waitIn(arrived.addressed ? WAKE_SECONDS.addressed : WAKE_SECONDS.ambient),
   onError: (error, botId) =>
     console.error(
       `seek: a wake for ${botId ?? 'a bot'} threw — ${error instanceof Error ? error.message : String(error)}`,

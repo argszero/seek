@@ -402,21 +402,33 @@ function turnValues(card: {
   };
 }
 
-test('the shipped turn artifact is v3, and a blank card in an uncompacted room is asked the measured text', () => {
+test('the shipped turn artifact is v4, and it is the first one that can name who should answer', () => {
   const shipped = loadWorkArtifact();
-  assert.equal(shipped.version, 'work-v3');
-  assert.match(shippedWorkPromptPath().pathname, /work-v3\.json$/);
+  assert.equal(shipped.version, 'work-v4');
+  assert.match(shippedWorkPromptPath().pathname, /work-v4\.json$/);
 
-  // Byte for byte the v1 prompt, for a bot whose card says nothing and a room nothing
-  // has been compacted in. That is what lets `calibration/work/` keep measuring v1
-  // while this tree ships v3: the parts v2 and v3 add are exactly the ones neither a
-  // blank card nor an uncompacted room fills.
-  const measured = loadWorkArtifact(MEASURED_WORK);
-  const values = turnValues({ description: 'the one who watches the nightly batch' });
-  const before = assembleWorkPrompt(measured, values);
-  const after = assembleWorkPrompt(shipped, values);
-  assert.equal(after.system, before.system);
-  assert.equal(after.rest, before.rest);
+  // v4 rewrites the opening, the system line and the ask, so the byte-for-byte
+  // agreement with v1 that v2 and v3 kept is gone on purpose — and no row in
+  // `calibration/work/` covers v4, which both prose halves there say.
+  //
+  // What it adds is the ability to address someone. `delivery.ts` wakes a bot on a
+  // mention, a reply or a direct message, and nothing scans a message body for an `@`:
+  // before this, a bot that typed `@小荷` had addressed nobody, so a room of bots could
+  // not produce a second round at all.
+  const say = shipped.tools.find((tool) => tool.name === 'say');
+  assert.ok(say, 'the shipped artifact offers say');
+  const properties =
+    (say.parameters as { properties?: Record<string, unknown> }).properties ?? {};
+  assert.ok('mentions' in properties, 'say takes the names it addresses');
+
+  // And the line that makes naming possible: a bot that is not told who else is here
+  // cannot name anyone. It leaves the prompt when the bot is alone rather than
+  // rendering an empty list.
+  const blank = turnValues({ description: 'the one who watches the nightly batch' });
+  const alone = assembleWorkPrompt(shipped, blank);
+  const together = assembleWorkPrompt(shipped, { ...blank, others: '小荷, 阿岩' });
+  assert.equal(alone.rest.includes('The other bots here'), false);
+  assert.ok(together.rest.includes('The other bots here: 小荷, 阿岩'));
 });
 
 test('the room’s note reaches the turn, and an uncompacted room is told nothing about it', () => {

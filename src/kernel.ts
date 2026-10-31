@@ -57,12 +57,29 @@
  */
 
 import { RoomCompactor, type CompactLines, type Summarise } from './compact.ts';
-import { ScheduleComparator, type Timers } from './comparator.ts';
+import { ScheduleComparator, wallTimers, type Timers } from './comparator.ts';
 import { InboxLoop, type Judge, type TickResult } from './inbox.ts';
 import { applyRoster, readRosterFor } from './roster.ts';
 import { SeekStore } from './store.ts';
 import { makeTurn, type Decide } from './turn.ts';
-import type { Id, Observation } from './types.ts';
+import type { Id, Message, Observation } from './types.ts';
+
+/**
+ * What a bot was waiting for when its wait began.
+ *
+ * The one thing a delay needs to know: whether the words that just arrived were
+ * addressed to this bot. Somebody who hears their own name looks up; somebody
+ * listening to a room full of people finishes what they were doing first.
+ */
+export interface WakeArrival {
+  /** Named, replied to, or alone in the room with the sender. */
+  addressed: boolean;
+}
+
+/** A turn that opened nothing, for a wait that ended without one. */
+function nothingDrained(): TickResult {
+  return { woke: false, entries: [], drained: [], settled: undefined };
+}
 
 export interface KernelOptions {
   /**
@@ -106,8 +123,22 @@ export interface KernelOptions {
   compactLines?: CompactLines;
   /** An injectable clock, so a test does not depend on wall time. */
   now?: () => string;
-  /** Injectable timers, for the same reason. They reach the comparator. */
+  /** Injectable timers, for the same reason. They reach the comparator and the waits. */
   timers?: Timers;
+  /**
+   * How long a bot waits before it reads what just arrived, in milliseconds.
+   *
+   * **This is the room's tempo, and it belongs to the caller, not to this file.** A
+   * delivery is a fact and a turn is what the bot does about it; how long the bot takes
+   * to look is the difference between a room of people and four mouths answering on the
+   * same tick. With no function given there is no wait at all — a kernel that has not
+   * been told how people behave does not invent a pause, and every test that is about
+   * what a turn *does* gets it without waiting for a timer.
+   *
+   * A wake already waiting is not restarted and not doubled: what arrives during a wait
+   * is read by the tick that wait ends in, because a tick drains whatever is in the box.
+   */
+  wakeDelay?: (arrived: WakeArrival) => number;
   /**
    * Where a wake that threw is reported. The record on `failures` is written
    * either way: this is what a caller does about it.
@@ -133,8 +164,19 @@ export class Kernel {
   #decide: Decide | undefined;
   #judge: Judge | undefined;
   #onError: KernelOptions['onError'];
+  #wakeDelay: KernelOptions['wakeDelay'];
+  #timers: Timers;
   #loops = new Map<Id, InboxLoop>();
   #busy = new Map<Id, Promise<void>>();
+  /**
+   * The bots that are waiting to read what arrived, one wait each.
+   *
+   * Kept apart from `#busy` because they are the opposite state: a bot in `#busy` is
+   * working, and a bot here has not started. What they share is that both are "in
+   * flight" as far as `whenIdle()` is concerned, and that `stop()` ends both — nothing
+   * outlives the kernel.
+   */
+  #waits = new Map<Id, { handle: unknown; promise: Promise<TickResult>; settle: (result: TickResult) => void }>();
   /**
    * Compactions in flight, kept apart from `#busy` on purpose.
    *
@@ -149,6 +191,8 @@ export class Kernel {
     this.#decide = options.decide;
     this.#judge = options.judge;
     this.#onError = options.onError;
+    this.#wakeDelay = options.wakeDelay;
+    this.#timers = options.timers ?? wallTimers;
 
     this.compactor = new RoomCompactor(store, {
       summarise: options.summarise,
@@ -209,7 +253,9 @@ export class Kernel {
 
     const loop = new InboxLoop(
       this.store,
-      makeTurn(this.store, botId, this.#decide, () => this.comparator.refresh()),
+      makeTurn(this.store, botId, this.#decide, () => this.comparator.refresh(), (message) =>
+        this.#said(message),
+      ),
       this.#judge,
     );
     this.#loops.set(botId, loop);
@@ -251,10 +297,96 @@ export class Kernel {
     return result;
   }
 
+  /**
+   * Something new arrived for this bot: it reads it after the room's tempo, and then
+   * this is the ordinary `tick()`.
+   *
+   * **This is the wake a message uses, and `tick()` is the drain it ends in.** The
+   * difference between them is the one thing a room needs and a lock cannot give: a
+   * person who has just been spoken to does not answer on the same instant as everybody
+   * else in the room, and four bots that do are not four people. So the wait is here,
+   * once, on the one path — a wait per bot, not one per message, because what arrives
+   * during a wait is read by the tick that wait ends in.
+   *
+   * No delay configured means no wait: this answers `tick()` directly, so every test
+   * about what a turn does sees the turn and never a timer.
+   */
+  wake(botId: Id): Promise<TickResult> {
+    const delay = Math.max(0, this.#wakeDelay?.({ addressed: this.#addressed(botId) }) ?? 0);
+    if (delay === 0) return this.tick(botId);
+
+    const waiting = this.#waits.get(botId);
+    if (waiting) return waiting.promise;
+
+    let handle: unknown;
+    let settle!: (result: TickResult) => void;
+    const promise = new Promise<TickResult>((resolve, reject) => {
+      settle = resolve;
+      handle = this.#timers.set(delay, () => {
+        this.#waits.delete(botId);
+        this.tick(botId).then(resolve, reject);
+      });
+    });
+    this.#waits.set(botId, { handle, promise, settle });
+    return promise;
+  }
+
+  /** Whether what is waiting for this bot was addressed to it. */
+  #addressed(botId: Id): boolean {
+    return this.store
+      .pending(botId)
+      .some((entry) => entry.hints.mentionsMe || entry.hints.repliesToMe || entry.hints.direct);
+  }
+
+  /**
+   * A bot has spoken: the bots it named are woken, and nobody else is.
+   *
+   * **The name is read off the entry, not scanned for in the text.** `deliver()` wrote one
+   * entry per recipient and put the verdict's own hints on each, so this asks the same
+   * question stage 0 will ask rather than looking for an `@` that means nothing there.
+   *
+   * **Only a naming, and not a reply or a direct message — measured, not assumed.** The
+   * three of them all make an entry *addressed*, and `gate.ts` row 2 still fast-passes it;
+   * what they cannot be is what starts the wake. Every message a turn produces is a reply
+   * to the one that woke it (`replyOf`), so with the reply edge waking, two bots answer
+   * each other forever: a room of four produced twelve consecutive messages that named
+   * nobody, alternating between the same two bots, agreeing the same three things six
+   * times, and it could not end — a closing sentence is a reply too, and it woke the person
+   * it was closing with. Two bots alone in a room are the same trap by a different edge,
+   * which is why `direct` is not a wake either. **A room ends when somebody has the last
+   * word**, and only a name calls somebody back.
+   */
+  #said(message: Message): void {
+    for (const botId of Object.keys(this.store.data.bots)) {
+      if (botId === message.sender_id) continue;
+      const named = this.store
+        .pending(botId)
+        .some((entry) => entry.message_id === message.id && entry.hints.mentionsMe);
+      if (named) this.#wakeQuietly(botId);
+    }
+  }
+
+  /** A wake nobody awaited: its failure is recorded rather than left as a rejection. */
+  #wakeQuietly(botId: Id): void {
+    this.wake(botId).catch((error: unknown) => {
+      this.failures.push({ botId, error });
+      this.#onError?.(error, botId);
+    });
+  }
+
   /** Resolve when no wake is in flight, including one started while waiting. */
   async whenIdle(): Promise<void> {
-    while (this.#busy.size > 0 || this.#compacting.size > 0) {
-      await Promise.all([...this.#busy.values(), ...this.#compacting.values()]);
+    while (this.#busy.size > 0 || this.#compacting.size > 0 || this.#waits.size > 0) {
+      await Promise.all([
+        ...this.#busy.values(),
+        ...this.#compacting.values(),
+        // A wait is in flight, and a wait whose turn threw is not this method's failure:
+        // the error is on `failures` and its own caller has it.
+        ...[...this.#waits.values()].map((wait) => wait.promise.then(
+          () => undefined,
+          () => undefined,
+        )),
+      ]);
     }
   }
 
@@ -270,14 +402,21 @@ export class Kernel {
   }
 
   /**
-   * Stop the comparator: disarm the timer and leave the table as it is.
+   * Stop the comparator and end every wait: disarm the timer and leave the table as it is.
    *
-   * A row that comes due while nothing is sweeping is caught by the next
-   * `start()`, once (§12 (c)) — which is the whole restart story, and the reason
-   * stopping loses nothing.
+   * A row that comes due while nothing is sweeping is caught by the next `start()`, once
+   * (§12 (c)) — which is the whole restart story, and the reason stopping loses nothing. A
+   * bot that was waiting to read a room is a different matter: nothing outlives the kernel,
+   * so its timer is cleared and its wait answers the one thing that is true — it opened no
+   * turn.
    */
   stop(): void {
     this.comparator.stop();
+    for (const [botId, wait] of this.#waits) {
+      this.#timers.clear(wait.handle);
+      this.#waits.delete(botId);
+      wait.settle(nothingDrained());
+    }
   }
 
   /**
