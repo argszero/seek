@@ -7,9 +7,10 @@ import Gutter from './Gutter.jsx'
 /**
  * The contacts view: the bots in this organization, and a card for whichever one is chosen.
  *
- * **The prototype is the spec** (`prototype/src/js/app.js`): the rail row it labels 机器人, the
- * list `renderList()` draws for `view === 'contacts'`, and the card `renderContactPane()`
- * draws. What differs here is what this store forces, not a choice of this file:
+ * **This view's shape was the prototype's**: the rail row it labels 机器人, the list that
+ * row opens, and the card beside it. The file that drew them was deleted with the prototype's
+ * copy of the window (issue #138), so what is fixed here is the shape and not a source.
+ * What differs from it is what this store forces, not a choice of this file:
  *
  * - **The list is the bots, and only the bots.** The prototype's `friends()` shows everyone
  *   but the reader and chips each row 机器人 or 人; this screen is the one the rail calls

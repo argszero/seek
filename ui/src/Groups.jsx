@@ -8,14 +8,13 @@ import Gutter from './Gutter.jsx'
  * The groups view: the rooms in this store that are not one person's conversation with one
  * other person.
  *
- * **The prototype is the spec** (`prototype/src/js/app.js`): the rail row it labels 群组, the
- * list `renderList()` draws for `view === 'groups'`, the pane `renderGroupsPane()` draws, and
- * the form `modalNewGroup()` opens. What differs here is what this store forces, not a choice
- * of this file.
+ * **This view's shape was the prototype's**: the rail row it labels 群组, the list that row
+ * opens, the pane beside it, and the form that makes one. The file that drew them was deleted
+ * with the prototype's copy of the window (issue #138), so what is fixed here is the shape and
+ * not a source. What differs from it is what this store forces, not a choice of this file.
  *
  * **Which rooms are groups is the kernel's answer, not a field's.** The prototype filters on
- * `chat_mode` (`prototype/src/js/store.js:210`: `'group'` or `'topic'`), because its data has
- * a `p2p` mode to filter out. This store does not: `ui/electron/host.js` declines to ask for
+ * `chat_mode`, because its data has a `p2p` mode to filter out. This store does not: `ui/electron/host.js` declines to ask for
  * a mode when it makes a room, and a direct message here **is a headcount** —
  * `deriveHints()` reads `direct` from `membershipsOf(room).length === 2`
  * (`src/delivery.ts:418`) and `src/rooms.ts:23` states that the domain sees one kind of Room.
@@ -36,8 +35,8 @@ import Gutter from './Gutter.jsx'
  * time — so neither is drawn. The members are drawn instead, because those the store does
  * hold.
  *
- * **Making a group puts you in it.** The prototype's `createGroup()` builds its member list as
- * `[me, ...chosen]` (`prototype/src/js/store.js:414`), and the section heading above the list
+ * **Making a group puts you in it.** The prototype builds its member list as
+ * `[me, ...chosen]`, and the section heading above the list
  * says whose groups these are — 我加入的群. So the form offers everyone but you, and you are
  * added without being asked.
  *
