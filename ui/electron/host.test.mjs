@@ -22,7 +22,8 @@ import { test } from 'node:test'
 import { applyRoster } from '../../src/roster.ts'
 import { seedOneRoom, STUB_REPLY, stubDecide, stubJudge } from '../../src/main.ts'
 import { emptyData, SeekStore } from '../../src/store.ts'
-import { addMember, closeHost, createRoom, deleteBot, openHost, hostSnapshot, postMessage } from './host.js'
+import { addMember, closeHost, createRoom, deleteBot, openHost, hostSnapshot, pictureLoader, postMessage } from './host.js'
+import { mediaDirFor, saveMedia } from './media.js'
 
 
 /**
@@ -901,5 +902,44 @@ test('the bot reads the message after the room’s tempo, not in the instant it 
     assert.equal(room.messages[1].sender, w.scene.bot)
   } finally {
     await w.done()
+  }
+})
+
+/**
+ * The pictures a turn is about, read from the one layer that knows where they live.
+ *
+ * `LlamaServer.loadMedia` is the kernel asking for the bytes behind a key it may not
+ * resolve — `src/box.ts`: how a client names a file is its business — so this is the
+ * wiring that makes a picture in a room reachable by the half that answers at all. Two
+ * facts are measured here rather than a call: the bytes handed over are the file's own,
+ * and a picture whose file is gone is `null` rather than a throw, because a room whose
+ * store was copied without its `media/` directory has to keep answering.
+ */
+test('the loader a turn is given reads the picture beside the store, and answers null for one that has gone', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'seek-loader-'))
+  try {
+    const storeFile = join(dir, 'seek.json')
+    const png = Uint8Array.from([0x89, 0x50, 0x4e, 0x47])
+    const saved = saveMedia(storeFile, { bytes: png, mime: 'image/png', name: 'shot.png' })
+    const load = pictureLoader(storeFile)
+
+    assert.deepEqual(
+      Uint8Array.from(await load({ key: saved.key, mime: saved.mime })),
+      png,
+      'the bytes the transport gets are the file’s own, not a path and not an encoding',
+    )
+
+    await rm(join(mediaDirFor(storeFile), saved.key))
+    assert.equal(
+      await load({ key: saved.key, mime: saved.mime }),
+      null,
+      'a picture that is no longer beside the store does not ride, and does not fail the turn',
+    )
+
+    // A key that is a path is not a picture that has gone — it is a store that is wrong,
+    // and it stays a throw rather than becoming silence.
+    await assert.rejects(() => load({ key: '../seek.json', mime: 'image/png' }))
+  } finally {
+    await rm(dir, { recursive: true, force: true })
   }
 })

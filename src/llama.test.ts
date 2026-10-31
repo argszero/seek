@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import {
   chatTurn,
   llamaWatchModel,
+  PICTURE_BYTES_PER_TURN,
   requireChatShape,
   requireDeclaredModel,
   requireWatchShape,
@@ -603,6 +604,117 @@ test('a hosted endpoint is not asked for a projector it cannot report', async ()
     recorder.calls.map((call) => call.path),
     ['/v1/chat/completions'],
     'there is no /props to ask, so the nothing-sent-nothing-called rule applies instead',
+  );
+});
+
+/**
+ * What one turn may carry, and what a picture that will not fit becomes.
+ *
+ * The cap exists because a picture in a box rides **every** turn that opens it — the box
+ * hands over its delta's pictures and base64 is 4/3 of the bytes — so one retina screenshot
+ * in a room is a standing megabyte on every turn of every bot until a compaction moves it
+ * out. What the cap must not do is make the turn quieter: the entry line stays, the
+ * artifact's own sentence says a line with no image to match it is a picture this turn
+ * cannot see, and the request goes out.
+ */
+test('a picture larger than one turn may carry is left out, and the turn still goes out', async () => {
+  const recorder = fakeServer();
+  const huge = new Uint8Array(PICTURE_BYTES_PER_TURN + 1);
+  await chatTurn(
+    serverOf(recorder, { model: 'deepseek-flash', loadMedia: async () => huge }),
+    [
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'what is this?' },
+          { type: 'picture', picture: PICTURE },
+        ],
+      },
+    ],
+  );
+
+  const [call] = recorder.calls;
+  assert.equal(call.path, '/v1/chat/completions', 'the turn was asked, one picture short');
+  assert.deepEqual(
+    (call.body.messages as { content: unknown }[])[0].content,
+    [{ type: 'text', text: 'what is this?' }],
+    'the words stay and the image part is gone',
+  );
+});
+
+test('one too large does not take the small picture behind it with it', async () => {
+  const recorder = fakeServer();
+  const sizes = [PICTURE_BYTES_PER_TURN + 1, 3];
+  let asked = 0;
+  await chatTurn(
+    serverOf(recorder, {
+      model: 'deepseek-flash',
+      loadMedia: async () => new Uint8Array(sizes[asked++] ?? 0),
+    }),
+    [
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'two pictures' },
+          { type: 'picture', picture: { key: 'media/big.png', mime: 'image/png' } },
+          { type: 'picture', picture: { key: 'media/small.png', mime: 'image/png' } },
+        ],
+      },
+    ],
+  );
+
+  const parts = (recorder.calls[0].body.messages as { content: unknown[] }[])[0].content;
+  const images = parts.filter(
+    (part) => (part as { type?: string }).type === 'image_url',
+  ) as { image_url: { url: string } }[];
+  assert.equal(images.length, 1, 'the one that fits rides');
+  const encoded = images[0].image_url.url.slice('data:image/png;base64,'.length);
+  assert.equal(Buffer.from(encoded, 'base64').length, 3, 'and it is the small one, not the big one');
+});
+
+test('a picture whose bytes are not beside the store does not ride, and does not fail the turn', async () => {
+  const recorder = fakeServer();
+  await chatTurn(
+    serverOf(recorder, { model: 'deepseek-flash', loadMedia: async () => null }),
+    [
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'what is this?' },
+          { type: 'picture', picture: PICTURE },
+        ],
+      },
+    ],
+  );
+
+  const [call] = recorder.calls;
+  assert.equal(
+    call.path,
+    '/v1/chat/completions',
+    'one missing file is not a room that never answers again: every turn that opens the ' +
+      'box would fail on the same picture',
+  );
+  assert.deepEqual(
+    (call.body.messages as { content: unknown }[])[0].content,
+    [{ type: 'text', text: 'what is this?' }],
+    'the words stay and the picture that is not there is left out of the request',
+  );
+});
+
+test('a message that was only a picture keeps a part when the picture does not ride', async () => {
+  const recorder = fakeServer();
+  await chatTurn(
+    serverOf(recorder, {
+      model: 'deepseek-flash',
+      loadMedia: async () => new Uint8Array(PICTURE_BYTES_PER_TURN + 1),
+    }),
+    [{ role: 'user', content: [{ type: 'picture', picture: PICTURE }] }],
+  );
+
+  assert.deepEqual(
+    (recorder.calls[0].body.messages as { content: unknown }[])[0].content,
+    [{ type: 'text', text: '' }],
+    'a part list with nothing in it is a message with no content at all',
   );
 });
 

@@ -407,10 +407,26 @@ function turnValues(card: {
   };
 }
 
-test('the shipped turn artifact is v6, and a picture reaches the turn in words', () => {
+test('the shipped turn artifact is v7, and a picture is named on the line it came with', () => {
   const shipped = loadWorkArtifact();
-  assert.equal(shipped.version, 'work-v6');
-  assert.match(shippedWorkPromptPath().pathname, /work-v6\.json$/);
+  assert.equal(shipped.version, 'work-v7');
+  assert.match(shippedWorkPromptPath().pathname, /work-v7\.json$/);
+
+  // **What v7 is, and what it is not.** v6 said in words that a picture came and could not
+  // be seen, because the turn was handed none; the turn now carries the box's pictures, so
+  // v7's sentence says a picture arrives and names the line it did not arrive on. It is the
+  // same file otherwise — no part added, no part reworded, no tool touched — and that is
+  // what this pair of assertions holds: a version bump that reworded the room's temper or
+  // dropped a part would change what every bot is like, not only what it knows about
+  // pictures.
+  const older = loadWorkArtifact(new URL('./prompts/work-v6.json', import.meta.url));
+  assert.deepEqual(shipped.parts, older.parts, 'v7 changes no part');
+  assert.deepEqual(shipped.tools, older.tools, 'v7 offers the same tools');
+  assert.notEqual(
+    shipped.pictureLine,
+    older.pictureLine,
+    'the sentence about a picture is the whole of v7: the fact under it changed',
+  );
 
   // v6 adds one fact to the entry line and one line to the file to say it with: a
   // message that came with a picture is no longer indistinguishable from an empty one.

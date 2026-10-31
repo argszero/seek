@@ -259,6 +259,59 @@ test('a turn opens with the room’s box, not only the entries that woke it', as
   assert.equal(box.summary, undefined, 'nothing has been compacted in this room yet');
 });
 
+/**
+ * The box's pictures, handed over with the box.
+ *
+ * This is the layer issue #179 named first: `TurnBox` was `{summary?, entries}` while
+ * `box.ts` had already collected the pictures beside those same entries, so the list
+ * stopped at the judgement and the half that writes could only be told *that* a picture
+ * had come. What the turn is handed here is the reference and never the bytes — loading
+ * them is the client's — and it is in the same order as the entries, because a picture
+ * reversed on its own would be read against the wrong line.
+ */
+test('the pictures the box holds are handed over with it, in the order the entries are read', async () => {
+  const world = makeWorld();
+  const media = { key: 'blobs/one.png', mime: 'image/png' };
+  deliver(world.store, {
+    roomId: world.room,
+    senderId: world.me,
+    kind: 'image',
+    text: 'the first thing',
+    media,
+    now: '2026-10-24T00:30:00.000Z',
+  });
+  deliver(world.store, {
+    roomId: world.room,
+    senderId: world.me,
+    text: 'and a second thing, in words',
+    now: '2026-10-24T00:31:00.000Z',
+  });
+  const entries = await world.store.drain(world.botA);
+
+  const spoke: TurnContext[] = [];
+  await runTurn(
+    world.store,
+    { agentId: world.agentA2, roomId: world.room, entries: [entries[1]] },
+    (context) => {
+      spoke.push(context);
+    },
+  );
+
+  const box = spoke[0].box;
+  assert.ok(box, 'a turn in a room is handed that room’s box');
+  assert.equal(box.media.length, 1, 'the one picture in the box is in the list');
+  assert.deepEqual(
+    box.media.map((picture) => picture.key),
+    [media.key],
+    'the picture is named by the reference the store keeps, never by its bytes',
+  );
+  assert.equal(
+    box.media[0]?.entryId,
+    box.entries[0]?.id,
+    'and it is aligned with the entry it came with, oldest first like the entries',
+  );
+});
+
 test('once a note exists, the box is the note and what arrived after it', async () => {
   const world = makeWorld();
   deliver(world.store, {
