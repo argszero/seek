@@ -182,6 +182,14 @@ Its own words are observations like anyone's, and the record of who said them is
 *"Yes, one point: a bot's observation is limited to what it can see — for instance, if a group holds only bots A and B, then bot C cannot see that group or anything said in it."* / *"Yes, a direct message is visible to the two of them only; nobody else can see it."*
 There is no observation of a room the bot is not in. A direct message is gathered by its two participants and by nobody else.
 
+**What is sent to the model by default is the latest compaction, the memory index, and every observation after that compaction.**
+*"By default the latest compaction, the memory index and every observation after the latest compaction are sent to the LLM."*
+Three things, not two: the index stands beside the compaction, and what follows it is every observation after it.
+
+**Where the uncompacted content is put has to be told to the model, and it is archived by day.**
+*"But where the uncompacted content is put also has to be told to the LLM, and the LLM can look at it whenever it needs to. The uncompacted content is archived by day."*
+Putting it somewhere is not enough: the model is told the place and may look when it needs to, and the filing is by day.
+
 ---
 
 ## Bot and agent as two objects
