@@ -59,7 +59,7 @@ measures the prompt the reader has; `LLAMA=<path>` names another `llama-server` 
 `src/prompts/work-v1.json` changed, which is what makes the rows comparable: the only
 variable left is the model.
 
-**The tree now ships `work-v4.json`, and every row below was measured on `work-v1.json`.** A
+**The tree now ships `work-v5.json`, and every row below was measured on `work-v1.json`.** A
 prompt is versioned rather than edited in place, so v1 stays in the tree exactly as it was
 measured. v2 adds two parts — what the bot does in its organization, and how it talks and
 works — and both are skipped when a bot's card says nothing; v3 adds one part, the note the
@@ -76,6 +76,16 @@ argument, so a bot can address the others by name and a room of bots can answer 
 Nothing below was measured on v2, v3 or v4: the driver hands over a description, no card and
 no note, so it still assembles the v1 text, and a run on any later version would be a new row
 set.
+
+**v5 is the same kind of change and the last one this record does not cover: the entry line
+now says when the entry arrived.** It renders `[{at}] {sender}: {text}`, which is the shape
+`watch-v3` already used for the same fact, and the value is the observation's own
+`delivered_at` — not "a week ago", which would need a clock reading at assembly time. Two
+messages a week apart used to arrive as two lines of one shape, so the half that answers could
+not tell a reply from an answer to something said seven days earlier, and the parts `work-v5`
+inherits from v4 ask it to say when it will know a thing works and when it looks again. The
+driver's rows hand over no time at all, so they still assemble the v1 text; this record
+measures nothing about v5.
 
 **Tools reached the model in every row.** This build enables the Jinja engine by default
 (`--help` reports `--jinja, --no-jinja … (default: enabled)`), so each GGUF's own chat

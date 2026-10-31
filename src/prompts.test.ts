@@ -398,18 +398,22 @@ function turnValues(card: {
     room: 'oc_0000000000000000',
     roster: '- role=work tools=say home=/tmp/seek/echo/work self=true',
     summary: card.summary ?? '',
-    entries: [{ sender: '邵安清', text: 'deploy is red' }],
+    entries: [{ sender: '邵安清', text: 'deploy is red', at: '2026-10-31T09:00:00.000Z' }],
   };
 }
 
-test('the shipped turn artifact is v4, and it is the first one that can name who should answer', () => {
+test('the shipped turn artifact is v5, and its entries say when they arrived', () => {
   const shipped = loadWorkArtifact();
-  assert.equal(shipped.version, 'work-v4');
-  assert.match(shippedWorkPromptPath().pathname, /work-v4\.json$/);
+  assert.equal(shipped.version, 'work-v5');
+  assert.match(shippedWorkPromptPath().pathname, /work-v5\.json$/);
 
-  // v4 rewrites the opening, the system line and the ask, so the byte-for-byte
-  // agreement with v1 that v2 and v3 kept is gone on purpose — and no row in
-  // `calibration/work/` covers v4, which both prose halves there say.
+  // v5 adds one fact to the entry line — the arrival time — in the shape `watch-v3`
+  // already renders it, so the half that answers can tell a reply from an answer to
+  // something said a week earlier. What v4 did is still what this test was written
+  // for and it has not changed: it rewrites the opening, the system line and the ask,
+  // so the byte-for-byte agreement with v1 that v2 and v3 kept is gone on purpose —
+  // and no row in `calibration/work/` covers v4 or v5, which both prose halves there
+  // say.
   //
   // What it adds is the ability to address someone. `delivery.ts` wakes a bot on a
   // mention, a reply or a direct message, and nothing scans a message body for an `@`:
@@ -429,6 +433,37 @@ test('the shipped turn artifact is v4, and it is the first one that can name who
   const together = assembleWorkPrompt(shipped, { ...blank, others: '小荷, 阿岩' });
   assert.equal(alone.rest.includes('The other bots here'), false);
   assert.ok(together.rest.includes('The other bots here: 小荷, 阿岩'));
+});
+
+test('two entries a week apart do not read alike, because each line says when it arrived', () => {
+  const shipped = loadWorkArtifact();
+  const week = '2026-10-24T02:00:00.000Z';
+  const today = '2026-10-31T02:00:00.000Z';
+
+  const turn = assembleWorkPrompt(shipped, {
+    ...turnValues({}),
+    entries: [
+      { sender: '邵安清', text: 'deploy is red', at: week },
+      { sender: '邵安清', text: 'deploy is green again', at: today },
+    ],
+  });
+
+  const lineOf = (said: string): string | undefined =>
+    turn.rest.split('\n').find((line) => line.includes(said));
+  const older = lineOf('deploy is red');
+  const newer = lineOf('deploy is green again');
+
+  // The whole of the defect: before v5 these two lines were the same shape, so a bot
+  // reading the box could not tell an answer to this morning's question from an answer
+  // to one asked the week before — which is what `agent-lifecycle.md` line 201 asks an
+  // observation to carry ("its room, who spoke, when and what").
+  assert.equal(older, `[${week}] 邵安清: deploy is red`);
+  assert.equal(newer, `[${today}] 邵安清: deploy is green again`);
+  assert.notEqual(older, newer, 'a week apart is not two lines of one shape');
+  assert.ok(
+    turn.rest.indexOf(String(older)) < turn.rest.indexOf(String(newer)),
+    'oldest first, as the box is read',
+  );
 });
 
 test('the room’s note reaches the turn, and an uncompacted room is told nothing about it', () => {
