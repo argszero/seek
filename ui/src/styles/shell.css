@@ -513,11 +513,11 @@ body {
   overflow-wrap: anywhere;
 }
 
-/* The canvas the words sit on is `--bg-content-base`, not the column's `--bg-list`:
-   measured off the client, the list column reads `#FCFCFC` and the area behind the
-   messages reads `#F8F9FA`, which is the client's own content-base value. The two are
-   four units apart and nobody will name the difference, but it is a reading rather than
-   a preference, and the column around it keeps the surface both columns share. */
+/* The canvas the words sit on is `--bg-content-base`, and measured off the client's own
+   screenshot of an open room it reads `#FCFCFC` — the surface both columns share, so the
+   messages no longer sit one shade darker than the column around them. `#F8F9FA` is the
+   client's colour too, but of the place with no room selected: an empty state, not this
+   canvas, and reading it as this one is what put four units of grey here in the first place. */
 .messages { list-style: none; margin: 0; padding: 16px 20px; overflow-y: auto; flex: 1; background: var(--bg-content-base); }
 
 .msg { display: flex; gap: 10px; padding: 6px 0; }
