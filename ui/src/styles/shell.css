@@ -772,14 +772,17 @@ body {
   margin-top: 6px;
 }
 
+/* A reaction is a chip the client draws inside the message's box. Measured off its own
+   screenshot: 24px tall and fully round, filled a step darker than the box (`--fill-reaction`),
+   with the glyph and then the people who chose it. */
 .reaction {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  height: 22px;
+  height: 24px;
   padding: 0 7px;
-  border-radius: 11px;
-  background: var(--bg-body-overlay);
+  border-radius: 12px;
+  background: var(--fill-reaction);
   border: 1px solid transparent;
   font-size: 12px;
   color: var(--text-caption);
@@ -798,10 +801,9 @@ body {
 
 .reaction-glyph { font-size: 13px; line-height: 1; }
 
-/* The count beside the glyph. Everything it draws it inherits from `.reaction` — this rule
-   exists because it is a class in the markup, and because a count is a number that changes:
-   tabular figures keep the chip from changing width when a second person reacts. */
-.reaction-count { font-variant-numeric: tabular-nums; }
+/* The names beside the glyph carry no rule of their own: they are text in `.reaction`, and
+   the separator between them is `joinList()`'s — a list the language joins is not a list this
+   sheet punctuates. */
 
 .msg-forwarded {
   display: flex;

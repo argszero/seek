@@ -86,6 +86,11 @@
      `#EBECED`, one shade darker than the canvas under it — the shade is what makes a
      message read as something somebody said rather than as text on a page. */
   --fill-msg: #ebeced;
+  /* The chip a reaction sits in, inside that box. Measured off the client's screenshot at
+     `#E2E3E4`, a step darker than the message box under it — the direction is what tells a
+     reaction apart from the words beside it, and the palette's own fills are the other way
+     (lighter than the box, and too dark: `--fill-hover` over `#EBECED` reads `#DBDBDC`). */
+  --fill-reaction: #e2e3e4;
   --bg-float: var(--N00);
   --bg-float-overlay: var(--N50);
   --bg-float-push: rgba(255, 255, 255, 0.8);
@@ -208,6 +213,10 @@
   /* The dark client was not measured, so the message box takes the palette's own overlay
      surface rather than a shade nobody read off a screen. */
   --fill-msg: var(--N100);
+  /* The light client's chip is a step darker than its box; the dark client was not measured,
+     so this keeps the surface the dark window already drew (`--bg-body-overlay` is the same
+     `--N100`) rather than a shade nobody read off a screen. */
+  --fill-reaction: var(--N100);
   --bg-float: var(--N100);
   --bg-float-overlay: var(--N200);
   --bg-float-push: rgba(41, 41, 41, 0.8);

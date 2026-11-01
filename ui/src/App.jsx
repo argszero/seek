@@ -1550,6 +1550,7 @@ export default function App() {
                   key={message.id}
                   message={message}
                   sender={whoSaid[message.sender]}
+                  people={whoSaid}
                   replies={repliesIn[message.chain] ?? 0}
                   inThread={openThread !== null && message.chain === openThread}
                   onOpen={openThreadOf}
@@ -1694,6 +1695,7 @@ export default function App() {
                 key={message.id}
                 message={message}
                 sender={whoSaid[message.sender]}
+                people={whoSaid}
                 replies={repliesIn[message.chain] ?? 0}
                 inThread={false}
                 onOpen={openThreadOf}
@@ -2440,7 +2442,7 @@ function SilenceLine({ who }) {
  * when it has none — because a thread that cannot be started from the message it would
  * belong to is a panel nobody can open.
  */
-function Line({ message, sender, replies, inThread, onOpen, chip = false, me = null, actions = null }) {
+function Line({ message, sender, replies, inThread, onOpen, chip = false, me = null, people = null, actions = null }) {
   const name = sender?.name ?? message.sender
   // A picture is drawn because the kernel's `kind` says so,
   // never because the text looks like one: a message whose kind disowns its bytes is one
@@ -2452,8 +2454,8 @@ function Line({ message, sender, replies, inThread, onOpen, chip = false, me = n
   // all, never as a row of blanks.
   const attachment = message.kind === 'file' && message.file ? message.file : null
   // The reactions the store holds, and nothing this file counted: `operators[]` is the fact
-  // (`src/types.ts`), so the number drawn beside a glyph is that array's length and "mine"
-  // is whether the person this window speaks as is in it. A reaction nobody has reacted with
+  // (`src/types.ts`), so who is drawn beside a glyph is that array's names and "mine" is
+  // whether the person this window speaks as is in it. A reaction nobody has reacted with
   // has no entry at all — the kernel deletes a row whose last operator took it back.
   const reactions = message.reactions ?? []
   // **A deleted message is a tombstone, not a gap.** The kernel keeps the row — an observation,
@@ -2523,6 +2525,13 @@ function Line({ message, sender, replies, inThread, onOpen, chip = false, me = n
             {reactions.map((reaction) => {
               const mine = me !== null && reaction.operators.includes(me)
               const count = reaction.operators.length
+              // **Who chose it, not how many.** The client names the people beside the glyph,
+              // and the store already holds them: `operators[]` is ids, resolved here against
+              // the names the snapshot carries and never against the roster — the same rule a
+              // mention follows. `joinList()` puts the language's own separator between them,
+              // and the full count stays in the title, where a chip too narrow to read still
+              // answers the question.
+              const who = reaction.operators.map((id) => people?.[id]?.name ?? id)
               return (
                 <button
                   key={reaction.emojiType}
@@ -2532,7 +2541,7 @@ function Line({ message, sender, replies, inThread, onOpen, chip = false, me = n
                   onClick={() => actions?.react(message, reaction.emojiType)}
                 >
                   <span className="reaction-glyph">{emojiGlyph(reaction.emojiType)}</span>
-                  <span className="reaction-count">{count}</span>
+                  {joinList(who)}
                 </button>
               )
             })}
