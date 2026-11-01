@@ -1374,6 +1374,111 @@ test('grep names the file and the line a word is on', async () => {
   assert.equal(answer.split('\n').length, 1, 'one line matched, so one line comes back');
 });
 
+test('grep quotes the line a reader is handed, not the row the file stores', async () => {
+  const world = makeWorld();
+  const filed = archiveOf(['the retry queue was at 40 yesterday']);
+  world.store.data.agents[world.agentA2].home = filed.home;
+
+  const recorder = fakeServer({
+    answers: [{ toolCalls: [grepCall({ pattern: 'retry queue' })] }, { content: 'at 40' }],
+  });
+  const decide = await workOverServer(world.store, world.botA, serverOf(recorder), {
+    prompt: ARTIFACT,
+  });
+  await turnWith(world, decide, await entriesOf(world));
+
+  // Exactly what `read` hands back for that day, with where it is put in front of it — a word
+  // found and a day read describe the same facts in the same shape.
+  assert.equal(
+    lookupAnswer(recorder),
+    `archive/${filed.day}.jsonl:1: [${filed.day}T02:00:00.000Z] 邵安清: the retry queue was at 40 yesterday`,
+  );
+});
+
+test('a message longer than a quoted line is cut where a reader can see it was cut', async () => {
+  const world = makeWorld();
+  const long =
+    'the retry queue was at 40 and the on-call said the paging rule had been changed twice ' +
+    'in one week and nobody had written down which version was live, so we agreed to pin the ' +
+    'version we had and revisit the whole rule after this release rather than guess again';
+  assert.ok(long.length > 240, 'the message outruns the quote, which is the point of it');
+  const filed = archiveOf([long]);
+  world.store.data.agents[world.agentA2].home = filed.home;
+
+  const recorder = fakeServer({
+    answers: [{ toolCalls: [grepCall({ pattern: 'retry queue' })] }, { content: 'at 40' }],
+  });
+  const decide = await workOverServer(world.store, world.botA, serverOf(recorder), {
+    prompt: ARTIFACT,
+  });
+  await turnWith(world, decide, await entriesOf(world));
+
+  // The stored row cut at 240 characters landed inside `"text":"…"`, so what came back was
+  // neither the message nor anything a reader could parse. A cut in a rendered line is a cut
+  // of the message itself, and the mark says that it was made.
+  const answer = lookupAnswer(recorder);
+  assert.ok(!answer.includes('"text":'), 'no field of the stored row is quoted');
+  assert.ok(answer.includes('邵安清: the retry queue was at 40'), 'and what it says is there');
+  assert.ok(answer.endsWith('…'), 'the cut is marked rather than left to look complete');
+});
+
+test('grep searches the line it shows, not the fields the row stores', async () => {
+  const world = makeWorld();
+  const filed = archiveOf(['the retry queue was at 40 yesterday']);
+  world.store.data.agents[world.agentA2].home = filed.home;
+
+  // A phrase the rendered line carries and the stored row does not: `[at] sender: text` is
+  // one string, while the row spells the same two facts as `"sender":"…","text":"…"`.
+  const rendered = fakeServer({
+    answers: [{ toolCalls: [grepCall({ pattern: '邵安清: the retry queue' })] }, { content: 'yes' }],
+  });
+  const decide = await workOverServer(world.store, world.botA, serverOf(rendered), {
+    prompt: ARTIFACT,
+  });
+  await turnWith(world, decide, await entriesOf(world));
+  assert.ok(
+    lookupAnswer(rendered).startsWith(`archive/${filed.day}.jsonl:1: `),
+    'a phrase that only the line a reader sees has is still found',
+  );
+
+  // And the other direction, which is the false positive this rule removes: `oc_room` is a
+  // value in the stored row and in nothing the reader is handed, so a search that reads the
+  // row would answer every line in the file for it.
+  const stored = fakeServer({
+    answers: [{ toolCalls: [grepCall({ pattern: 'oc_room' })] }, { content: 'nothing' }],
+  });
+  const over = await workOverServer(world.store, world.botA, serverOf(stored), {
+    prompt: ARTIFACT,
+  });
+  await turnWith(world, over, await entriesOf(world));
+  assert.match(
+    lookupAnswer(stored),
+    /nothing in this bot's own directory matches "oc_room"/,
+    "a field's value is not a line, so it is not a match",
+  );
+});
+
+test('a file that is not the archive is quoted as it is written', async () => {
+  const world = makeWorld();
+  const filed = archiveOf(['the retry queue was at 40 yesterday']);
+  writeFileSync(join(filed.home, 'notes.txt'), 'the retry queue again\n', 'utf8');
+  world.store.data.agents[world.agentA2].home = filed.home;
+
+  const recorder = fakeServer({
+    answers: [{ toolCalls: [grepCall({ pattern: 'retry queue' })] }, { content: 'twice' }],
+  });
+  const decide = await workOverServer(world.store, world.botA, serverOf(recorder), {
+    prompt: ARTIFACT,
+  });
+  await turnWith(world, decide, await entriesOf(world));
+
+  const answer = lookupAnswer(recorder);
+  assert.ok(
+    answer.split('\n').includes('notes.txt:1: the retry queue again'),
+    'a file this reader did not write is answered about as it stands, not dropped',
+  );
+});
+
 test('a lookup that names a place outside the bot own directory is answered in words', async () => {
   const world = makeWorld();
   const filed = archiveOf(['the retry queue was at 40 yesterday']);

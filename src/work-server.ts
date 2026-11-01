@@ -51,7 +51,7 @@
 
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { archiveDays, archivePlaceOf, readArchiveDay } from './archive.ts';
+import { archiveDays, archivePlaceOf, archivedLine, readArchiveDay } from './archive.ts';
 import { agentTurnsIn } from './chain.ts';
 import type { AgentIdentity } from './identity.ts';
 import {
@@ -663,9 +663,16 @@ function grepped(
     }
     const rows = text.split('\n');
     for (let index = 0; index < rows.length; index += 1) {
-      const row = rows[index];
-      if (row.trim() === '' || !matcher.test(row)) continue;
-      const cut = row.length <= GREP_LINE_CHARS ? row : `${row.slice(0, GREP_LINE_CHARS)}…`;
+      if (rows[index].trim() === '') continue;
+      // **What is searched is what is shown, and what is shown is what `read` shows.** The
+      // line is the one a reader of this file is handed (`archivedLine`), not the row the
+      // file stores. Searching the stored row would match the field names every archived
+      // row carries — `at`, `room`, `sender` and `text` are in all of them — and would then
+      // quote back a line that does not contain the word that found it, which reads as a
+      // search answering something else.
+      const line = lineOf(rows[index]);
+      if (!matcher.test(line)) continue;
+      const cut = line.length <= GREP_LINE_CHARS ? line : `${line.slice(0, GREP_LINE_CHARS)}…`;
       matches.push(`${name}:${index + 1}: ${cut}`);
     }
   }
@@ -676,6 +683,23 @@ function grepped(
     `nothing in ${place} matches ${JSON.stringify(source)}` +
       (searched.length === 0 ? ': there is no file there.' : '.'),
   );
+}
+
+/**
+ * A row of a file under the bot's home, as the line this reader hands back.
+ *
+ * The archive's rows are entries and are rendered by `archivedLine`, which is what makes a
+ * word `grep` found and a day `read` handed back describe the same facts the same way. A
+ * file that is not the archive's is quoted as it stands rather than dropped: the home is the
+ * bot's own directory, this reader does not decide what may be filed in it, and a lookup
+ * that answered nothing about a file that is there would be wrong about it.
+ */
+function lineOf(row: string): string {
+  try {
+    return archivedLine(row);
+  } catch {
+    return row;
+  }
 }
 
 /**
