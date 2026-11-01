@@ -408,10 +408,11 @@ function turnValues(card: {
   };
 }
 
-test('the shipped turn artifact is v9, and a picture is named on the line it came with', () => {
+test('the shipped turn artifact is v10, and a picture is named on the line it came with', () => {
   const shipped = loadWorkArtifact();
-  assert.equal(shipped.version, 'work-v9');
-  assert.match(shippedWorkPromptPath().pathname, /work-v9\.json$/);
+  assert.equal(shipped.version, 'work-v10');
+  assert.match(shippedWorkPromptPath().pathname, /work-v10\.json$/);
+  const nine = loadWorkArtifact(new URL('./prompts/work-v9.json', import.meta.url));
   const eight = loadWorkArtifact(new URL('./prompts/work-v8.json', import.meta.url));
 
   // **What v7 is, and what it is not.** v6 said in words that a picture came and could not
@@ -460,20 +461,44 @@ test('the shipped turn artifact is v9, and a picture is named on the line it cam
   // are v5's entry lines, and the index is the one of the three with no site. One part
   // says it, and it arrives only when there is something to say: a bot that has worked
   // in one room is asked the v8 text byte for byte, which is the last assertion here.
-  const index = shipped.parts.filter((part) => part.name === 'memories');
+  const index = nine.parts.filter((part) => part.name === 'memories');
   assert.equal(index.length, 1, 'one part says what this bot wrote down elsewhere');
   assert.deepEqual(
-    shipped.parts.filter((part) => part.name !== 'memories'),
+    nine.parts.filter((part) => part.name !== 'memories'),
     eight.parts,
     'v9 adds the index part and renumbers nothing else',
   );
-  assert.equal(shipped.system, eight.system, "the system line is v8's");
-  assert.equal(shipped.pictureLine, eight.pictureLine, "the picture line is v8's");
-  assert.deepEqual(shipped.tools, eight.tools, 'v9 adds no tool: an index is not a lookup');
+  assert.equal(nine.system, eight.system, "the system line is v8's");
+  assert.equal(nine.pictureLine, eight.pictureLine, "the picture line is v8's");
+  assert.deepEqual(nine.tools, eight.tools, 'v9 adds no tool: an index is not a lookup');
   assert.ok(
     index[0].text.includes('{memories}'),
     'the part quotes the fact it depends on, or it says nothing about it',
   );
+
+
+  // **What v10 is: two ways to look through what the bot filed.** `docs/host-rulings.md`,
+  // "The tools" names `glob` and `grep` in the work agent's registry; v9 gave a turn the
+  // place its archive is kept and `read(day)` to open one, and left it no way to find a
+  // name or a word in it. Both new tools are read-only, and both are bounded to this
+  // agent's own home — the bound `read` already had. No part moves, which is what keeps
+  // v10 a change to what a bot may do rather than to what it is like.
+  assert.deepEqual(shipped.parts, nine.parts, 'v10 adds no part: the tools are the whole of it');
+  assert.equal(shipped.system, nine.system, "the system line is v9's");
+  assert.equal(shipped.pictureLine, nine.pictureLine, "the picture line is v9's");
+  assert.deepEqual(
+    shipped.tools.filter((tool) => tool.name !== 'glob' && tool.name !== 'grep'),
+    nine.tools,
+    'v10 adds glob and grep and changes no other tool',
+  );
+  for (const name of ['glob', 'grep']) {
+    const tool = shipped.tools.find((one) => one.name === name);
+    assert.ok(tool, `v10 offers ${name}, because the runtime executes it`);
+    assert.ok(
+      tool.description.includes('own directory'),
+      `${name} says where it is bounded, in the words the model reads`,
+    );
+  }
 
   // v6 adds one fact to the entry line and one line to the file to say it with: a
   // message that came with a picture is no longer indistinguishable from an empty one.

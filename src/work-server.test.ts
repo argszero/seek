@@ -916,7 +916,7 @@ test('a prompt that offers a tool this runtime cannot execute is refused at bind
 
   await assert.rejects(
     () => workOverServer(world.store, world.botA, serverOf(recorder), { prompt: offering }),
-    /offers 'schedule' and this runtime can only execute 'say', 'read'/,
+    /offers 'schedule' and this runtime can only execute 'say', 'read', 'glob', 'grep'/,
     'a model asked to call a tool nobody runs asks for something that cannot happen',
   );
 });
@@ -1081,7 +1081,7 @@ test('a tool this runtime does not execute is still refused at the call', async 
   const woke = await entriesOf(world);
   await assert.rejects(
     () => turnWith(world, decide, woke),
-    /the model called 'delete' and this runtime executes only 'say', 'read'/,
+    /the model called 'delete' and this runtime executes only 'say', 'read', 'glob', 'grep'/,
   );
 });
 
@@ -1094,7 +1094,7 @@ test('a roster whose work row does not allow what the prompt offers is refused a
 
   await assert.rejects(
     () => workOverServer(world.store, world.botA, serverOf(recorder), { prompt: ARTIFACT }),
-    /the turn prompt offers 'say', 'read' and the roster's work row allows nothing/,
+    /the turn prompt offers 'say', 'read', 'glob', 'grep' and the roster's work row allows nothing/,
     'the prompt and the allowlist are two files, and the bind is the only place both are open',
   );
 });
@@ -1299,4 +1299,117 @@ test('a note that comes back empty is refused, and says what it would have cost'
       }),
     /came back empty/,
   );
+});
+
+
+/** A glob call as a model writes one. */
+function globCall(pattern: string): unknown {
+  return { id: 'call_2', function: { name: 'glob', arguments: JSON.stringify({ pattern }) } };
+}
+
+/** A grep call as a model writes one. */
+function grepCall(args: { pattern: string; path?: string }): unknown {
+  return { id: 'call_3', function: { name: 'grep', arguments: JSON.stringify(args) } };
+}
+
+/**
+ * The answer the runtime handed back for the lookup that opened the turn.
+ *
+ * Read off the second request rather than off `run`'s return value, because the second
+ * request is what the model actually gets to see: a lookup whose answer never reaches it
+ * is a tool that cost a request and bought nothing.
+ */
+function lookupAnswer(recorder: { calls: Call[] }): string {
+  const chats = recorder.calls.filter((call) => call.path === '/v1/chat/completions');
+  assert.equal(chats.length, 2, 'a lookup is one request and the answer to it is another');
+  const tool =
+    (chats[1].body.messages as { role: string; content: string }[]).at(-1);
+  assert.equal(tool?.role, 'tool');
+  return String(tool?.content);
+}
+
+test('glob answers with the names this bot filed, and the answer is in the next request', async () => {
+  const world = makeWorld();
+  const filed = archiveOf(['the retry queue was at 40 yesterday']);
+  world.store.data.agents[world.agentA2].home = filed.home;
+
+  const recorder = fakeServer({
+    answers: [{ toolCalls: [globCall('archive/*.jsonl')] }, { content: 'found it' }],
+  });
+  const decide = await workOverServer(world.store, world.botA, serverOf(recorder), {
+    prompt: ARTIFACT,
+  });
+  await turnWith(world, decide, await entriesOf(world));
+
+  assert.equal(
+    lookupAnswer(recorder),
+    `archive/${filed.day}.jsonl`,
+    'the name it filed, relative to the directory the lookup is bounded to',
+  );
+});
+
+test('grep names the file and the line a word is on', async () => {
+  const world = makeWorld();
+  const filed = archiveOf(['the retry queue was at 40 yesterday', 'nobody has looked since']);
+  world.store.data.agents[world.agentA2].home = filed.home;
+
+  const recorder = fakeServer({
+    answers: [
+      { toolCalls: [grepCall({ pattern: 'nobody has looked' })] },
+      { content: 'the second line' },
+    ],
+  });
+  const decide = await workOverServer(world.store, world.botA, serverOf(recorder), {
+    prompt: ARTIFACT,
+  });
+  await turnWith(world, decide, await entriesOf(world));
+
+  const answer = lookupAnswer(recorder);
+  assert.match(
+    answer,
+    new RegExp(`^archive/${filed.day}\\.jsonl:2: `),
+    'where it is: the file, and the line inside it',
+  );
+  assert.ok(answer.includes('nobody has looked since'), 'and the line itself');
+  assert.equal(answer.split('\n').length, 1, 'one line matched, so one line comes back');
+});
+
+test('a lookup that names a place outside the bot own directory is answered in words', async () => {
+  const world = makeWorld();
+  const filed = archiveOf(['the retry queue was at 40 yesterday']);
+  world.store.data.agents[world.agentA2].home = filed.home;
+
+  const recorder = fakeServer({
+    answers: [
+      { toolCalls: [grepCall({ pattern: 'root', path: '../../etc' })] },
+      { content: 'that is outside' },
+    ],
+  });
+  const decide = await workOverServer(world.store, world.botA, serverOf(recorder), {
+    prompt: ARTIFACT,
+  });
+  const record = await turnWith(world, decide, await entriesOf(world));
+
+  assert.equal(record.produced.length, 0, 'a refused lookup is not a reason to end the turn');
+  const answer = lookupAnswer(recorder);
+  assert.match(answer, /can only look inside its own directory/, 'the bound, in words');
+  assert.ok(answer.includes('"../../etc"'), 'and the name it would not resolve');
+});
+
+test('a glob that matches nothing answers with what is there instead of nothing', async () => {
+  const world = makeWorld();
+  const filed = archiveOf(['the retry queue was at 40 yesterday']);
+  world.store.data.agents[world.agentA2].home = filed.home;
+
+  const recorder = fakeServer({
+    answers: [{ toolCalls: [globCall('notes/*.txt')] }, { content: 'no notes then' }],
+  });
+  const decide = await workOverServer(world.store, world.botA, serverOf(recorder), {
+    prompt: ARTIFACT,
+  });
+  await turnWith(world, decide, await entriesOf(world));
+
+  const answer = lookupAnswer(recorder);
+  assert.match(answer, /nothing in this bot's own directory matches "notes\/\*\.txt"/);
+  assert.ok(answer.includes(`archive/${filed.day}.jsonl`), 'and what it does have');
 });

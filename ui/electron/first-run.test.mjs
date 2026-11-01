@@ -103,7 +103,7 @@ test('a directory with nothing in it opens on a room whose bot answers', async (
       rows.map((row) => [row.role, row.tools]),
       [
         ['watch', []],
-        ['work', ['say', 'read']],
+        ['work', ['say', 'read', 'glob', 'grep']],
       ],
       'a watch half that cannot write, and a work half that can speak and look back',
     )

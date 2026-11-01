@@ -752,7 +752,7 @@ export interface WorkValues {
 /**
  * The shipped turn artifact's location, beside this module.
  *
- * `work-v9.json` ships; `work-v1.json` through `work-v8.json` stay beside it. A prompt is
+ * `work-v10.json` ships; `work-v1.json` through `work-v9.json` stay beside it. A prompt is
  * versioned rather than edited in place, because `calibration/work/` measured v1 and a
  * record that quotes a prompt the tree has changed describes a run nobody can re-read
  * — `work-calibration.test.ts` holds that pair together. What v2 added is the two parts
@@ -783,9 +783,18 @@ export interface WorkValues {
  * in one room is asked the v8 text byte for byte, which `prompts.test.ts` checks against
  * v8 itself. No other part of the file moves, and no tool is added: the index is a list
  * of what it already knows, not a second way to look something up.
+ *
+ * What v10 adds is two ways to look through the files the bot filed. v9 told a turn where
+ * its archive is and gave it `read(day)` to open one; what it could not do was find a name
+ * in it, or find which day a word was said on. `glob(pattern)` and `grep(pattern, path?)`
+ * are both in the registry `docs/host-rulings.md`, "The tools" names — and both are bounded
+ * to the agent's own home, which is the bound `read` already had, so neither is a new surface
+ * a bot can reach the machine through. No part moves and neither existing tool changes: a
+ * tool's description is prompt text, so the words about the two are in their own entries and
+ * nowhere else.
  */
 export function shippedWorkPromptPath(): URL {
-  return new URL('./prompts/work-v9.json', import.meta.url);
+  return new URL('./prompts/work-v10.json', import.meta.url);
 }
 
 /**
