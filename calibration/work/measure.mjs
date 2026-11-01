@@ -45,7 +45,7 @@ const values = (entry) => ({
   description: 'the one who watches the nightly batch',
   room: ROOM,
   roster: 'watch (no tools), work (say,read)',
-  // Filled, not left out: `work-v9`'s archive part is rendered on every turn, and a row
+  // Filled, not left out: `work-v10`'s archive part is rendered on every turn, and a row
   // measured with `{archive}` in it would be a reading of a prompt no bot is ever given.
   archive: '/tmp/seek/agents/work/archive (days: 2026-10-30)',
   entries: [{ sender: '邵安清', text: entry }],

@@ -129,9 +129,10 @@ agents:
     role: work
     # \`say\` is the only way into a room (checklist line 14), so a work agent without it
     # could not answer at all; \`read\` is how it goes back to what a note folded away
-    # (\`archive.ts\`, and \`docs/host-rulings.md\` "The observation box"). A row that allows
-    # less than the shipped prompt offers is refused when the prompt is bound to a server.
-    tools: [say, read]
+    # (\`archive.ts\`, and \`docs/host-rulings.md\` "The observation box"). \`glob\` and \`grep\` answer
+    # what that archive holds rather than one day of it. A row that allows less than
+    # the shipped prompt offers is refused when the prompt is bound to a server.
+    tools: [say, read, glob, grep]
 `
 
 /**
@@ -1130,9 +1131,10 @@ async function addMember(host, input) {
  *
  * **The two rows are the shipped ones**, `watch` and `work`, in the same order and with the
  * same tools a first run writes (`FIRST_RUN_ROSTER`): the half that decides cannot write and
- * calls nothing, and the half that answers has `say` — the only way into a room — and `read`,
- * which is how it goes back to what a note folded away. A bot with one row is a bot that
- * either never decides or can never speak.
+ * calls nothing, and the half that answers has `say` — the only way into a room — `read`,
+ * which is how it goes back to what a note folded away, and `glob` and `grep`, which find a
+ * file or a word in what it filed. A bot with one row is a bot that either never decides or
+ * can never speak.
  */
 function rowsForNewBot(botId) {
   return (
@@ -1141,7 +1143,7 @@ function rowsForNewBot(botId) {
     '    tools: []\n' +
     `  - bot: ${botId}\n` +
     '    role: work\n' +
-    '    tools: [say, read]\n'
+    '    tools: [say, read, glob, grep]\n'
   )
 }
 

@@ -49,6 +49,8 @@
  * executed in the order the model asked for them.
  */
 
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { archiveDays, archivePlaceOf, readArchiveDay } from './archive.ts';
 import { agentTurnsIn } from './chain.ts';
 import type { AgentIdentity } from './identity.ts';
@@ -93,13 +95,24 @@ const ROOM_SAMPLE = 'oc_0000000000000000';
 /**
  * What this seam can execute, by the name the artifact offers.
  *
- * Two, and the second is the one the ruling asks for: `docs/host-rulings.md`, "The
- * observation box" — the uncompacted content "is archived by day", the model is told
- * where, and it "may go and read it". A tool named in the artifact and absent here is
- * refused at bind (§ below), so this set and `work-v9.json` are held against each other
- * before the first turn.
+ * **The set is the ruling's list, not a vocabulary invented here.**
+ * `docs/host-rulings.md`, "The tools": the work agent's tools are the kernel's registry —
+ * `bash / read / write / edit / glob / grep / subagent / submit_rant / boss` — and which
+ * of them an agent may call is ordinary per-agent configuration. What ships so far is the
+ * half that can neither change anything nor reach past the bot's own directory: the one
+ * way a turn speaks (`say`), and three ways it looks. `read` is "The observation box" —
+ * the uncompacted content "is archived by day", the model is told where, and it "may go
+ * and read it". `glob` and `grep` are the registry's own two: what is filed, and which of
+ * those files holds a word.
+ *
+ * **`bash`, `write` and `edit` are deliberately absent**, and the absence is the reason
+ * the bound below matters: each of the three changes something or reaches the machine,
+ * which is a decision larger than a tool, so what ships are the file tools that only read.
+ *
+ * A tool named in the artifact and absent here is refused at bind (§ below), so this set
+ * and `work-v10.json` are held against each other before the first turn.
  */
-const EXECUTABLE = new Set(['say', 'read']);
+const EXECUTABLE = new Set(['say', 'read', 'glob', 'grep']);
 
 /**
  * How many times one turn may look something up before it has to answer.
@@ -377,9 +390,13 @@ function run(store: SeekStore, context: TurnContext, call: ToolCall): string | u
     throw new Error(`the model called ${call.name} with ${call.arguments}, which names no arguments`);
   }
 
-  // `read` answers with words and answers nothing else: it posts no message, so it is
-  // the one call whose result is handed back to the model rather than into a room.
+  // The lookups answer with words and answer nothing else: none of them posts a message, so
+  // they are the calls whose result is handed back to the model rather than into a room.
   if (call.name === 'read') return look(store, context, parsed as { day?: unknown });
+  if (call.name === 'glob') return globbed(store, context, parsed as { pattern?: unknown });
+  if (call.name === 'grep') {
+    return grepped(store, context, parsed as { pattern?: unknown; path?: unknown });
+  }
 
   const args = parsed as { room?: unknown; text?: unknown; mentions?: unknown };
   if (typeof args.room !== 'string' || typeof args.text !== 'string') {
@@ -460,6 +477,204 @@ function look(store: SeekStore, context: TurnContext, args: { day?: unknown }): 
       ? 'Nothing has been filed at all yet: a day is written when a note folds a room\'s ' +
         'messages away, and no note has been written for it so far.'
       : `The days it has are ${days.join(', ')}.`)
+  );
+}
+
+/**
+ * `glob(pattern)` and `grep(pattern, path?)`: what a bot can find in the files it filed.
+ *
+ * **The bound is the agent's own home, and it is the bound `read` already had.** The
+ * ruling hands the work agent the kernel's registry, and a file tool with the whole
+ * machine behind it is a different thing from one that reads its own notes: every name
+ * here is taken relative to `<home>`, and one that can leave it is refused in words so
+ * the model can correct itself rather than lose the turn over it. Nothing here writes,
+ * and nothing here is a surface `read` did not already open.
+ *
+ * **Why both, when `read` already hands back a day.** A bot that knows a number was
+ * quoted but not which day has one move without these: read day after day until one of
+ * them has it. `glob` answers *what is there* and `grep` answers *where this word is*,
+ * which is one request where the alternative is a dozen — and each of the dozen carries
+ * the whole box again.
+ */
+
+/** Where every file lookup is bounded: the agent's own home. */
+function homeOf(store: SeekStore, context: TurnContext): string {
+  return store.data.agents[context.agentId]?.home ?? '';
+}
+
+/**
+ * The refusal a name earns when it leaves the bot's own directory, or `null` when it does not.
+ *
+ * A name that is absolute or that climbs is not resolved at all: the files a bot has are
+ * the ones that were filed under its home, so a name reaching outside it asks about a
+ * file this bot was never given, and the answer would be about somebody else's work.
+ */
+function outsideOf(name: string): string | null {
+  if (!name.startsWith('/') && !name.split('/').includes('..')) return null;
+  return (
+    `this bot can only look inside its own directory, and ${JSON.stringify(name)} names ` +
+    'somewhere outside it. Nothing is readable here but the files this bot filed itself: ' +
+    'ask again with a name relative to its own directory, such as archive.'
+  );
+}
+
+/** The files under one directory, named relative to it, sorted, up to a bound. */
+function filesUnder(home: string, limit: number): string[] {
+  const found: string[] = [];
+  const walk = (dir: string, prefix: string): void => {
+    if (found.length >= limit) return;
+    let rows;
+    try {
+      rows = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    rows.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    for (const row of rows) {
+      if (found.length >= limit) return;
+      const name = prefix === '' ? row.name : `${prefix}/${row.name}`;
+      if (row.isDirectory()) walk(join(dir, row.name), name);
+      else if (row.isFile()) found.push(name);
+    }
+  };
+  if (home !== '') walk(home, '');
+  return found;
+}
+
+/** A glob pattern as a regular expression over names relative to the bot's home. */
+function matcherFor(pattern: string): RegExp {
+  let out = '';
+  for (let index = 0; index < pattern.length; index += 1) {
+    const char = pattern[index];
+    if (char === '*') {
+      if (pattern[index + 1] === '*') {
+        // `**` crosses directories, and a leading `**/` may match none of them.
+        const crosses = pattern[index + 2] === '/';
+        out += crosses ? '(?:.*/)?' : '.*';
+        index += crosses ? 2 : 1;
+      } else {
+        out += '[^/]*';
+      }
+      continue;
+    }
+    if (char === '?') {
+      out += '[^/]';
+      continue;
+    }
+    out += char.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+  return new RegExp(`^${out}$`);
+}
+
+/** What one answer may spend, in bytes — a look goes into a request carrying the whole box. */
+const LOOK_ANSWER_LIMIT = 8 * 1024;
+
+/** How many files one walk collects before it stops looking. */
+const LOOK_FILES_LIMIT = 500;
+
+/** How much of one line a match quotes. */
+const GREP_LINE_CHARS = 240;
+
+/**
+ * The lines that fit, and a plain count of the ones that did not.
+ *
+ * A silently shortened list reads as a complete one, which is the rule `archive.ts` states
+ * for a day and the reason its count goes first rather than last.
+ */
+function withinLimit(lines: string[], empty: string): string {
+  const kept: string[] = [];
+  let spent = 0;
+  for (const line of lines) {
+    const size = Buffer.byteLength(line, 'utf8') + 1;
+    if (kept.length > 0 && spent + size > LOOK_ANSWER_LIMIT) break;
+    kept.push(line);
+    spent += size;
+  }
+  if (kept.length === 0) return empty;
+  if (kept.length === lines.length) return kept.join('\n');
+  return [`showing=${kept.length} of ${lines.length}`, ...kept].join('\n');
+}
+
+function globbed(store: SeekStore, context: TurnContext, args: { pattern?: unknown }): string {
+  const pattern = typeof args.pattern === 'string' ? args.pattern.trim() : '';
+  if (pattern === '') {
+    throw new Error(
+      'the model called glob with no pattern: the tool declares one, and a glob with ' +
+        'nothing to match is a request for every file this bot has',
+    );
+  }
+  const outside = outsideOf(pattern);
+  if (outside !== null) return outside;
+
+  const home = homeOf(store, context);
+  const matcher = matcherFor(pattern);
+  const files = filesUnder(home, LOOK_FILES_LIMIT);
+  return withinLimit(
+    files.filter((name) => matcher.test(name)),
+    `nothing in this bot's own directory matches ${JSON.stringify(pattern)}. ` +
+      (files.length === 0
+        ? "It has filed nothing yet: a file is written when a note folds a room's messages " +
+          'away, and no note has been written for it so far.'
+        : `What it has is ${files.join(', ')}.`),
+  );
+}
+
+function grepped(
+  store: SeekStore,
+  context: TurnContext,
+  args: { pattern?: unknown; path?: unknown },
+): string {
+  const source = typeof args.pattern === 'string' ? args.pattern : '';
+  if (source === '') {
+    throw new Error(
+      'the model called grep with no pattern: the tool declares one, and a search for ' +
+        "nothing answers with every line in this bot's files",
+    );
+  }
+  let matcher: RegExp;
+  try {
+    matcher = new RegExp(source);
+  } catch (error) {
+    throw new Error(
+      `the model called grep with pattern=${JSON.stringify(args.pattern)}, which is not a ` +
+        `regular expression (${(error as Error).message}): the tool declares one, and a ` +
+        'pattern this runtime cannot compile is not one it may answer with a guess',
+    );
+  }
+  const where = typeof args.path === 'string' ? args.path.trim() : '';
+  if (where !== '') {
+    const outside = outsideOf(where);
+    if (outside !== null) return outside;
+  }
+
+  const home = homeOf(store, context);
+  const all = filesUnder(home, LOOK_FILES_LIMIT);
+  const dir = where.replace(/\/+$/, '');
+  const searched =
+    where === '' ? all : all.filter((name) => name === dir || name.startsWith(`${dir}/`));
+
+  const matches: string[] = [];
+  for (const name of searched) {
+    let text: string;
+    try {
+      text = readFileSync(join(home, name), 'utf8');
+    } catch {
+      continue;
+    }
+    const rows = text.split('\n');
+    for (let index = 0; index < rows.length; index += 1) {
+      const row = rows[index];
+      if (row.trim() === '' || !matcher.test(row)) continue;
+      const cut = row.length <= GREP_LINE_CHARS ? row : `${row.slice(0, GREP_LINE_CHARS)}…`;
+      matches.push(`${name}:${index + 1}: ${cut}`);
+    }
+  }
+
+  const place = where === '' ? "this bot's own directory" : where;
+  return withinLimit(
+    matches,
+    `nothing in ${place} matches ${JSON.stringify(source)}` +
+      (searched.length === 0 ? ': there is no file there.' : '.'),
   );
 }
 
