@@ -698,6 +698,23 @@ export interface WorkValues {
    */
   archive: string;
   /**
+   * The index of the notes this bot wrote about rooms other than the one it is in now.
+   *
+   * The third of the three things `docs/host-rulings.md` hands a turn by default —
+   * *"the latest compaction, the memory index and every observation after the latest
+   * compaction"*. The compaction is `summary` and the observations are `entries`; this
+   * is what was missing.
+   *
+   * **The note for the room being addressed is not in it.** That note is `summary`
+   * above, and a bot woken in the room it is about would otherwise read the same
+   * conclusion twice, which reads as emphasis rather than as one fact.
+   *
+   * Absent rather than `''` when there is nothing to index, for the reason `others` is:
+   * a bot that has only ever worked in one room is not told about a list of notes it
+   * does not have.
+   */
+  memories?: string;
+  /**
    * How many bot messages in a row this room has had without the person — absent until
    * the room has been going long enough to be told.
    *
@@ -735,7 +752,7 @@ export interface WorkValues {
 /**
  * The shipped turn artifact's location, beside this module.
  *
- * `work-v8.json` ships; `work-v1.json` through `work-v7.json` stay beside it. A prompt is
+ * `work-v9.json` ships; `work-v1.json` through `work-v8.json` stay beside it. A prompt is
  * versioned rather than edited in place, because `calibration/work/` measured v1 and a
  * record that quotes a prompt the tree has changed describes a run nobody can re-read
  * — `work-calibration.test.ts` holds that pair together. What v2 added is the two parts
@@ -756,9 +773,19 @@ export interface WorkValues {
  * archived by day, its place is told to the model, and the model may go and read it. So
  * v8 has one new part saying where the archive is (`{archive}`, `archive.ts`) and one new
  * tool, `read(day)`, and no other part of the file moves.
+ *
+ * What v9 adds is the third thing `docs/host-rulings.md` hands a turn by default — *"the
+ * latest compaction, the memory index and every observation after the latest
+ * compaction"*. The compaction is v3's `{summary}` and the observations are v5's entry
+ * lines; the index was the one of the three with no site. It is `{memories}`, one line
+ * per note this bot wrote in a room other than the one it is being woken in — the note
+ * for *this* room is the `{summary}` part above it, and a bot that has only ever worked
+ * in one room is asked the v8 text byte for byte, which `prompts.test.ts` checks against
+ * v8 itself. No other part of the file moves, and no tool is added: the index is a list
+ * of what it already knows, not a second way to look something up.
  */
 export function shippedWorkPromptPath(): URL {
-  return new URL('./prompts/work-v8.json', import.meta.url);
+  return new URL('./prompts/work-v9.json', import.meta.url);
 }
 
 /**
@@ -825,6 +852,7 @@ export function assembleWorkPrompt(
     roster: values.roster,
     summary: values.summary,
     archive: values.archive,
+    memories: values.memories ?? '',
     others: values.others ?? '',
     turns: values.turns ?? '',
   };
@@ -880,6 +908,7 @@ const WORK_FACTS = [
   'roster',
   'summary',
   'archive',
+  'memories',
   'others',
   'turns',
 ] as const;
@@ -898,12 +927,20 @@ function isOptionalFact(name: unknown): name is OptionalFact {
 }
 
 /**
- * True for a placeholder the prompt may have to leave out: the card's four, and the
- * room's note — a room nothing has been compacted in has no note, and quoting a blank
- * after a colon is the same defect as quoting an empty position.
+ * True for a placeholder the prompt may have to leave out: the card's four; the room's
+ * note, since a room nothing has been compacted in has no note; the notes it wrote about
+ * other rooms, since a bot that has worked in one room has none; the company it keeps in
+ * this room; and how long the room has been going. Quoting a blank after a colon is the
+ * same defect as quoting an empty position.
  */
 function isSkippable(name: unknown): boolean {
-  return name === 'summary' || name === 'others' || name === 'turns' || isOptionalFact(name);
+  return (
+    name === 'summary' ||
+    name === 'memories' ||
+    name === 'others' ||
+    name === 'turns' ||
+    isOptionalFact(name)
+  );
 }
 
 /**

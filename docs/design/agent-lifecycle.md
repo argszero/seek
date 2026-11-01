@@ -246,8 +246,9 @@ the bot's loop, per tick:
   │
   └ Stage 2 · run the work agent (expensive)
      Stage 2 calls the work agent and lets it run — one ordinary turn: full context,
-     tools, memory write at the end. What it opens with is the box: the last
-     compaction and every observation since it, whichever room each came from. The
+     tools, memory write at the end. What it opens with is the latest compaction,
+     the index of the notes it wrote in other rooms, and every observation after
+     that compaction, whichever room each came from. The
      judgement's reason is the one thing not in it — it stays on the record, where the
      work agent may go and read it if it wants to (see "what crosses the line").
      **To say anything it must call the speaking tool** — `say(room, text)`, where a
@@ -305,7 +306,7 @@ No new machinery is built for this. The outcome is not reported to the watch sid
 
 **The box is handed over; the reasoning stays on the record.**
 
-When the watch side decides to act, the work agent is woken with the bot's box — the last compaction and every observation since it, whichever room each one came from — and not the line the watch side wrote about why they mattered. It reads that box, its own history and its own memory, and decides for itself what, if anything, to say.
+When the watch side decides to act, the work agent is woken with the bot's box — the latest compaction, the index of the notes it wrote in other rooms, and every observation after that compaction, whichever room each one came from — and not the line the watch side wrote about why they mattered. It reads that box, its own history and its own memory, and decides for itself what, if anything, to say.
 
 **Why not pass the reason: the work agent would start depending on a 300 MB model's judgement without knowing it.** A reason in the context is not advice, it is a premise — the expensive model reads it as a fact about the world and builds on it. Where the watch side is wrong, the work agent would not correct it, it would amplify it, and the amplification would look like coherence.
 

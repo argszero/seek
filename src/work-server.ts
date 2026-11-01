@@ -96,7 +96,7 @@ const ROOM_SAMPLE = 'oc_0000000000000000';
  * Two, and the second is the one the ruling asks for: `docs/host-rulings.md`, "The
  * observation box" — the uncompacted content "is archived by day", the model is told
  * where, and it "may go and read it". A tool named in the artifact and absent here is
- * refused at bind (§ below), so this set and `work-v8.json` are held against each other
+ * refused at bind (§ below), so this set and `work-v9.json` are held against each other
  * before the first turn.
  */
 const EXECUTABLE = new Set(['say', 'read']);
@@ -536,6 +536,7 @@ function valuesOf(store: SeekStore, context: TurnContext): WorkValues {
     turns: context.roomId === undefined ? undefined : turnsSincePerson(store, context.roomId),
     summary: box?.summary ?? '',
     archive: archivePlaceOf(store.data.agents[context.agentId]?.home ?? ''),
+    memories: memoriesOf(store, context),
     entries: readable.map((entry) => entryOf(store, bot.name, entry)),
   };
 }
@@ -603,6 +604,83 @@ function othersOf(store: SeekStore, context: TurnContext, botId: Id): string {
       return position === '' ? name : `${name} (${position})`;
     })
     .join(', ');
+}
+
+/** How many of the bot's other notes a turn is told about, newest first. */
+const MEMORIES_IN_INDEX = 10;
+
+/** How much of a note the index quotes, in characters. */
+const MEMORY_LINE_CHARS = 120;
+
+/**
+ * The index of what this bot wrote down about the rooms it is not in right now.
+ *
+ * The third of the three things `docs/host-rulings.md` hands a turn by default — *"the
+ * latest compaction, the memory index and every observation after the latest
+ * compaction"*. Two of them were already fact: the compaction is `summary` (the box's
+ * note for this room) and the observations are the entry lines. This is the index, and
+ * what it answers is *what am I in the middle of somewhere else* — a bot woken in one
+ * room while a decision it took part in sits in another.
+ *
+ * **The room being addressed is left out on purpose.** Its note is the part above this
+ * one, quoted in full; listing it here as well would read as emphasis rather than as one
+ * fact, and it is the same sentence twice. So a bot that has only ever worked in one
+ * room has no index at all, and the part that quotes one leaves the prompt: the ruling's
+ * three things are then two, and both of them are the ones that carry content.
+ *
+ * **One line each, and a bounded one.** A note is a compaction's whole body, which is not
+ * a thing to put in a prompt beside the note for this room: what a turn gets is where
+ * each note is about, when it was written and how it starts. The list is capped and says
+ * so when it is, because a silently truncated list reads as a complete one — the failure
+ * `src/README.md` names for the box and this is the same rule one layer up.
+ *
+ * Machine-shaped rather than phrased, as `rosterOf` is: the words around a row belong to
+ * the artifact, and a key=value row does not have to be re-read when the sentence is
+ * reworded. `first=` runs to the end of the line, so the free text is last.
+ */
+function memoriesOf(store: SeekStore, context: TurnContext): string | undefined {
+  const rows = store
+    .memoriesOf(context.agentId)
+    .filter((row) => !(row.level === 'room_digest' && row.room_id === context.roomId))
+    // Newest first, and the id breaks a tie so two notes written in the same instant do
+    // not change places between two turns that read the same record.
+    .sort((a, b) => {
+      if (a.updated_at !== b.updated_at) return a.updated_at < b.updated_at ? 1 : -1;
+      return b.id.localeCompare(a.id);
+    });
+  if (rows.length === 0) return undefined;
+
+  const shown = rows.slice(0, MEMORIES_IN_INDEX);
+  const lines = shown.map((row) => {
+    const place = row.room_id === undefined ? '' : ` room=${roomNameOf(store, row.room_id)}`;
+    return `-${place} level=${row.level} at=${row.updated_at} first=${startOf(row.body)}`;
+  });
+  if (shown.length < rows.length) {
+    lines.unshift(`showing=${shown.length} of ${rows.length}, newest first`);
+  }
+  return lines.join('\n');
+}
+
+/** How the store names a room: the name somebody gave it, or its id when nobody did. */
+function roomNameOf(store: SeekStore, roomId: Id): string {
+  const name = store.data.rooms[roomId]?.name?.trim() ?? '';
+  return name === '' ? roomId : name;
+}
+
+/**
+ * How a note starts: its first line that says something, on one line and cut short.
+ *
+ * A compaction writes a paragraph, and a digest for another room is quoted for what it is
+ * about rather than for what it says. The cut is marked, because a line that stops
+ * mid-sentence without saying so reads as the whole of the note.
+ */
+function startOf(body: string): string {
+  const line = body
+    .split('\n')
+    .map((one) => one.trim())
+    .find((one) => one.length > 0) ?? '';
+  const tidy = line.replace(/\s+/g, ' ');
+  return tidy.length <= MEMORY_LINE_CHARS ? tidy : `${tidy.slice(0, MEMORY_LINE_CHARS)}…`;
 }
 
 /**

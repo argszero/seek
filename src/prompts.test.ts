@@ -408,10 +408,11 @@ function turnValues(card: {
   };
 }
 
-test('the shipped turn artifact is v8, and a picture is named on the line it came with', () => {
+test('the shipped turn artifact is v9, and a picture is named on the line it came with', () => {
   const shipped = loadWorkArtifact();
-  assert.equal(shipped.version, 'work-v8');
-  assert.match(shippedWorkPromptPath().pathname, /work-v8\.json$/);
+  assert.equal(shipped.version, 'work-v9');
+  assert.match(shippedWorkPromptPath().pathname, /work-v9\.json$/);
+  const eight = loadWorkArtifact(new URL('./prompts/work-v8.json', import.meta.url));
 
   // **What v7 is, and what it is not.** v6 said in words that a picture came and could not
   // be seen, because the turn was handed none; the turn now carries the box's pictures, so
@@ -433,25 +434,46 @@ test('the shipped turn artifact is v8, and a picture is named on the line it cam
   // Nothing else in the file moves, which is what the next four assertions are for: a
   // version bump that also reworded the room's temper would change what every bot is like,
   // not only what it can look up.
-  const archive = shipped.parts.filter((part) => part.name === 'archive');
+  const archive = eight.parts.filter((part) => part.name === 'archive');
   assert.equal(archive.length, 1, 'one part says where the archive is');
   assert.deepEqual(
-    shipped.parts.filter((part) => part.name !== 'archive'),
+    eight.parts.filter((part) => part.name !== 'archive'),
     seven.parts,
     'v8 adds the archive part and renumbers nothing else',
   );
-  assert.equal(shipped.system, seven.system, 'the system line is v7\'s');
-  assert.equal(shipped.pictureLine, seven.pictureLine, 'the picture line is v7\'s');
+  assert.equal(eight.system, seven.system, 'the system line is v7\'s');
+  assert.equal(eight.pictureLine, seven.pictureLine, 'the picture line is v7\'s');
   assert.deepEqual(
-    shipped.tools.filter((tool) => tool.name !== 'read'),
+    eight.tools.filter((tool) => tool.name !== 'read'),
     seven.tools,
     'v8 adds the read tool and changes no other',
   );
-  const read = shipped.tools.find((tool) => tool.name === 'read');
-  assert.ok(read, 'the shipped artifact offers read, because the runtime executes it');
+  const read = eight.tools.find((tool) => tool.name === 'read');
+  assert.ok(read, 'v8 offers read, because the runtime executes it');
   const day = (read.parameters as { properties?: { day?: unknown }; required?: string[] }) ?? {};
   assert.ok(day.properties?.day, 'read takes the day it is asked for');
   assert.deepEqual(day.required, ['day'], 'a read with no day asks for nothing');
+
+  // **What v9 is: the third thing a turn is handed.** `docs/host-rulings.md`, "The
+  // observation box" — *"the latest compaction, the memory index and every observation
+  // after the latest compaction"*. The compaction is v3's `{summary}`, the observations
+  // are v5's entry lines, and the index is the one of the three with no site. One part
+  // says it, and it arrives only when there is something to say: a bot that has worked
+  // in one room is asked the v8 text byte for byte, which is the last assertion here.
+  const index = shipped.parts.filter((part) => part.name === 'memories');
+  assert.equal(index.length, 1, 'one part says what this bot wrote down elsewhere');
+  assert.deepEqual(
+    shipped.parts.filter((part) => part.name !== 'memories'),
+    eight.parts,
+    'v9 adds the index part and renumbers nothing else',
+  );
+  assert.equal(shipped.system, eight.system, "the system line is v8's");
+  assert.equal(shipped.pictureLine, eight.pictureLine, "the picture line is v8's");
+  assert.deepEqual(shipped.tools, eight.tools, 'v9 adds no tool: an index is not a lookup');
+  assert.ok(
+    index[0].text.includes('{memories}'),
+    'the part quotes the fact it depends on, or it says nothing about it',
+  );
 
   // v6 adds one fact to the entry line and one line to the file to say it with: a
   // message that came with a picture is no longer indistinguishable from an empty one.
@@ -504,6 +526,22 @@ test('the shipped turn artifact is v8, and a picture is named on the line it cam
   const together = assembleWorkPrompt(shipped, { ...blank, others: '小荷, 阿岩' });
   assert.equal(alone.rest.includes('The other bots here'), false);
   assert.ok(together.rest.includes('The other bots here: 小荷, 阿岩'));
+
+  // The index, rendered both ways. With one, the bot reads the line it was given and
+  // nothing invented around it; with none, the whole prompt is v8's, so a bot that has
+  // never worked in a second room is not asked about a list it does not have.
+  const noted = assembleWorkPrompt(shipped, {
+    ...blank,
+    memories:
+      '- room=the design room level=room_digest at=2026-11-01T09:00:00.000Z ' +
+      'first=the migration is blocked on the key rotation',
+  });
+  assert.ok(noted.rest.includes('the migration is blocked on the key rotation'));
+  assert.equal(
+    alone.rest,
+    assembleWorkPrompt(eight, blank).rest,
+    'with nothing to index the bot is asked the v8 text byte for byte',
+  );
 });
 
 test('two entries a week apart do not read alike, because each line says when it arrived', () => {
