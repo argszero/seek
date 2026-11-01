@@ -38,6 +38,16 @@ const TOKENS = new Intl.NumberFormat()
 const COMPOSER_ICON = 18
 
 /**
+ * The mark the thread row carries, at the client's own size.
+ *
+ * Measured off the same screenshots on 2026-11-01: the client puts a **16px bubble before 12px
+ * words**, 6px apart, both in the caption grey. It is a constant of its own rather than
+ * `COMPOSER_ICON` because the client draws the two rows to different measurements — the
+ * composer's marks are 18 and the row's is 16.
+ */
+const THREAD_ICON = 16
+
+/**
  * The hover toolbar's four glyphs, and the emoji its square picks from.
  *
  * The paths are not drawn here and not adapted from an icon set: each one is the pixel mask
@@ -2559,6 +2569,7 @@ function Line({ message, sender, replies, inThread, onOpen, chip = false, me = n
             live replies keeps its count, because those replies are still there to read. */}
         {chip && message.chain === message.id && (!deleted || replies > 0) && (
           <button className="msg-thread" data-thread-for={message.id} onClick={() => onOpen(message)}>
+            <Icon name="thread" size={THREAD_ICON} />
             {replies > 0 ? t('ui.replies', { count: replies }) : t('ui.reply-in-thread')}
           </button>
         )}

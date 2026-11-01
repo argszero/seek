@@ -40,6 +40,17 @@ const ICONS = {
     <path d="M4.5 4.8h15a1 1 0 0 1 1 1v9.2a1 1 0 0 1-1 1H12l-3.6 3v-3H4.5a1 1 0 0 1-1-1V5.8a1 1 0 0 1 1-1Z" />,
     <path d="M7.6 8.4h8.8M7.6 11.8h5.6" />,
   ],
+  // The mark the message row puts before its way into a thread: measured off the client's own
+  // 回复话题 line on 2026-11-01, where it is a bubble with a tail and three dots in it, drawn
+  // outlined at 16px rather than filled. `topic` above is the hover toolbar's filled glyph for
+  // the same act, and the two are not interchangeable — the client draws the row's smaller mark
+  // with dots and the toolbar's with lines.
+  thread: [
+    <path d="M4.4 5.2h15.2a1.2 1.2 0 0 1 1.2 1.2v7.4a1.2 1.2 0 0 1-1.2 1.2h-6.4l-3.2 2.9v-2.9H4.4a1.2 1.2 0 0 1-1.2-1.2V6.4a1.2 1.2 0 0 1 1.2-1.2Z" />,
+    <circle cx="8.1" cy="10.2" r="1" fill="currentColor" stroke="none" />,
+    <circle cx="12" cy="10.2" r="1" fill="currentColor" stroke="none" />,
+    <circle cx="15.9" cy="10.2" r="1" fill="currentColor" stroke="none" />,
+  ],
   // The chat header's 会话信息 mark, transcribed from `icons.js` `info` — the prototype puts
   // it on the last of the three marks in the header (`renderChat()`, `data-role="chat-info"`).
   // An `i` in a ring rather than a bare letter, which is why it is a shape and not text.

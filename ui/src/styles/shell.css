@@ -1248,23 +1248,30 @@ body {
   font-size: 12px;
 }
 
-/* The thread's way in. It is a button on every message, because a thread has to be
-   startable from the message it would belong to — not only from a message that already
-   has replies. */
+/* The thread's way in, drawn the way the client draws it. Measured off Feishu's own row on
+   2026-11-01: a 16px bubble mark, then 12px words 6px after it, both in the caption grey
+   (`#646A73`) rather than in the link's blue — it is a line *about* the message and not a link
+   out of the room. It sits on the message that **roots** a chain, which is where the markup
+   puts it: a chip on every reply would draw one chain's count four times. A thread still has to
+   be startable from the message it would belong to, and the hover toolbar's topic mark is how a
+   chain that has no replies yet is begun. */
 .msg-thread {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   align-self: flex-start;
   margin-top: 2px;
   padding: 0 6px;
   border: 0;
   border-radius: var(--radius-sm);
   background: transparent;
-  color: var(--B700);
+  color: var(--text-caption);
   font: inherit;
   font-size: 12px;
   cursor: pointer;
 }
 
-.msg-thread:hover { background: var(--B50); }
+.msg-thread:hover { background: var(--fill-hover); }
 
 /* The messages of the thread on show, marked where they are in the room — so the panel
    on the right and the line it was opened from point at each other. */
