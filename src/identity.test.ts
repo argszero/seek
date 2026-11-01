@@ -61,7 +61,11 @@ test('each roster row carries its role, its home and what it may do — itself i
   assert.ok(watch, 'a bot’s other agent is part of its roster');
   assert.deepEqual(watch.tools, [], 'a watch agent that may call nothing says so');
   assert.equal(watch.self, false);
-  assert.deepEqual(self[0].tools, ['say'], 'what the work agent may do is its allowlist');
+  assert.deepEqual(
+    self[0].tools,
+    ['say', 'read'],
+    'what the work agent may do is its allowlist',
+  );
 });
 
 test('it is pushed, not stored: a renamed bot is seen renamed by an agent already there', () => {
@@ -160,12 +164,12 @@ test('the answer is a copy: rewriting what it was told cannot rewrite the store'
 
   assert.equal(world.store.data.bots[world.botA].name, 'A');
   assert.equal(world.store.data.bots[world.botA].personality, 'the words as written');
-  assert.deepEqual(world.store.data.agents[world.agentA2].tools, ['say']);
+  assert.deepEqual(world.store.data.agents[world.agentA2].tools, ['say', 'read']);
 
   // A second read is unaffected by what a caller did to the first.
   const fresh = identityFor(world.store, world.botA, world.agentA2);
   assert.equal(fresh.bot.name, 'A');
-  assert.deepEqual(fresh.roster.find((row) => row.role === 'work')?.tools, ['say']);
+  assert.deepEqual(fresh.roster.find((row) => row.role === 'work')?.tools, ['say', 'read']);
 });
 
 test('the roster it is told is this bot’s own: two bots in one store never mix', () => {

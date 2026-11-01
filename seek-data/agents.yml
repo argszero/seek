@@ -30,5 +30,7 @@ agents:
   - bot: Echo
     role: work
     # `say` is the only way into a room (checklist line 14), so a work agent
-    # without it could not answer at all.
-    tools: [say]
+    # without it could not answer at all. `read` is how it goes back to what a
+    # note already folded away (`src/archive.ts`): the ruling that gives it an
+    # archive also gives it the way to read one day of it.
+    tools: [say, read]

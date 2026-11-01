@@ -689,6 +689,15 @@ export interface WorkValues {
    */
   summary: string;
   /**
+   * Where this bot's uncompacted content is kept, as a place a model can be told.
+   *
+   * `docs/host-rulings.md`, "The observation box": what a note folds away is *"archived
+   * by day"*, *"the location is told to the model"*, and the model *"may go and read
+   * it"*. The directory and the days already in it are one value, because a place with
+   * no list of days is a place a model can name and not read.
+   */
+  archive: string;
+  /**
    * How many bot messages in a row this room has had without the person — absent until
    * the room has been going long enough to be told.
    *
@@ -726,7 +735,7 @@ export interface WorkValues {
 /**
  * The shipped turn artifact's location, beside this module.
  *
- * `work-v7.json` ships; `work-v1.json` through `work-v6.json` stay beside it. A prompt is
+ * `work-v8.json` ships; `work-v1.json` through `work-v7.json` stay beside it. A prompt is
  * versioned rather than edited in place, because `calibration/work/` measured v1 and a
  * record that quotes a prompt the tree has changed describes a run nobody can re-read
  * — `work-calibration.test.ts` holds that pair together. What v2 added is the two parts
@@ -742,10 +751,14 @@ export interface WorkValues {
  * from an entry with nothing in it. What v7 changes is that sentence alone, and it changes
  * because the fact under it changed: the turn now carries the box's pictures, so the line
  * says a picture is attached, and names the case where one is not — the same file, still
- * one `{picture}` site, still filled from the same fact (`entryOf`).
+ * one `{picture}` site, still filled from the same fact (`entryOf`). What v8 adds is the
+ * way back: `docs/host-rulings.md`, "The observation box" — the uncompacted content is
+ * archived by day, its place is told to the model, and the model may go and read it. So
+ * v8 has one new part saying where the archive is (`{archive}`, `archive.ts`) and one new
+ * tool, `read(day)`, and no other part of the file moves.
  */
 export function shippedWorkPromptPath(): URL {
-  return new URL('./prompts/work-v7.json', import.meta.url);
+  return new URL('./prompts/work-v8.json', import.meta.url);
 }
 
 /**
@@ -811,6 +824,7 @@ export function assembleWorkPrompt(
     room: values.room,
     roster: values.roster,
     summary: values.summary,
+    archive: values.archive,
     others: values.others ?? '',
     turns: values.turns ?? '',
   };
@@ -865,6 +879,7 @@ const WORK_FACTS = [
   'room',
   'roster',
   'summary',
+  'archive',
   'others',
   'turns',
 ] as const;

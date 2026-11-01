@@ -103,9 +103,9 @@ test('a directory with nothing in it opens on a room whose bot answers', async (
       rows.map((row) => [row.role, row.tools]),
       [
         ['watch', []],
-        ['work', ['say']],
+        ['work', ['say', 'read']],
       ],
-      'a watch half that cannot write, and a work half that can speak',
+      'a watch half that cannot write, and a work half that can speak and look back',
     )
 
     // And the bot holds those agents: a roster nobody applied would fail here.

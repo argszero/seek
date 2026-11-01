@@ -163,7 +163,10 @@ test('the rows appended to agents.yml name the bot by id, and the file still par
     // the whole roster refuse (`src/roster.ts`). The Echo rows a person may have edited are
     // still there: this appends, it does not rewrite.
     assert.match(text, new RegExp(`- bot: ${made.botId}\\n    role: watch\\n    tools: \\[\\]\\n`))
-    assert.match(text, new RegExp(`- bot: ${made.botId}\\n    role: work\\n    tools: \\[say\\]\\n`))
+    assert.match(
+      text,
+      new RegExp(`- bot: ${made.botId}\\n    role: work\\n    tools: \\[say, read\\]\\n`),
+    )
     assert.ok(text.includes('  - bot: Echo\n    role: watch\n'), 'the rows that were there are there')
 
     // The kernel's own reader, over the text as it now stands: no rows of ours missing, and
@@ -180,7 +183,7 @@ test('the rows appended to agents.yml name the bot by id, and the file still par
       agents.map((agent) => [agent.role, agent.tools]),
       [
         ['watch', []],
-        ['work', ['say']],
+        ['work', ['say', 'read']],
       ],
     )
   } finally {
