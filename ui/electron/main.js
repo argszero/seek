@@ -336,10 +336,18 @@ function pushChanged() {
  *   reason to be quick and every reason not to: this is where the person stops being
  *   answered in chorus. The wait is long and drawn from a range, so the room drifts apart
  *   instead of ticking.
+ *
+ * **The ambient end does not start under a minute, and that floor is measured.** Below it a
+ * bot can reach a question nobody asked it while the person is still reading the ones that
+ * were: the answers land close enough together to be chorus again, which is the whole thing
+ * the wait exists to prevent. The reading, on 2026-11-01: one question, five bots in the
+ * room, nobody named — the answers came at 62.5 s, 64.0 s, 70.5 s, 96.0 s and 99.0 s. A
+ * floor of 45 s allowed draws the run never happened to take, so the floor moved to where
+ * the room already stood.
  */
 const WAKE_SECONDS = {
   addressed: [3, 25],
-  ambient: [45, 120],
+  ambient: [60, 120],
 }
 
 function waitIn([low, high]) {
