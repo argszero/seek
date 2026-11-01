@@ -82,6 +82,10 @@
      room reads `#FCFCFC`. One shade apart, and the shade is the difference between "this
      room is blank" and "no room is open". */
   --bg-empty: #f8f9fa;
+  /* The box a message's own words sit in. Measured off the client's screenshot at
+     `#EBECED`, one shade darker than the canvas under it — the shade is what makes a
+     message read as something somebody said rather than as text on a page. */
+  --fill-msg: #ebeced;
   --bg-float: var(--N00);
   --bg-float-overlay: var(--N50);
   --bg-float-push: rgba(255, 255, 255, 0.8);
@@ -201,6 +205,9 @@
   /* The dark client was not measured, so the empty column keeps the surface the columns
      already have rather than a shade nobody read off a screen. */
   --bg-empty: var(--N50);
+  /* The dark client was not measured, so the message box takes the palette's own overlay
+     surface rather than a shade nobody read off a screen. */
+  --fill-msg: var(--N100);
   --bg-float: var(--N100);
   --bg-float-overlay: var(--N200);
   --bg-float-push: rgba(41, 41, 41, 0.8);

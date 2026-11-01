@@ -529,6 +529,27 @@ body {
 
 .msg { display: flex; gap: 10px; padding: 6px 0; }
 
+/* The box a message sits in. Measured off the client's own screenshot: the fill is `#EBECED`,
+   the words are 15px in from either side and 8px down from the top, and the box is as wide as
+   its own content rather than as wide as the column — a message of six words gets a box of six
+   words. `align-self` is what does that: `.msg-body` is a column, so a bubble left to stretch
+   would be a full-width band on every row.
+
+   The corner radius is `--radius-md`, the one every other card here carries, and it is the one
+   number in this rule that was not read off the client: the sampled corners of both boxes in
+   that screenshot are square at 10× magnification, but that screenshot is a bot feed rather
+   than a room of people, so its shape was not carried over into ours. */
+.msg-bubble {
+  display: flex;
+  flex-direction: column;
+  align-self: flex-start;
+  min-width: 0;
+  max-width: 100%;
+  padding: 8px 15px;
+  border-radius: var(--radius-md);
+  background: var(--fill-msg);
+}
+
 .msg-av {
   width: 32px;
   height: 32px;

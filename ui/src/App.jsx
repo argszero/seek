@@ -2470,6 +2470,12 @@ function Line({ message, sender, replies, inThread, onOpen, chip = false, me = n
           {name}
           {sender?.bot && <span className="msg-bot">{t('ui.chat.bot')}</span>}
         </span>
+        {/* Everything the message itself carries, on the box the client draws it on
+            (`shell.css`, `.msg-bubble`): the client puts a name above a grey box and leaves the
+            name on the canvas, so the box opens after the name and closes before the lines that
+            are *about* the message rather than part of it — who read it and said nothing, and
+            the way into its thread. */}
+        <span className="msg-bubble">
         {/* Where a forward came from. Drawn above the words rather than inside them: the
             kernel keeps `forwarded_from` as its own field (`src/types.ts`), and the words
             below it are the original's — copied, not retyped. */}
@@ -2535,6 +2541,7 @@ function Line({ message, sender, replies, inThread, onOpen, chip = false, me = n
         {/* Who read this and said nothing — the snapshot's own list, never a count this file
             worked out: a bot is on it because the kernel wrote `ignore` on the entry it
             judged. See `SilenceLine` for what the sentence is and is not. */}
+        </span>
         {message.silent.length > 0 && <SilenceLine who={message.silent} />}
         {/* The thread's way in belongs to the message that **roots** the chain: the count is the
             chain's, so a chip on every reply would be one number drawn four times (Feishu draws
