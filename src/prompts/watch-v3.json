@@ -44,6 +44,6 @@
  },
  "operatingPoint": {
   "threshold": 0.6,
-  "measuredOn": "calibration/set4-d1.json: 24 of 24 at 0.600, read through the kernel's own watchAs() over /v1/systemone on d1-2B-Q8_0 — the lowest `act` is 0.625 and the highest of everything else is 0.582, so the two classes are separated at this cut rather than mixed through it. The same record holds a four-bot matrix: the bot that was named reads 0.88 / 0.95 and the three that were not read 0.26-0.41, and a room that names nobody reads under 0.58 for all four (16 of 16). Both readings need the `others` line: without it the lowest `act` fell to 0.823 and the highest `ignore` rose to 0.810, which is one distribution rather than two."
+  "measuredOn": "calibration/set4-d1.json, as it read when this artifact shipped: 24 of 24 at 0.600, the lowest `act` at 0.625 and the highest of everything else at 0.582. The record file now holds the re-read taken under watch-v4 on the same twenty-four cases — 23 of 24 at the same cut, lowest `act` 0.740, highest of everything else 0.611 — because the prompt changed in between: an entry line carries the room it came from. watch-v3 is kept as the prompt that measurement was taken on, not as the one that ships."
  }
 }

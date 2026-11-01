@@ -359,7 +359,7 @@ function decideOver(bound) {
  * A turn that says nothing is a legal turn — woken, silent, on the ledger. A note that
  * says nothing is not: it would consume the observations it was written from and leave the
  * bot knowing less than before, which is why `digestOver` throws on an empty answer. The
- * throw reaches `RoomCompactor`, which records the failure, backs off until the delta grows
+ * throw reaches `Compactor`, which records the failure, backs off until the delta grows
  * and writes nothing — and no note is better than an empty one.
  */
 function summariseOver(writers) {
@@ -390,7 +390,7 @@ const WORK_MODEL_WITHOUT_SERVER =
  *
  * The host settled it in these words on 2026-10-28 — 「超过20条新消息，就压缩」 — and it is a
  * count and not an age, because what has to be bounded is how much a later judgement is
- * asked to read. `RoomCompactor.crosses` fires at `>=`, so the twentieth pending observation
+ * asked to read. `Compactor.crosses` fires at `>=`, so the twentieth pending observation
  * is the one that starts a note, which is what "more than twenty" means when the twentieth
  * has already arrived.
  *
@@ -696,7 +696,7 @@ async function openHost(storeFile, options = {}) {
   // **The note is the one line a room gets.** The host settled it in these words on
   // 2026-10-28 — 「超过20条新消息，就压缩」 — and it is a count rather than an age, because
   // what the box has to bound is how much a later judgement can be asked to read. Without a
-  // writer the line is inert: `RoomCompactor.due()` answers false before it counts anything,
+  // writer the line is inert: `Compactor.due()` answers false before it counts anything,
   // so a bot with no model still fills its box and still reads it.
   const kernel = new mods.kernel.Kernel(store, {
     ...(stage2.decide === undefined ? {} : { decide: stage2.decide }),

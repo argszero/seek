@@ -316,7 +316,7 @@ test('the run settles the compaction it started before it reports', async () => 
     const reloaded = await SeekStore.load(path);
     const digest = reloaded
       .memoriesOf(run.scene.work)
-      .filter((row) => row.level === 'room_digest');
+      .filter((row) => row.level === 'box_digest');
     assert.equal(digest.length, 1, 'the summary was written before the run returned');
     assert.equal(digest[0].body, 'the room so far');
   } finally {

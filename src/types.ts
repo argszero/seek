@@ -576,9 +576,9 @@ export interface Turn extends TokenUsage {
   produced: Id[];
 }
 
-export type MemoryLevel = 'diary' | 'room_digest' | 'session';
+export type MemoryLevel = 'diary' | 'box_digest' | 'session';
 
-/** Agent diary, room digest, session memory. One store per agent. */
+/** Agent diary, the box's note, session memory. One store per agent. */
 export interface Memory {
   id: Id;
   agent_id: Id;
@@ -586,7 +586,7 @@ export interface Memory {
   room_id?: Id;
   body: string;
   /**
-   * The last observation a room digest accounts for.
+   * The last observation the box's note accounts for.
    *
    * It is written in the same operation as `body` (`agent-lifecycle.md` §3), and
    * the delta a judgement reads is derived from it: the queue entries after this

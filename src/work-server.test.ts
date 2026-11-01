@@ -301,7 +301,7 @@ test('the prompt carries the entry and not the watch side’s verdict', async ()
   const asked = messages.map((message) => message.content).join('\n');
 
   assert.match(asked, /the batch failed/, 'the entry itself is handed over');
-  assert.match(asked, /me: the batch failed/, 'and it is named by who said it');
+  assert.match(asked, /me \[room\]: the batch failed/, 'and it is named by who said it, in the room it came from');
   assert.doesNotMatch(asked, /the room is asking for help/, 'the reason stayed behind');
   assert.equal(
     messages[0].role,
@@ -351,8 +351,8 @@ test('the request says when each entry arrived, so a week apart does not read as
       .join('\n')
       .split('\n')
       .find((line) => line.includes(said));
-  assert.equal(lineOf('the deploy is red'), `[${week}] me: the deploy is red`);
-  assert.equal(lineOf('it is green again'), `[${today}] me: it is green again`);
+  assert.equal(lineOf('the deploy is red'), `[${week}] me [room]: the deploy is red`);
+  assert.equal(lineOf('it is green again'), `[${today}] me [room]: it is green again`);
 });
 
 /**
@@ -437,11 +437,15 @@ test('a picture reaches the turn as an image, and the words still say which line
   assert.ok(text.includes(pictureLine.trim()), 'the body says a picture came with a message');
   const said = text.split('\n').find((line) => line.includes(pictureLine.trim()));
   assert.ok(said, 'the picture has a line of its own');
-  assert.match(said, /^\[\S+\] me: +\S/, 'nothing was consolidated away, and the line is not blank');
+  assert.match(
+    said,
+    /^\[\S+\] me \[[^\]]+\]: +\S/,
+    'nothing was consolidated away, and the line is not blank',
+  );
   assert.equal(JSON.stringify(chat.body).includes(media.key), false, 'the blob key is not part of what the model reads');
 
   const plain = text.split('\n').find((line) => line.includes('and this one is only words'));
-  assert.match(String(plain), /^\[\S+\] me: and this one is only words$/);
+  assert.match(String(plain), /^\[\S+\] me \[[^\]]+\]: and this one is only words$/);
 });
 
 /**
@@ -545,8 +549,8 @@ test('the note is written from when each message landed, and from the picture th
 
   // Both moments, and not the same shape twice: a note that cannot tell them apart is
   // the note every later turn reads instead of the messages themselves.
-  assert.equal(lineOf('the deploy is red'), `- [${week}] me: the deploy is red`);
-  assert.equal(lineOf('it is green again'), `- [${today}] me: it is green again`);
+  assert.equal(lineOf('the deploy is red'), `- [${week}] me [room]: the deploy is red`);
+  assert.equal(lineOf('it is green again'), `- [${today}] me [room]: it is green again`);
 
   // The picture, in the same three readings #176 took of a turn: the body says one came,
   // the line it says so on is not blank, and the blob's key stayed home.
@@ -556,7 +560,7 @@ test('the note is written from when each message landed, and from the picture th
   const said = lines.find((line) => line.includes(pictureLine.trim()));
   assert.match(
     String(said),
-    /^- \[\S+\] me: +\S/,
+    /^- \[\S+\] me \[[^\]]+\]: +\S/,
     'nothing was consolidated away, and the line is not blank',
   );
   assert.equal(asked.includes(media.key), false, 'the blob key is not part of what the model reads');
@@ -612,7 +616,7 @@ test('what the model reads is the room’s box: the note, and the message before
   world.store.memoriesOf(world.agentA2).push({
     id: 'mm_note',
     agent_id: world.agentA2,
-    level: 'room_digest',
+    level: 'box_digest',
     room_id: world.room,
     body: 'the deploy has been red since last night, cause unknown',
     updated_at: '2026-10-24T00:10:00.000Z',
@@ -639,33 +643,25 @@ test('what the model reads is the room’s box: the note, and the message before
   );
 });
 
-test('what the bot wrote in other rooms reaches the turn, and this room’s note is not said twice', async () => {
+test('the note is the bot’s, so what it wrote in one room reaches a turn in another', async () => {
   const world = makeWorld();
-  const elsewhere = 'oc_the_design_room';
-  world.store.data.rooms[elsewhere] = {
-    id: elsewhere,
+  world.store.data.rooms['oc_the_design_room'] = {
+    id: 'oc_the_design_room',
     name: 'the design room',
     chat_mode: 'group',
     created_at: '2026-10-20T00:00:00.000Z',
   };
-  world.store.memoriesOf(world.agentA2).push(
-    {
-      id: 'mm_here',
-      agent_id: world.agentA2,
-      level: 'room_digest',
-      room_id: world.room,
-      body: 'the deploy has been red since last night, cause unknown',
-      updated_at: '2026-10-24T00:10:00.000Z',
-    },
-    {
-      id: 'mm_there',
-      agent_id: world.agentA2,
-      level: 'room_digest',
-      room_id: elsewhere,
-      body: 'the migration is blocked on the key rotation\n\nnobody has asked ops yet',
-      updated_at: '2026-10-24T00:20:00.000Z',
-    },
-  );
+  // One note, and it belongs to the bot rather than to a room (`compact.ts`): a compaction
+  // in the design room writes the row this turn in the other room reads. A note per room
+  // would leave this turn reading a room's own note and nothing else, which is the box the
+  // ruling took away.
+  world.store.memoriesOf(world.agentA2).push({
+    id: 'mm_there',
+    agent_id: world.agentA2,
+    level: 'box_digest',
+    body: 'the migration is blocked on the key rotation',
+    updated_at: '2026-10-24T00:20:00.000Z',
+  });
 
   const recorder = fakeServer({ content: 'nothing worth adding' });
   const decide = await workOverServer(world.store, world.botA, serverOf(recorder), {
@@ -679,85 +675,18 @@ test('what the bot wrote in other rooms reaches the turn, and this room’s note
     .map((message) => message.content)
     .join('\n');
 
-  // The ruling's third item, from the store to the request body: `docs/host-rulings.md`,
-  // "The observation box" — *"the latest compaction, the memory index and every
-  // observation after the latest compaction"*. The other room's note is one line: where
-  // it is, when it was written, and how it starts — never the whole paragraph, which is
-  // what a compaction wrote and what this turn has no room for.
-  assert.ok(
-    asked.includes(
-      '- room=the design room level=room_digest at=2026-10-24T00:20:00.000Z ' +
-        'first=the migration is blocked on the key rotation',
-    ),
-    'the note it wrote in another room is in the turn, as one line',
-  );
-  assert.doesNotMatch(
-    asked,
-    /nobody has asked ops yet/,
-    'and only as one line: the paragraph behind it is not quoted into a prompt',
-  );
-
-  // The note for the room this turn is in has its own part, quoted in full. Listing it
-  // in the index as well would say the same thing twice, which reads as emphasis.
   assert.equal(
-    asked.split('the deploy has been red since last night').length - 1,
+    asked.split('the migration is blocked on the key rotation').length - 1,
     1,
-    'the note about this room is said once',
+    'the note is quoted once, in full, in the turn of a room it was not written in',
   );
-
-  // The record is the store's, and reading a turn must not reorder it: the index is
-  // sorted for the reader, not written back.
+  // Reading a turn must not rewrite the record: the note keeps the shape the compaction
+  // left it in, and this turn is a reader.
   assert.deepEqual(
-    world.store.memoriesOf(world.agentA2).map((row) => row.id),
-    ['mm_here', 'mm_there'],
-    'the store keeps its own order',
+    world.store.memoriesOf(world.agentA2).map((row) => [row.id, row.body, row.room_id]),
+    [['mm_there', 'the migration is blocked on the key rotation', undefined]],
+    'the store keeps its own row',
   );
-});
-
-test('the index is ten lines and says so when there are more, newest first', async () => {
-  const world = makeWorld();
-  // Twelve notes in other rooms, oldest written first, so the store's own order and the
-  // index's order disagree and the assertion can tell which one it read.
-  for (let n = 0; n < 12; n += 1) {
-    world.store.memoriesOf(world.agentA2).push({
-      id: `mm_${n}`,
-      agent_id: world.agentA2,
-      level: 'room_digest',
-      room_id: `oc_room_${n}`,
-      body: `the note numbered ${n}.`,
-      updated_at: `2026-10-${String(n + 1).padStart(2, '0')}T00:00:00.000Z`,
-    });
-  }
-
-  const recorder = fakeServer({ content: 'nothing worth adding' });
-  const decide = await workOverServer(world.store, world.botA, serverOf(recorder), {
-    prompt: ARTIFACT,
-  });
-  await turnWith(world, decide, await entriesOf(world));
-
-  const chat = recorder.calls.filter((call) => call.path === '/v1/chat/completions').at(-1);
-  assert.ok(chat, 'the model was asked');
-  const asked = (chat.body.messages as { role: string; content: string }[])
-    .map((message) => message.content)
-    .join('\n');
-
-  // **Bounded, and it says so.** A list silently cut at ten reads as a list of ten, and
-  // a prompt that grows with every room the bot has worked in is the cost this cap
-  // exists to stop. The count is the artifact's to explain; the shape is this value's.
-  assert.match(asked, /showing=10 of 12, newest first/);
-  assert.ok(asked.includes('first=the note numbered 11.'), 'the newest note is in it');
-  assert.equal(
-    asked.includes('the note numbered 0.') || asked.includes('first=the note numbered 1.'),
-    false,
-    'and the two oldest are the ones left out',
-  );
-  assert.ok(
-    asked.indexOf('the note numbered 11.') < asked.indexOf('the note numbered 10.') &&
-      asked.indexOf('the note numbered 10.') < asked.indexOf('the note numbered 9.'),
-    'newest first, which is the store order read backwards',
-  );
-  // A room nobody named is named by its id, as every other list here does.
-  assert.ok(asked.includes('room=oc_room_11 level=room_digest'), 'a nameless room keeps its id');
 });
 
 test('the card a person filled in is quoted in the turn the model reads', async () => {

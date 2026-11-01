@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { RoomCompactor } from './compact.ts';
+import { Compactor } from './compact.ts';
 import { deliver } from './delivery.ts';
 import { makeWorld, type World } from './fixtures.ts';
 import { newId } from './store.ts';
@@ -46,20 +46,20 @@ function secondRoom(world: World): Id {
 test('the summary is the work agent’s, and the watch agent keeps no row', async () => {
   const world = makeWorld();
   fill(world, 3);
-  const compactor = new RoomCompactor(world.store, {
+  const compactor = new Compactor(world.store, {
     summarise: () => 'the room, and what has been settled',
     lines: { maxObservations: 2 },
     now: () => AT,
   });
 
-  const outcome = await compactor.compact(world.botA, world.room);
+  const outcome = await compactor.compact(world.botA);
   assert.equal(outcome.ran, true);
 
   const digests = world.store
     .memoriesOf(world.agentA2)
-    .filter((row) => row.level === 'room_digest');
+    .filter((row) => row.level === 'box_digest');
   assert.equal(digests.length, 1);
-  assert.equal(digests[0].room_id, world.room);
+  assert.equal(digests[0].room_id, undefined, 'one note per bot: it belongs to no room');
   assert.equal(digests[0].body, 'the room, and what has been settled');
   assert.equal(digests[0].updated_at, AT);
 
@@ -71,15 +71,15 @@ test('the summary is the work agent’s, and the watch agent keeps no row', asyn
 test('one digest per room per bot, and a second compaction replaces it', async () => {
   const world = makeWorld();
   fill(world, 2);
-  const compactor = new RoomCompactor(world.store, {
+  const compactor = new Compactor(world.store, {
     summarise: ({ delta }) => `covering ${delta.length}`,
     lines: { maxObservations: 2 },
     now: () => AT,
   });
 
-  await compactor.compact(world.botA, world.room);
+  await compactor.compact(world.botA);
   fill(world, 2, 2);
-  await compactor.compact(world.botA, world.room);
+  await compactor.compact(world.botA);
 
   const rows = world.store.memoriesOf(world.agentA2);
   assert.equal(rows.length, 1, 'rolling, not appended');
@@ -87,7 +87,7 @@ test('one digest per room per bot, and a second compaction replaces it', async (
   assert.equal(rows[0].consumed_to, world.store.inbox(world.botA).at(-1)?.id);
 
   // Per bot: the other bot's bot-level box is its own.
-  await compactor.compact(world.botB, world.room);
+  await compactor.compact(world.botB);
   assert.equal(world.store.memoriesOf(world.agentB1).length, 1);
   assert.notEqual(
     world.store.memoriesOf(world.agentB1)[0].agent_id,
@@ -101,12 +101,12 @@ test('compaction opens no turn and produces no message', async () => {
   const messagesBefore = world.store.messagesOf(world.room).length;
   const turnsBefore = world.store.data.turns.length;
 
-  const compactor = new RoomCompactor(world.store, {
+  const compactor = new Compactor(world.store, {
     summarise: () => 'summary',
     lines: { maxObservations: 2 },
     now: () => AT,
   });
-  const outcome = await compactor.compact(world.botA, world.room);
+  const outcome = await compactor.compact(world.botA);
 
   assert.equal(outcome.ran, true);
   assert.equal(world.store.data.turns.length, turnsBefore, 'not a turn');
@@ -126,7 +126,7 @@ test('two compactions over one room run one summary, not two', async () => {
   const held = new Promise<void>((resolve) => {
     release = resolve;
   });
-  const compactor = new RoomCompactor(world.store, {
+  const compactor = new Compactor(world.store, {
     summarise: async () => {
       calls += 1;
       await held;
@@ -136,8 +136,8 @@ test('two compactions over one room run one summary, not two', async () => {
     now: () => AT,
   });
 
-  const first = compactor.compact(world.botA, world.room);
-  const second = compactor.compact(world.botA, world.room);
+  const first = compactor.compact(world.botA);
+  const second = compactor.compact(world.botA);
   release();
   const [a, b] = await Promise.all([first, second]);
 
@@ -151,7 +151,7 @@ test('an observation that arrives during a compaction stays in the delta', async
   const world = makeWorld();
   fill(world, 2);
 
-  const compactor = new RoomCompactor(world.store, {
+  const compactor = new Compactor(world.store, {
     summarise: () => {
       // The room keeps moving while the summary is being written.
       deliver(world.store, {
@@ -164,13 +164,13 @@ test('an observation that arrives during a compaction stays in the delta', async
     lines: { maxObservations: 2 },
     now: () => AT,
   });
-  const outcome = await compactor.compact(world.botA, world.room);
+  const outcome = await compactor.compact(world.botA);
   assert.equal(outcome.ran, true);
 
   // The summary covers what it read. The arrival is not inside it and not lost:
   // it is still on the queue, and it is the whole delta.
   assert.equal(world.store.inbox(world.botA).length, 3);
-  const delta = compactor.delta(world.botA, world.room);
+  const delta = compactor.delta(world.botA);
   assert.equal(delta.length, 1);
   assert.equal(delta[0].message_id, world.store.messagesOf(world.room).at(-1)?.id);
 });
@@ -178,33 +178,33 @@ test('an observation that arrives during a compaction stays in the delta', async
 test('the delta is the record after the consumed-to point, and the whole record once that entry is gone', async () => {
   const world = makeWorld();
   fill(world, 3);
-  const compactor = new RoomCompactor(world.store, {
+  const compactor = new Compactor(world.store, {
     summarise: () => 'summary',
     lines: { maxObservations: 1 },
     now: () => AT,
   });
 
-  await compactor.compact(world.botA, world.room);
-  assert.equal(compactor.delta(world.botA, world.room).length, 0);
+  await compactor.compact(world.botA);
+  assert.equal(compactor.delta(world.botA).length, 0);
 
   fill(world, 2, 3);
-  assert.equal(compactor.delta(world.botA, world.room).length, 2);
+  assert.equal(compactor.delta(world.botA).length, 2);
 
   // A tick is not a compaction: draining marks the entries and moves no point, so
   // the delta a tick leaves behind is exactly the delta it found.
-  const before = compactor.delta(world.botA, world.room).length;
+  const before = compactor.delta(world.botA).length;
   await world.store.drain(world.botA);
-  assert.equal(compactor.delta(world.botA, world.room).length, before);
+  assert.equal(compactor.delta(world.botA).length, before);
 
   fill(world, 1, 5);
-  assert.equal(compactor.delta(world.botA, world.room).length, before + 1);
+  assert.equal(compactor.delta(world.botA).length, before + 1);
 
   // The last case, and why this is a search by id rather than an index: a digest
   // whose consumed-to entry is not on the record — a file written before the
   // record kept what it consumed — cannot be sliced by it, and then the delta is
   // the whole record rather than nothing.
   world.store.memoriesOf(world.agentA2)[0].consumed_to = 'ob_not_on_the_record';
-  assert.equal(compactor.delta(world.botA, world.room).length, 6);
+  assert.equal(compactor.delta(world.botA).length, 6);
 });
 
 test('a judgement reading the box never waits for a compaction', async () => {
@@ -214,7 +214,7 @@ test('a judgement reading the box never waits for a compaction', async () => {
   const held = new Promise<void>((resolve) => {
     release = resolve;
   });
-  const compactor = new RoomCompactor(world.store, {
+  const compactor = new Compactor(world.store, {
     summarise: async () => {
       await held;
       return 'summary';
@@ -223,26 +223,26 @@ test('a judgement reading the box never waits for a compaction', async () => {
     now: () => AT,
   });
 
-  const running = compactor.compact(world.botA, world.room);
-  assert.equal(compactor.inFlight(world.botA, world.room), true);
+  const running = compactor.compact(world.botA);
+  assert.equal(compactor.inFlight(world.botA), true);
   // Mid-flight the box is read as it stands — it is not held behind the write.
-  assert.equal(compactor.delta(world.botA, world.room).length, 2);
+  assert.equal(compactor.delta(world.botA).length, 2);
 
   release();
   const outcome = await running;
   assert.equal(outcome.ran, true);
-  assert.equal(compactor.inFlight(world.botA, world.room), false);
+  assert.equal(compactor.inFlight(world.botA), false);
 });
 
 test('with no summariser nothing is due and nothing is written', async () => {
   const world = makeWorld();
   fill(world, 3);
-  const compactor = new RoomCompactor(world.store, {
+  const compactor = new Compactor(world.store, {
     lines: { maxObservations: 1 },
   });
 
-  assert.equal(compactor.due(world.botA, world.room), false);
-  assert.deepEqual(await compactor.compact(world.botA, world.room), {
+  assert.equal(compactor.due(world.botA), false);
+  assert.deepEqual(await compactor.compact(world.botA), {
     ran: false,
     reason: 'no-summarise',
   });
@@ -254,24 +254,24 @@ test('only a stated line makes a delta due', async () => {
   fill(world, 2);
 
   // No numbers are invented: with no line configured, nothing is ever due.
-  const silent = new RoomCompactor(world.store, { summarise: () => 's' });
-  assert.equal(silent.due(world.botA, world.room), false);
-  assert.deepEqual(await silent.compact(world.botA, world.room), {
+  const silent = new Compactor(world.store, { summarise: () => 's' });
+  assert.equal(silent.due(world.botA), false);
+  assert.deepEqual(await silent.compact(world.botA), {
     ran: false,
     reason: 'not-due',
   });
 
-  const short = new RoomCompactor(world.store, {
+  const short = new Compactor(world.store, {
     summarise: () => 's',
     lines: { maxObservations: 3 },
   });
-  assert.equal(short.due(world.botA, world.room), false);
+  assert.equal(short.due(world.botA), false);
 
-  const reached = new RoomCompactor(world.store, {
+  const reached = new Compactor(world.store, {
     summarise: () => 's',
     lines: { maxObservations: 2 },
   });
-  assert.equal(reached.due(world.botA, world.room), true);
+  assert.equal(reached.due(world.botA), true);
 });
 
 test('an age line is measured against the oldest entry, on the injected clock', async () => {
@@ -283,26 +283,26 @@ test('an age line is measured against the oldest entry, on the injected clock', 
   queued[0].delivered_at = '2026-10-24T00:00:00.000Z';
   queued[1].delivered_at = '2026-10-24T00:01:30.000Z';
 
-  const early = new RoomCompactor(world.store, {
+  const early = new Compactor(world.store, {
     summarise: () => 's',
     lines: { maxAgeMs: 60_000 },
     now: () => '2026-10-24T00:00:30.000Z',
   });
-  assert.equal(early.due(world.botA, world.room), false);
+  assert.equal(early.due(world.botA), false);
 
   // 100s after the oldest, 10s after the newest: only the oldest has crossed.
-  const late = new RoomCompactor(world.store, {
+  const late = new Compactor(world.store, {
     summarise: () => 's',
     lines: { maxAgeMs: 60_000 },
     now: () => '2026-10-24T00:01:40.000Z',
   });
-  assert.equal(late.due(world.botA, world.room), true);
+  assert.equal(late.due(world.botA), true);
 });
 
 test('a failing summariser writes nothing and backs off until the delta grows', async () => {
   const world = makeWorld();
   fill(world, 2);
-  const compactor = new RoomCompactor(world.store, {
+  const compactor = new Compactor(world.store, {
     summarise: () => {
       throw new Error('the model is offline');
     },
@@ -310,7 +310,7 @@ test('a failing summariser writes nothing and backs off until the delta grows', 
     now: () => AT,
   });
 
-  assert.deepEqual(await compactor.compact(world.botA, world.room), {
+  assert.deepEqual(await compactor.compact(world.botA), {
     ran: false,
     reason: 'failed',
   });
@@ -318,26 +318,26 @@ test('a failing summariser writes nothing and backs off until the delta grows', 
 
   // The same delta is not re-fired on the next tick: back off, do not retry in
   // a loop.
-  assert.equal(compactor.due(world.botA, world.room), false);
+  assert.equal(compactor.due(world.botA), false);
 
   fill(world, 1, 2);
-  assert.equal(compactor.due(world.botA, world.room), true);
+  assert.equal(compactor.due(world.botA), true);
 });
 
 test('a bot with no work agent has no writer', async () => {
   const world = makeWorld();
   fill(world, 2);
   delete world.store.data.agents[world.agentB1];
-  const compactor = new RoomCompactor(world.store, {
+  const compactor = new Compactor(world.store, {
     summarise: () => 's',
     lines: { maxObservations: 1 },
   });
 
-  assert.deepEqual(await compactor.compact(world.botB, world.room), {
+  assert.deepEqual(await compactor.compact(world.botB), {
     ran: false,
     reason: 'no-work-agent',
   });
-  assert.equal(compactor.due(world.botB, world.room), false);
+  assert.equal(compactor.due(world.botB), false);
 });
 
 test('the entries a tick drained are the delta, with nothing handed back in', async () => {
@@ -351,7 +351,7 @@ test('the entries a tick drained are the delta, with nothing handed back in', as
   assert.equal(world.store.pending(world.botA).length, 0);
   assert.equal(world.store.inbox(world.botA).length, 3);
 
-  const compactor = new RoomCompactor(world.store, {
+  const compactor = new Compactor(world.store, {
     summarise: () => 'summary',
     lines: { maxObservations: 3 },
     now: () => AT,
@@ -361,10 +361,10 @@ test('the entries a tick drained are the delta, with nothing handed back in', as
   // is what lets a runtime that compacts *after* a tick fold in the very entries
   // the tick was woken by, and reach its line at all.
   assert.deepEqual(
-    compactor.delta(world.botA, world.room).map((entry) => entry.id),
+    compactor.delta(world.botA).map((entry) => entry.id),
     arrival,
   );
-  assert.equal(compactor.due(world.botA, world.room), true);
+  assert.equal(compactor.due(world.botA), true);
 });
 
 test('a compaction over what a tick drained consumes it, and the same entries are never folded in twice', async () => {
@@ -373,7 +373,7 @@ test('a compaction over what a tick drained consumes it, and the same entries ar
   const drained = await world.store.drain(world.botA);
 
   let calls = 0;
-  const compactor = new RoomCompactor(world.store, {
+  const compactor = new Compactor(world.store, {
     summarise: ({ delta }) => {
       calls += 1;
       return `covering ${delta.length}`;
@@ -382,15 +382,15 @@ test('a compaction over what a tick drained consumes it, and the same entries ar
     now: () => AT,
   });
 
-  const outcome = await compactor.compact(world.botA, world.room);
+  const outcome = await compactor.compact(world.botA);
   assert.equal(outcome.ran, true);
   const row = world.store.memoriesOf(world.agentA2)[0];
   assert.equal(row.body, 'covering 3');
   assert.equal(row.consumed_to, drained.at(-1)?.id);
 
   // Behind the consumed-to point now, so they are not folded in a second time.
-  assert.equal(compactor.delta(world.botA, world.room).length, 0);
-  assert.deepEqual(await compactor.compact(world.botA, world.room), {
+  assert.equal(compactor.delta(world.botA).length, 0);
+  assert.deepEqual(await compactor.compact(world.botA), {
     ran: false,
     reason: 'empty-delta',
   });
@@ -407,45 +407,45 @@ test('an entry the gate put back on the queue is counted once, not twice', async
   for (const entry of drained) entry.state = 'new';
   await world.store.save();
 
-  const compactor = new RoomCompactor(world.store, {
+  const compactor = new Compactor(world.store, {
     summarise: () => 'summary',
     lines: { maxObservations: 2 },
     now: () => AT,
   });
 
   assert.deepEqual(
-    compactor.delta(world.botA, world.room).map((entry) => entry.id),
+    compactor.delta(world.botA).map((entry) => entry.id),
     drained.map((entry) => entry.id),
     'each entry once, at its arrival position',
   );
   assert.equal(world.store.inbox(world.botA).length, 2, 'stored once, not twice');
-  assert.equal(compactor.due(world.botA, world.room), true);
-  await compactor.compact(world.botA, world.room);
-  assert.equal(compactor.delta(world.botA, world.room).length, 0);
+  assert.equal(compactor.due(world.botA), true);
+  await compactor.compact(world.botA);
+  assert.equal(compactor.delta(world.botA).length, 0);
 });
 
 test('a tick that drained nothing leaves the delta where it was', async () => {
   const world = makeWorld();
-  const compactor = new RoomCompactor(world.store, {
+  const compactor = new Compactor(world.store, {
     summarise: () => 'summary',
     lines: { maxObservations: 1 },
     now: () => AT,
   });
 
   // Nothing delivered: nothing to fold in.
-  assert.equal(compactor.due(world.botA, world.room), false);
+  assert.equal(compactor.due(world.botA), false);
   assert.equal((await world.store.drain(world.botA)).length, 0);
-  assert.equal(compactor.due(world.botA, world.room), false);
+  assert.equal(compactor.due(world.botA), false);
 
   fill(world, 2);
-  assert.equal(compactor.due(world.botA, world.room), true);
+  assert.equal(compactor.due(world.botA), true);
   // And a tick is not a compaction: taking the queue leaves what it took still to
   // be folded in, because draining and summarising are two different acts.
   await world.store.drain(world.botA);
-  assert.equal(compactor.due(world.botA, world.room), true);
+  assert.equal(compactor.due(world.botA), true);
 });
 
-test('another room’s entry is not in this room’s delta', async () => {
+test('a delta spans the rooms this bot works in, and each entry says which', async () => {
   const world = makeWorld();
   const elsewhere = secondRoom(world);
   fill(world, 2);
@@ -454,23 +454,24 @@ test('another room’s entry is not in this room’s delta', async () => {
     senderId: world.me,
     text: 'a different conversation',
   });
-  // One tick spans every room this bot has news from, so what it takes is per bot
-  // and not per room — and the record keeps all three of them.
+  // One tick spans every room this bot has news from, so what it takes is per bot and
+  // not per room. The note is the bot's too (`compact.ts`), so what it folds in is all
+  // three — and each entry keeps its own `room_id`, which is what lets the note say
+  // which conversation a line came from.
   const drained = await world.store.drain(world.botA);
   assert.equal(drained.length, 3);
 
-  const compactor = new RoomCompactor(world.store, {
+  const compactor = new Compactor(world.store, {
     summarise: () => 'summary',
     lines: { maxObservations: 2 },
     now: () => AT,
   });
 
-  const here = compactor.delta(world.botA, world.room);
-  assert.equal(here.length, 2);
-  assert.equal(
-    here.every((entry) => entry.room_id === world.room),
-    true,
-    'a room’s delta is that room’s',
+  const delta = compactor.delta(world.botA);
+  assert.equal(delta.length, 3, 'one delta, and nothing is dropped for being elsewhere');
+  assert.deepEqual(
+    [...new Set(delta.map((entry) => entry.room_id))].sort(),
+    [world.room, elsewhere].sort(),
+    'both rooms are in it, and each entry names its own',
   );
-  assert.equal(compactor.delta(world.botA, elsewhere).length, 1);
 });

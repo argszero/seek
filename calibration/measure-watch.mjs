@@ -1,7 +1,7 @@
 // Does the shipped judgement separate "this is for me" from "this is not"?
 //
 // `calibration/set4.json` is the labelled set written after every prompt selection, and
-// `src/prompts/watch-v3.json` ships the cut that is applied to it. This file is the reading
+// `src/prompts/watch-v4.json` ships the cut that is applied to it. This file is the reading
 // that cut rests on, taken **through the kernel's own code**: a store, a room, a message,
 // `watchAs` from `src/watch.ts`, and `llamaWatchModel` from `src/llama.ts` talking to a real
 // `llama-server` at its `/v1/systemone`. Nothing here re-implements the state, the question,
@@ -20,7 +20,7 @@
 //     node calibration/measure-watch.mjs
 //
 // The record it writes is `calibration/set4-d1.json`, and it carries the state each case was
-// sent as, so the figure `watch-v3.json` advertises can be recomputed by anyone holding the
+// sent as, so the figure `watch-v4.json` advertises can be recomputed by anyone holding the
 // file rather than taken on this script's word.
 import { spawn } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'

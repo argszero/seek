@@ -102,6 +102,15 @@ export interface PromptArtifact {
   system: string;
   /** What follows the system block — `"\n\n"` in the shipped artifact. */
   afterSystem: string;
+  /**
+   * The words for where an entry came from, and nothing when it came from no room.
+   *
+   * The same split a turn makes with `picture`/`pictureLine`: the fact is the entry's
+   * `room`, and the sentence is the file's. Filled for an entry that names a room and left
+   * empty for one that does not, so ` [{room}]` prints nothing for a reminder rather than
+   * an empty bracket.
+   */
+  entryRoomLine?: string;
   /** The parts, in the order they are rendered. */
   parts: PromptPart[];
   /**
@@ -146,6 +155,16 @@ export interface PromptLine {
   sender: string;
   /** When it landed, as the record timestamps it. */
   at: string;
+  /**
+   * Which room it came from, named as the store names it.
+   *
+   * **Absent for a reminder**, which is in no room (`Observation.room_id`), and never a
+   * caller that forgot: the box is the bot's and holds several rooms at once (`box.ts`),
+   * so a line with no room in it is a line a reader cannot place. How the room is said —
+   * ` [{room}]` in the shipped artifact — is `entryRoomLine`'s, exactly as the words for a
+   * picture are `pictureLine`'s.
+   */
+  room?: string;
 }
 
 /** What a part is filled from: the room, its summary, and each delta entry. */
@@ -185,9 +204,18 @@ export interface PromptValues {
   lines: PromptLine[];
 }
 
-/** The shipped artifact's location, beside this module. */
+/**
+ * The shipped artifact's location, beside this module.
+ *
+ * What v4 changes is what the box became. It is the bot's and not a room's, so the note it
+ * carries is the bot's note rather than this room's, and the lines in it may come from any
+ * room the bot works in — each now says which, in the words `entryRoomLine` gives, and says
+ * nothing when it came from no room at all. The question is still about one room: the room
+ * part and the other bots in it are the batch's own room, which is why those two parts are
+ * unchanged.
+ */
 export function shippedPromptPath(): URL {
-  return new URL('./prompts/watch-v3.json', import.meta.url);
+  return new URL('./prompts/watch-v4.json', import.meta.url);
 }
 
 /**
@@ -252,7 +280,12 @@ export function assemblePrompt(artifact: PromptArtifact, values: PromptValues): 
     if (part.each === 'observation') {
       for (const line of values.lines) {
         out.push(
-          fill(part.text, { text: line.text, sender: line.sender, at: line.at }),
+          fill(part.text, {
+            text: line.text,
+            sender: line.sender,
+            at: line.at,
+            room: roomTagOf(line.room, artifact),
+          }),
           part.after,
         );
       }
@@ -333,6 +366,21 @@ export function systemOf(artifact: PromptArtifact, values: { bot?: string }): st
   return fill(artifact.system, { bot: values.bot ?? '' });
 }
 
+/**
+ * The words for where an entry came from, or nothing at all.
+ *
+ * The fact is `room` on the entry and the sentence is the artifact's `entryRoomLine` — the
+ * same division `picture`/`pictureLine` already makes, and for the same reason: a phrase
+ * this module invented would be a sentence nobody wrote. An entry with no room (a reminder
+ * is in no room) fills `''`, so its line is byte for byte what it was before the box held
+ * several rooms.
+ */
+function roomTagOf(room: string | undefined, artifact: { entryRoomLine?: string }): string {
+  if (room === undefined || room === '') return '';
+  const line = artifact.entryRoomLine;
+  return line === undefined ? room : fill(line, { room });
+}
+
 /** One template, filled in a single pass. */
 function fill(template: string, values: Record<string, string>): string {
   return template.replace(/\{(\w+)\}/g, (whole, name: string) => values[name] ?? whole);
@@ -361,6 +409,12 @@ function assertArtifact(value: unknown, source: string): PromptArtifact {
   if (typeof artifact.system !== 'string') return fail('`system` must be a string');
   if (typeof artifact.afterSystem !== 'string') {
     return fail('`afterSystem` must be a string (use "" to join the system block directly)');
+  }
+  if (
+    artifact.entryRoomLine !== undefined &&
+    (typeof artifact.entryRoomLine !== 'string' || artifact.entryRoomLine.trim() === '')
+  ) {
+    return fail('`entryRoomLine` must be a non-empty string when present, or be left out');
   }
   if (!Array.isArray(artifact.parts) || artifact.parts.length === 0) {
     return fail('`parts` must be a non-empty array');
@@ -415,7 +469,12 @@ function assertArtifact(value: unknown, source: string): PromptArtifact {
       if (name === 'position' && row.when !== 'position') {
         return fail(`${where} fills {position} but is rendered when the bot may have none`);
       }
-      if (name === 'room' && row.when !== 'room') {
+      // `{room}` has two meanings and they are both legal. On a part rendered when the
+      // room itself is the subject, `when: "room"` is what guarantees there is a name to
+      // fill. On an entry line it is the entry's own room (`PromptLine.room`), which may
+      // be absent — a reminder is in no room — and `roomTagOf` fills `''` there, so the
+      // line says nothing rather than naming a room it did not come from.
+      if (name === 'room' && row.when !== 'room' && row.each !== 'observation') {
         return fail(`${where} fills {room} but is rendered when the room may have no name`);
       }
       if (name === 'others' && row.when !== 'others') {
@@ -493,10 +552,32 @@ function assertArtifact(value: unknown, source: string): PromptArtifact {
     meanings[token] = meaning;
   }
 
+  // Both halves of one rule, as the turn prompt holds them on its entry line: a `{room}`
+  // site with no sentence in the file would print the raw room id at the model — the room
+  // a message came from is not a thing to invent words for here — and a sentence no line
+  // quotes is one the file wrote for a model that never reads it. Looked for on the parts
+  // that repeat per line only: `{room}` on any other part is the room the question is
+  // about, filled from `PromptValues.room`.
+  const roomOnLine = parts.some(
+    (part) => part.each === 'observation' && placeholdersIn(part.text).includes('room'),
+  );
+  if (roomOnLine && artifact.entryRoomLine === undefined) {
+    return fail(
+      'an observation part fills {room}, and this artifact declares no `entryRoomLine` to ' +
+        "put there: the words for a room are the file's to say",
+    );
+  }
+  if (artifact.entryRoomLine !== undefined && !roomOnLine) {
+    return fail(
+      'the artifact declares `entryRoomLine` and no observation part says {room} to put it in',
+    );
+  }
+
   const artifactOut: PromptArtifact = {
     version: artifact.version,
     system: artifact.system,
     afterSystem: artifact.afterSystem,
+    ...(artifact.entryRoomLine === undefined ? {} : { entryRoomLine: artifact.entryRoomLine }),
     parts,
     question: { instructions: question.instructions, criteria: meanings },
   };
@@ -626,6 +707,16 @@ export interface WorkArtifact {
    * Absent on v1–v5, where an entry line carries no such fact.
    */
   pictureLine?: string;
+
+  /**
+   * The words for where an entry came from, and nothing when it came from no room.
+   *
+   * The fact is `room` on the entry; this is the file's sentence about it, the same split
+   * `picture`/`pictureLine` already makes. It is filled for an entry that names a room and
+   * left empty for one that does not — a reminder is in no room — so an artifact that
+   * writes ` [{room}]` prints nothing at all for a reminder rather than an empty bracket.
+   */
+  entryRoomLine?: string;
   /** The parts, in the order they are rendered. */
   parts: WorkPart[];
   /**
@@ -698,23 +789,6 @@ export interface WorkValues {
    */
   archive: string;
   /**
-   * The index of the notes this bot wrote about rooms other than the one it is in now.
-   *
-   * The third of the three things `docs/host-rulings.md` hands a turn by default —
-   * *"the latest compaction, the memory index and every observation after the latest
-   * compaction"*. The compaction is `summary` and the observations are `entries`; this
-   * is what was missing.
-   *
-   * **The note for the room being addressed is not in it.** That note is `summary`
-   * above, and a bot woken in the room it is about would otherwise read the same
-   * conclusion twice, which reads as emphasis rather than as one fact.
-   *
-   * Absent rather than `''` when there is nothing to index, for the reason `others` is:
-   * a bot that has only ever worked in one room is not told about a list of notes it
-   * does not have.
-   */
-  memories?: string;
-  /**
    * How many bot messages in a row this room has had without the person — absent until
    * the room has been going long enough to be told.
    *
@@ -746,13 +820,13 @@ export interface WorkValues {
    * decides how to say it. Absent reads as no picture, which is what a caller that does
    * not report it — the calibration driver's rows — actually knows.
    */
-  entries: { sender: string; text: string; at: string; picture?: boolean }[];
+  entries: { sender: string; text: string; at: string; picture?: boolean; room?: string }[];
 }
 
 /**
  * The shipped turn artifact's location, beside this module.
  *
- * `work-v11.json` ships; `work-v1.json` through `work-v10.json` stay beside it. A prompt is
+ * `work-v12.json` ships; `work-v1.json` through `work-v11.json` stay beside it. A prompt is
  * versioned rather than edited in place, because `calibration/work/` measured v1 and a
  * record that quotes a prompt the tree has changed describes a run nobody can re-read
  * — `work-calibration.test.ts` holds that pair together. What v2 added is the two parts
@@ -802,9 +876,19 @@ export interface WorkValues {
  * three that reaches the machine itself rather than the bot's own files, and the ruling's
  * "It has tools" paragraph is about the set a bot is configured with, not a decision this
  * artifact makes on the host's behalf. No part moves.
+ *
+ * What v12 changes follows from the box becoming the bot's. `docs/host-rulings.md`,
+ * "The observation box", says the box travels with the bot and holds what the bot
+ * gathered in another room, and `agent-lifecycle.md` §3 asks an observation to carry
+ * *"its room, who spoke, when and what was said"* — so an entry line now says which room
+ * it came from, in the words `entryRoomLine` gives, and says nothing when there is no room
+ * to name (a reminder). The note is one per bot as well, so the part that quotes it stops
+ * calling it this room's; and the memory index (`{memories}`, v9) leaves, because it listed
+ * the notes a bot had written about *other* rooms and one note per bot leaves no other
+ * room's note to list. Every other part of the file is v11's.
  */
 export function shippedWorkPromptPath(): URL {
-  return new URL('./prompts/work-v11.json', import.meta.url);
+  return new URL('./prompts/work-v12.json', import.meta.url);
 }
 
 /**
@@ -900,6 +984,7 @@ export function assembleWorkPrompt(
             // leaves an unknown placeholder whole, so a site left out would print
             // `{picture}` at a model rather than say nothing.
             picture: entry.picture === true ? (artifact.pictureLine ?? '') : '',
+            room: roomTagOf(entry.room, artifact),
           }),
           part.after,
         );
@@ -995,6 +1080,12 @@ function assertWorkArtifact(value: unknown, source: string): WorkArtifact {
     (typeof artifact.pictureLine !== 'string' || artifact.pictureLine.trim() === '')
   ) {
     return fail('`pictureLine` must be a non-empty string when present, or be left out');
+  }
+  if (
+    artifact.entryRoomLine !== undefined &&
+    (typeof artifact.entryRoomLine !== 'string' || artifact.entryRoomLine.trim() === '')
+  ) {
+    return fail('`entryRoomLine` must be a non-empty string when present, or be left out');
   }
   if (!Array.isArray(artifact.parts) || artifact.parts.length === 0) {
     return fail('`parts` must be a non-empty array');
@@ -1100,6 +1191,26 @@ function assertWorkArtifact(value: unknown, source: string): WorkArtifact {
     return fail('the artifact declares `pictureLine` and no part says {picture} to put it in');
   }
 
+  // The same two halves for a room. An entry line that says where it came from with no
+  // sentence in the file to say it would print the raw room id at the model — a phrase
+  // the file did not write — and a sentence no entry line quotes is one written for a
+  // model that never reads it. The site is looked for on the entry parts only: `{room}`
+  // elsewhere is the room the bot is in, which is a different fact with its own part.
+  const roomOnEntry = parts.some(
+    (part) => part.each === 'entry' && placeholdersIn(part.text).includes('room'),
+  );
+  if (roomOnEntry && artifact.entryRoomLine === undefined) {
+    return fail(
+      'an entry part fills {room}, and this artifact declares no `entryRoomLine` to put ' +
+        "there: the words for a room are the file's to say",
+    );
+  }
+  if (artifact.entryRoomLine !== undefined && !roomOnEntry) {
+    return fail(
+      'the artifact declares `entryRoomLine` and no entry part says {room} to put it in',
+    );
+  }
+
   // A per-entry part with nothing after it would glue one message onto the next,
   // and the last entry onto whatever part follows — the text would still be a
   // prompt, and the model would still answer, so nothing else here would notice.
@@ -1145,6 +1256,7 @@ function assertWorkArtifact(value: unknown, source: string): WorkArtifact {
     system: artifact.system,
     afterSystem: artifact.afterSystem,
     ...(artifact.pictureLine === undefined ? {} : { pictureLine: artifact.pictureLine }),
+    ...(artifact.entryRoomLine === undefined ? {} : { entryRoomLine: artifact.entryRoomLine }),
     parts,
     tools,
   };
@@ -1157,7 +1269,7 @@ function placeholdersIn(template: string): string[] {
 
 /**
  * One versioned note prompt: what the work agent is asked when a room's delta has
- * outgrown itself (`compact.ts`, `RoomCompactor`).
+ * outgrown itself (`compact.ts`, `Compactor`).
  *
  * A second artifact rather than a variant of `work-v2`, because it answers a different
  * question. A turn's prompt tells the model that the only way into a room is a `say`
@@ -1166,7 +1278,7 @@ function placeholdersIn(template: string): string[] {
  * together, either one would have to say "except when" about the other's first line.
  */
 export interface CompactArtifact {
-  /** The identity this file is. `compact-v2` is the shipped one. */
+  /** The identity this file is. `compact-v3` is the shipped one. */
   version: string;
   /** The head of the text, before the rest. Filled with `{bot}`. */
   system: string;
@@ -1192,6 +1304,16 @@ export interface CompactArtifact {
    * checked together: a site with no sentence to fill it would say nothing at all.
    */
   pictureLine?: string;
+
+  /**
+   * The words for where an entry came from, and nothing when it came from no room.
+   *
+   * The fact is `room` on the entry; this is the file's sentence about it, the same split
+   * `picture`/`pictureLine` already makes. It is filled for an entry that names a room and
+   * left empty for one that does not — a reminder is in no room — so an artifact that
+   * writes ` [{room}]` prints nothing at all for a reminder rather than an empty bracket.
+   */
+  entryRoomLine?: string;
   /** What the model is asked to do, after the observations. */
   ask: string;
 }
@@ -1207,18 +1329,20 @@ export interface CompactValues {
   /**
    * The observations being folded in, **oldest first**.
    *
-   * The same four facts the turn's entries carry — `entryOf` in `work-server.ts` hands
-   * the same value to both halves, so the note is never written from less than the turn
-   * was shown. `at` is the entry's own `delivered_at` and `picture` reports that the
-   * message came with one; how either is said is the artifact's business.
+   * The same facts the turn's entries carry — `entryOf` in `work-server.ts` hands the same
+   * value to both halves, so the note is never written from less than the turn was shown.
+   * `at` is the entry's own `delivered_at`, `picture` reports that the message came with
+   * one, and `room` names where the entry came from — a note folded from several rooms has
+   * to say which, or the later self reads one conversation made of three. How any of them
+   * is said is the artifact's business.
    */
-  entries: { sender: string; text: string; at: string; picture: boolean }[];
+  entries: { sender: string; text: string; at: string; picture: boolean; room: string }[];
 }
 
 /**
  * The shipped note artifact's location, beside this module.
  *
- * `compact-v2.json` ships; `compact-v1.json` stays beside it. A prompt is versioned
+ * `compact-v3.json` ships; `compact-v1.json` and `compact-v2.json` stay beside it. A prompt is versioned
  * rather than edited in place, for `shippedWorkPromptPath`'s reason: a note written by
  * v1 and a note written by v2 are different notes, and a record that quotes one is not
  * a description of the other. What v2 adds is the arrival time on every entry line and
@@ -1227,9 +1351,14 @@ export interface CompactValues {
  * answer is later read from. **This file still describes a picture it cannot see, and
  * that is still true of it**: nothing supplies the note's writer with bytes, so `work-v7`'s
  * sentence would be a claim this path cannot keep.
+ *
+ * What v3 changes is what the note is a note of. The box is the bot's (`box.ts`), so the
+ * observations folded in may come from several rooms at once: `entryLine` names the room
+ * each line came from through `entryRoomLine`, and `roomLine` names the rooms the batch
+ * covers rather than "the room", which is one of those only by accident.
  */
 export function shippedCompactPromptPath(): URL {
-  return new URL('./prompts/compact-v2.json', import.meta.url);
+  return new URL('./prompts/compact-v3.json', import.meta.url);
 }
 
 /**
@@ -1293,12 +1422,18 @@ export function loadCompactArtifact(
     );
   }
 
-  // The entry line may quote the four per-entry facts and nothing else — a name nothing
+  // The entry line may quote the five per-entry facts and nothing else — a name nothing
   // fills would reach the model as `{thatword}`, which is how a prompt starts describing
   // its own plumbing instead of the room.
   const entrySites = placeholdersIn(file.entryLine as string);
   for (const name of entrySites) {
-    if (name !== 'sender' && name !== 'text' && name !== 'at' && name !== 'picture') {
+    if (
+      name !== 'sender' &&
+      name !== 'text' &&
+      name !== 'at' &&
+      name !== 'picture' &&
+      name !== 'room'
+    ) {
       throw new Error(
         `the note prompt artifact at ${String(source)} names {${name}} on its entry line, ` +
           'which nothing here fills',
@@ -1323,6 +1458,31 @@ export function loadCompactArtifact(
     );
   }
 
+  // And the same two halves for the room the entry came from: the box is the bot's, so a
+  // note folded from several rooms has to say which, and the words for it are the file's.
+  const entryRoomLine = file.entryRoomLine;
+  if (
+    entryRoomLine !== undefined &&
+    (typeof entryRoomLine !== 'string' || entryRoomLine.trim() === '')
+  ) {
+    throw new Error(
+      `the note prompt artifact at ${String(source)} has an \`entryRoomLine\` that is not a ` +
+        'non-empty string: leave it out when the entry line has no {room} to fill',
+    );
+  }
+  if (entrySites.includes('room') && entryRoomLine === undefined) {
+    throw new Error(
+      `the note prompt artifact at ${String(source)} fills {room} and declares no ` +
+        "`entryRoomLine`: the words for a room are the file's to say",
+    );
+  }
+  if (entryRoomLine !== undefined && !entrySites.includes('room')) {
+    throw new Error(
+      `the note prompt artifact at ${String(source)} declares \`entryRoomLine\` and its entry ` +
+        'line says no {room} to put it in',
+    );
+  }
+
   return {
     version: file.version as string,
     system: file.system as string,
@@ -1331,6 +1491,7 @@ export function loadCompactArtifact(
     transcriptLine: file.transcriptLine as string,
     entryLine: file.entryLine as string,
     ...(pictureLine === undefined ? {} : { pictureLine }),
+    ...(entryRoomLine === undefined ? {} : { entryRoomLine }),
     ask: file.ask as string,
   };
 }
@@ -1367,6 +1528,7 @@ export function assembleCompactPrompt(
         // The fact is `entry.picture`; the sentence is the file's. An entry with no
         // picture fills nothing at all, so its line is byte for byte what v1 wrote.
         picture: entry.picture === true ? (artifact.pictureLine ?? '') : '',
+        room: roomTagOf(entry.room, artifact),
       }),
       '\n',
     );

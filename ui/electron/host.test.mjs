@@ -827,7 +827,7 @@ async function worldWithNote(note) {
   }
 }
 
-test('a room of more than twenty new observations is compacted into a note', async () => {
+test('more than twenty new observations are compacted into a note', async () => {
   const w = await worldWithNote('the batch is still failing; nobody has looked at the queue')
   try {
     for (let i = 1; i <= 21; i += 1) {
@@ -837,9 +837,9 @@ test('a room of more than twenty new observations is compacted into a note', asy
     assert.equal(w.asked.length, 1, 'one compaction ran, and it ran once')
     const digest = w.host.store
       .memoriesOf(w.asked[0].agentId)
-      .filter((row) => row.level === 'room_digest')
-    assert.equal(digest.length, 1, 'the room has exactly one note')
-    assert.equal(digest[0].room_id, w.scene.room)
+      .filter((row) => row.level === 'box_digest')
+    assert.equal(digest.length, 1, 'the bot has exactly one note')
+    assert.equal(digest[0].room_id, undefined, 'one note per bot: it belongs to no room')
     assert.equal(digest[0].body, 'the batch is still failing; nobody has looked at the queue')
     // The consumed-to point is the note's own claim about how much it covers, and it is
     // what makes the box stop growing: the delta is read from after it (`deltaFor`).
@@ -849,7 +849,7 @@ test('a room of more than twenty new observations is compacted into a note', asy
   }
 })
 
-test('a room of a few observations has no note, and none is invented', async () => {
+test('a few observations make no note, and none is invented', async () => {
   const w = await worldWithNote('a note nobody should have asked for')
   try {
     for (let i = 1; i <= 5; i += 1) {
@@ -857,7 +857,7 @@ test('a room of a few observations has no note, and none is invented', async () 
     }
     assert.equal(w.asked.length, 0, 'five observations are under the line')
     const digests = Object.values(w.host.store.data.memories ?? {}).filter(
-      (row) => row.level === 'room_digest',
+      (row) => row.level === 'box_digest',
     )
     assert.equal(digests.length, 0, 'and no empty note stands in for one')
   } finally {

@@ -1,5 +1,5 @@
 /**
- * Compaction: a room's standing summary, written by the half that can write.
+ * Compaction: the bot's standing note, written by the half that can write.
  *
  * `docs/design/agent-lifecycle.md` §3 ("The observation box") fixes the whole
  * contract, and none of it is this file's to invent:
@@ -7,12 +7,15 @@
  * - **One writer.** A decision model emits a choice and no text, so the summary
  *   is the work agent's and the watch side only reads the box. Nothing here can
  *   reach a second agent's store.
- * - **Per (bot, room), and rolling.** One digest row per room per bot, replaced
- *   in place rather than appended to: two rows would be two versions to
- *   disagree, which is the silent-amnesia defect in its other form.
- * - **The delta is derived, never stored.** It is read off the bot's queue — the
- *   entries for this room after the point the last summary consumed up to — so
- *   there stays exactly one copy of every observation.
+ * - **Per bot, and rolling.** One note per bot, replaced in place rather than
+ *   appended to: two rows would be two versions to disagree, which is the
+ *   silent-amnesia defect in its other form. The box travels with the bot
+ *   (`box.ts`), so its note does too: one note covers every room it folded in,
+ *   and a note carrying a `room_id` would be one room's summary standing in for
+ *   the box of a bot that works in several.
+ * - **The delta is derived, never stored.** It is read off the bot's record — the
+ *   entries after the point the last note consumed up to, whichever room each came
+ *   from — so there stays exactly one copy of every observation.
  * - **Single-flight, one atomic write.** Two compactions over one room would
  *   each rewrite the summary from a state the other has already moved past, and
  *   whichever finished last would delete the difference without a trace. So the
@@ -51,7 +54,6 @@ import type { Agent, Id, Memory, Observation } from './types.ts';
 export interface SummariseInput {
   botId: Id;
   agentId: Id;
-  roomId: Id;
   /**
    * The entries this summary is written from — the snapshot taken before the
    * call. Never re-read afterwards: an arrival during the await is a later entry
@@ -99,20 +101,19 @@ export type CompactOutcome =
   | { ran: true; memory: Memory; delta: Observation[] }
   | { ran: false; reason: CompactSkip };
 
-/** The room's digest for this agent, when one has been written. */
-export function digestOf(
-  store: SeekStore,
-  agentId: Id,
-  roomId: Id,
-): Memory | undefined {
-  return store
-    .memoriesOf(agentId)
-    .find((row) => row.level === 'room_digest' && row.room_id === roomId);
+/**
+ * The bot's note for this agent, when one has been written.
+ *
+ * One row and no room, because there is one box per bot: `box.ts` says why, and the
+ * row follows it rather than keeping a room the box no longer has.
+ */
+export function digestOf(store: SeekStore, agentId: Id): Memory | undefined {
+  return store.memoriesOf(agentId).find((row) => row.level === 'box_digest');
 }
 
 /**
- * The delta: this room's entries on this bot's record, after the point the last
- * summary consumed up to.
+ * The delta: this bot's record after the point its note consumed up to, whichever
+ * room each entry came from.
  *
  * It is *derived* — read off the record — and never stored, so there is one copy
  * of every observation and no second log to keep true (`agent-lifecycle.md`
@@ -134,43 +135,41 @@ export function digestOf(
  * it — consumed, awaiting a summary — until a compaction moves the consumed-to
  * point past it. That is what makes the box's last-verdict part a fact in
  * operation rather than only in a test, and bounding the span is compaction's
- * job (`RoomCompactor`), not this slice's.
+ * job (`Compactor`), not this slice's.
  */
-export function deltaFor(
-  store: SeekStore,
-  botId: Id,
-  roomId: Id,
-  agentId?: Id,
-): Observation[] {
-  const record = store
-    .inbox(botId)
-    .filter((entry) => entry.room_id === roomId);
+export function deltaFor(store: SeekStore, botId: Id, agentId?: Id): Observation[] {
+  const record = store.inbox(botId);
   if (record.length === 0) return [];
 
-  const point = agentId ? digestOf(store, agentId, roomId)?.consumed_to : undefined;
-  if (!point) return record;
+  const point = agentId ? digestOf(store, agentId)?.consumed_to : undefined;
+  // **A copy, not the record itself.** `write()` calls this for the snapshot a note
+  // covers and then awaits the writer, and the record keeps growing meanwhile: handing
+  // back the store's own array let an observation that arrived during the compaction
+  // join the delta the note was already being written from, so it was folded away
+  // without ever being read. The two other returns below already copy (`slice`).
+  if (!point) return [...record];
 
   const at = record.findIndex((entry) => entry.id === point);
-  return at === -1 ? record : record.slice(at + 1);
+  return at === -1 ? [...record] : record.slice(at + 1);
 }
 
 /**
- * The room digest writer for one store.
+ * The note's writer for one store.
  *
  * It holds no timer and no life of its own — like an agent, it is a runnable,
  * called by whatever owns the clock. The comparator is the only thing in the
  * kernel that arms a timer, and compaction is not one of its outputs.
  */
-export class RoomCompactor {
+export class Compactor {
   store: SeekStore;
   summarise?: Summarise;
   lines: CompactLines;
   /** Injected so a test can age a delta without waiting for one. */
   clock: () => string;
-  /** The one compaction running per (bot, room): single-flight, not a queue. */
+  /** The one compaction running per bot: single-flight, not a queue. */
   private running = new Map<string, Promise<CompactOutcome>>();
   /**
-   * The delta size a failed run saw, per (bot, room).
+   * The delta size a failed run saw, per bot.
    *
    * A writer that keeps failing must not be re-fired every tick against the same
    * delta: it backs off until the delta has actually grown. That is a rule about
@@ -197,13 +196,13 @@ export class RoomCompactor {
    * a drained entry is on it. What a compaction folds in is therefore the same
    * set whether it runs before, during or after a tick.
    */
-  delta(botId: Id, roomId: Id): Observation[] {
-    return deltaFor(this.store, botId, roomId, this.workAgent(botId)?.id);
+  delta(botId: Id): Observation[] {
+    return deltaFor(this.store, botId, this.workAgent(botId)?.id);
   }
 
-  /** Whether a compaction is in flight for this room. */
-  inFlight(botId: Id, roomId: Id): boolean {
-    return this.running.has(key(botId, roomId));
+  /** Whether a compaction is in flight for this bot. */
+  inFlight(botId: Id): boolean {
+    return this.running.has(botId);
   }
 
   /**
@@ -212,36 +211,35 @@ export class RoomCompactor {
    * This is the question the runtime answers for itself and never puts to a
    * model: a count, and an age, both free.
    */
-  due(botId: Id, roomId: Id): boolean {
+  due(botId: Id): boolean {
     if (!this.summarise) return false;
-    if (this.inFlight(botId, roomId)) return false;
+    if (this.inFlight(botId)) return false;
     if (!this.workAgent(botId)) return false;
 
-    const delta = this.delta(botId, roomId);
+    const delta = this.delta(botId);
     if (delta.length === 0) return false;
-    if (this.failed.get(key(botId, roomId)) === delta.length) return false;
+    if (this.failed.get(botId) === delta.length) return false;
     return this.crosses(delta);
   }
 
   /**
    * Write the room's summary, or say why not.
    *
-   * One at a time per room: a second caller joins the run in flight instead of
+   * One at a time per bot: a second caller joins the run in flight instead of
    * starting a rival one. The snapshot is taken before the writer is awaited and
    * is what the summary covers, so an entry that arrives meanwhile is still in
    * the delta afterwards — never summarised by accident and never dropped.
    */
-  async compact(botId: Id, roomId: Id): Promise<CompactOutcome> {
-    const room = key(botId, roomId);
-    const inFlight = this.running.get(room);
+  async compact(botId: Id): Promise<CompactOutcome> {
+    const inFlight = this.running.get(botId);
     if (inFlight) return inFlight;
 
-    const run = this.write(botId, roomId, room);
-    this.running.set(room, run);
+    const run = this.write(botId);
+    this.running.set(botId, run);
     try {
       return await run;
     } finally {
-      this.running.delete(room);
+      this.running.delete(botId);
     }
   }
 
@@ -259,31 +257,30 @@ export class RoomCompactor {
     return false;
   }
 
-  private async write(botId: Id, roomId: Id, room: string): Promise<CompactOutcome> {
+  private async write(botId: Id): Promise<CompactOutcome> {
     const agent = this.workAgent(botId);
     if (!agent) return { ran: false, reason: 'no-work-agent' };
     const summarise = this.summarise;
     if (!summarise) return { ran: false, reason: 'no-summarise' };
 
-    const snapshot = deltaFor(this.store, botId, roomId, agent.id);
+    const snapshot = deltaFor(this.store, botId, agent.id);
     if (snapshot.length === 0) return { ran: false, reason: 'empty-delta' };
     if (!this.crosses(snapshot)) return { ran: false, reason: 'not-due' };
 
-    const previous = digestOf(this.store, agent.id, roomId);
+    const previous = digestOf(this.store, agent.id);
     let body: string;
     try {
       body = await summarise({
         botId,
         agentId: agent.id,
-        roomId,
         delta: snapshot,
         previous,
       });
     } catch {
-      this.failed.set(room, snapshot.length);
+      this.failed.set(botId, snapshot.length);
       return { ran: false, reason: 'failed' };
     }
-    this.failed.delete(room);
+    this.failed.delete(botId);
 
     // **What this note is about to fold away is filed first** (`archive.ts`):
     // `docs/host-rulings.md`, "The observation box" — *"the uncompacted content is
@@ -298,7 +295,7 @@ export class RoomCompactor {
     let memory: Memory;
     if (previous) {
       // Rolling: the digest is replaced where it stands. Appending would leave
-      // two summaries of one room, which is a disagreement waiting to surface.
+      // two summaries of one bot, which is a disagreement waiting to surface.
       previous.body = body;
       previous.consumed_to = consumedTo;
       previous.updated_at = at;
@@ -307,8 +304,7 @@ export class RoomCompactor {
       memory = {
         id: newId('mm'),
         agent_id: agent.id,
-        level: 'room_digest',
-        room_id: roomId,
+        level: 'box_digest',
         body,
         consumed_to: consumedTo,
         updated_at: at,
@@ -321,8 +317,4 @@ export class RoomCompactor {
     await this.store.save();
     return { ran: true, memory, delta: snapshot };
   }
-}
-
-function key(botId: Id, roomId: Id): string {
-  return `${botId}:${roomId}`;
 }

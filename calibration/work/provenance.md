@@ -59,11 +59,13 @@ measures the prompt the reader has; `LLAMA=<path>` names another `llama-server` 
 `src/prompts/work-v1.json` changed, which is what makes the rows comparable: the only
 variable left is the model.
 
-**The tree now ships `work-v11.json`, and every row below was measured on `work-v1.json`.** A
+**The tree now ships `work-v12.json`, and every row below was measured on `work-v1.json`.** A
 prompt is versioned rather than edited in place, so v1 stays in the tree exactly as it was
 measured. v2 adds two parts — what the bot does in its organization, and how it talks and
 works — and both are skipped when a bot's card says nothing; v3 adds one part, the note the
 bot wrote about the room before the messages it reads, skipped while the room has no note.
+v12 adds the room each line came from — the box is the bot's and not a room's, so what it
+reads may come from several — and leaves the rest of v11 as it stood.
 So a bot with an empty card, in a room nothing has been compacted in, was asked the v1 text
 byte for byte for as long as v2 and v3 shipped (`src/prompts.test.ts` compared the two
 assemblies, and says why it no longer can).
@@ -217,7 +219,7 @@ measurement's:
   1,846,240,576 B (`d1-2B-Q8_0`), so first-run weights grow from ≈1.72 GiB to ≈2.3 GiB;
 - the judgement half reads **one calibrated probability** from a decision endpoint, and its
   `0.600` cut is calibrated against `d1-2B` on the twenty-four cases in `../set4-d1.json`
-  (24 of 24). A different model is a different distribution, so a work model that also served
+  (23 of 24 at that cut under the shipped `watch-v4`). A different model is a different distribution, so a work model that also served
   stage 1 would need that cut recalibrated — which is a second measurement, not a line to
   change;
 - the two halves are wired to separate servers (`SEEK_SERVER` / `SEEK_WORK_SERVER`), so

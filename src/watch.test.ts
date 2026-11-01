@@ -114,7 +114,7 @@ function summarise(world: World, body: string, consumedTo: Id, botId: Id = world
   world.store.memoriesOf(agent.id).push({
     id: newId('mm'),
     agent_id: agent.id,
-    level: 'room_digest',
+    level: 'box_digest',
     room_id: world.room,
     body,
     consumed_to: consumedTo,
@@ -331,16 +331,22 @@ test('a verdict lands on the entries that were judged and on nothing else', asyn
   const waiting = world.store.pending(world.botA).map((entry) => entry.id);
   assert.equal(waiting.length, 1);
 
-  // Two rooms, two questions, told apart by what the state holds: this is one call per
-  // room, so the model is handed one room's text at a time.
+  // Two rooms, two questions: the box is the bot's and holds both rooms, but the question
+  // is asked about a room, so there is one call per room. What tells the two apart is the
+  // room the question is about — the `Room:` line — and not a message body, because both
+  // states now carry both rooms' lines.
   const { model, seen } = stub((input) => ({
-    probabilities: input.prompt.state.includes('Message: here')
+    probabilities: input.prompt.state.includes('Room: room')
       ? { act: 0.99, ignore: 0.01 }
       : { act: 0.01, ignore: 0.99 },
   }));
   const acting = await bind(world, model)(entries);
 
   assert.equal(seen.length, 2, 'one question per room, never one for the batch');
+  assert.ok(
+    seen[0].prompt.state.includes('Message: there'),
+    'the box is the bot\'s, so each question is handed the other room\'s line too',
+  );
   assert.equal(acting.length, 1);
   assert.equal(acting[0].room_id, world.room);
 
@@ -574,7 +580,7 @@ test('a verdict a tick wrote survives a restart, and the next box reads it back'
 
     // The box's last-verdict part is still read off the record — which is the whole
     // reason the entry stayed: the tick used to destroy the only copy.
-    const box = buildBox(reloaded, world.botA, world.room, { window: 10 });
+    const box = buildBox(reloaded, world.botA, { window: 10 });
     assert.equal(box.lastVerdict?.verdict, 'ignore');
     assert.equal(box.lastVerdict?.entryId, entries[0].id);
   } finally {
@@ -597,20 +603,20 @@ test('no artifact and no cut given means the shipped file and its 0.600', async 
   }
 
   const at = await decideAt(0.6);
-  assert.equal(at.asked.prompt.version, 'watch-v3', 'the shipped version, not a literal in here');
+  assert.equal(at.asked.prompt.version, 'watch-v4', 'the shipped version, not a literal in here');
   assert.equal(at.acting.length, 1, 'exactly at the shipped cut, and the cut is inclusive');
 
   // Verbatim apart from the timestamp, which is the entry's own: the head names the bot
   // this judgement is for, the neighbours in the room, the room, then the message.
-  const stamped = /^\[(.+)\] me: deploy is red$/m.exec(at.asked.prompt.state);
+  const stamped = /^\[(.+)\] me \[room\]: deploy is red$/m.exec(at.asked.prompt.state);
   assert.ok(stamped !== null, 'the message line names who spoke and when');
   assert.equal(Number.isNaN(Date.parse(stamped[1])), false, 'the time is a real timestamp');
   assert.equal(
-    at.asked.prompt.state.replace(stamped[0], '[<at>] me: deploy is red'),
+    at.asked.prompt.state.replace(stamped[0], '[<at>] me [room]: deploy is red'),
     'You are A, one of the bots in this chat client.\n' +
       'The other bots in this room: B.\n' +
       '\nRoom: room\n' +
-      '\n[<at>] me: deploy is red\n',
+      '\n[<at>] me [room]: deploy is red\n',
     'the shipped shape, with this bot named in its head and the room named',
   );
 

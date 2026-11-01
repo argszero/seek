@@ -6,8 +6,8 @@
  *
  * | Part | Where it comes from |
  * |---|---|
- * | **Summary** | the room digest the work agent wrote (`compact.ts`, `digestOf`) |
- * | **Delta** | the record's entries after that digest's consumed-to point (`deltaFor`) |
+ * | **Summary** | the note the work agent wrote (`compact.ts`, `digestOf`) |
+ * | **Delta** | the record's entries after that note's consumed-to point (`deltaFor`) |
  * | **Last verdict** | read off the entry the loop wrote it on — never a second copy |
  * | **Question set** | the caller's (`agents.yml`), absent until a ruling fixes its shape |
  *
@@ -24,6 +24,17 @@
  * - **It never waits for a compaction.** Whatever box exists is what is read —
  *   possibly an empty summary and a long delta. Nothing here locks, queues or
  *   retries.
+ *
+ * **One box per bot, and it travels with the bot.** `docs/design/agent-lifecycle.md`
+ * §3 opens with it — *"One box per bot. Not per room"* — and `docs/host-rulings.md`,
+ * "The observation box", says *"One bot has one, it travels with the bot, and what
+ * the bot gathered in another room is in it"*. So what this file builds is the bot's
+ * own record after its note, whichever room each entry came from: a bot working in
+ * two rooms has one box holding both, never two boxes that each hold half. Every
+ * entry keeps its `room_id`, and `rooms` is that list made explicit for a caller
+ * that has to say where a line came from — *"each carrying which room it came from,
+ * who said it, when and what was said, which is what lets one box hold several rooms
+ * without confusing them"* (same section).
  *
  * **No model is called and nothing is written.** `buildBox` is a pure read of
  * the store: it appends no message, no turn and no row, and it is not a turn.
@@ -87,7 +98,7 @@ export interface BoxVerdict {
   reason?: string;
 }
 
-/** Who spoke in this room over the delta, and how often. */
+/** Who spoke over the delta, and how often. */
 export interface BoxSpeaker {
   principalId: Id;
   name?: string;
@@ -122,7 +133,7 @@ export interface BoxMedia {
 }
 
 /**
- * One room's box, as a judgement receives it. Structured, never prose.
+ * One bot's box, as a judgement receives it. Structured, never prose.
  *
  * **The box is what a judgement is told; the question is what it is asked, and it
  * is not here.** The question is the prompt artifact's own last part (`prompts.ts`):
@@ -132,9 +143,15 @@ export interface BoxMedia {
  * would be a second one, free to disagree with the text and with the mask measured
  * against it, and the roster has no field for it either — so there is no path by which a caller can ask two.
  */
-export interface RoomBox {
+export interface BotBox {
   botId: Id;
-  roomId: Id;
+  /**
+   * Every room the entries came from, oldest first.
+   *
+   * A reminder is in no room (`Observation.room_id`) and contributes none, which is
+   * why this is a list rather than the single room the box used to be.
+   */
+  rooms: Id[];
   /** The last compaction's result. Absent when nothing has been compacted. */
   summary?: string;
   /** The observations that fit, newest first. */
@@ -167,24 +184,19 @@ export interface RoomBox {
 }
 
 /**
- * Build the box for one (bot, room).
+ * Build the bot's box.
  *
  * Newest first, up to the window, with the unread count carried along. The
  * newest entry that cannot fit is not read — the box never exceeds the window,
  * even when a single entry is larger than the whole of it, and that shows up as
  * an unread count rather than as a quietly oversized box.
  */
-export function buildBox(
-  store: SeekStore,
-  botId: Id,
-  roomId: Id,
-  options: BoxOptions,
-): RoomBox {
+export function buildBox(store: SeekStore, botId: Id, options: BoxOptions): BotBox {
   const weigh = options.weigh ?? (() => 1);
   // No `inFlight` to add: the entries that woke this judgement are on the record
   // the delta is read from, so the box holds the line that woke it without any
   // caller handing it back in.
-  const total = deltaFor(store, botId, roomId, workAgentId(store, botId));
+  const total = deltaFor(store, botId, workAgentId(store, botId));
 
   const kept: Observation[] = [];
   let spent = 0;
@@ -203,13 +215,13 @@ export function buildBox(
   // Filled by walking backwards, so `kept` is already newest-first — the order
   // the judgement reads it. Reversing would hand it oldest-first.
 
-  const summary = digestOf(store, workAgentId(store, botId) ?? '', roomId)?.body;
+  const summary = digestOf(store, workAgentId(store, botId) ?? '')?.body;
 
   const lastVerdict = newestVerdict(total);
-  const messages = byMessageId(store.messagesOf(roomId));
-  const box: RoomBox = {
+  const messages = messagesOf(store, total);
+  const box: BotBox = {
     botId,
-    roomId,
+    rooms: roomsOf(total),
     delta: kept,
     media: mediaOf(messages, kept),
     read: kept.length,
@@ -259,10 +271,27 @@ function newestVerdict(delta: Observation[]): BoxVerdict | undefined {
   return undefined;
 }
 
-/** The room's messages, keyed by id — built once, because two parts read them. */
-function byMessageId(messages: Message[]): Map<Id, Message> {
+/** Every room the entries came from, oldest first, once each. */
+function roomsOf(entries: Observation[]): Id[] {
+  const rooms: Id[] = [];
+  for (const entry of entries) {
+    if (entry.room_id !== undefined && !rooms.includes(entry.room_id)) rooms.push(entry.room_id);
+  }
+  return rooms;
+}
+
+/**
+ * The messages the entries point at, keyed by id — built once, because two parts
+ * read them.
+ *
+ * Read room by room, because one box now holds several: an entry names the room it
+ * came from, so the bodies it points at are in that room's messages and nowhere else.
+ */
+function messagesOf(store: SeekStore, entries: Observation[]): Map<Id, Message> {
   const byId = new Map<Id, Message>();
-  for (const message of messages) byId.set(message.id, message);
+  for (const roomId of roomsOf(entries)) {
+    for (const message of store.messagesOf(roomId)) byId.set(message.id, message);
+  }
   return byId;
 }
 

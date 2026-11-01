@@ -87,7 +87,11 @@ place a repository can cite.
   per declared answer and generates no token: nothing is summed, and there is no spelling to
   match. `readingOf` and `bindOptions` went with it. What the shipped cut rests on now is
   `calibration/set4-d1.json` — set4 read through the kernel's own `watchAs` over that endpoint,
-  24 of 24 at 0.600, lowest `act` 0.625 and highest of everything else 0.582. Everything above
+  **23 of 24 at 0.600 under the prompt that ships (`watch-v4`), lowest `act` 0.740 and highest
+  of everything else 0.611**: the two classes do not overlap and the cut sits just below the
+  gap, so the one case read wrong is an `ignore` that crosses it by 0.011. The `watch-v3`
+  record on the same twenty-four cases was 24 of 24; entry lines gained the room they came
+  from in between. Everything above
   is the measurement that *was* taken, kept as what it is and not read as a description of the
   code; `measured.json` says which record replaced it. The one difference that was never
   settled — `vocab.py` normalising over the pair while `readingOf` returned the raw sum — is now

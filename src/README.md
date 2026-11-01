@@ -1,6 +1,6 @@
 # src — the kernel
 
-The kernel is written: `store`, `roster`, `identity`, `rooms`, `erase`, `delivery`, `gate`, `chain`, `schedule`, `say`, `turn`, `compact`, `archive`, `box`, `prompts`, `i18n`, `watch`, `llama`, `watch-server`, `work-server`, `served`, `inbox`, `kernel`, the comparator, the seam that binds stage 2 to a server so a model writes the reply, the by-day file that keeps what a compaction consumed, the `read` that hands a day back, the `glob` and `grep` that find a file or a word in that archive, the `write` and `edit` that keep something of the bot's own in the same directory, and a runnable first milestone (`npm start`), with 465 tests over them, and **no interface**. By rule 1 in `CONTRIBUTING.md`: **settle the data model before the interface.**
+The kernel is written: `store`, `roster`, `identity`, `rooms`, `erase`, `delivery`, `gate`, `chain`, `schedule`, `say`, `turn`, `compact`, `archive`, `box`, `prompts`, `i18n`, `watch`, `llama`, `watch-server`, `work-server`, `served`, `inbox`, `kernel`, the comparator, the seam that binds stage 2 to a server so a model writes the reply, the by-day file that keeps what a compaction consumed, the `read` that hands a day back, the `glob` and `grep` that find a file or a word in that archive, the `write` and `edit` that keep something of the bot's own in the same directory, and a runnable first milestone (`npm start`), with 464 tests over them, and **no interface**. By rule 1 in `CONTRIBUTING.md`: **settle the data model before the interface.**
 
 ## Checklist
 
