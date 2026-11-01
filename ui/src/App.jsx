@@ -1588,15 +1588,20 @@ export default function App() {
             >
               <Mentions members={active.members} mention={roomMention} />
               {/* **One box, and the three choices inside it.** Measured off the client on
-                  2026-10-27: a 48px rounded field with the editor on the left and the marks on
-                  the right — five 26×26 hit areas holding 18px glyphs, 4px apart, a 1px rule,
-                  then the send arrow. Ours used to be four bordered boxes side by side with the
-                  words "@", "Picture" and "Send" in them, which is not the client's shape and,
-                  for the last two, not even a shape a picture can be drawn in.
+                  2026-10-27 and re-read on 2026-11-01 from a 2× screenshot of its composer: a
+                  48px rounded field with the editor on the left and the marks on the right, a
+                  1px rule, then the send arrow. Ours used to be four bordered boxes side by
+                  side with the words "@", "Picture" and "Send" in them, which is not the
+                  client's shape and, for the last two, not even a shape a picture can be drawn
+                  in.
                   The marks are the four the message can carry before it has words — an emoji
                   in them, a name it addresses, a picture and a file — and of the client's five
                   slots the two that stay undrawn are `Aa`, a font picker this product has no
-                  fonts for, and `⤢`, a window state it does not keep. */}
+                  fonts for, and `⤢`, a window state it does not keep. What the client puts in
+                  its one `+`, this window puts in two buttons.
+                  The marks' ink is 33–35 device px in that screenshot and 30–33 in ours, and is
+                  left so: `COMPOSER_ICON` sizes the marks and the arrow together, and the
+                  arrow's ink is 32 device px in both. */}
               <div className="composer-box">
                 <textarea
                   ref={roomInput}
@@ -1608,12 +1613,13 @@ export default function App() {
                   onKeyDown={(event) => keyDown(event, draft, undefined, roomMention)}
                 />
                 <div className="composer-tools">
-                  {/* The client's five marks, of which four are drawn: the smiley, the @, the
-                      picture and the plus. `Aa` (typography) and `⤢` (expand) are not — the
-                      first is a font picker this product does not have and the second is a
-                      window state it does not keep. The four that are drawn each do their
-                      job: an emoji goes into the words, a name goes onto the message, a
-                      picture is one kind of bytes and a file is the other. */}
+                  {/* The client's row holds five marks — `Aa`, the smiley, the `@`, a circled
+                      `+` and `⤢`, read off its own composer on 2026-11-01 — and four are drawn
+                      here. Two are the client's own: the smiley, which puts an emoji into the
+                      words, and the `@`, which puts a name onto the message. Its single `+` is
+                      drawn as two, because a picture is one kind of bytes and a file is the
+                      other. `Aa` (a font picker this product has no fonts for) and `⤢` (a
+                      window state it does not keep) stay undrawn. */}
                   <button
                     className="composer-tool"
                     type="button"
