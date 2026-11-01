@@ -154,6 +154,35 @@ export function archiveDays(home: string): string[] {
 }
 
 /**
+ * One archived row, as the line a reader is handed.
+ *
+ * **This is the one place the shape is written.** Two readers hand back the same facts —
+ * `read` a whole day of them, `grep` the ones a word is on — and the comment below states
+ * the rule the pair has to keep: a reader given yesterday in one shape and today in another
+ * has to learn a difference that buys nothing. So `grep` does not quote the row the file
+ * happens to store; it quotes this.
+ *
+ * A row that is not an archived entry has no line to be read as, and says so rather than
+ * rendering one out of whatever fields it happens to have: `[undefined] undefined: …` is a
+ * reader being told something that is not in the file.
+ */
+export function archivedLine(row: string): string {
+  const entry = JSON.parse(row) as Partial<ArchivedEntry> | null;
+  if (
+    typeof entry !== 'object' ||
+    entry === null ||
+    typeof entry.at !== 'string' ||
+    typeof entry.sender !== 'string' ||
+    typeof entry.text !== 'string'
+  ) {
+    throw new Error(
+      `this row is not an archived entry, so there is no line to read it as: ${row.slice(0, 120)}`,
+    );
+  }
+  return `[${entry.at}] ${entry.sender}: ${entry.text}`;
+}
+
+/**
  * One day, as the words a reader is handed.
  *
  * `null` means this agent has no such day: the files are the whole of what may be read, so
