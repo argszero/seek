@@ -43,7 +43,7 @@ test('the roster shipped with the tree parses: the watch row may call nothing, t
     rows.map((row) => [row.bot, row.role, row.tools]),
     [
       ['Echo', 'watch', []],
-      ['Echo', 'work', ['say', 'read', 'glob', 'grep']],
+      ['Echo', 'work', ['say', 'read', 'glob', 'grep', 'write', 'edit']],
     ],
   );
 });

@@ -752,7 +752,7 @@ export interface WorkValues {
 /**
  * The shipped turn artifact's location, beside this module.
  *
- * `work-v10.json` ships; `work-v1.json` through `work-v9.json` stay beside it. A prompt is
+ * `work-v11.json` ships; `work-v1.json` through `work-v10.json` stay beside it. A prompt is
  * versioned rather than edited in place, because `calibration/work/` measured v1 and a
  * record that quotes a prompt the tree has changed describes a run nobody can re-read
  * — `work-calibration.test.ts` holds that pair together. What v2 added is the two parts
@@ -792,9 +792,19 @@ export interface WorkValues {
  * a bot can reach the machine through. No part moves and neither existing tool changes: a
  * tool's description is prompt text, so the words about the two are in their own entries and
  * nowhere else.
+ *
+ * What v11 adds is the half of the tool set that changes something: `write` and `edit`. The
+ * ruling's list in `docs/host-rulings.md`, "The tools", is the kernel's registry — `bash`,
+ * `read`, `write`, `edit`, `glob`, `grep`, `subagent`, `submit_rant`, `boss` — and until v11
+ * a bot could look and not act, which is not the agent that sentence describes. Both are
+ * bounded to the agent's own home, exactly as `read`, `glob` and `grep` are, so the home is
+ * still the only part of the machine a turn can touch. `bash` stays out: it is the one of the
+ * three that reaches the machine itself rather than the bot's own files, and the ruling's
+ * "It has tools" paragraph is about the set a bot is configured with, not a decision this
+ * artifact makes on the host's behalf. No part moves.
  */
 export function shippedWorkPromptPath(): URL {
-  return new URL('./prompts/work-v10.json', import.meta.url);
+  return new URL('./prompts/work-v11.json', import.meta.url);
 }
 
 /**

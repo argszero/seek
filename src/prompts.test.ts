@@ -408,10 +408,11 @@ function turnValues(card: {
   };
 }
 
-test('the shipped turn artifact is v10, and a picture is named on the line it came with', () => {
+test('the shipped turn artifact is v11, and a picture is named on the line it came with', () => {
   const shipped = loadWorkArtifact();
-  assert.equal(shipped.version, 'work-v10');
-  assert.match(shippedWorkPromptPath().pathname, /work-v10\.json$/);
+  assert.equal(shipped.version, 'work-v11');
+  assert.match(shippedWorkPromptPath().pathname, /work-v11\.json$/);
+  const ten = loadWorkArtifact(new URL('./prompts/work-v10.json', import.meta.url));
   const nine = loadWorkArtifact(new URL('./prompts/work-v9.json', import.meta.url));
   const eight = loadWorkArtifact(new URL('./prompts/work-v8.json', import.meta.url));
 
@@ -483,14 +484,39 @@ test('the shipped turn artifact is v10, and a picture is named on the line it ca
   // name or a word in it. Both new tools are read-only, and both are bounded to this
   // agent's own home — the bound `read` already had. No part moves, which is what keeps
   // v10 a change to what a bot may do rather than to what it is like.
-  assert.deepEqual(shipped.parts, nine.parts, 'v10 adds no part: the tools are the whole of it');
-  assert.equal(shipped.system, nine.system, "the system line is v9's");
-  assert.equal(shipped.pictureLine, nine.pictureLine, "the picture line is v9's");
+  assert.deepEqual(ten.parts, nine.parts, 'v10 adds no part: the tools are the whole of it');
+  assert.equal(ten.system, nine.system, "the system line is v9's");
+  assert.equal(ten.pictureLine, nine.pictureLine, "the picture line is v9's");
   assert.deepEqual(
-    shipped.tools.filter((tool) => tool.name !== 'glob' && tool.name !== 'grep'),
+    ten.tools.filter((tool) => tool.name !== 'glob' && tool.name !== 'grep'),
     nine.tools,
     'v10 adds glob and grep and changes no other tool',
   );
+
+  // **What v11 is: the half of the tool set that keeps something.** The registry
+  // `docs/host-rulings.md`, "The tools", names is `bash / read / write / edit / glob /
+  // grep / subagent / submit_rant / boss`; through v10 a bot could look and not act, and
+  // `write` and `edit` are the two that change what is on the disk. Both are bounded to
+  // the agent's own home, which is the bound the four before them already had, so no new
+  // surface opens. No part moves, and the two are additions rather than replacements: a
+  // bot given only `write` would rewrite a whole note to correct one line of it.
+  assert.deepEqual(shipped.parts, ten.parts, 'v11 adds no part: the tools are the whole of it');
+  assert.equal(shipped.system, ten.system, "the system line is v10's");
+  assert.equal(shipped.pictureLine, ten.pictureLine, "the picture line is v10's");
+  assert.deepEqual(
+    shipped.tools.filter((tool) => tool.name !== 'write' && tool.name !== 'edit'),
+    ten.tools,
+    'v11 adds write and edit and changes no other tool',
+  );
+  for (const name of ['write', 'edit']) {
+    const tool = shipped.tools.find((one) => one.name === name);
+    assert.ok(tool, `v11 offers ${name}, because the runtime executes it`);
+    assert.ok(
+      tool.description.includes('own directory'),
+      `${name} says where it is bounded, in the words the model reads`,
+    );
+  }
+
   for (const name of ['glob', 'grep']) {
     const tool = shipped.tools.find((one) => one.name === name);
     assert.ok(tool, `v10 offers ${name}, because the runtime executes it`);
