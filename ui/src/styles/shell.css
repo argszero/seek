@@ -527,7 +527,12 @@ body {
    canvas, and reading it as this one is what put four units of grey here in the first place. */
 .messages { list-style: none; margin: 0; padding: 16px 20px; overflow-y: auto; flex: 1; background: var(--bg-content-base); }
 
-.msg { display: flex; gap: 10px; padding: 6px 0; }
+/* The air between two messages. Measured off the client, from the one adjacent pair its
+   screenshot shows whole: the box above ends at y=140 and the next message's avatar begins at
+   y=160, so 20px of canvas separates them. `10px` top and bottom is what adds up to that;
+   `6px` here put them 12px apart. The measurement is that one pair because the pair is all
+   the screenshot holds — the row above it is scrolled out of the window. */
+.msg { display: flex; gap: 10px; padding: 10px 0; }
 
 /* The box a message sits in. Measured off the client's own screenshot: the fill is `#EBECED`,
    the words are 15px in from either side and 8px down from the top, and the box is as wide as
