@@ -56,7 +56,7 @@
  * startup sweep would be writing behaviour the documents do not state.
  */
 
-import { RoomCompactor, type CompactLines, type Summarise } from './compact.ts';
+import { Compactor, type CompactLines, type Summarise } from './compact.ts';
 import { ScheduleComparator, wallTimers, type Timers } from './comparator.ts';
 import { InboxLoop, type Judge, type TickResult } from './inbox.ts';
 import { applyRoster, readRosterFor } from './roster.ts';
@@ -159,7 +159,7 @@ export class Kernel {
   /** Turns that threw on the wake path, oldest first. */
   failures: KernelFailure[] = [];
   /** Compaction: a runtime action, never a turn (§3). */
-  compactor: RoomCompactor;
+  compactor: Compactor;
 
   #decide: Decide | undefined;
   #judge: Judge | undefined;
@@ -194,7 +194,7 @@ export class Kernel {
     this.#wakeDelay = options.wakeDelay;
     this.#timers = options.timers ?? wallTimers;
 
-    this.compactor = new RoomCompactor(store, {
+    this.compactor = new Compactor(store, {
       summarise: options.summarise,
       lines: options.compactLines,
       now: options.now ?? (() => new Date().toISOString()),
@@ -430,36 +430,26 @@ export class Kernel {
   #compactAfter(botId: Id, drained: Observation[]): void {
     if (drained.length === 0) return;
 
-    // One compaction per room, because a summary is per (bot, room). A reminder
-    // has no room and is not folded into anybody's: it belongs to no room's
-    // conversation (`agent-lifecycle.md` §12).
-    const byRoom = new Map<Id, Observation[]>();
-    for (const entry of drained) {
-      if (!entry.room_id) continue;
-      const group = byRoom.get(entry.room_id);
-      if (group) group.push(entry);
-      else byRoom.set(entry.room_id, [entry]);
-    }
+    // **One compaction per bot, because the note is the bot's.** It used to be one per
+    // room, when a box was one room's; `box.ts` and `docs/host-rulings.md` now say the
+    // box travels with the bot, so a tick that touched two rooms has one delta to fold
+    // and not two. Whatever the tick drained needs no hand-off: it is on the record the
+    // delta is read from, so this only decides whether to ask at all.
+    // The question the runtime answers for itself and never puts to a model: a count
+    // and an age, both free (§3).
+    if (!this.compactor.due(botId)) return;
 
-    // What the tick drained needs no hand-off: it is on the record the delta is
-    // read from, so the grouping only decides *which rooms* this tick touched.
-    for (const roomId of byRoom.keys()) {
-      // The question the runtime answers for itself and never puts to a model:
-      // a count and an age, both free (§3).
-      if (!this.compactor.due(botId, roomId)) continue;
-
-      const run = this.compactor.compact(botId, roomId).then(
-        () => undefined,
-        (error: unknown) => {
-          // A background action that threw must not take the process down, and
-          // must not vanish either: §@ "nothing is ever dropped silently".
-          this.failures.push({ botId, error });
-          this.#onError?.(error, botId);
-        },
-      );
-      this.#compacting.add(run);
-      void run.then(() => this.#compacting.delete(run));
-    }
+    const run = this.compactor.compact(botId).then(
+      () => undefined,
+      (error: unknown) => {
+        // A background action that threw must not take the process down, and
+        // must not vanish either: §@ "nothing is ever dropped silently".
+        this.failures.push({ botId, error });
+        this.#onError?.(error, botId);
+      },
+    );
+    this.#compacting.add(run);
+    void run.then(() => this.#compacting.delete(run));
   }
 
   #deliver(botIds: Id[]): void {

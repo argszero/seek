@@ -30,7 +30,7 @@ import {
   describeFrom,
   readArchiveDay,
 } from './archive.ts';
-import { RoomCompactor } from './compact.ts';
+import { Compactor } from './compact.ts';
 import { deliver } from './delivery.ts';
 import { makeWorld } from './fixtures.ts';
 import type { Observation } from './types.ts';
@@ -184,11 +184,11 @@ test('a compaction files what its note folds away, and files it before the note 
   deliver(world.store, { roomId: world.room, senderId: world.me, text: 'first' });
   deliver(world.store, { roomId: world.room, senderId: world.me, text: 'second' });
 
-  const compactor = new RoomCompactor(world.store, {
+  const compactor = new Compactor(world.store, {
     summarise: () => 'a note that covers both messages',
     lines: { maxObservations: 1 },
   });
-  const outcome = await compactor.compact(world.botA, world.room);
+  const outcome = await compactor.compact(world.botA);
   assert.equal(outcome.ran, true);
 
   const day = outcome.ran ? outcome.delta[0].delivered_at.slice(0, 10) : '';
@@ -201,7 +201,7 @@ test('a compaction files what its note folds away, and files it before the note 
   // **Nothing is filed twice.** The next compaction folds in only what arrived after the
   // note, so the archive stays one line per message rather than a second copy of the box.
   deliver(world.store, { roomId: world.room, senderId: world.me, text: 'third' });
-  await compactor.compact(world.botA, world.room);
+  await compactor.compact(world.botA);
   const after = String(readArchiveDay(home, day));
   assert.equal(after.split('\n').length, 3, 'the third message is the only line added');
   assert.equal(after.split('\n').filter((line) => line.includes('first')).length, 1);
@@ -216,13 +216,13 @@ test('a directory that cannot be written leaves the delta where it was', async (
   world.store.data.agents[world.agentA2].home = join(block, 'agents', 'work');
 
   deliver(world.store, { roomId: world.room, senderId: world.me, text: 'first' });
-  const compactor = new RoomCompactor(world.store, {
+  const compactor = new Compactor(world.store, {
     summarise: () => 'a note',
     lines: { maxObservations: 1 },
   });
 
-  await assert.rejects(() => compactor.compact(world.botA, world.room));
-  const delta = compactor.delta(world.botA, world.room);
+  await assert.rejects(() => compactor.compact(world.botA));
+  const delta = compactor.delta(world.botA);
   assert.equal(delta.length, 1, 'the entries are still in the delta, to be summarised again');
 });
 

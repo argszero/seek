@@ -111,7 +111,7 @@ export interface TurnSpec {
 export type HandedEntry = Omit<Observation, 'verdict' | 'reason'>;
 
 /**
- * The room's box as the turn reads it: the note, and the observations after it.
+ * The bot's box as the turn reads it: the note, and the observations after it.
  *
  * Oldest first, which is the order the record wrote them and the order a
  * conversation is read in. `box.ts` builds it newest-first, because a judgement
@@ -121,7 +121,7 @@ export type HandedEntry = Omit<Observation, 'verdict' | 'reason'>;
 export interface TurnBox {
   /** The last compaction's result, when the room has one. */
   summary?: string;
-  /** Every observation since it, oldest first. */
+  /** Every observation since it, oldest first, whichever room each came from. */
   entries: HandedEntry[];
   /**
    * The pictures those observations carry, in the same order.
@@ -169,11 +169,13 @@ export interface TurnContext {
    */
   entries: HandedEntry[];
   /**
-   * The room's box as it stands, oldest first: the note written last time and
-   * every observation since it (`box.ts`).
+   * The bot's box as it stands, oldest first: the note written last time and every
+   * observation since it, whichever room each came from (`box.ts`).
    *
-   * Absent on a reminder's turn, which is in no room (§12) and so has no box to
-   * read — what it opens with is the reminder itself.
+   * `runTurn` always hands it over, a reminder's turn included: the box is the bot's
+   * and travels with it, so a turn speaking in no room still reads the box the bot
+   * has. It is optional here because the calibration drivers build a context by
+   * hand and have no store to read a box from.
    */
   box?: TurnBox;
   /** `say(room, text)`: bound to this bot and this agent, addressed by the caller. */
@@ -289,10 +291,12 @@ export async function runTurn(
   // What the decision reports having spent, held across the `finally` so a turn that
   // throws still closes its row. `null` is "nobody reported anything", which is the
   // placeholder path and also a server that answered without a usage block.
-  // §4: what the turn opens with is the room's box, read off the record here so no
+  // §4: what the turn opens with is the bot's box, read off the record here so no
   // caller can hand it a different one, and so a turn can never be woken with a
-  // window into a conversation it is being asked to continue.
-  const box = spec.roomId === undefined ? undefined : boxFor(store, agent.bot_id, spec.roomId);
+  // window into a conversation it is being asked to continue. It is the bot's and
+  // not a room's (`box.ts`): a reminder's turn, the one with no room, reads the same
+  // box as any other, because the box travels with the bot.
+  const box = boxFor(store, agent.bot_id);
 
   let spent: TokenUsage | null = null;
   try {
@@ -304,7 +308,7 @@ export async function runTurn(
       roomId: spec.roomId,
       identity,
       entries: spec.entries.map(handOver),
-      ...(box === undefined ? {} : { box }),
+      box,
       say,
       schedule,
     })) ?? null;
@@ -430,7 +434,7 @@ function handOver(entry: Observation): HandedEntry {
 }
 
 /**
- * The room's box, as the turn opens with it.
+ * The bot's box, as the turn opens with it.
  *
  * **The window is infinite on purpose.** What bounds this box is the compaction
  * threshold, not a number picked here: no work model's window has been measured in
@@ -444,8 +448,8 @@ function handOver(entry: Observation): HandedEntry {
  * and the reason off every entry, exactly as it does for the entries that woke the
  * turn — the box is the record, never the watch side's answer to it.
  */
-function boxFor(store: SeekStore, botId: Id, roomId: Id): TurnBox {
-  const built = buildBox(store, botId, roomId, { window: Number.POSITIVE_INFINITY });
+function boxFor(store: SeekStore, botId: Id): TurnBox {
+  const built = buildBox(store, botId, { window: Number.POSITIVE_INFINITY });
   // Both lists are reversed together: `buildBox` fills them newest-first, and a picture
   // reversed on its own would be read against the wrong line of the conversation.
   const box: TurnBox = {

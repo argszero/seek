@@ -81,7 +81,7 @@ const PERMUTED: PromptArtifact = {
 test('the shipped artifact is the shape that was measured', () => {
   const artifact = loadPromptArtifact();
 
-  assert.equal(artifact.version, 'watch-v3');
+  assert.equal(artifact.version, 'watch-v4');
   assert.equal(artifact.operatingPoint?.threshold, 0.6, 'the cut ships as a declared default');
   assert.match(artifact.operatingPoint?.measuredOn ?? '', /set4/);
 
@@ -101,7 +101,7 @@ test('the shipped artifact is the shape that was measured', () => {
       'What you do here: 运维.\n' +
       'The other bots in this room: 小荷, 小李.\n' +
       '\nRoom: 支付组\n' +
-      '\nRoom memory: a release is being arranged\n' +
+      '\nYour note so far: a release is being arranged\n' +
       '\n[2026-10-28T15:44:08+08:00] 邵安清: deploy is red\n',
   );
   assert.deepEqual(artifact.question, {
@@ -193,7 +193,9 @@ test('a room message cannot write the front of its own prompt', () => {
     text.includes('{summary} and {text} are what this line says\n'),
     'the message is text, not a substitution site',
   );
-  assert.equal(text.match(/Room memory:/g)?.length, 1, 'the memory is rendered once, from the digest');
+  // The digest is rendered once, and the message that happens to spell `{summary}` is
+  // text: a room cannot put a note it never had at the front of its own prompt.
+  assert.equal(text.match(/quiet/g)?.length, 1, 'the memory is rendered once, from the digest');
 });
 
 test("the order is the file's, all the way through the runtime", async () => {
@@ -295,7 +297,7 @@ test('the shipped file is the one the runtime loads by default', () => {
   const artifact = loadPromptArtifact();
   const shipped = shippedPromptPath();
 
-  assert.match(shipped.pathname, /src\/prompts\/watch-v3\.json$/);
+  assert.match(shipped.pathname, /src\/prompts\/watch-v4\.json$/);
   assert.equal(loadPromptArtifact(shipped).version, artifact.version);
   assert.deepEqual(skeletonOf(artifact), skeletonOf(loadPromptArtifact(shipped)));
   assert.deepEqual(
@@ -408,11 +410,12 @@ function turnValues(card: {
   };
 }
 
-test('the shipped turn artifact is v11, and a picture is named on the line it came with', () => {
+test('the shipped turn artifact is v12, and a picture is named on the line it came with', () => {
   const shipped = loadWorkArtifact();
-  assert.equal(shipped.version, 'work-v11');
-  assert.match(shippedWorkPromptPath().pathname, /work-v11\.json$/);
+  assert.equal(shipped.version, 'work-v12');
+  assert.match(shippedWorkPromptPath().pathname, /work-v12\.json$/);
   const ten = loadWorkArtifact(new URL('./prompts/work-v10.json', import.meta.url));
+  const eleven = loadWorkArtifact(new URL('./prompts/work-v11.json', import.meta.url));
   const nine = loadWorkArtifact(new URL('./prompts/work-v9.json', import.meta.url));
   const eight = loadWorkArtifact(new URL('./prompts/work-v8.json', import.meta.url));
 
@@ -500,16 +503,16 @@ test('the shipped turn artifact is v11, and a picture is named on the line it ca
   // the agent's own home, which is the bound the four before them already had, so no new
   // surface opens. No part moves, and the two are additions rather than replacements: a
   // bot given only `write` would rewrite a whole note to correct one line of it.
-  assert.deepEqual(shipped.parts, ten.parts, 'v11 adds no part: the tools are the whole of it');
-  assert.equal(shipped.system, ten.system, "the system line is v10's");
-  assert.equal(shipped.pictureLine, ten.pictureLine, "the picture line is v10's");
+  assert.deepEqual(eleven.parts, ten.parts, 'v11 adds no part: the tools are the whole of it');
+  assert.equal(eleven.system, ten.system, "the system line is v10's");
+  assert.equal(eleven.pictureLine, ten.pictureLine, "the picture line is v10's");
   assert.deepEqual(
-    shipped.tools.filter((tool) => tool.name !== 'write' && tool.name !== 'edit'),
+    eleven.tools.filter((tool) => tool.name !== 'write' && tool.name !== 'edit'),
     ten.tools,
     'v11 adds write and edit and changes no other tool',
   );
   for (const name of ['write', 'edit']) {
-    const tool = shipped.tools.find((one) => one.name === name);
+    const tool = eleven.tools.find((one) => one.name === name);
     assert.ok(tool, `v11 offers ${name}, because the runtime executes it`);
     assert.ok(
       tool.description.includes('own directory'),
@@ -578,20 +581,78 @@ test('the shipped turn artifact is v11, and a picture is named on the line it ca
   assert.equal(alone.rest.includes('The other bots here'), false);
   assert.ok(together.rest.includes('The other bots here: 小荷, 阿岩'));
 
-  // The index, rendered both ways. With one, the bot reads the line it was given and
-  // nothing invented around it; with none, the whole prompt is v8's, so a bot that has
-  // never worked in a second room is not asked about a list it does not have.
-  const noted = assembleWorkPrompt(shipped, {
-    ...blank,
-    memories:
-      '- room=the design room level=room_digest at=2026-11-01T09:00:00.000Z ' +
-      'first=the migration is blocked on the key rotation',
+  // **What v12 is: the box became the bot's.** `docs/host-rulings.md`, "The observation
+  // box" — one box per bot, it travels with the bot, and what the bot gathered in another
+  // room is in it — and `agent-lifecycle.md` §3 asks an observation to carry *"its room,
+  // who spoke, when and what was said"*. Three things follow, and this is the whole of v12:
+  // the entry line says which room it came from, the part that quotes the note stops
+  // calling it this room's, and the index of other rooms' notes leaves the file.
+  const roomless = shipped.parts.filter((part) => part.name === 'memories');
+  assert.equal(roomless.length, 0, 'v12 has no index of other rooms: there is one note per bot');
+  assert.equal(
+    eleven.parts.filter((part) => part.name === 'memories').length,
+    1,
+    'v11 did have one, which is what makes the removal a change rather than an omission',
+  );
+  // Two parts move and the rest are untouched: the index leaves, and the note stops being
+  // described as this room's — the note itself is one per bot now (`compact.ts`).
+  const kept = (artifact: { parts: { name: string }[] }) =>
+    artifact.parts.filter(
+      (part) => part.name !== 'memories' && part.name !== 'memory' && part.name !== 'entry',
+    );
+  assert.deepEqual(
+    kept(shipped),
+    kept(eleven),
+    'v12 moves no part but the index, the note and the entry line',
+  );
+  const noteOf = (artifact: { parts: { name: string; text: string }[] }) =>
+    artifact.parts.find((part) => part.name === 'memory')?.text ?? '';
+  assert.notEqual(noteOf(shipped), noteOf(eleven), 'the note part is reworded');
+  assert.ok(
+    noteOf(eleven).includes('about this room') && !noteOf(shipped).includes('about this room'),
+    'what v11 called this room\'s note is v12\'s note for the bot, whichever room it worked in',
+  );
+  assert.equal(shipped.system, eleven.system, "the system line is v11's");
+  assert.equal(shipped.pictureLine, eleven.pictureLine, "the picture line is v11's");
+  assert.deepEqual(shipped.tools, eleven.tools, 'v12 adds no tool: nothing about the box is a call');
+
+  const entry = shipped.parts.find((part) => part.name === 'entry');
+  assert.ok(entry, 'the file still renders one line per observation');
+  assert.ok(
+    entry.text.includes('{room}'),
+    'the entry line says which room it came from, or one box cannot hold two without confusing them',
+  );
+  const roomWords = shipped.entryRoomLine;
+  assert.ok(roomWords, 'and the words for it are the file\'s, not a phrase invented in the code');
+  assert.ok(shipped.parts.length === eleven.parts.length - 1, 'one part fewer, and only that');
+
+  // Rendered both ways. An entry that names a room is placed; one that names none — a
+  // reminder is in no room — is exactly the line v11 wrote, so the removal costs a
+  // roomless entry nothing.
+  const placed = assembleWorkPrompt(shipped, {
+    ...turnValues({}),
+    entries: [
+      { sender: '邵安清', text: 'the batch failed', at: TODAY, room: '支付组' },
+      { sender: '邵安清', text: 'and the retry too', at: TODAY },
+    ],
   });
-  assert.ok(noted.rest.includes('the migration is blocked on the key rotation'));
+  const placedAt = (text: string): string | undefined =>
+    placed.rest.split('\n').find((one) => one.endsWith(text));
+  assert.equal(
+    placedAt('the batch failed'),
+    `[${TODAY}] 邵安清 [支付组]: the batch failed`,
+    'the line says where it came from, in the file\'s own words',
+  );
+  assert.equal(
+    placedAt('and the retry too'),
+    `[${TODAY}] 邵安清: and the retry too`,
+    'an entry with no room prints no bracket at all rather than an empty one',
+  );
+
   assert.equal(
     alone.rest,
     assembleWorkPrompt(eight, blank).rest,
-    'with nothing to index the bot is asked the v8 text byte for byte',
+    'a bot with nothing compacted and nothing to place is asked the v8 text byte for byte',
   );
 });
 
@@ -826,7 +887,7 @@ test('a part that quotes a card field depends on exactly that field', async () =
 
 test('the note artifact is asked about one room, and says the room by its name', () => {
   const artifact = loadCompactArtifact();
-  assert.equal(artifact.version, 'compact-v2');
+  assert.equal(artifact.version, 'compact-v3');
 
   const first = assembleCompactPrompt(artifact, {
     bot: '小荷',

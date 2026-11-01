@@ -333,7 +333,7 @@ test('once a note exists, the box is the note and what arrived after it', async 
   world.store.memoriesOf(world.agentA2).push({
     id: 'mm_note',
     agent_id: world.agentA2,
-    level: 'room_digest',
+    level: 'box_digest',
     room_id: world.room,
     body: 'the deploy has been red since last night, cause unknown',
     consumed_to: entries[0].id,
@@ -359,7 +359,7 @@ test('once a note exists, the box is the note and what arrived after it', async 
   );
 });
 
-test('a reminder’s turn has no box, because it is in no room', async () => {
+test('a reminder’s turn reads the bot’s box, and the reminder is in it with no room', async () => {
   const world = makeWorld();
   addRow(world.store, {
     botId: world.botA,
@@ -374,7 +374,17 @@ test('a reminder’s turn has no box, because it is in no room', async () => {
   await runTurn(world.store, { agentId: world.agentA2, entries }, (context) => {
     spoke.push(context);
   });
-  assert.equal(spoke[0].box, undefined, 'no room, so nothing to be in the box');
+  // The box is the bot's and travels with it (`box.ts`, `docs/host-rulings.md`), so the one
+  // turn with no room reads the same box as any other. What has no room is the reminder
+  // itself, and its entry says so: `room_id` is absent, which is what makes the line print
+  // no room at all rather than naming one it did not come from.
+  assert.ok(spoke[0].box, 'the box is the bot\'s, so a reminder\'s turn reads it too');
+  assert.equal(spoke[0].box.entries.at(-1)?.room_id, undefined, 'the reminder is in no room');
+  assert.deepEqual(
+    spoke[0].box.entries.map((entry) => entry.id),
+    [entries[0].id],
+    'and it is the one line the box holds',
+  );
   assert.deepEqual(
     spoke[0].entries.map((entry) => entry.id),
     entries.map((entry) => entry.id),

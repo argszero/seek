@@ -262,26 +262,40 @@ export function watchAs(
       else byRoom.set(entry.room_id, [entry]);
     }
 
+    // **One box, built once, because the box is the bot's.** Building it inside the
+    // loop below would build one per room this tick touched, and each of those would
+    // be a box the bot does not have — the shape `box.ts`, `agent-lifecycle.md` §3 and
+    // `docs/host-rulings.md` ("The box is the bot's and not a room's") all refuse. What
+    // changes per room is the question, never what the bot has read.
+    //
+    // It is built from the record, so it already holds this batch: the drain marked
+    // these entries rather than removing them, and a box that had to be handed them
+    // back would be reading the room after the reason to look was taken away.
+    const boxOptions: BoxOptions = { window: options.window };
+    if (options.weigh) boxOptions.weigh = options.weigh;
+    const box = buildBox(store, botId, boxOptions);
+
+    // Every message the box's lines point at, whichever room it is in: one box holds
+    // several rooms now, so the bodies are read once per room the box's delta names.
+    if (box.media.length > 0) outcome.unreadPictures += box.media.length;
+    const messages = new Map<Id, Message>();
+    for (const boxRoom of box.rooms) {
+      for (const message of store.messagesOf(boxRoom)) messages.set(message.id, message);
+    }
+
     const acted = new Set<Id>();
     let wrote = false;
 
     for (const [roomId, group] of byRoom) {
-      // The box is built from the record, so it already holds this batch: the
-      // drain marked these entries rather than removing them, and a box that had
-      // to be handed them back would be reading the room after the reason to look
-      // was taken away.
-      const boxOptions: BoxOptions = { window: options.window };
-      if (options.weigh) boxOptions.weigh = options.weigh;
-      const box = buildBox(store, botId, roomId, boxOptions);
 
       // **A picture this seam cannot read is counted, and the room is still judged.** The
       // model this app ships is text (`d1-2B`: `modalities.vision: false`) and
       // `/v1/systemone` takes a `state` string, so a picture's bytes have nowhere to go —
       // that much has not changed. What changed is what is done about it.
       //
-      // This used to throw, and the cost was not one judgement. The box is built per room,
-      // so a picture anywhere in the window stopped this bot judging **that room** for as
-      // long as the picture stayed inside it — every later text message included — and the
+      // This used to throw, and the cost was not one judgement. The box was built per room
+      // then, so a picture anywhere in the window stopped this bot judging **that room** for
+      // as long as the picture stayed inside it — every later text message included — and the
       // window said nothing at all, because a background wake's failure goes to the log and
       // nowhere else. Measured on a room holding one picture: the picture was refused, and
       // so was the plain text message posted after it. A room that goes silently mute for a
@@ -295,14 +309,11 @@ export function watchAs(
       // all, and it is stated here rather than hidden: that is the price of a text model,
       // not of this file. Reopening the picture route needs a model with a projector
       // (`llama.ts`, `modalities.vision`), not a longer prompt.
-      if (box.media.length > 0) outcome.unreadPictures += box.media.length;
 
-      // What this judgement is asked. The record keeps a message's body on the message
-      // and an observation only names it, so the bodies are read once per room — read,
+      // What this judgement is asked. The record keeps a message's body on the message and
+      // an observation only names it, so the bodies are read once for the whole box — read,
       // never copied onto the entry: a verdict is the only thing stage 1 writes. Entries
       // are rendered **oldest first**, so the newest arrival is the last thing read.
-      const messages = new Map<Id, Message>();
-      for (const message of store.messagesOf(roomId)) messages.set(message.id, message);
       // The room's name, when it has one: `rooms.ts` treats an empty name as no name,
       // and the artifact skips its room part rather than printing a blank after a colon.
       const declaredRoom = store.room(roomId)?.name;
@@ -477,6 +488,12 @@ function lineOf(
   store: SeekStore,
   botName: string,
 ): PromptLine {
+  // **Which room the line came from, because one box now holds several.** The design
+  // asks for exactly this — an observation carries *"its room, who spoke, when and what
+  // was said, which is what lets one box hold several rooms without confusing them"*
+  // (`agent-lifecycle.md` §3) — and a reminder, which is in no room, says nothing rather
+  // than naming one it is not in.
+  const room = roomLabelOf(store, entry.room_id);
   if (entry.text !== undefined) {
     return { text: entry.text, sender: botName, at: entry.delivered_at };
   }
@@ -487,7 +504,22 @@ function lineOf(
     // record can, which is the same refusal to invent that `reason` gets.
     return { text: '', sender: botName, at: entry.delivered_at };
   }
-  return { text: message.text, sender: nameOf(store, message.sender_id), at: entry.delivered_at };
+  const line: PromptLine = {
+    text: message.text,
+    sender: nameOf(store, message.sender_id),
+    at: entry.delivered_at,
+  };
+  // Set only when there is a room to name: `fill` leaves an unknown placeholder whole, so
+  // an absent fact has to reach the artifact as `''` rather than as `{room}`.
+  if (room !== undefined) line.room = room;
+  return line;
+}
+
+/** The room's name, or its id when nobody named it; absent for a reminder. */
+function roomLabelOf(store: SeekStore, roomId: Id | undefined): string | undefined {
+  if (roomId === undefined) return undefined;
+  const declared = store.room(roomId)?.name;
+  return typeof declared === 'string' && declared !== '' ? declared : roomId;
 }
 
 /** A principal's name, or its id when the name is missing or empty. */

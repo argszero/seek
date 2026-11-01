@@ -2,9 +2,10 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { buildBox } from './box.ts';
-import { RoomCompactor } from './compact.ts';
+import { Compactor } from './compact.ts';
 import { deliver } from './delivery.ts';
 import { makeWorld, type World } from './fixtures.ts';
+import { newId } from './store.ts';
 
 function fill(world: World, count: number, senderId = world.me): string[] {
   const ids: string[] = [];
@@ -22,7 +23,7 @@ function fill(world: World, count: number, senderId = world.me): string[] {
 test('a box that fits reads every entry, newest first, with nothing unread', () => {
   const world = makeWorld();
   const ids = fill(world, 3);
-  const box = buildBox(world.store, world.botA, world.room, { window: 10 });
+  const box = buildBox(world.store, world.botA, { window: 10 });
 
   assert.equal(box.read, 3);
   assert.equal(box.total, 3);
@@ -37,7 +38,7 @@ test('a box that fits reads every entry, newest first, with nothing unread', () 
 test('an over-full box keeps the newest, and the unread count says how many were left', () => {
   const world = makeWorld();
   const ids = fill(world, 5);
-  const box = buildBox(world.store, world.botA, world.room, { window: 2 });
+  const box = buildBox(world.store, world.botA, { window: 2 });
 
   assert.equal(box.read, 2);
   assert.equal(box.total, 5);
@@ -53,7 +54,7 @@ test('an over-full box keeps the newest, and the unread count says how many were
 test('the window is never exceeded, even by one entry that cannot fit', () => {
   const world = makeWorld();
   fill(world, 3);
-  const box = buildBox(world.store, world.botA, world.room, {
+  const box = buildBox(world.store, world.botA, {
     window: 2,
     // Every entry costs more than the whole window.
     weigh: () => 3,
@@ -67,7 +68,7 @@ test('weigh() makes the window a budget rather than a count', () => {
   const world = makeWorld();
   const ids = fill(world, 4);
   // The last entry is expensive; the rest are cheap.
-  const box = buildBox(world.store, world.botA, world.room, {
+  const box = buildBox(world.store, world.botA, {
     window: 3,
     weigh: (entry) => (entry.message_id === ids[3] ? 2 : 1),
   });
@@ -85,7 +86,7 @@ test('a weigh() that returns no real cost is refused, not looped on', () => {
   fill(world, 1);
   for (const cost of [0, -1, Number.NaN]) {
     assert.throws(
-      () => buildBox(world.store, world.botA, world.room, { window: 5, weigh: () => cost }),
+      () => buildBox(world.store, world.botA, { window: 5, weigh: () => cost }),
       /positive number/,
     );
   }
@@ -93,7 +94,7 @@ test('a weigh() that returns no real cost is refused, not looped on', () => {
 
 test('an empty room gives an empty box, not an error', () => {
   const world = makeWorld();
-  const box = buildBox(world.store, world.botA, world.room, { window: 5 });
+  const box = buildBox(world.store, world.botA, { window: 5 });
 
   assert.deepEqual(box.delta, []);
   assert.equal(box.read, 0);
@@ -108,37 +109,37 @@ test('the summary is the digest that exists, and a judgement does not wait for o
   fill(world, 2);
 
   // Nothing compacted yet: an empty summary and a long delta still read.
-  const before = buildBox(world.store, world.botA, world.room, { window: 10 });
+  const before = buildBox(world.store, world.botA, { window: 10 });
   assert.equal(before.summary, undefined);
   assert.equal(before.read, 2);
 
-  const compactor = new RoomCompactor(world.store, {
+  const compactor = new Compactor(world.store, {
     summarise: () => 'what this room is',
     lines: { maxObservations: 2 },
     now: () => '2026-10-24T01:00:00.000Z',
   });
   // A compaction in flight must not block the read: the box is whatever exists.
-  void compactor.compact(world.botA, world.room);
-  const during = buildBox(world.store, world.botA, world.room, { window: 10 });
+  void compactor.compact(world.botA);
+  const during = buildBox(world.store, world.botA, { window: 10 });
   assert.equal(during.read, 2);
 });
 
 test('a digest narrows the delta to what it has not consumed', async () => {
   const world = makeWorld();
   fill(world, 2);
-  const compactor = new RoomCompactor(world.store, {
+  const compactor = new Compactor(world.store, {
     summarise: () => 'the first two settled',
     lines: { maxObservations: 2 },
     now: () => '2026-10-24T01:00:00.000Z',
   });
-  await compactor.compact(world.botA, world.room);
+  await compactor.compact(world.botA);
 
-  const compacted = buildBox(world.store, world.botA, world.room, { window: 10 });
+  const compacted = buildBox(world.store, world.botA, { window: 10 });
   assert.equal(compacted.summary, 'the first two settled');
   assert.equal(compacted.total, 0);
 
   fill(world, 1);
-  const after = buildBox(world.store, world.botA, world.room, { window: 10 });
+  const after = buildBox(world.store, world.botA, { window: 10 });
   assert.equal(after.summary, 'the first two settled');
   assert.equal(after.total, 1, 'only what arrived after the digest');
 });
@@ -151,7 +152,7 @@ test('the last verdict is read off the entry it was written on', () => {
   queued[1].verdict = 'keep';
   queued[2].verdict = 'snooze';
 
-  const box = buildBox(world.store, world.botA, world.room, { window: 10 });
+  const box = buildBox(world.store, world.botA, { window: 10 });
   assert.equal(box.lastVerdict?.verdict, 'snooze', 'the newest one wins');
   assert.equal(box.lastVerdict?.entryId, queued[2].id);
   assert.equal(box.lastVerdict?.delivered_at, queued[2].delivered_at);
@@ -159,7 +160,7 @@ test('the last verdict is read off the entry it was written on', () => {
 
   // A verdict older than the newest entry reports how stale it is.
   queued[2].verdict = undefined;
-  const stale = buildBox(world.store, world.botA, world.room, { window: 10 });
+  const stale = buildBox(world.store, world.botA, { window: 10 });
   assert.equal(stale.lastVerdict?.verdict, 'keep');
   assert.equal(stale.observationsSinceLastVerdict, 1);
 });
@@ -174,13 +175,13 @@ test('the reason comes back with the verdict, and only when there was one', () =
 
   // The newer verdict carries no reason. That must stay absent rather than
   // become an empty string or the older entry's sentence.
-  const newer = buildBox(world.store, world.botA, world.room, { window: 10 });
+  const newer = buildBox(world.store, world.botA, { window: 10 });
   assert.equal(newer.lastVerdict?.verdict, 'keep');
   assert.equal('reason' in (newer.lastVerdict ?? {}), false);
 
   // Drop it, and the older verdict comes back with its own sentence attached.
   queued[1].verdict = undefined;
-  const older = buildBox(world.store, world.botA, world.room, { window: 10 });
+  const older = buildBox(world.store, world.botA, { window: 10 });
   assert.equal(older.lastVerdict?.verdict, 'ignore');
   assert.equal(
     older.lastVerdict?.reason,
@@ -192,7 +193,7 @@ test('the reason comes back with the verdict, and only when there was one', () =
 test('no verdict on the record means no last verdict, and no staleness', () => {
   const world = makeWorld();
   fill(world, 2);
-  const box = buildBox(world.store, world.botA, world.room, { window: 10 });
+  const box = buildBox(world.store, world.botA, { window: 10 });
   assert.equal(box.lastVerdict, undefined);
   assert.equal(box.observationsSinceLastVerdict, undefined);
 });
@@ -202,7 +203,7 @@ test('who spoke is counted off the messages, not stored on the box', () => {
   fill(world, 2, world.me);
   fill(world, 1, world.botB);
 
-  const box = buildBox(world.store, world.botA, world.room, { window: 10 });
+  const box = buildBox(world.store, world.botA, { window: 10 });
   const byId = new Map(box.whoSpoke.map((speaker) => [speaker.principalId, speaker]));
   assert.equal(byId.get(world.me)?.count, 2);
   assert.equal(byId.get(world.me)?.name, 'me');
@@ -238,7 +239,7 @@ test('who spoke puts the busiest speaker first, whatever the ids say', () => {
 
   // The order is part of what the box says: a judgement reads the room’s
   // shape, so the speaker it hears most has to come first.
-  const box = buildBox(world.store, world.botA, world.room, { window: 10 });
+  const box = buildBox(world.store, world.botA, { window: 10 });
   assert.deepEqual(
     box.whoSpoke.map((speaker) => speaker.principalId),
     [busy, quiet],
@@ -251,7 +252,7 @@ test('the box is what the judgement is told, and it carries no question', () => 
   const world = makeWorld();
   fill(world, 1);
 
-  const box = buildBox(world.store, world.botA, world.room, { window: 5 });
+  const box = buildBox(world.store, world.botA, { window: 5 });
 
   // Asserted whole rather than one key at a time, because the point is the absence:
   // the question is what a judgement is *asked*, and it is the prompt artifact's own
@@ -267,7 +268,7 @@ test('the box is what the judgement is told, and it carries no question', () => 
     'delta',
     'media',
     'read',
-    'roomId',
+    'rooms',
     'total',
     'unread',
     'whoSpoke',
@@ -284,7 +285,7 @@ test('building a box writes nothing and opens no turn', () => {
     inbox: world.store.inbox(world.botA).length,
   };
 
-  buildBox(world.store, world.botA, world.room, { window: 2 });
+  buildBox(world.store, world.botA, { window: 2 });
 
   assert.equal(world.store.messagesOf(world.room).length, before.messages);
   assert.equal(world.store.data.turns.length, before.turns, 'not a turn');
@@ -295,8 +296,8 @@ test('building a box writes nothing and opens no turn', () => {
 test('a box is per bot: each bot reads its own queue', () => {
   const world = makeWorld();
   fill(world, 2);
-  const boxA = buildBox(world.store, world.botA, world.room, { window: 10 });
-  const boxB = buildBox(world.store, world.botB, world.room, { window: 10 });
+  const boxA = buildBox(world.store, world.botA, { window: 10 });
+  const boxB = buildBox(world.store, world.botB, { window: 10 });
 
   assert.equal(boxA.botId, world.botA);
   assert.equal(boxB.botId, world.botB);
@@ -315,7 +316,7 @@ test('the entries a tick drained are still in the delta the box reads', async ()
   await world.store.drain(world.botA);
   const later = fill(world, 1);
 
-  const box = buildBox(world.store, world.botA, world.room, { window: 10 });
+  const box = buildBox(world.store, world.botA, { window: 10 });
   assert.equal(box.total, 3, 'the drained entries are still on the record');
   assert.equal(box.read + box.unread, box.total);
   assert.deepEqual(
@@ -325,19 +326,57 @@ test('the entries a tick drained are still in the delta the box reads', async ()
   );
 });
 
-test("another room's entries are not let into this room's box", async () => {
+test('a box holds the bot\'s own record from every room, and says which rooms those are', async () => {
   const world = makeWorld();
   const ids = fill(world, 1);
+  const elsewhere = addRoom(world, 'the design room');
+  const there = deliver(world.store, {
+    roomId: elsewhere,
+    senderId: world.me,
+    text: 'the migration is blocked',
+  }).message.id;
   await world.store.drain(world.botA);
 
-  const here = buildBox(world.store, world.botA, world.room, { window: 10 });
-  assert.equal(here.total, 1, 'the room the entry belongs to reads it');
-  assert.deepEqual(here.delta.map((entry) => entry.message_id), ids);
-
-  const elsewhere = buildBox(world.store, world.botA, 'oc_elsewhere', { window: 10 });
-  assert.equal(elsewhere.total, 0, "a box is one room's");
-  assert.deepEqual(elsewhere.delta, []);
+  // One box, two rooms: `docs/host-rulings.md`, "The box is the bot's and not a room's".
+  // A second box per room would be a box the bot does not have — the shape the ruling and
+  // `agent-lifecycle.md` §3 both refuse — and what keeps the two conversations apart once
+  // they are in one box is the room each entry carries.
+  const box = buildBox(world.store, world.botA, { window: 10 });
+  assert.equal(box.total, 2, 'both rooms are in the one box');
+  assert.deepEqual(box.delta.map((entry) => entry.message_id), [there, ids[0]], 'newest first');
+  assert.deepEqual(
+    box.rooms,
+    [world.room, elsewhere],
+    'and the box names every room it read, oldest first',
+  );
+  assert.deepEqual(
+    box.delta.map((entry) => entry.room_id),
+    [elsewhere, world.room],
+    'each entry keeps the room it came from',
+  );
 });
+
+/** A second room this world's bot is a member of. */
+function addRoom(world: World, name: string): string {
+  const id = newId('oc');
+  world.store.data.rooms[id] = {
+    id,
+    name,
+    chat_mode: 'group',
+    created_at: '2026-10-24T00:00:00.000Z',
+  };
+  for (const principal of [world.me, world.botA]) {
+    const own = newId('mb');
+    world.store.data.memberships[own] = {
+      id: own,
+      room_id: id,
+      principal_id: principal,
+      joined_at: '2026-10-24T00:00:00.000Z',
+      role: 'member',
+    };
+  }
+  return id;
+}
 
 function postImage(world: World, key: string, text = '看这张'): string {
   const { message } = deliver(world.store, {
@@ -353,7 +392,7 @@ function postImage(world: World, key: string, text = '看这张'): string {
 test('a picture arrives with the entry that carries it, named and located', () => {
   const world = makeWorld();
   const messageId = postImage(world, 'blobs/screen.png');
-  const box = buildBox(world.store, world.botA, world.room, { window: 10 });
+  const box = buildBox(world.store, world.botA, { window: 10 });
 
   assert.equal(box.media.length, 1, 'the image is in the box, not only its text');
   const [picture] = box.media;
@@ -368,7 +407,7 @@ test('a picture the window left out is not handed over', () => {
   postImage(world, 'blobs/old.png');
   const newest = postImage(world, 'blobs/new.png');
 
-  const box = buildBox(world.store, world.botA, world.room, { window: 1 });
+  const box = buildBox(world.store, world.botA, { window: 1 });
   assert.equal(box.read, 1);
   assert.equal(box.unread, 1, 'the older entry is outside what the judgement read');
   assert.deepEqual(
@@ -382,7 +421,7 @@ test('a picture the window left out is not handed over', () => {
 test('a box of text has an empty media list rather than a missing one', () => {
   const world = makeWorld();
   fill(world, 2);
-  const box = buildBox(world.store, world.botA, world.room, { window: 10 });
+  const box = buildBox(world.store, world.botA, { window: 10 });
 
   assert.deepEqual(box.media, []);
   assert.equal(box.read, 2);

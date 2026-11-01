@@ -518,13 +518,13 @@ test('a tick that opens no turn still compacts the room it settled', async () =>
 
   const rows = world.store
     .memoriesOf(world.agentA2)
-    .filter((row) => row.level === 'room_digest');
+    .filter((row) => row.level === 'box_digest');
   assert.equal(rows.length, 1);
   assert.equal(rows[0].body, 'the standup, and what was settled');
   // The port is the drained entry's, so the entry this tick settled is never
   // folded in a second time.
   assert.equal(rows[0].consumed_to, pending);
-  assert.equal(kernel.compactor.delta(world.botA, world.room).length, 0);
+  assert.equal(kernel.compactor.delta(world.botA).length, 0);
 });
 
 test('a tick does not wait for the compaction it starts, and whenIdle does', { timeout: 5000 }, async () => {
@@ -549,7 +549,7 @@ test('a tick does not wait for the compaction it starts, and whenIdle does', { t
   // The tick has settled and the summary is still being written: a summary is
   // nobody's wake, so nothing waits on it.
   assert.equal(written, false);
-  assert.equal(kernel.compactor.inFlight(world.botA, world.room), true);
+  assert.equal(kernel.compactor.inFlight(world.botA), true);
 
   let idle = false;
   const waiting = kernel.whenIdle().then(() => {
@@ -637,7 +637,7 @@ test('a background action that throws outside the writer is recorded and leaves 
   assert.equal(kernel.failures[0].botId, world.botA);
 });
 
-test('a reminder belongs to no room, so it is folded into nobody’s summary', async () => {
+test('a reminder is in no room, and the note is the bot’s, so it is folded in with the rest', async () => {
   const world = makeWorld();
   addRow(world.store, { botId: world.botA, when: MORNING, text: 'check the thread' });
 
@@ -655,8 +655,13 @@ test('a reminder belongs to no room, so it is folded into nobody’s summary', a
   await kernel.whenIdle();
 
   assert.equal(kernel.loopFor(world.botA).turns, 1, 'the reminder did wake the bot');
-  assert.equal(summarised, 0, 'a reminder is no room’s conversation');
-  assert.equal(world.store.memoriesOf(world.agentA2).length, 0);
+  // The note is the bot's and not a room's (`compact.ts`), so a reminder — which is on the
+  // bot's record and in no room — is folded in like anything else. Before the box became
+  // the bot's there was a note per room and this reminder belonged to none, so nothing
+  // consumed it and every later note was written with it still standing in the delta.
+  assert.equal(summarised, 1, 'the reminder is folded into the bot’s note');
+  assert.equal(world.store.memoriesOf(world.agentA2).length, 1);
+  assert.equal(world.store.memoriesOf(world.agentA2)[0].room_id, undefined);
 });
 
 /**

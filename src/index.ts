@@ -96,7 +96,7 @@ export { say, sayAs } from './say.ts';
 export type { SayInput, SayOptions, SayTool } from './say.ts';
 export { makeTurn, runTurn } from './turn.ts';
 export type { Decide, HandedEntry, TurnContext, TurnRecord, TurnSpec } from './turn.ts';
-export { RoomCompactor, deltaFor, digestOf } from './compact.ts';
+export { Compactor, deltaFor, digestOf } from './compact.ts';
 export type {
   CompactLines,
   CompactOptions,
