@@ -49,8 +49,8 @@
  * executed in the order the model asked for them.
  */
 
-import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { archiveDays, archivePlaceOf, archivedLine, readArchiveDay } from './archive.ts';
 import { agentTurnsIn } from './chain.ts';
 import type { AgentIdentity } from './identity.ts';
@@ -98,21 +98,32 @@ const ROOM_SAMPLE = 'oc_0000000000000000';
  * **The set is the ruling's list, not a vocabulary invented here.**
  * `docs/host-rulings.md`, "The tools": the work agent's tools are the kernel's registry —
  * `bash / read / write / edit / glob / grep / subagent / submit_rant / boss` — and which
- * of them an agent may call is ordinary per-agent configuration. What ships so far is the
- * half that can neither change anything nor reach past the bot's own directory: the one
- * way a turn speaks (`say`), and three ways it looks. `read` is "The observation box" —
- * the uncompacted content "is archived by day", the model is told where, and it "may go
- * and read it". `glob` and `grep` are the registry's own two: what is filed, and which of
- * those files holds a word.
+ * of them an agent may call is ordinary per-agent configuration. What ships is the one way
+ * a turn speaks (`say`), the four file tools that work inside the bot's own directory, and
+ * nothing else. `read` is "The observation box" — the uncompacted content "is archived by
+ * day", the model is told where, and it "may go and read it". `glob` and `grep` are the
+ * registry's own two: what is filed, and which of those files holds a word. `write` and
+ * `edit` are the two that keep something: the same directory, and the first way a turn
+ * changes what is on the disk rather than only reading it.
  *
- * **`bash`, `write` and `edit` are deliberately absent**, and the absence is the reason
- * the bound below matters: each of the three changes something or reaches the machine,
- * which is a decision larger than a tool, so what ships are the file tools that only read.
+ * **The four are one surface, and the bound is what makes them one.** Every one of them
+ * takes a name relative to `<home>` and refuses a name that leaves it, so the machine is
+ * still not reachable from a turn: a bot's own directory is what it may read and what it
+ * may write, and there is no second place either call can reach. That is also why `edit`
+ * is here rather than being a second `write`: a bot that may replace a whole note but not
+ * correct one line of it will rewrite the note every time, and a working record rewritten
+ * in full every turn is one nobody can read the history of.
+ *
+ * **`bash` is deliberately absent, and it is the only one that is.** It is not a file tool
+ * with a wider root — it is the machine itself, and the ruling's "It has tools" paragraph
+ * is about the set a bot is configured with, not a decision this seam may take on the
+ * host's behalf. A tool the runtime does not execute stays out of the artifact too, so the
+ * absence costs a bot nothing it was promised.
  *
  * A tool named in the artifact and absent here is refused at bind (§ below), so this set
- * and `work-v10.json` are held against each other before the first turn.
+ * and `work-v11.json` are held against each other before the first turn.
  */
-const EXECUTABLE = new Set(['say', 'read', 'glob', 'grep']);
+const EXECUTABLE = new Set(['say', 'read', 'glob', 'grep', 'write', 'edit']);
 
 /**
  * How many times one turn may look something up before it has to answer.
@@ -390,12 +401,21 @@ function run(store: SeekStore, context: TurnContext, call: ToolCall): string | u
     throw new Error(`the model called ${call.name} with ${call.arguments}, which names no arguments`);
   }
 
-  // The lookups answer with words and answer nothing else: none of them posts a message, so
-  // they are the calls whose result is handed back to the model rather than into a room.
+  // The file calls answer with words and answer nothing else: none of them posts a message,
+  // so they are the calls whose result is handed back to the model rather than into a room.
+  // That is as true of the two that write as of the four that read — a bot told its note was
+  // written carries on with the turn, and one told the name it gave was outside its own
+  // directory can correct itself in the same turn instead of losing it.
   if (call.name === 'read') return look(store, context, parsed as { day?: unknown });
   if (call.name === 'glob') return globbed(store, context, parsed as { pattern?: unknown });
   if (call.name === 'grep') {
     return grepped(store, context, parsed as { pattern?: unknown; path?: unknown });
+  }
+  if (call.name === 'write') {
+    return wrote(store, context, parsed as { path?: unknown; text?: unknown });
+  }
+  if (call.name === 'edit') {
+    return edited(store, context, parsed as { path?: unknown; find?: unknown; replace?: unknown });
   }
 
   const args = parsed as { room?: unknown; text?: unknown; mentions?: unknown };
@@ -497,7 +517,7 @@ function look(store: SeekStore, context: TurnContext, args: { day?: unknown }): 
  * the whole box again.
  */
 
-/** Where every file lookup is bounded: the agent's own home. */
+/** Where every file call is bounded: the agent's own home, read or written alike. */
 function homeOf(store: SeekStore, context: TurnContext): string {
   return store.data.agents[context.agentId]?.home ?? '';
 }
@@ -506,13 +526,24 @@ function homeOf(store: SeekStore, context: TurnContext): string {
  * The refusal a name earns when it leaves the bot's own directory, or `null` when it does not.
  *
  * A name that is absolute or that climbs is not resolved at all: the files a bot has are
- * the ones that were filed under its home, so a name reaching outside it asks about a
- * file this bot was never given, and the answer would be about somebody else's work.
+ * the ones under its home, so a name reaching outside it asks about a file this bot was
+ * never given, and the answer would be about somebody else's work. The same test is what
+ * keeps a writing call inside, which is why the sentence is told which of the two it is
+ * refusing: a bot told "nothing is readable here" after a `write` would try again with
+ * another name that is just as far outside.
  */
-function outsideOf(name: string): string | null {
+function outsideOf(name: string, doing: 'read' | 'write' = 'read'): string | null {
   if (!name.startsWith('/') && !name.split('/').includes('..')) return null;
+  const place = JSON.stringify(name);
+  if (doing === 'write') {
+    return (
+      `this bot can only write inside its own directory, and ${place} names somewhere ` +
+      'outside it. Nothing is written here but under this bot\'s own directory: ask again ' +
+      'with a name relative to it, such as notes.md.'
+    );
+  }
   return (
-    `this bot can only look inside its own directory, and ${JSON.stringify(name)} names ` +
+    `this bot can only look inside its own directory, and ${place} names ` +
     'somewhere outside it. Nothing is readable here but the files this bot filed itself: ' +
     'ask again with a name relative to its own directory, such as archive.'
   );
@@ -700,6 +731,139 @@ function lineOf(row: string): string {
   } catch {
     return row;
   }
+}
+
+/** The name a writing call gave, once it is known to be one this bot may write. */
+function writableName(args: { path?: unknown }, home: string): string {
+  const name = typeof args.path === 'string' ? args.path.trim() : '';
+  if (name === '') {
+    throw new Error(
+      'the model called a writing tool with no path: the tool declares one, and a write ' +
+        'with nothing to name is a request to choose a file on the model\'s behalf',
+    );
+  }
+  if (name.endsWith('/')) {
+    throw new Error(
+      `the model named ${JSON.stringify(args.path)}, which is a directory rather than a ` +
+        'file: both writing tools take the name of one file to write or change',
+    );
+  }
+  if (home === '') {
+    throw new Error(
+      'this bot has no directory on this machine, so there is nowhere for it to write: ' +
+        'its home is what the roster row names, and every file call is bounded by it',
+    );
+  }
+  return name;
+}
+
+/**
+ * `write(path, text)`: keep something in the bot's own directory.
+ *
+ * **The home is the whole of the surface.** The name is checked by `outsideOf` and refused
+ * in words before a byte is written, so nothing here can reach the machine outside the
+ * directory the bot was given — and the refusal is an answer rather than a throw, because
+ * a model that named the wrong place can name the right one in the same turn.
+ *
+ * **The archive lives under the same home, and this call is not fenced off it.** That is
+ * deliberate: the ruling bounds a bot's file tools by its own directory and says nothing
+ * about one part of it being the runtime's. A bot that overwrites its own archive damages
+ * its own working record and nobody else's, and a fence here would be a rule invented in
+ * code — which is the one thing `CONTRIBUTING.md` says has to be undone later.
+ */
+function wrote(store: SeekStore, context: TurnContext, args: { path?: unknown; text?: unknown }): string {
+  const home = homeOf(store, context);
+  const name = writableName(args, home);
+  const outside = outsideOf(name, 'write');
+  if (outside !== null) return outside;
+
+  const text = args.text;
+  if (typeof text !== 'string') {
+    throw new Error(
+      `the model called write on ${JSON.stringify(name)} without a text: the tool declares ` +
+        'the whole file, and a write that names none would empty a file the model never ' +
+        'said it wanted emptied',
+    );
+  }
+
+  const file = join(home, name);
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, text, 'utf8');
+  const bytes = Buffer.byteLength(text, 'utf8');
+  // The trailing newline ends the last line rather than starting an empty one, so a file
+  // of one line is reported as one: a model told "2 lines" about a single line of text
+  // would go and read it back to find out what the second one was.
+  const lines = text === '' ? 0 : text.replace(/\n$/, '').split('\n').length;
+  return `wrote ${name}: ${bytes} bytes, ${lines} ${lines === 1 ? 'line' : 'lines'}.`;
+}
+
+/**
+ * `edit(path, find, replace)`: change part of a note instead of writing it again.
+ *
+ * **The text has to occur once.** A replacement that matched twice would change a part of
+ * the file the model did not name, and there is no reading of "replace this" that means
+ * "replace both of them" — so a `find` occurring more than once changes nothing and says
+ * how many it found, which is a correction the model can make in the same turn. This is
+ * the same shape as the day `read` cannot answer with a guess: what the caller got wrong
+ * is answered rather than thrown, and what it got wrong about the *arguments* is a throw.
+ */
+function edited(
+  store: SeekStore,
+  context: TurnContext,
+  args: { path?: unknown; find?: unknown; replace?: unknown },
+): string {
+  const home = homeOf(store, context);
+  const name = writableName(args, home);
+  const outside = outsideOf(name, 'write');
+  if (outside !== null) return outside;
+
+  if (typeof args.find !== 'string' || typeof args.replace !== 'string') {
+    throw new Error(
+      `the model called edit on ${JSON.stringify(name)} without a find and a replace, which ` +
+        'are the two arguments the tool declares: a change that names neither the old text ' +
+        'nor the new one is not a change this runtime may guess at',
+    );
+  }
+  if (args.find === '') {
+    throw new Error(
+      'the model called edit with an empty find: an empty text matches everywhere, and ' +
+        'replacing it would insert the new words between every character of the file',
+    );
+  }
+
+  let whole: string;
+  try {
+    whole = readFileSync(join(home, name), 'utf8');
+  } catch {
+    return (
+      `this bot has no file ${JSON.stringify(name)} to change. Use write to put one there, ` +
+      'or glob to see what it already has.'
+    );
+  }
+
+  const parts = whole.split(args.find);
+  const found = parts.length - 1;
+  if (found === 0) {
+    return (
+      `nothing in ${JSON.stringify(name)} is ${JSON.stringify(args.find)}, so nothing was ` +
+        'changed. Name the text as it stands in the file, or use write to replace the whole ' +
+        'of it.'
+    );
+  }
+  if (found > 1) {
+    return (
+      `${JSON.stringify(args.find)} occurs ${found} times in ${JSON.stringify(name)}, so ` +
+        'nothing was changed: an edit names the one place it means. Give more of the words ' +
+        'around it until only one line has them.'
+    );
+  }
+
+  const next = parts.join(args.replace);
+  writeFileSync(join(home, name), next, 'utf8');
+  return (
+    `edited ${name}: replaced 1 occurrence of ${JSON.stringify(args.find)} with ` +
+    `${JSON.stringify(args.replace)}. It is now ${Buffer.byteLength(next, 'utf8')} bytes.`
+  );
 }
 
 /**

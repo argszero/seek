@@ -34,5 +34,9 @@ agents:
     # note already folded away (`src/archive.ts`): the ruling that gives it an
     # archive also gives it the way to read one day of it. `glob` and `grep` are the
     # registry's own two, and they answer what that archive holds rather than one day of
-    # it: which files were filed, and which of them holds a word.
-    tools: [say, read, glob, grep]
+    # it: which files were filed, and which of them holds a word. `write` and `edit` are
+    # the registry's two that keep something: the same directory, and the only two here
+    # that change what is on the disk (`docs/host-rulings.md`, "The tools"). `bash` is
+    # not here — it is the machine rather than the bot's own files, and no artifact
+    # offers it, so a row naming it would allow a tool nothing can call.
+    tools: [say, read, glob, grep, write, edit]

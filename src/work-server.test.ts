@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -916,7 +916,7 @@ test('a prompt that offers a tool this runtime cannot execute is refused at bind
 
   await assert.rejects(
     () => workOverServer(world.store, world.botA, serverOf(recorder), { prompt: offering }),
-    /offers 'schedule' and this runtime can only execute 'say', 'read', 'glob', 'grep'/,
+    /offers 'schedule' and this runtime can only execute 'say', 'read', 'glob', 'grep', 'write', 'edit'/,
     'a model asked to call a tool nobody runs asks for something that cannot happen',
   );
 });
@@ -1081,7 +1081,7 @@ test('a tool this runtime does not execute is still refused at the call', async 
   const woke = await entriesOf(world);
   await assert.rejects(
     () => turnWith(world, decide, woke),
-    /the model called 'delete' and this runtime executes only 'say', 'read', 'glob', 'grep'/,
+    /the model called 'delete' and this runtime executes only 'say', 'read', 'glob', 'grep', 'write', 'edit'/,
   );
 });
 
@@ -1094,7 +1094,7 @@ test('a roster whose work row does not allow what the prompt offers is refused a
 
   await assert.rejects(
     () => workOverServer(world.store, world.botA, serverOf(recorder), { prompt: ARTIFACT }),
-    /the turn prompt offers 'say', 'read', 'glob', 'grep' and the roster's work row allows nothing/,
+    /the turn prompt offers 'say', 'read', 'glob', 'grep', 'write', 'edit' and the roster's work row allows nothing/,
     'the prompt and the allowlist are two files, and the bind is the only place both are open',
   );
 });
@@ -1517,4 +1517,180 @@ test('a glob that matches nothing answers with what is there instead of nothing'
   const answer = lookupAnswer(recorder);
   assert.match(answer, /nothing in this bot's own directory matches "notes\/\*\.txt"/);
   assert.ok(answer.includes(`archive/${filed.day}.jsonl`), 'and what it does have');
+});
+
+/**
+ * **The two calls that keep something, and the one bound they share with the four that read.**
+ *
+ * `docs/host-rulings.md`, "The tools": the work agent's tools are the kernel's registry, and
+ * `write` and `edit` are two of them. Through v10 a bot could look and nothing else, which is
+ * not the agent that sentence describes — it could read what a note folded away and had no
+ * way to keep a conclusion of its own. These are the tests that the capability is real: the
+ * bytes land on the disk under the bot's own home, the answer comes back into the turn, and
+ * a name that leaves that home is refused in words rather than resolved.
+ */
+
+/** A write call as a model writes one. */
+function writeCall(path: string, text: string): unknown {
+  return { id: 'call_4', function: { name: 'write', arguments: JSON.stringify({ path, text }) } };
+}
+
+/** An edit call as a model writes one. */
+function editCall(path: string, find: string, replace: string): unknown {
+  return {
+    id: 'call_5',
+    function: { name: 'edit', arguments: JSON.stringify({ path, find, replace }) },
+  };
+}
+
+/** A home of this bot's own, empty to begin with: no archive, nothing filed. */
+function homeOfBot(): string {
+  return mkdtempSync(join(tmpdir(), 'seek-write-'));
+}
+
+test('write keeps a file under the bot own directory, and the answer is in the next request', async () => {
+  const world = makeWorld();
+  const home = homeOfBot();
+  world.store.data.agents[world.agentA2].home = home;
+
+  const recorder = fakeServer({
+    answers: [
+      { toolCalls: [writeCall('notes/retry.md', 'the queue was at 40\n')] },
+      { toolCalls: [sayCall(world.room, 'written down')] },
+    ],
+  });
+  const decide = await workOverServer(world.store, world.botA, serverOf(recorder), {
+    prompt: ARTIFACT,
+  });
+  const record = await turnWith(world, decide, await entriesOf(world));
+
+  assert.equal(
+    readFileSync(join(home, 'notes', 'retry.md'), 'utf8'),
+    'the queue was at 40\n',
+    'the bytes are on the disk, under the home and at the name it gave',
+  );
+  assert.equal(
+    lookupAnswer(recorder),
+    'wrote notes/retry.md: 20 bytes, 1 line.',
+    'and the model is told what it did, in the words the runtime chose',
+  );
+  assert.equal(record.produced.length, 1, 'a write does not end the turn: the bot went on to speak');
+});
+
+test('a write that names a place outside the bot own directory is refused, and nothing is written', async () => {
+  const world = makeWorld();
+  const home = homeOfBot();
+  world.store.data.agents[world.agentA2].home = home;
+
+  // A name nobody else can be holding: the parent of a `mkdtemp` is the shared temporary
+  // directory, so a fixed name here would make this test's assertion depend on whether some
+  // earlier run — or some earlier mutation of the refusal itself — left that file behind.
+  const escaped = `escape-${process.pid}-${Date.now()}.md`;
+  const recorder = fakeServer({
+    answers: [{ toolCalls: [writeCall(`../${escaped}`, 'out of bounds')] }, { content: 'understood' }],
+  });
+  const decide = await workOverServer(world.store, world.botA, serverOf(recorder), {
+    prompt: ARTIFACT,
+  });
+  const record = await turnWith(world, decide, await entriesOf(world));
+
+  const answer = lookupAnswer(recorder);
+  assert.match(answer, /can only write inside its own directory/, 'the bound, in words');
+  assert.ok(answer.includes(`"../${escaped}"`), 'and the name it would not resolve');
+  assert.equal(
+    existsSync(join(home, '..', escaped)),
+    false,
+    'the refusal is the whole answer: no byte was written outside the home',
+  );
+  assert.equal(
+    existsSync(join(home, escaped)),
+    false,
+    'and the name was not quietly re-rooted inside it either, which would be a different file',
+  );
+  assert.equal(record.produced.length, 0, 'a refused write is not a reason to end the turn');
+});
+
+test('edit changes the one place it names, and the file on the disk is what changed', async () => {
+  const world = makeWorld();
+  const home = homeOfBot();
+  writeFileSync(join(home, 'notes.md'), '# plan\nretry queue at 40\n', 'utf8');
+  world.store.data.agents[world.agentA2].home = home;
+
+  const recorder = fakeServer({
+    answers: [{ toolCalls: [editCall('notes.md', 'at 40', 'at 12')] }, { content: 'fixed' }],
+  });
+  const decide = await workOverServer(world.store, world.botA, serverOf(recorder), {
+    prompt: ARTIFACT,
+  });
+  await turnWith(world, decide, await entriesOf(world));
+
+  assert.equal(
+    readFileSync(join(home, 'notes.md'), 'utf8'),
+    '# plan\nretry queue at 12\n',
+    'the one occurrence is replaced and the rest of the file is as it was',
+  );
+  assert.match(
+    lookupAnswer(recorder),
+    /^edited notes\.md: replaced 1 occurrence of "at 40" with "at 12"\./,
+    'the model is told which text went and what took its place',
+  );
+});
+
+test('an edit whose text occurs twice changes nothing, and says how many there are', async () => {
+  const world = makeWorld();
+  const home = homeOfBot();
+  const before = 'queue at 40\nand the batch at 40 as well\n';
+  writeFileSync(join(home, 'notes.md'), before, 'utf8');
+  world.store.data.agents[world.agentA2].home = home;
+
+  const recorder = fakeServer({
+    answers: [{ toolCalls: [editCall('notes.md', 'at 40', 'at 12')] }, { content: 'two of them' }],
+  });
+  const decide = await workOverServer(world.store, world.botA, serverOf(recorder), {
+    prompt: ARTIFACT,
+  });
+  await turnWith(world, decide, await entriesOf(world));
+
+  // Replacing both would change a part of the file the model did not name, and there is no
+  // reading of "replace this" that means "replace every one of them".
+  assert.equal(readFileSync(join(home, 'notes.md'), 'utf8'), before, 'not one byte moved');
+  const answer = lookupAnswer(recorder);
+  assert.match(answer, /occurs 2 times in "notes\.md", so nothing was changed/);
+  assert.match(answer, /Give more of the words around it/, 'and what to do about it');
+});
+
+test('an edit that has nothing to change says so rather than ending the turn', async () => {
+  const world = makeWorld();
+  const home = homeOfBot();
+  world.store.data.agents[world.agentA2].home = home;
+  writeFileSync(join(home, 'notes.md'), 'queue at 40\n', 'utf8');
+
+  // No such file.
+  const missing = fakeServer({
+    answers: [{ toolCalls: [editCall('absent.md', 'anything', 'nothing')] }, { content: 'no file' }],
+  });
+  const decide = await workOverServer(world.store, world.botA, serverOf(missing), {
+    prompt: ARTIFACT,
+  });
+  const record = await turnWith(world, decide, await entriesOf(world));
+
+  assert.match(lookupAnswer(missing), /has no file "absent\.md" to change/);
+  assert.equal(existsSync(join(home, 'absent.md')), false, 'and it does not make one');
+  assert.equal(record.produced.length, 0, 'the turn goes on either way');
+
+  // The file is there and the words are not, which is the other way to have nothing to do.
+  const wrongWords = fakeServer({
+    answers: [{ toolCalls: [editCall('notes.md', 'at 12', 'at 7')] }, { content: 'not there' }],
+  });
+  const second = await workOverServer(world.store, world.botA, serverOf(wrongWords), {
+    prompt: ARTIFACT,
+  });
+  await turnWith(world, second, await entriesOf(world));
+
+  assert.match(lookupAnswer(wrongWords), /nothing in "notes\.md" is "at 12", so nothing was changed/);
+  assert.equal(
+    readFileSync(join(home, 'notes.md'), 'utf8'),
+    'queue at 40\n',
+    'the file is what it was',
+  );
 });

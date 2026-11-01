@@ -165,7 +165,7 @@ test('the rows appended to agents.yml name the bot by id, and the file still par
     assert.match(text, new RegExp(`- bot: ${made.botId}\\n    role: watch\\n    tools: \\[\\]\\n`))
     assert.match(
       text,
-      new RegExp(`- bot: ${made.botId}\\n    role: work\\n    tools: \\[say, read, glob, grep\\]\\n`),
+      new RegExp(`- bot: ${made.botId}\\n    role: work\\n    tools: \\[say, read, glob, grep, write, edit\\]\\n`),
     )
     assert.ok(text.includes('  - bot: Echo\n    role: watch\n'), 'the rows that were there are there')
 
@@ -183,7 +183,7 @@ test('the rows appended to agents.yml name the bot by id, and the file still par
       agents.map((agent) => [agent.role, agent.tools]),
       [
         ['watch', []],
-        ['work', ['say', 'read', 'glob', 'grep']],
+        ['work', ['say', 'read', 'glob', 'grep', 'write', 'edit']],
       ],
     )
   } finally {

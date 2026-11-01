@@ -130,9 +130,12 @@ agents:
     # \`say\` is the only way into a room (checklist line 14), so a work agent without it
     # could not answer at all; \`read\` is how it goes back to what a note folded away
     # (\`archive.ts\`, and \`docs/host-rulings.md\` "The observation box"). \`glob\` and \`grep\` answer
-    # what that archive holds rather than one day of it. A row that allows less than
-    # the shipped prompt offers is refused when the prompt is bound to a server.
-    tools: [say, read, glob, grep]
+    # what that archive holds rather than one day of it, and \`write\` and \`edit\` are how it
+    # keeps something of its own: the same directory, and the one part of the tool set that
+    # changes what is on the disk. A row that allows less than the shipped prompt offers is
+    # refused when the prompt is bound to a server, so these six words and the shipped
+    # turn artifact (work-v11.json) are one decision written twice.
+    tools: [say, read, glob, grep, write, edit]
 `
 
 /**
@@ -1143,7 +1146,7 @@ function rowsForNewBot(botId) {
     '    tools: []\n' +
     `  - bot: ${botId}\n` +
     '    role: work\n' +
-    '    tools: [say, read, glob, grep]\n'
+    '    tools: [say, read, glob, grep, write, edit]\n'
   )
 }
 
