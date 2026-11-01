@@ -50,7 +50,7 @@ export function makeWorld(): World {
     home: '/tmp/seek/a/work',
     model: 'big',
     prompt: 'v1',
-    tools: ['say'],
+    tools: ['say', 'read'],
   };
   const agentB1 = newId('ag');
   store.data.agents[agentB1] = {
@@ -60,7 +60,7 @@ export function makeWorld(): World {
     home: '/tmp/seek/b/work',
     model: 'big',
     prompt: 'v1',
-    tools: ['say'],
+    tools: ['say', 'read'],
   };
 
   const room = newId('oc');

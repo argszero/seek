@@ -401,32 +401,57 @@ function turnValues(card: {
     personality: card.personality ?? '',
     gender: '',
     room: 'oc_0000000000000000',
-    roster: '- role=work tools=say home=/tmp/seek/echo/work self=true',
+    roster: '- role=work tools=say,read home=/tmp/seek/echo/work self=true',
     summary: card.summary ?? '',
+    archive: '/tmp/seek/echo/work/archive (days: 2026-10-30)',
     entries: [{ sender: '邵安清', text: 'deploy is red', at: '2026-10-31T09:00:00.000Z' }],
   };
 }
 
-test('the shipped turn artifact is v7, and a picture is named on the line it came with', () => {
+test('the shipped turn artifact is v8, and a picture is named on the line it came with', () => {
   const shipped = loadWorkArtifact();
-  assert.equal(shipped.version, 'work-v7');
-  assert.match(shippedWorkPromptPath().pathname, /work-v7\.json$/);
+  assert.equal(shipped.version, 'work-v8');
+  assert.match(shippedWorkPromptPath().pathname, /work-v8\.json$/);
 
   // **What v7 is, and what it is not.** v6 said in words that a picture came and could not
   // be seen, because the turn was handed none; the turn now carries the box's pictures, so
   // v7's sentence says a picture arrives and names the line it did not arrive on. It is the
-  // same file otherwise — no part added, no part reworded, no tool touched — and that is
-  // what this pair of assertions holds: a version bump that reworded the room's temper or
-  // dropped a part would change what every bot is like, not only what it knows about
-  // pictures.
+  // same file otherwise — no part added, no part reworded, no tool touched.
+  const seven = loadWorkArtifact(new URL('./prompts/work-v7.json', import.meta.url));
   const older = loadWorkArtifact(new URL('./prompts/work-v6.json', import.meta.url));
-  assert.deepEqual(shipped.parts, older.parts, 'v7 changes no part');
-  assert.deepEqual(shipped.tools, older.tools, 'v7 offers the same tools');
+  assert.deepEqual(seven.parts, older.parts, 'v7 changes no part');
+  assert.deepEqual(seven.tools, older.tools, 'v7 offers the same tools');
   assert.notEqual(
-    shipped.pictureLine,
+    seven.pictureLine,
     older.pictureLine,
     'the sentence about a picture is the whole of v7: the fact under it changed',
   );
+
+  // **What v8 is: the way back.** `docs/host-rulings.md`, "The observation box" — the
+  // uncompacted content is archived by day, its place is told to the model, and the model
+  // may go and read it. One part says where the archive is; one tool is how it reads one.
+  // Nothing else in the file moves, which is what the next four assertions are for: a
+  // version bump that also reworded the room's temper would change what every bot is like,
+  // not only what it can look up.
+  const archive = shipped.parts.filter((part) => part.name === 'archive');
+  assert.equal(archive.length, 1, 'one part says where the archive is');
+  assert.deepEqual(
+    shipped.parts.filter((part) => part.name !== 'archive'),
+    seven.parts,
+    'v8 adds the archive part and renumbers nothing else',
+  );
+  assert.equal(shipped.system, seven.system, 'the system line is v7\'s');
+  assert.equal(shipped.pictureLine, seven.pictureLine, 'the picture line is v7\'s');
+  assert.deepEqual(
+    shipped.tools.filter((tool) => tool.name !== 'read'),
+    seven.tools,
+    'v8 adds the read tool and changes no other',
+  );
+  const read = shipped.tools.find((tool) => tool.name === 'read');
+  assert.ok(read, 'the shipped artifact offers read, because the runtime executes it');
+  const day = (read.parameters as { properties?: { day?: unknown }; required?: string[] }) ?? {};
+  assert.ok(day.properties?.day, 'read takes the day it is asked for');
+  assert.deepEqual(day.required, ['day'], 'a read with no day asks for nothing');
 
   // v6 adds one fact to the entry line and one line to the file to say it with: a
   // message that came with a picture is no longer indistinguishable from an empty one.

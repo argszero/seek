@@ -59,7 +59,7 @@ measures the prompt the reader has; `LLAMA=<path>` names another `llama-server` 
 `src/prompts/work-v1.json` changed, which is what makes the rows comparable: the only
 variable left is the model.
 
-**The tree now ships `work-v7.json`, and every row below was measured on `work-v1.json`.** A
+**The tree now ships `work-v8.json`, and every row below was measured on `work-v1.json`.** A
 prompt is versioned rather than edited in place, so v1 stays in the tree exactly as it was
 measured. v2 adds two parts — what the bot does in its organization, and how it talks and
 works — and both are skipped when a bot's card says nothing; v3 adds one part, the note the

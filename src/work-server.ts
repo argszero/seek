@@ -49,6 +49,7 @@
  * executed in the order the model asked for them.
  */
 
+import { archiveDays, archivePlaceOf, readArchiveDay } from './archive.ts';
 import { agentTurnsIn } from './chain.ts';
 import type { AgentIdentity } from './identity.ts';
 import {
@@ -59,6 +60,7 @@ import {
   type DeclaredEndpoint,
   type LlamaServer,
   type ToolCall,
+  type TurnMessage,
   type TurnPart,
 } from './llama.ts';
 import {
@@ -88,8 +90,30 @@ import type { Id, TokenUsage } from './types.ts';
  */
 const ROOM_SAMPLE = 'oc_0000000000000000';
 
-/** What this seam can execute, by the name the artifact offers. */
-const EXECUTABLE = new Set(['say']);
+/**
+ * What this seam can execute, by the name the artifact offers.
+ *
+ * Two, and the second is the one the ruling asks for: `docs/host-rulings.md`, "The
+ * observation box" — the uncompacted content "is archived by day", the model is told
+ * where, and it "may go and read it". A tool named in the artifact and absent here is
+ * refused at bind (§ below), so this set and `work-v8.json` are held against each other
+ * before the first turn.
+ */
+const EXECUTABLE = new Set(['say', 'read']);
+
+/**
+ * How many times one turn may look something up before it has to answer.
+ *
+ * A look is a second generation request with the same box in it, so an unbounded loop is
+ * an unbounded bill and a bot that never speaks. Three is enough for the shape the ruling
+ * describes — read a day, notice the day before it, read that — and a turn that asks a
+ * fourth time is refused rather than quietly left unanswered, because a model left
+ * mid-look is a turn whose last words were never read by anybody.
+ */
+const LOOK_ROUNDS = 3;
+
+/** The archive place a bind-time measurement uses, before this bot has a home to read. */
+const ARCHIVE_SAMPLE = '/tmp/seek/agents/work/archive (nothing filed yet)';
 
 /** What the caller may say about the turn half; the rest is the artifact's. */
 export interface WorkServerOptions {
@@ -143,6 +167,7 @@ export async function workOverServer(
     room: ROOM_SAMPLE,
     roster: '',
     summary: '',
+    archive: ARCHIVE_SAMPLE,
     entries: [],
   });
   // Which of the two kinds of endpoint this is decides what can be asked of it, and the
@@ -210,6 +235,24 @@ export async function workOverServer(
     const assembled = assembleWorkPrompt(artifact, values);
     const pictures = picturesOf(context);
 
+    // The request this turn opens with, and then what it opens *after* a look. A turn
+    // that looks nothing up sends exactly this and nothing else, so every prompt
+    // measured before this seam carried a tool an answer could come back for is the
+    // same request it was measured as.
+    const opening: TurnMessage[] = [
+      { role: 'system', content: assembled.system },
+      {
+        role: 'user',
+        // A turn whose box holds no picture sends the string it sent before, byte for
+        // byte: parts exist to say where a picture goes, and a request with no picture
+        // has nothing to say with them.
+        content:
+          pictures.length === 0
+            ? assembled.rest
+            : [{ type: 'text', text: assembled.rest }, ...pictures],
+      },
+    ];
+
     // A refusal rather than a truncation. This prompt is longer than the one measured
     // at bind time — it carries this turn's entries — and a prompt that overflows is
     // not shortened by llama-server: it shifts the context, keeps 0 leading tokens, and
@@ -222,6 +265,11 @@ export async function workOverServer(
     // is that an endpoint answers an over-long prompt with an error rather than by
     // discarding the front of it, so the failure arrives as the endpoint's own words on the
     // turn that caused it instead of as a bot that quietly stopped making sense.
+    // The window is checked on the opening request, which is the one whose size this
+    // file assembled. A later round carries that plus a day of archive, and it is bounded
+    // where the archive is read (`ARCHIVE_READ_LIMIT`) rather than guessed at here: a
+    // character estimate of an endpoint's tokeniser is the kind of number this repository
+    // refuses to make up.
     if (declared === null) {
       await requireChatShape(
         server,
@@ -230,33 +278,70 @@ export async function workOverServer(
       );
     }
 
-    const answer = await chatTurn(
-      server,
-      [
-        { role: 'system', content: assembled.system },
-        {
-          role: 'user',
-          // A turn whose box holds no picture sends the string it sent before, byte for
-          // byte: parts exist to say where a picture goes, and a request with no picture
-          // has nothing to say with them.
-          content:
-            pictures.length === 0
-              ? assembled.rest
-              : [{ type: 'text', text: assembled.rest }, ...pictures],
-        },
-      ],
-      tools,
-    );
-
-    // `answer.content` is deliberately unread: it is the agent's working record, and
-    // there is no path from it to a room (`say.ts`).
-    for (const call of answer.toolCalls) run(store, context, call);
-
+    let messages = opening;
     // What the server said this turn read and wrote, handed to `runTurn` to be written
     // on the ledger row — the one place a real cost enters the store. `undefined` when
     // the server reported no usage: this seam does not top the figure up, because the
-    // half it would invent is the half nobody measured.
-    return answer.usage ?? undefined;
+    // half it would invent is the half nobody measured. A turn that looked something up
+    // is two or more requests, and the row is the whole of what they cost, so they are
+    // added rather than the last one reported.
+    let spent: TokenUsage | null = null;
+
+    for (let round = 0; ; round += 1) {
+      const answer = await chatTurn(server, messages, tools);
+      if (answer.usage !== null) spent = add(spent, answer.usage);
+
+      // `answer.content` is deliberately unread: it is the agent's working record, and
+      // there is no path from it to a room (`say.ts`).
+      const looked: { call: ToolCall; text: string }[] = [];
+      for (const call of answer.toolCalls) {
+        const text = run(store, context, call);
+        // `say` answers with nothing: it has already done what it was asked, and a turn
+        // that only spoke is finished. Anything that answers with words is a look, and a
+        // look is only worth making if the model is asked again with the answer in hand.
+        if (text !== undefined) looked.push({ call, text });
+      }
+      if (looked.length === 0) break;
+
+      if (round === LOOK_ROUNDS) {
+        throw new Error(
+          `the model asked to look something up ${LOOK_ROUNDS + 1} times in one turn ` +
+            `(${looked.map((one) => one.call.name).join(', ')} again, after ${LOOK_ROUNDS} ` +
+            'answers): each look is another request carrying the whole box, so a turn ' +
+            'that keeps looking never answers, and this one is ended rather than left ' +
+            'mid-look with words nobody read',
+        );
+      }
+
+      // The answer goes back as the endpoint's own two shapes: the assistant message the
+      // calls are continued from — carrying only the calls whose answers are about to be
+      // sent, because the endpoint matches them one for one — and one `tool` message per
+      // answer, named by the call it belongs to.
+      messages = [
+        ...messages,
+        {
+          role: 'assistant',
+          content: answer.content,
+          toolCalls: looked.map((one) => one.call),
+        },
+        ...looked.map((one, index) => ({
+          role: 'tool' as const,
+          toolCallId: one.call.id ?? `call_${round}_${index}`,
+          content: one.text,
+        })),
+      ];
+    }
+
+    return spent ?? undefined;
+  };
+}
+
+/** Two requests' usage as one figure, for a turn that looked something up. */
+function add(sofar: TokenUsage | null, more: TokenUsage): TokenUsage {
+  if (sofar === null) return { ...more };
+  return {
+    input_tokens: sofar.input_tokens + more.input_tokens,
+    output_tokens: sofar.output_tokens + more.output_tokens,
   };
 }
 
@@ -269,7 +354,7 @@ export async function workOverServer(
  * something, and the honest answer to an unreadable request is an error rather than a
  * shrug dressed as a quiet turn.
  */
-function run(store: SeekStore, context: TurnContext, call: ToolCall): void {
+function run(store: SeekStore, context: TurnContext, call: ToolCall): string | undefined {
   if (!EXECUTABLE.has(call.name)) {
     throw new Error(
       `the model called '${call.name}' and this runtime executes only ` +
@@ -291,6 +376,10 @@ function run(store: SeekStore, context: TurnContext, call: ToolCall): void {
   if (typeof parsed !== 'object' || parsed === null) {
     throw new Error(`the model called ${call.name} with ${call.arguments}, which names no arguments`);
   }
+
+  // `read` answers with words and answers nothing else: it posts no message, so it is
+  // the one call whose result is handed back to the model rather than into a room.
+  if (call.name === 'read') return look(store, context, parsed as { day?: unknown });
 
   const args = parsed as { room?: unknown; text?: unknown; mentions?: unknown };
   if (typeof args.room !== 'string' || typeof args.text !== 'string') {
@@ -331,6 +420,47 @@ function run(store: SeekStore, context: TurnContext, call: ToolCall): void {
   // rather than dropped — a mention aimed at nobody is a message the sender believed
   // was addressed.
   context.say(args.room, args.text, { ...replyOf(context), ...mentionsOf(store, args.mentions, context) });
+  // Nothing to hand back: the message is the answer, and the model already knows what it
+  // asked for. A turn that only spoke ends here, which is what makes loop one request.
+  return undefined;
+}
+
+/**
+ * `read(day)`: one day of what a note folded away, in the agent's own words.
+ *
+ * **The day is a name, not a path.** `archive.ts` builds the file from a `YYYY-MM-DD`
+ * it has checked, so nothing a model writes in this call can reach outside the bot's own
+ * archive — the surface a bot can read is the surface the runtime files for it, and there
+ * is no second one.
+ *
+ * **Two different answers to two different problems.** A `day` argument that is not a day
+ * is a call this runtime cannot read, and an unreadable call is an error (the same rule as
+ * `say`'s). A day this bot simply has nothing filed for is not an error: it is an answer,
+ * and it is the answer that lets the model correct itself — it is told which days do exist
+ * and asks again. A throw there would end the turn over a wrong guess about a date.
+ */
+function look(store: SeekStore, context: TurnContext, args: { day?: unknown }): string {
+  const agent = store.data.agents[context.agentId];
+  const home = agent?.home ?? '';
+  const days = archiveDays(home);
+  const day = typeof args.day === 'string' ? args.day.trim() : '';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) {
+    throw new Error(
+      `the model called read with day=${JSON.stringify(args.day)}, which is not a day: the ` +
+        'tool declares YYYY-MM-DD, and a name this runtime cannot read is not a day it may ' +
+        `answer with a guess. The days this bot has filed are ` +
+        `${days.join(', ') || 'none yet'}`,
+    );
+  }
+  const text = readArchiveDay(home, day);
+  if (text !== null) return text;
+  return (
+    `this bot has nothing filed for ${day}. ` +
+    (days.length === 0
+      ? 'Nothing has been filed at all yet: a day is written when a note folds a room\'s ' +
+        'messages away, and no note has been written for it so far.'
+      : `The days it has are ${days.join(', ')}.`)
+  );
 }
 
 /**
@@ -405,6 +535,7 @@ function valuesOf(store: SeekStore, context: TurnContext): WorkValues {
     others: othersOf(store, context, bot.id),
     turns: context.roomId === undefined ? undefined : turnsSincePerson(store, context.roomId),
     summary: box?.summary ?? '',
+    archive: archivePlaceOf(store.data.agents[context.agentId]?.home ?? ''),
     entries: readable.map((entry) => entryOf(store, bot.name, entry)),
   };
 }

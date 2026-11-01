@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -50,6 +51,15 @@ function fakeServer(
      * untestable, and that is the case the kernel must not fill in with a zero.
      */
     usage?: unknown;
+    /**
+     * What the model answers, request after request, when one answer is not enough.
+     *
+     * A turn that looks something up is two requests — the read, and then the one that
+     * carries its answer back — so the answers have to change between them, and a
+     * recorder with one fixed answer could not tell the second request from the first.
+     * Once the list runs out the last entry repeats.
+     */
+    answers?: { content?: string; toolCalls?: unknown[] }[];
     nCtx?: number;
     modelAlias?: string | null;
     modelPath?: string | null;
@@ -65,6 +75,7 @@ function fakeServer(
   } = {},
 ): { fetch: Fetcher; calls: Call[] } {
   const calls: Call[] = [];
+  let asked = 0;
   const fetcher: Fetcher = async (url, init) => {
     const path = new URL(url).pathname;
     const body =
@@ -93,12 +104,18 @@ function fakeServer(
       // being pinned is that the check runs and refuses, not a tokeniser's arithmetic.
       payload = { tokens: String(body.content).split(/\s+/).filter(Boolean).map((_, i) => i) };
     } else if (path === '/v1/chat/completions') {
+      const scripted = options.answers;
+      const answer =
+        scripted === undefined
+          ? options
+          : scripted[Math.min(asked, scripted.length - 1)];
+      asked += 1;
       payload = {
         choices: [
           {
             message: {
-              content: options.content ?? '',
-              ...(options.toolCalls === undefined ? {} : { tool_calls: options.toolCalls }),
+              content: answer.content ?? '',
+              ...(answer.toolCalls === undefined ? {} : { tool_calls: answer.toolCalls }),
             },
           },
         ],
@@ -778,8 +795,172 @@ test('a prompt that offers a tool this runtime cannot execute is refused at bind
 
   await assert.rejects(
     () => workOverServer(world.store, world.botA, serverOf(recorder), { prompt: offering }),
-    /offers 'schedule' and this runtime can only execute 'say'/,
+    /offers 'schedule' and this runtime can only execute 'say', 'read'/,
     'a model asked to call a tool nobody runs asks for something that cannot happen',
+  );
+});
+
+/**
+ * A bot's home holding one filed day, and the day it is filed under.
+ *
+ * A temporary directory of this test's own rather than the fixture's `/tmp/seek/a/work`:
+ * the archive is files, two runs of this file would share them, and a test that reads
+ * another test's leftovers passes for the wrong reason.
+ */
+function archiveOf(lines: string[], day = '2026-10-30'): { home: string; day: string } {
+  const home = mkdtempSync(join(tmpdir(), 'seek-look-'));
+  mkdirSync(join(home, 'archive'), { recursive: true });
+  writeFileSync(
+    join(home, 'archive', `${day}.jsonl`),
+    lines
+      .map((line) =>
+        JSON.stringify({
+          at: `${day}T02:00:00.000Z`,
+          room: 'oc_room',
+          sender: '邵安清',
+          text: line,
+        }),
+      )
+      .join('\n') + '\n',
+    'utf8',
+  );
+  return { home, day };
+}
+
+/** A read call as a model writes one. */
+function readCall(day: string): unknown {
+  return { id: 'call_1', function: { name: 'read', arguments: JSON.stringify({ day }) } };
+}
+
+test('a read comes back into the turn, and what is said afterwards is a second request', async () => {
+  const world = makeWorld();
+  const filed = archiveOf(['the retry queue was at 40 yesterday', 'nobody has looked since']);
+  world.store.data.agents[world.agentA2].home = filed.home;
+
+  const recorder = fakeServer({
+    answers: [
+      { toolCalls: [readCall(filed.day)] },
+      { toolCalls: [sayCall(world.room, 'yesterday it was at 40')] },
+    ],
+  });
+  const decide = await workOverServer(world.store, world.botA, serverOf(recorder), {
+    prompt: ARTIFACT,
+  });
+
+  const record = await turnWith(world, decide, await entriesOf(world));
+
+  // What the room got is the second answer: the model read first, and then spoke.
+  assert.equal(record.produced.length, 1);
+  assert.equal(record.produced[0].text, 'yesterday it was at 40');
+
+  const chats = recorder.calls.filter((call) => call.path === '/v1/chat/completions');
+  assert.equal(chats.length, 2, 'a look is one request and the answer to it is another');
+
+  // The second request carries the answer, in the endpoint's own two shapes: the
+  // assistant message the call continues from, and the tool message that answers it.
+  const sent = chats[1].body.messages as {
+    role: string;
+    content: unknown;
+    tool_calls?: { id: string; function: { name: string } }[];
+    tool_call_id?: string;
+  }[];
+  const assistant = sent.at(-2);
+  assert.equal(assistant?.role, 'assistant');
+  assert.deepEqual(
+    assistant?.tool_calls?.map((one) => [one.id, one.function.name]),
+    [['call_1', 'read']],
+    'the call is named by the id the endpoint gave it, or the answer cannot be matched',
+  );
+  const tool = sent.at(-1);
+  assert.equal(tool?.role, 'tool');
+  assert.equal(tool?.tool_call_id, 'call_1');
+  assert.equal(
+    tool?.content,
+    '[2026-10-30T02:00:00.000Z] 邵安清: the retry queue was at 40 yesterday\n' +
+      '[2026-10-30T02:00:00.000Z] 邵安清: nobody has looked since',
+    'the day arrives in the shape the transcript already uses',
+  );
+});
+
+test('the turn is told where the archive is, so a read has a day to name', async () => {
+  const world = makeWorld();
+  const filed = archiveOf(['the retry queue was at 40 yesterday']);
+  world.store.data.agents[world.agentA2].home = filed.home;
+
+  const recorder = fakeServer({ content: '' });
+  const decide = await workOverServer(world.store, world.botA, serverOf(recorder), {
+    prompt: ARTIFACT,
+  });
+  await turnWith(world, decide, await entriesOf(world));
+
+  const chat = recorder.calls.find((call) => call.path === '/v1/chat/completions');
+  const user = (chat?.body.messages as { role: string; content: string }[]).find(
+    (message) => message.role === 'user',
+  );
+  assert.ok(String(user?.content).includes(`${filed.home}/archive`), 'the place is named');
+  assert.ok(String(user?.content).includes(filed.day), 'and the days already filed');
+});
+
+test('a day with nothing filed is answered in words, so the model can ask again', async () => {
+  const world = makeWorld();
+  const filed = archiveOf(['the retry queue was at 40 yesterday']);
+  world.store.data.agents[world.agentA2].home = filed.home;
+
+  const recorder = fakeServer({
+    answers: [
+      { toolCalls: [readCall('2026-10-28')] },
+      { toolCalls: [sayCall(world.room, 'nothing filed for that day, so I am going on the note')] },
+    ],
+  });
+  const decide = await workOverServer(world.store, world.botA, serverOf(recorder), {
+    prompt: ARTIFACT,
+  });
+
+  const record = await turnWith(world, decide, await entriesOf(world));
+
+  assert.equal(record.produced.length, 1, 'the turn carried on rather than ending on a wrong date');
+  const tool = (
+    recorder.calls.filter((call) => call.path === '/v1/chat/completions')[1].body
+      .messages as { role: string; content: string }[]
+  ).at(-1);
+  assert.equal(tool?.role, 'tool');
+  assert.match(String(tool?.content), /nothing filed for 2026-10-28/);
+  assert.match(String(tool?.content), new RegExp(filed.day), 'and which days do exist');
+});
+
+test('a read that names no day is refused rather than answered with a guess', async () => {
+  const world = makeWorld();
+  const filed = archiveOf(['one line']);
+  world.store.data.agents[world.agentA2].home = filed.home;
+
+  const recorder = fakeServer({
+    toolCalls: [{ function: { name: 'read', arguments: JSON.stringify({ day: 'yesterday' }) } }],
+  });
+  const decide = await workOverServer(world.store, world.botA, serverOf(recorder), {
+    prompt: ARTIFACT,
+  });
+
+  const woke = await entriesOf(world);
+  await assert.rejects(
+    () => turnWith(world, decide, woke),
+    /called read with day="yesterday", which is not a day/,
+    'a name this runtime cannot read is not a day it may answer with a guess',
+  );
+});
+
+test('a tool this runtime does not execute is still refused at the call', async () => {
+  const world = makeWorld();
+  const recorder = fakeServer({
+    toolCalls: [{ function: { name: 'delete', arguments: JSON.stringify({ room: world.room }) } }],
+  });
+  const decide = await workOverServer(world.store, world.botA, serverOf(recorder), {
+    prompt: ARTIFACT,
+  });
+
+  const woke = await entriesOf(world);
+  await assert.rejects(
+    () => turnWith(world, decide, woke),
+    /the model called 'delete' and this runtime executes only 'say', 'read'/,
   );
 });
 
@@ -792,7 +973,7 @@ test('a roster whose work row does not allow what the prompt offers is refused a
 
   await assert.rejects(
     () => workOverServer(world.store, world.botA, serverOf(recorder), { prompt: ARTIFACT }),
-    /the turn prompt offers 'say' and the roster's work row allows nothing/,
+    /the turn prompt offers 'say', 'read' and the roster's work row allows nothing/,
     'the prompt and the allowlist are two files, and the bind is the only place both are open',
   );
 });

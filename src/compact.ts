@@ -43,6 +43,7 @@
  * configured nothing is ever due.
  */
 
+import { archiveObservations, describeFrom } from './archive.ts';
 import { newId, type SeekStore } from './store.ts';
 import type { Agent, Id, Memory, Observation } from './types.ts';
 
@@ -283,6 +284,14 @@ export class RoomCompactor {
       return { ran: false, reason: 'failed' };
     }
     this.failed.delete(room);
+
+    // **What this note is about to fold away is filed first** (`archive.ts`):
+    // `docs/host-rulings.md`, "The observation box" — *"the uncompacted content is
+    // archived by day"*, and *"the model may go and read it"*. It goes to the
+    // agent's own home, one file per day, and it goes before the note is written:
+    // a directory that cannot be written must leave the delta where it is, rather
+    // than consume the entries and then fail to keep them.
+    archiveObservations(agent.home, snapshot, describeFrom(this.store));
 
     const at = this.clock();
     const consumedTo = snapshot[snapshot.length - 1].id;

@@ -107,8 +107,27 @@ export type TurnPart =
  * of that placement rather than something this file infers.
  */
 export interface TurnMessage {
-  role: 'system' | 'user';
+  /**
+   * Which of the four a chat request carries, and why the last two exist here.
+   *
+   * A turn that can *look something up* is four messages, not two: the assistant
+   * message that asked, the tool message that answered, and then the request that
+   * carries them both forward. `docs/host-rulings.md` gives the work agent an archive
+   * it "may go and read", and a read whose answer never reaches the model is a tool
+   * that does nothing — so the transport carries the shape the answer needs.
+   */
+  role: 'system' | 'user' | 'assistant' | 'tool';
   content: string | TurnPart[];
+  /**
+   * On an `assistant` message: the calls it is being continued from.
+   *
+   * Only the calls whose answers are in the same request, because the endpoint matches
+   * them one for one — a call named here with no answer beside it is a request the
+   * server refuses.
+   */
+  toolCalls?: ToolCall[];
+  /** On a `tool` message: which call it answers. */
+  toolCallId?: string;
 }
 
 /** Where the model is. */
@@ -499,6 +518,14 @@ export interface ChatTool {
 
 /** One call a model asked for. The arguments are the model's own bytes, unparsed. */
 export interface ToolCall {
+  /**
+   * What the endpoint calls this call, so its answer can name it.
+   *
+   * A `llama-server` build that reports one gets it back verbatim; a build that reports
+   * none gets the position in the turn, which is this file standing in for a name the
+   * server did not give rather than inventing a meaning for one.
+   */
+  id?: string;
   name: string;
   /** Raw JSON as the model produced it — parsed by the caller, so a bad one is its sentence. */
   arguments: string;
@@ -558,7 +585,7 @@ export async function chatTurn(
   tools: ChatTool[] = [],
 ): Promise<ChatTurn> {
   const body: Record<string, unknown> = {
-    messages: await messagesWithPictures(server, messages),
+    messages: wireOf(await messagesWithPictures(server, messages)),
     temperature: 0,
   };
   // **Which model, when the caller named one.** A `llama-server` serves a single model and
@@ -611,7 +638,12 @@ export async function chatTurn(
       );
     }
     const args = nested?.arguments ?? flat?.arguments;
+    // The id is kept only when the endpoint gave one; the caller names the call after its
+    // position when it did not, which is a name this file never has to invent meaning for.
+    const rawId = (call as { id?: unknown } | null)?.id;
+    const id = typeof rawId === 'string' && rawId !== '' ? rawId : undefined;
     toolCalls.push({
+      ...(id === undefined ? {} : { id }),
       name,
       arguments: typeof args === 'string' ? args : JSON.stringify(args ?? {}),
     });
@@ -680,6 +712,36 @@ export const PICTURE_BYTES_PER_TURN = 512 * 1024;
  * the window and template checks too — the ones a turn carrying an image is in more need of
  * than one that is not.
  */
+/**
+ * The messages as the endpoint names them.
+ *
+ * `tool_calls` and `tool_call_id` are the wire's spelling, and three of the four roles
+ * carry neither — so a plain system-and-user request goes out with exactly the two keys
+ * it always had, byte for byte, which is what keeps every measured prompt of the last
+ * two versions the same request it was measured as.
+ *
+ * A message with no `toolCalls` and no `toolCallId` is returned field for field, and that
+ * is deliberate: the caller's own objects are what the endpoint reads, and rebuilding
+ * them here would be this file quietly deciding which fields of a message exist.
+ */
+function wireOf(messages: unknown[]): unknown[] {
+  return messages.map((message) => {
+    const one = message as TurnMessage;
+    const carries = one.toolCalls !== undefined || one.toolCallId !== undefined;
+    if (!carries) return message;
+    const wire: Record<string, unknown> = { role: one.role, content: one.content };
+    if (one.toolCalls !== undefined) {
+      wire.tool_calls = one.toolCalls.map((call) => ({
+        id: call.id,
+        type: 'function',
+        function: { name: call.name, arguments: call.arguments },
+      }));
+    }
+    if (one.toolCallId !== undefined) wire.tool_call_id = one.toolCallId;
+    return wire;
+  });
+}
+
 async function messagesWithPictures(
   server: LlamaServer,
   messages: TurnMessage[],
