@@ -700,6 +700,17 @@ async function openHost(storeFile, options = {}) {
     ...(stage1.judge === undefined ? {} : { judge: stage1.judge }),
     ...(stage2.summarise === undefined ? {} : { summarise: stage2.summarise }),
     ...(options.onError === undefined ? {} : { onError: options.onError }),
+    // **The dot has a clock the store does not.** A bot that starts a turn, or takes up a wait
+    // before it reads, writes nothing — so a window told only about writes would draw every
+    // bot as asleep for the whole time it is working, and the one state §8 item 1 exists for
+    // would never be on screen. The kernel reports those four moments here.
+    //
+    // **Its own hook rather than `onChanged`**, which says "the answers have settled" and is
+    // counted as one announcement per answer (`send-does-not-wait.test.mjs`). Both end in the
+    // same broadcast the window redraws from — `main.js` sends `seek:changed` for either —
+    // so the renderer still has one picture of the world and one way to hear about it, while
+    // a caller that asks only about speech is not told about a turn opening.
+    ...(options.onActivity === undefined ? {} : { onActivity: options.onActivity }),
     // How long a bot takes to look at what just arrived. The window's caller decides it
     // (`main.js` says what a person's tempo is), and a caller that says nothing gets no
     // wait at all — which is what every test of this layer wants, since what it measures
@@ -714,7 +725,9 @@ async function openHost(storeFile, options = {}) {
 
   // **The two ways a bot answers without being asked twice.** A send starts its wakes and
   // returns (`postMessage`); `onChanged` is what says they have settled, so the window can
-  // draw an answer that arrived after the person's own line was already on screen. `onError`
+  // draw an answer that arrived after the person's own line was already on screen. It is also
+  // what says a bot has started or finished a turn, because the window redraws a whole
+  // snapshot either way and the state dot has no other way to learn that. `onError`
   // is the same hook for the wakes that threw — the kernel's comparator and a person's send
   // both report there, so the main process has one place to log them.
   return {
@@ -736,7 +749,20 @@ async function openHost(storeFile, options = {}) {
  * answer from the snapshot it returned, because a bot answers on its own time.
  */
 function hostSnapshot(host) {
-  return snapshotOf(host.store, host.storeFile, host.stage1, host.stage2)
+  return snapshotOf(host.store, host.storeFile, host.stage1, host.stage2, null, botActivityOf(host))
+}
+
+/**
+ * What the bots are doing, off the kernel — the only thing that knows.
+ *
+ * A host with no kernel yet (a store that was refused, a window opened before the loop) has
+ * no readings to give, and `null` is that answer: the snapshot then carries every bot as
+ * asleep rather than a dot drawn from a guess. A kernel built by a test may be a stub without
+ * the method, which is the same nothing.
+ */
+function botActivityOf(host) {
+  const kernel = host?.kernel
+  return kernel && typeof kernel.activity === 'function' ? kernel.activity() : null
 }
 
 /**
@@ -993,7 +1019,7 @@ async function postMessage(host, input) {
   // The same facts the window's first snapshot carried, for both halves: a send replaces
   // the whole snapshot in the renderer, so leaving either out here would make its strip
   // disappear the moment the person said anything.
-  return snapshotOf(host.store, host.storeFile, host.stage1, host.stage2)
+  return snapshotOf(host.store, host.storeFile, host.stage1, host.stage2, null, botActivityOf(host))
 }
 
 /**
@@ -1026,7 +1052,7 @@ async function reactToMessage(host, input) {
     emojiType: typeof input?.emojiType === 'string' ? input.emojiType : '',
   })
   await host.store.save()
-  return snapshotOf(host.store, host.storeFile, host.stage1, host.stage2)
+  return snapshotOf(host.store, host.storeFile, host.stage1, host.stage2, null, botActivityOf(host))
 }
 
 /**
@@ -1081,7 +1107,7 @@ async function createRoom(host, input) {
 
   return {
     roomId: created.room.id,
-    snapshot: snapshotOf(host.store, host.storeFile, host.stage1, host.stage2),
+    snapshot: snapshotOf(host.store, host.storeFile, host.stage1, host.stage2, null, botActivityOf(host)),
   }
 }
 
@@ -1118,7 +1144,7 @@ async function addMember(host, input) {
   // outcome the person cannot see and cannot repair.
   await host.store.save()
 
-  return snapshotOf(host.store, host.storeFile, host.stage1, host.stage2)
+  return snapshotOf(host.store, host.storeFile, host.stage1, host.stage2, null, botActivityOf(host))
 }
 
 /**
@@ -1209,7 +1235,7 @@ async function addBot(host, input) {
   return {
     botId: bot.id,
     roster,
-    snapshot: snapshotOf(host.store, host.storeFile, host.stage1, host.stage2),
+    snapshot: snapshotOf(host.store, host.storeFile, host.stage1, host.stage2, null, botActivityOf(host)),
   }
 }
 
@@ -1217,6 +1243,7 @@ module.exports = {
   WORK_MODEL_WITHOUT_SERVER,
   addBot,
   addMember,
+  botActivityOf,
   closeHost,
   createRoom,
   deleteMessage,
@@ -1260,7 +1287,7 @@ async function updateRoom(host, input) {
   // forgetting what it was told.
   await host.store.save()
 
-  return snapshotOf(host.store, host.storeFile, host.stage1, host.stage2)
+  return snapshotOf(host.store, host.storeFile, host.stage1, host.stage2, null, botActivityOf(host))
 }
 
 /**
@@ -1279,7 +1306,7 @@ async function removeMember(host, input) {
   })
   await host.store.save()
 
-  return snapshotOf(host.store, host.storeFile, host.stage1, host.stage2)
+  return snapshotOf(host.store, host.storeFile, host.stage1, host.stage2, null, botActivityOf(host))
 }
 
 /**
@@ -1306,7 +1333,7 @@ async function deleteMessage(host, input) {
     roomId: gone.message.room_id,
     media: gone.media ? { key: gone.media.key } : null,
     file: gone.file ? { key: gone.file.key } : null,
-    snapshot: snapshotOf(host.store, host.storeFile, host.stage1, host.stage2),
+    snapshot: snapshotOf(host.store, host.storeFile, host.stage1, host.stage2, null, botActivityOf(host)),
   }
 }
 
@@ -1323,7 +1350,7 @@ async function deleteThread(host, input) {
     blobs: gone.erased
       .flatMap((one) => [one.media && { key: one.media.key }, one.file && { key: one.file.key }])
       .filter(Boolean),
-    snapshot: snapshotOf(host.store, host.storeFile, host.stage1, host.stage2),
+    snapshot: snapshotOf(host.store, host.storeFile, host.stage1, host.stage2, null, botActivityOf(host)),
   }
 }
 
@@ -1339,7 +1366,7 @@ async function deleteRoom(host, input) {
     blobs: gone.erased
       .flatMap((one) => [one.media && { key: one.media.key }, one.file && { key: one.file.key }])
       .filter(Boolean),
-    snapshot: snapshotOf(host.store, host.storeFile, host.stage1, host.stage2),
+    snapshot: snapshotOf(host.store, host.storeFile, host.stage1, host.stage2, null, botActivityOf(host)),
   }
 }
 
@@ -1361,6 +1388,6 @@ async function deleteBot(host, input) {
     // The rooms it was in, so the window can say what changed rather than leaving a person to
     // notice it in a list.
     rooms: gone.rooms,
-    snapshot: snapshotOf(host.store, host.storeFile, host.stage1, host.stage2),
+    snapshot: snapshotOf(host.store, host.storeFile, host.stage1, host.stage2, null, botActivityOf(host)),
   }
 }

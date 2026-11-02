@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { t } from './catalogue.mjs'
 import Dialog from './Dialog.jsx'
 import Gutter from './Gutter.jsx'
+import StateDot from './StateDot.jsx'
 
 /**
  * The contacts view: the bots in this organization, and a card for whichever one is chosen.
@@ -38,7 +39,7 @@ import Gutter from './Gutter.jsx'
  * the rail all move with it; a bot is made from the list that holds bots, so that call is
  * here, beside its form.
  */
-export default function Contacts({ people, firstLaw, refusal, onMessage, onSnapshot, ask, onAsked }) {
+export default function Contacts({ people, activity, firstLaw, refusal, onMessage, onSnapshot, ask, onAsked }) {
   const [query, setQuery] = useState('')
   const [openId, setOpenId] = useState(null)
 
@@ -326,7 +327,13 @@ export default function Contacts({ people, firstLaw, refusal, onMessage, onSnaps
                   data-contact-row={person.id}
                   onClick={() => setOpenId(person.id)}
                 >
-                  <span className="conv-av">{person.name.slice(0, 1).toUpperCase()}</span>
+                  <span className="conv-av">
+                    {person.name.slice(0, 1).toUpperCase()}
+                    {/* What this bot is doing, on the avatar the list draws it by — the
+                        roster is the one screen that shows every bot at once, and asleep,
+                        watching and working are the three answers it can give. */}
+                    <StateDot state={activity?.[person.id]} />
+                  </span>
                   <span className="conv-body">
                     <span className="conv-name">{person.name}</span>
                     {/* The prototype's line under the name — absent where there is nothing to

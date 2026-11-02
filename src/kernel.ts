@@ -140,6 +140,20 @@ export interface KernelOptions {
    */
   wakeDelay?: (arrived: WakeArrival) => number;
   /**
+   * Where a change in what the bots are doing is reported.
+   *
+   * The two readings `activity()` answers move at four moments — a bot's turn opens, its turn
+   * ends, its reading wait is armed, its wait fires — and none of them is a write to the
+   * store. A window that only redrew when the store changed would show a bot as asleep for
+   * the whole of the turn it is spending, and then as asleep again; the dot would be a
+   * decoration rather than a reading. This is the hook that makes the reading observable
+   * without a window polling for it.
+   *
+   * Nothing here waits on it, and an observer that throws does not fail a turn: what a bot
+   * does with what it read is the room's business, not the caller's.
+   */
+  onActivity?: () => void;
+  /**
    * Where a wake that threw is reported. The record on `failures` is written
    * either way: this is what a caller does about it.
    */
@@ -164,6 +178,7 @@ export class Kernel {
   #decide: Decide | undefined;
   #judge: Judge | undefined;
   #onError: KernelOptions['onError'];
+  #onActivity: KernelOptions['onActivity'];
   #wakeDelay: KernelOptions['wakeDelay'];
   #timers: Timers;
   #loops = new Map<Id, InboxLoop>();
@@ -191,6 +206,7 @@ export class Kernel {
     this.#decide = options.decide;
     this.#judge = options.judge;
     this.#onError = options.onError;
+    this.#onActivity = options.onActivity;
     this.#wakeDelay = options.wakeDelay;
     this.#timers = options.timers ?? wallTimers;
 
@@ -284,8 +300,11 @@ export class Kernel {
       () => undefined,
     );
     this.#busy.set(botId, link);
+    this.#notifyActivity();
     void link.then(() => {
-      if (this.#busy.get(botId) === link) this.#busy.delete(botId);
+      if (this.#busy.get(botId) !== link) return;
+      this.#busy.delete(botId);
+      this.#notifyActivity();
     });
 
     const result = await next;
@@ -323,12 +342,30 @@ export class Kernel {
     const promise = new Promise<TickResult>((resolve, reject) => {
       settle = resolve;
       handle = this.#timers.set(delay, () => {
+        // No report of its own here: the `tick()` on the next line is what this wait became,
+        // and it reports the turn it opens in the same breath.
         this.#waits.delete(botId);
         this.tick(botId).then(resolve, reject);
       });
     });
     this.#waits.set(botId, { handle, promise, settle });
+    this.#notifyActivity();
     return promise;
+  }
+
+  /**
+   * Say that the two readings moved, and never let the saying fail a turn.
+   *
+   * A window that has closed, a caller whose observer throws — neither is a fact about the
+   * room, and neither may reach the bot.
+   */
+  #notifyActivity(): void {
+    try {
+      this.#onActivity?.();
+    } catch {
+      // Deliberately silent: what a caller does with what the bots are doing is the
+      // caller's, and the turn underneath is the bot's.
+    }
   }
 
   /** Whether what is waiting for this bot was addressed to it. */
@@ -388,6 +425,28 @@ export class Kernel {
         )),
       ]);
     }
+  }
+
+  /**
+   * What each bot is doing, in the two readings the window's state dot is derived from.
+   *
+   * `agent-lifecycle.md` §8 item 1 asks for watching / working / asleep / needy on the
+   * avatar, and §6 lists `agent_state` as a frame. **None of it is stored.** Working is a bot
+   * in a turn (`#busy`), watching is a bot whose wake timer is armed (`#waits`), and asleep is
+   * a bot in neither — so the four words are derived where the window already derives
+   * `mentionsMe` and `depth`, from what the record and the loop hold at that instant.
+   *
+   * **A stored `status` field would be the copy that goes stale.** `#busy` is emptied in the
+   * same `then` that reports a turn's error; a stored `working` written when the turn opened
+   * would survive the throw, and the avatar would go on saying the bot is busy with nothing
+   * on screen able to tell that from a bot genuinely still thinking.
+   *
+   * Read off live memory, so it says nothing about a bot whose turn was in flight when the
+   * process died: that work is gone, and a dot claiming otherwise would be a promise to
+   * finish something nobody is holding.
+   */
+  activity(): { working: Id[]; watching: Id[] } {
+    return { working: [...this.#busy.keys()], watching: [...this.#waits.keys()] };
   }
 
   /**
