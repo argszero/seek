@@ -845,7 +845,7 @@ test('a prompt that offers a tool this runtime cannot execute is refused at bind
 
   await assert.rejects(
     () => workOverServer(world.store, world.botA, serverOf(recorder), { prompt: offering }),
-    /offers 'schedule' and this runtime can only execute 'say', 'read', 'glob', 'grep', 'write', 'edit'/,
+    /offers 'schedule' and this runtime can only execute 'say', 'bash', 'read', 'glob', 'grep', 'write', 'edit'/,
     'a model asked to call a tool nobody runs asks for something that cannot happen',
   );
 });
@@ -1010,7 +1010,7 @@ test('a tool this runtime does not execute is still refused at the call', async 
   const woke = await entriesOf(world);
   await assert.rejects(
     () => turnWith(world, decide, woke),
-    /the model called 'delete' and this runtime executes only 'say', 'read', 'glob', 'grep', 'write', 'edit'/,
+    /the model called 'delete' and this runtime executes only 'say', 'bash', 'read', 'glob', 'grep', 'write', 'edit'/,
   );
 });
 

@@ -826,7 +826,7 @@ export interface WorkValues {
 /**
  * The shipped turn artifact's location, beside this module.
  *
- * `work-v12.json` ships; `work-v1.json` through `work-v11.json` stay beside it. A prompt is
+ * `work-v13.json` ships; `work-v1.json` through `work-v12.json` stay beside it. A prompt is
  * versioned rather than edited in place, because `calibration/work/` measured v1 and a
  * record that quotes a prompt the tree has changed describes a run nobody can re-read
  * — `work-calibration.test.ts` holds that pair together. What v2 added is the two parts
@@ -872,10 +872,9 @@ export interface WorkValues {
  * `read`, `write`, `edit`, `glob`, `grep`, `subagent`, `submit_rant`, `boss` — and until v11
  * a bot could look and not act, which is not the agent that sentence describes. Both are
  * bounded to the agent's own home, exactly as `read`, `glob` and `grep` are, so the home is
- * still the only part of the machine a turn can touch. `bash` stays out: it is the one of the
- * three that reaches the machine itself rather than the bot's own files, and the ruling's
- * "It has tools" paragraph is about the set a bot is configured with, not a decision this
- * artifact makes on the host's behalf. No part moves.
+ * still the only part of the machine a turn can touch through a name. `bash` stays out of
+ * v11: it reaches the machine itself rather than the bot's own files, so it could not be
+ * given to a turn until there was a bound around it that is not a name check. No part moves.
  *
  * What v12 changes follows from the box becoming the bot's. `docs/host-rulings.md`,
  * "The observation box", says the box travels with the bot and holds what the bot
@@ -886,9 +885,18 @@ export interface WorkValues {
  * calling it this room's; and the memory index (`{memories}`, v9) leaves, because it listed
  * the notes a bot had written about *other* rooms and one note per bot leaves no other
  * room's note to list. Every other part of the file is v11's.
+ *
+ * What v13 adds is `bash`, the one registry entry v11 left out. `docs/host-rulings.md`,
+ * "The tools", lists it beside the file tools, and what kept it out was that a shell names
+ * no path — so "inside the bot's own directory" was not a bound it could be given by a name
+ * check. It has one now that is not a name check: `sandbox.ts` puts the kernel around the
+ * child, with no writing outside the bot's own directory, no network, and none of the
+ * person's own files for reading. The entry's words say exactly that, because a model that
+ * believes it may write anywhere would spend a turn discovering otherwise. No part moves,
+ * and no other tool changes.
  */
 export function shippedWorkPromptPath(): URL {
-  return new URL('./prompts/work-v12.json', import.meta.url);
+  return new URL('./prompts/work-v13.json', import.meta.url);
 }
 
 /**
