@@ -35,17 +35,23 @@ export type RunTurn = (entries: Observation[]) => Promise<void> | void;
  *
  * The real stage 1 is a decision model (`agent-lifecycle.md` §4): one forward
  * pass over the room's box, an answer per named question, "unparseable counts
- * as no act". It is not built yet, so the default below is a placeholder that
- * acts on nothing — **no model is called this round**, and no verdict is
- * written, because the verdict for a judged entry is the watch side's to write
- * and a placeholder has nothing to record.
+ * as no act". It exists — `llama.ts` asks that question of `llama-server`'s
+ * `/v1/systemone`, `watch-server.ts` binds the answerer to the bot whose box it
+ * reads, and both callers bind one when they can: the app hands every bot its
+ * own (`ui/electron/host.js`), and the command line binds one when a server is
+ * named (`main.ts`).
+ *
+ * The default below is what a caller that bound none gets, and it is not a
+ * stand-in for that model: **no model is called**, nothing is spent, and no
+ * verdict is written, because the verdict for a judged entry is the watch
+ * side's to write and a caller that judged nothing has nothing to record.
  */
 export type Judge = (
   botId: Id,
   entries: Observation[],
 ) => Promise<Observation[]> | Observation[];
 
-/** Stage 1 until it exists: no act. Nothing is spent and nothing is written. */
+/** Stage 1 for a caller that bound none: no act. Nothing is spent and nothing is written. */
 const judgeNothing: Judge = () => [];
 
 export interface TickResult {
