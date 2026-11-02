@@ -19,6 +19,7 @@ import { test } from 'node:test'
 
 import {
   bundledServerPath,
+  serverBinaryName,
   serverChoiceFrom,
   startBundledServer,
   weightsDirectory,
@@ -269,6 +270,18 @@ test('the packaged paths are the ones the manifest ships', () => {
     bundledServerPath('/Applications/Seek.app/Contents/Resources'),
     join('/Applications/Seek.app/Contents/Resources', 'server', 'llama-server'),
     'the binary sits under the resources directory the package is built with',
+  )
+
+  // The two downloads carry a server named differently, and each has to ask for its own. The
+  // name is read from the platform rather than from whatever sits on disk: a build that packed
+  // the wrong directory should say which file it looked for, not take the one beside it —
+  // `startBundledServer` reports the path it could not find.
+  assert.equal(serverBinaryName('darwin'), 'llama-server')
+  assert.equal(serverBinaryName('win32'), 'llama-server.exe', 'Windows names its executables with an ending')
+  assert.equal(
+    bundledServerPath('/tmp/resources', 'win32'),
+    join('/tmp/resources', 'server', 'llama-server.exe'),
+    'and that is the name the pinned Windows archive holds',
   )
   assert.equal(
     weightsDirectory('/Users/someone/Library/Application Support/Seek'),

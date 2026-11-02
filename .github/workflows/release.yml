@@ -12,9 +12,23 @@ name: Release
 # says where and when, and `packaging/make-pkg.mjs` says what. The packaging test pins that
 # this file names that script rather than reimplementing it.
 #
-# **This repository has no pull-request workflow yet**, so nothing here runs on a pull
-# request: a green run of this file is only ever seen from a tag, which is why a `v*` push is
-# the first moment any of it is executed at all.
+# **Two platforms, two runners, one release.** `windows-x64` runs the same shape on
+# `windows-2025`: the interface suite, then `npm run dist:win`, which provisions the Windows
+# model server, builds the page and asks electron-builder for the `portable` target — one
+# `.exe` that installs nothing. Nothing about a Windows build can be produced on macOS (the
+# `portable` target ends in an NSIS self-extractor, and packaging a PE binary with a macOS
+# `codesign` step beside it would be inventing a third recipe), which is why this is a second
+# job rather than a second target in the first one.
+#
+# The publish step is its own job so that neither platform's job needs the other's
+# credentials, and so that a release is only created once **both** downloads exist: a tag that
+# publishes macOS alone because the Windows job was still running would be a release page
+# quietly dropping a shape the previous one had.
+#
+# **This repository has no pull-request workflow**, so nothing here runs on a pull request: a
+# green run of this file is only ever seen from a tag, which is why a `v*` push is the first
+# moment any of it is executed at all. `workflow_dispatch` is the dry run — it builds both
+# downloads and publishes nothing, because every publishing step is gated on a tag.
 
 on:
   push:
@@ -28,7 +42,7 @@ jobs:
     # decision about what this project ships, not a matrix row to be guessed here.
     runs-on: macos-15
     permissions:
-      contents: write # creating the release; every step before it only reads
+      contents: read # this job builds and uploads; the release is the publish job's
     steps:
       - uses: actions/checkout@v5
 
@@ -169,6 +183,78 @@ jobs:
             ui/release/*.zip
           if-no-files-found: error
 
+  windows-x64:
+    # The Windows download, and the one place it can be produced. `npm run dist:win` is the
+    # recipe (`ui/package.json`), `packaging/fetch-server-win.mjs` provisions the model server
+    # and `electron-builder --win --x64` writes the `portable` target — a single `.exe` that
+    # unpacks into a temporary directory at launch, installs nothing and leaves nothing behind
+    # but the app's own settings and store.
+    #
+    # **The interface suite runs here and the kernel's does not.** The interface half is the
+    # one this job just built and it is platform-neutral apart from paths handed to it; the
+    # kernel's suite is the macOS job's gate on the identical tree, and `src/sandbox.ts` is
+    # macOS by design — on Windows `fenceFor()` answers with a refusal rather than a fence, so
+    # its suite describes a machine this build is not. Running it here would report a red
+    # release for a system the app already refuses to run a shell on.
+    runs-on: windows-2025
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22.18"
+
+      - name: Interface tests
+        working-directory: ui
+        run: |
+          npm ci
+          npm test
+
+      # The same check the macOS job makes, because this job produces a download too and a
+      # release page is the only place the two would disagree.
+      - name: The tag names the version the app carries
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_VERSION="$(node -p "require('./ui/package.json').version")"
+          if [ "$GITHUB_REF_NAME" != "v${APP_VERSION}" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not name the app's version v${APP_VERSION}"
+            exit 1
+          fi
+
+      # `dist:win` runs `fetch:server-win` first, so the 44 MB of DLLs the server loads and
+      # discovers beside it are written from the pinned archive rather than tracked in this
+      # repository. `packaging/fetch-server-win.mjs` checks the archive's size and SHA-256
+      # before it writes a byte, and the build stops rather than packing a server it cannot
+      # identify.
+      - name: Build the portable app
+        working-directory: ui
+        run: npm run dist:win
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: seek-windows-x64
+          path: ui/release/*.exe
+          if-no-files-found: error
+
+  publish:
+    # Both downloads exist before anything is announced. `needs` is the whole reason this is a
+    # job of its own: a release created by whichever platform happened to finish first would
+    # publish half of a version and be corrected by a second edit, which is a window in which
+    # the page says something nobody built.
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [macos-arm64, windows-x64]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write # creating the release; every other job only reads
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          path: artifacts
+
       # A pre-release, and deliberately so — but the reason has changed three times, and this is
       # what it is now. The first reason (an unsigned download, which macOS refused) stopped
       # holding at `v0.1.2`. The second one, written here until `v0.1.4`, said "the package
@@ -191,12 +277,17 @@ jobs:
       # once one setting has been filled in, and this line is where the word that changes it
       # lives. Two things ride on that reading staying honest: the release is marked `prerelease`
       # here, and what a next version has to do to drop the mark is exactly this paragraph.
+      #
+      # The Windows `.exe` is unsigned: this project holds a `Developer ID` certificate and no
+      # Windows code-signing one, so SmartScreen may ask a machine that has never run it. That
+      # belongs in the release, not in a footnote nobody reads — it is the same honesty the
+      # `.pkg` paragraph above keeps about signing.
       - name: Publish the release
-        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           prerelease: true
           files: |
-            ui/release/*.pkg
-            ui/release/*.zip
+            artifacts/seek-macos-arm64/*.pkg
+            artifacts/seek-macos-arm64/*.zip
+            artifacts/seek-windows-x64/*.exe
           generate_release_notes: true

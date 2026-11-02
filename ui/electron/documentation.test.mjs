@@ -186,8 +186,15 @@ test('the dev window is pointed at the port the dev server actually listens on',
  */
 test('a reader is told what to clear for the shape they downloaded', () => {
   const workflow = readFileSync(join(REPO, '.github', 'workflows', 'release.yml'), 'utf8')
+  // Read the step that publishes rather than the file: each platform's job uploads its own
+  // artifacts now, so a `ui/release/*.pkg` earlier in this file says what a runner built and
+  // not what a release offers. The two lists are the same only by accident.
+  const published = workflow.slice(workflow.indexOf('Publish the release'))
   for (const extension of ['pkg', 'zip']) {
-    assert.ok(workflow.includes(`ui/release/*.${extension}`), `the release publishes a .${extension}`)
+    assert.ok(
+      new RegExp(`\\*\\.${extension}\\b`).test(published),
+      `the release publishes a .${extension}`,
+    )
   }
 
   // The target is the last word of the command, which is the path xattr is asked about.

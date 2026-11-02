@@ -15,6 +15,8 @@
     "dist:dir": "vite build && electron-builder --mac --arm64 --dir",
     "dist:mac": "vite build && electron-builder --mac --arm64",
     "dist:pkg": "vite build && electron-builder --mac --arm64 --dir && node ../packaging/make-pkg.mjs",
+    "dist:win": "npm run fetch:server-win && vite build && electron-builder --win --x64",
+    "fetch:server-win": "node ../packaging/fetch-server-win.mjs",
     "dist:notarize": "node ../packaging/notarize.mjs"
   },
   "devDependencies": {
@@ -53,10 +55,6 @@
       {
         "from": "resources/src-package.json",
         "to": "src/package.json"
-      },
-      {
-        "from": "resources/server",
-        "to": "server"
       }
     ],
     "mac": {
@@ -80,7 +78,31 @@
       "entitlements": "resources/entitlements.mac.plist",
       "entitlementsInherit": "resources/entitlements.mac.plist",
       "notarize": false,
-      "minimumSystemVersion": "12.0"
+      "minimumSystemVersion": "12.0",
+      "extraResources": [
+        {
+          "from": "resources/server",
+          "to": "server"
+        }
+      ]
+    },
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "../assets/icon.png",
+      "artifactName": "${productName}-${version}-win-x64-portable.${ext}",
+      "extraResources": [
+        {
+          "from": "resources/server-win",
+          "to": "server"
+        }
+      ]
     }
   }
 }
