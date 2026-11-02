@@ -87,7 +87,7 @@ import {
 import { requireServedModel } from './served.ts';
 import type { SeekStore } from './store.ts';
 import type { Decide, HandedEntry, TurnContext } from './turn.ts';
-import type { Id, TokenUsage } from './types.ts';
+import type { Id, ScheduleRow, TokenUsage } from './types.ts';
 
 /**
  * The room a bind-time prompt is measured with: an id of the width the store mints.
@@ -131,10 +131,17 @@ const ROOM_SAMPLE = 'oc_0000000000000000';
  * the bot's directory, no network, and none of the person's own files for reading. A
  * machine without that fence refuses the call rather than running it unconfined.
  *
+ * **`schedule` is here because §12 rules a bot must be able to keep a promise.** The whole
+ * of it already existed — the table, the comparator, the delivery a due row becomes — and
+ * the one thing missing was a way for a bot to write a row, which is what makes "I will look
+ * at this tomorrow" a sentence that can turn out true. It is the second entry that is not one
+ * of the registry's own, beside `say`, and the ruling names those two as exactly where the
+ * count of additions stops.
+ *
  * A tool named in the artifact and absent here is refused at bind (§ below), so this set
- * and `work-v14.json` are held against each other before the first turn.
+ * and `work-v15.json` are held against each other before the first turn.
  */
-const EXECUTABLE = new Set(['say', 'bash', 'read', 'glob', 'grep', 'write', 'edit']);
+const EXECUTABLE = new Set(['say', 'schedule', 'bash', 'read', 'glob', 'grep', 'write', 'edit']);
 
 /**
  * How many times one turn may look something up before it has to answer.
@@ -448,7 +455,9 @@ function run(
   // so they are the calls whose result is handed back to the model rather than into a room.
   // That is as true of the two that write as of the four that read — a bot told its note was
   // written carries on with the turn, and one told the name it gave was outside its own
-  // directory can correct itself in the same turn instead of losing it.
+  // directory can correct itself in the same turn instead of losing it. `schedule` is the
+  // same shape for the same reason: the reminder is not a room's, and the sentence saying it
+  // was written is what lets a bot fix an instant it got wrong before the turn ends.
   if (call.name === 'read') return look(store, context, parsed as { day?: unknown });
   if (call.name === 'glob') return globbed(store, context, parsed as { pattern?: unknown });
   if (call.name === 'grep') {
@@ -462,6 +471,19 @@ function run(
   }
   if (call.name === 'bash') {
     return shelled(store, context, parsed as { command?: unknown }, bash);
+  }
+  // Before the `say` fallthrough, deliberately: this is the one call a turn with no room can
+  // make, and that turn is the one a reminder wakes. A bot that comes back to its own note
+  // and wants to keep the next promise is the whole point of §12, and it would be refused by
+  // a `say` that found no room to post into.
+  if (call.name === 'schedule') {
+    return scheduled(store, context, parsed as {
+      verb?: unknown;
+      when?: unknown;
+      text?: unknown;
+      for?: unknown;
+      row?: unknown;
+    });
   }
 
   const args = parsed as { room?: unknown; text?: unknown; mentions?: unknown };
@@ -966,6 +988,138 @@ async function shelled(
       : `the command exited ${result.code === null ? 'on a signal' : result.code}.`;
   const body = result.output.trim() === '' ? '(it printed nothing.)' : result.output.trimEnd();
   return `${how}${result.cut ? ' The output was cut at the length one turn may read.' : ''}\n\n${body}`;
+}
+
+/**
+ * `schedule(verb, …)`: the one table, reached from inside a turn.
+ *
+ * §12's tool, whole: one table, three verbs, and nothing else. It answers with words like
+ * every call that is not `say`, and for the reason above — a bot told that the instant it
+ * wrote is not an instant can correct it before the turn ends, and one told which row it
+ * dropped does not ask again next time.
+ *
+ * **A reminder is not a message.** Nothing here writes to a room, and `add` answers with the
+ * row rather than a delivery, because the delivery is tomorrow's: the row sits in the table
+ * until the comparator reaches it, and then it becomes one entry in one bot's inbox.
+ *
+ * **The turn may be one with no room**, and that is the interesting case rather than an edge:
+ * a reminder wakes its bot with no room to answer in (§12, and the `roomId === undefined`
+ * refusal in `say` above). Keeping the next promise from such a turn is exactly what this
+ * tool is for, so nothing in this function reads `context.roomId`.
+ *
+ * **`for` is resolved here rather than written through.** `addRow` takes a bot's id, and a
+ * model knows the bots here by the names `entryOf` hands it, so a name is looked up among the
+ * bots that are still here and an unknown one is refused. Dropping it silently would leave a
+ * reminder that nobody will ever read, written by an author who believes they left it — the
+ * same failure `mentionsOf` refuses for a mention.
+ */
+function scheduled(
+  store: SeekStore,
+  context: TurnContext,
+  args: { verb?: unknown; when?: unknown; text?: unknown; for?: unknown; row?: unknown },
+): string {
+  const verb = typeof args.verb === 'string' ? args.verb.trim() : '';
+
+  if (verb === 'list') {
+    const table = context.schedule.list();
+    if (table.length === 0) {
+      return 'the table is empty: nothing is scheduled, by you or by anyone else here.';
+    }
+    // Unfiltered and said out loud. §12 makes this one shared calendar rather than a private
+    // one, so a bot seeing another bot's plans is the design and not a leak — and a row for
+    // someone else that read as its own would be worse than either.
+    return (
+      `the table, in the order the rows were written — ${table.length} of them, and it is one ` +
+      `shared calendar, so not all of these are yours:\n${table.map((row) => rowLine(store, row)).join('\n')}`
+    );
+  }
+
+  if (verb === 'add') {
+    const when = typeof args.when === 'string' ? args.when.trim() : '';
+    const text = typeof args.text === 'string' ? args.text : '';
+    if (when === '') {
+      throw new Error(
+        `the model called schedule add with when=${JSON.stringify(args.when)}, which names no ` +
+          'instant: a reminder is due at a moment, written as an ISO 8601 stamp such as ' +
+          '2026-11-03T09:00:00.000Z, and one with no moment would never arrive',
+      );
+    }
+    if (text === '') {
+      throw new Error(
+        'the model called schedule add with no text: a reminder that says nothing is not one, ' +
+          'because what is delivered later is these words and nothing else',
+      );
+    }
+    const row = context.schedule.add(
+      when,
+      text,
+      args.for === undefined ? undefined : { forBot: botNamed(store, args.for) },
+    );
+    return (
+      `added one reminder for ${botNameOf(store, row.bot_id)}, due ${row.when}: ` +
+      `${JSON.stringify(row.text)}. The text arrives in that bot's own inbox at that instant, ` +
+      `verbatim, and no room sees it. Its id is ${row.id}, if you want to drop it before then.`
+    );
+  }
+
+  if (verb === 'cancel') {
+    const id = typeof args.row === 'string' ? args.row.trim() : '';
+    if (id === '') {
+      throw new Error(
+        `the model called schedule cancel with row=${JSON.stringify(args.row)}, which names no ` +
+          'row: list answers with the ids, and cancel drops one of those',
+      );
+    }
+    const row = context.schedule.cancel(id);
+    return (
+      `cancelled ${row.id}: it was due ${row.when} for ${botNameOf(store, row.bot_id)} and it ` +
+      'will not arrive. The row stays on the record as cancelled rather than disappearing, ' +
+      'because "I had planned this and dropped it" is worth being able to read back.'
+    );
+  }
+
+  throw new Error(
+    `the model called schedule with verb ${JSON.stringify(args.verb)}, and the tool declares ` +
+      'three: list shows the table, add leaves a reminder for an instant, cancel drops one ' +
+      'that has not come due. There is no fourth verb — no run now, no repeat, no priority',
+  );
+}
+
+/** One row, as `list` hands the table over: who it is for, when, and what it will say. */
+function rowLine(store: SeekStore, row: ScheduleRow): string {
+  const state = row.fired_at === undefined ? row.state : `${row.state} at ${row.fired_at}`;
+  return `- ${row.id} | ${row.when} | ${state} | for ${botNameOf(store, row.bot_id)} | ${JSON.stringify(row.text)}`;
+}
+
+/** A bot's name, or its id when the record no longer holds one. */
+function botNameOf(store: SeekStore, botId: Id): string {
+  return store.principal(botId)?.name ?? botId;
+}
+
+/**
+ * The bot a reminder is being left for, from the name the model wrote.
+ *
+ * A deleted bot is not a candidate even though `addRow` would accept its id: nothing reads a
+ * deleted bot's inbox, so a row for one would never arrive and would still look scheduled.
+ */
+function botNamed(store: SeekStore, value: unknown): Id {
+  const wanted = typeof value === 'string' ? value.trim() : '';
+  if (wanted === '') {
+    throw new Error(
+      `the model called schedule add with for=${JSON.stringify(value)}, which names no bot: ` +
+        'leave the argument out to leave the reminder for yourself, or name one of the bots here',
+    );
+  }
+  const here = Object.values(store.data.bots).filter((bot) => bot.deleted_at === undefined);
+  const found = here.find((bot) => bot.name === wanted) ?? here.find((bot) => bot.id === wanted);
+  if (!found) {
+    throw new Error(
+      `no bot here is named ${JSON.stringify(wanted)}, and a reminder left for nobody would ` +
+        `never arrive: the bots here are ${here.map((bot) => `'${bot.name}'`).join(', ')}. ` +
+        'Leave the argument out to leave it for yourself',
+    );
+  }
+  return found.id;
 }
 
 /**

@@ -10,6 +10,7 @@ import { makeWorld, type World } from './fixtures.ts';
 import type { Fetcher, LlamaServer } from './llama.ts';
 import { loadCompactArtifact, loadWorkArtifact, type WorkArtifact } from './prompts.ts';
 import { parseRoster } from './roster.ts';
+import { addRow, fireDue } from './schedule.ts';
 import { runTurn } from './turn.ts';
 import type { Id, Observation } from './types.ts';
 import { digestOver, workOverServer } from './work-server.ts';
@@ -898,17 +899,19 @@ test('a server serving another model is refused before the first turn', async ()
 test('a prompt that offers a tool this runtime cannot execute is refused at bind', async () => {
   const world = makeWorld();
   const recorder = fakeServer({});
+  // `subagent` rather than `schedule`: the roster may name it (`KNOWN_TOOLS`) and this
+  // runtime still cannot run it, which is exactly the gap the bind check is for.
   const offering: WorkArtifact = {
     ...ARTIFACT,
     tools: [
       ...ARTIFACT.tools,
-      { name: 'schedule', description: 'keep a promise', parameters: { type: 'object' } },
+      { name: 'subagent', description: 'spawn one', parameters: { type: 'object' } },
     ],
   };
 
   await assert.rejects(
     () => workOverServer(world.store, world.botA, serverOf(recorder), { prompt: offering }),
-    /offers 'schedule' and this runtime can only execute 'say', 'bash', 'read', 'glob', 'grep', 'write', 'edit'/,
+    /offers 'subagent' and this runtime can only execute 'say', 'schedule', 'bash', 'read', 'glob', 'grep', 'write', 'edit'/,
     'a model asked to call a tool nobody runs asks for something that cannot happen',
   );
 });
@@ -1061,6 +1064,201 @@ test('a read that names no day is refused rather than answered with a guess', as
   );
 });
 
+/** A schedule call as a model writes one. */
+function scheduleCall(args: Record<string, unknown>): unknown {
+  return { id: 'call_s1', function: { name: 'schedule', arguments: JSON.stringify(args) } };
+}
+
+/** The words a call's answer came back as: the last thing the endpoint was sent. */
+function toolAnswer(recorder: { calls: Call[] }): string {
+  const chats = recorder.calls.filter((call) => call.path === '/v1/chat/completions');
+  const sent = chats.at(-1)?.body.messages as { role: string; content: unknown }[];
+  const tool = sent.at(-1);
+  assert.equal(tool?.role, 'tool', 'the call was answered in the shape the endpoint matches');
+  return String(tool?.content);
+}
+
+test('a bot that says it will look at something later writes the row itself', async () => {
+  const world = makeWorld();
+  const recorder = fakeServer({
+    answers: [
+      {
+        toolCalls: [
+          scheduleCall({
+            verb: 'add',
+            when: '2026-11-03T09:00:00.000Z',
+            text: 'check whether the retry queue drained',
+          }),
+        ],
+      },
+      { toolCalls: [sayCall(world.room, 'I will look at the queue tomorrow morning')] },
+    ],
+  });
+  const decide = await workOverServer(world.store, world.botA, serverOf(recorder), {
+    prompt: ARTIFACT,
+  });
+  const record = await turnWith(world, decide, await entriesOf(world));
+
+  // §12's row, written by the turn and not by the runtime: `created_by` is the agent, because
+  // "who planned this" is a question about the agent and not about the bot's name.
+  assert.equal(world.store.data.schedule.length, 1, 'one row, and the turn wrote it');
+  const row = world.store.data.schedule[0];
+  assert.equal(row.bot_id, world.botA, 'the reminder is the bot\'s: an inbox is never an agent\'s');
+  assert.equal(row.when, '2026-11-03T09:00:00.000Z');
+  assert.equal(row.text, 'check whether the retry queue drained');
+  assert.equal(row.state, 'pending');
+  assert.equal(row.created_by, world.agentA2, 'the row records which agent planned it');
+  assert.equal(row.created_at.length > 0, true, 'and when it was planned');
+
+  // **Nothing reached the room from the call.** The answer is words, which is what lets a bot
+  // correct an instant it got wrong inside the same turn — and what the room saw is the one
+  // message the bot chose to post.
+  assert.equal(record.produced.length, 1, 'the promise is what the room saw');
+  assert.equal(record.produced[0].text, 'I will look at the queue tomorrow morning');
+  assert.match(
+    toolAnswer(recorder),
+    /added one reminder for A, due 2026-11-03T09:00:00\.000Z/,
+    'the answer names the row it wrote, so the next promise can be kept from it',
+  );
+});
+
+test('a reminder wakes the bot with no room, and the next promise is kept from there', async () => {
+  const world = makeWorld();
+  addRow(world.store, {
+    botId: world.botA,
+    when: '2026-11-02T09:00:00.000Z',
+    text: 'check the release thread',
+    now: '2026-11-01T09:00:00.000Z',
+  });
+  fireDue(world.store, '2026-11-02T09:00:00.000Z');
+  const entries = await world.store.drain(world.botA);
+  assert.equal(entries.length, 1, 'the reminder is the one entry that woke the bot');
+
+  const recorder = fakeServer({
+    answers: [
+      {
+        toolCalls: [
+          scheduleCall({
+            verb: 'add',
+            when: '2026-11-05T09:00:00.000Z',
+            text: 'ask whether it shipped',
+          }),
+        ],
+      },
+      { content: '' },
+    ],
+  });
+  const decide = await workOverServer(world.store, world.botA, serverOf(recorder), {
+    prompt: ARTIFACT,
+  });
+
+  // No `roomId`: this is the turn §12 says a reminder produces, and the one the `say` refusal
+  // is written for. A bot that cannot schedule from here could never keep a second promise.
+  const record = await runTurn(
+    world.store,
+    { agentId: world.agentA2, entries },
+    decide,
+  );
+
+  assert.equal(record.produced.length, 0, 'a turn in no room posts nothing');
+  assert.equal(world.store.data.schedule.length, 2, 'and the next promise is written from it');
+  assert.equal(world.store.data.schedule[1].text, 'ask whether it shipped');
+  assert.equal(world.store.data.schedule[1].when, '2026-11-05T09:00:00.000Z');
+});
+
+test('the table is one calendar, so a list says whose each row is', async () => {
+  const world = makeWorld();
+  const peers = addRow(world.store, {
+    botId: world.botB,
+    when: '2026-11-04T09:00:00.000Z',
+    text: 'whatever B planned',
+    now: '2026-11-01T09:00:00.000Z',
+  });
+  const mine = addRow(world.store, {
+    botId: world.botA,
+    when: '2026-11-03T09:00:00.000Z',
+    text: 'check the retry queue',
+    now: '2026-11-01T09:00:00.000Z',
+  });
+
+  const recorder = fakeServer({
+    answers: [{ toolCalls: [scheduleCall({ verb: 'list' })] }, { content: '' }],
+  });
+  const decide = await workOverServer(world.store, world.botA, serverOf(recorder), {
+    prompt: ARTIFACT,
+  });
+  await turnWith(world, decide, await entriesOf(world));
+
+  // Another bot's row is in the answer on purpose: §12 makes this one shared calendar, and a
+  // list filtered by `bot_id` would be the private one the design refuses. What keeps it
+  // readable is that every line says who the row is for.
+  const answer = toolAnswer(recorder);
+  assert.ok(answer.includes(mine.id) && answer.includes('for A'), `got:\n${answer}`);
+  assert.ok(answer.includes(peers.id) && answer.includes('for B'), `got:\n${answer}`);
+  assert.ok(answer.includes('whatever B planned'), 'the text a later reader will get, verbatim');
+  assert.equal(world.store.data.schedule.length, 2, 'a list writes nothing');
+});
+
+test('a cancelled row is a tombstone, not a deletion', async () => {
+  const world = makeWorld();
+  const mine = addRow(world.store, {
+    botId: world.botA,
+    when: '2026-11-03T09:00:00.000Z',
+    text: 'check the retry queue',
+    now: '2026-11-01T09:00:00.000Z',
+  });
+
+  const recorder = fakeServer({
+    answers: [{ toolCalls: [scheduleCall({ verb: 'cancel', row: mine.id })] }, { content: '' }],
+  });
+  const decide = await workOverServer(world.store, world.botA, serverOf(recorder), {
+    prompt: ARTIFACT,
+  });
+  await turnWith(world, decide, await entriesOf(world));
+
+  assert.equal(world.store.data.schedule.length, 1, 'the row stays: it is not a deletion');
+  assert.equal(world.store.data.schedule[0].state, 'cancelled');
+  assert.match(toolAnswer(recorder), /will not arrive/, 'the answer says what will not happen');
+});
+
+test('a reminder may be left for another bot, and a name nobody has is refused', async () => {
+  const world = makeWorld();
+  const recorder = fakeServer({
+    answers: [
+      {
+        toolCalls: [
+          scheduleCall({ verb: 'add', when: '2026-11-03T09:00:00.000Z', text: 'read this when you start', for: 'B' }),
+        ],
+      },
+      { content: '' },
+      {
+        toolCalls: [
+          scheduleCall({ verb: 'add', when: '2026-11-03T09:00:00.000Z', text: 'for nobody', for: 'Nobody' }),
+        ],
+      },
+    ],
+  });
+  const decide = await workOverServer(world.store, world.botA, serverOf(recorder), {
+    prompt: ARTIFACT,
+  });
+
+  // §12 again: the row says which bot it is for, so a bot may leave a peer a note without
+  // interrupting it now. `addRow` takes an id and a model knows names, so the name is
+  // resolved here rather than written through.
+  await turnWith(world, decide, await entriesOf(world));
+  assert.equal(world.store.data.schedule.length, 1);
+  assert.equal(world.store.data.schedule[0].bot_id, world.botB, 'the note is B\'s, not A\'s');
+
+  // A reminder left for nobody would never arrive, and dropping it silently would leave an
+  // author believing they had left it — so the name is refused with the ones there are.
+  const second = await entriesOf(world, 'second wake');
+  await assert.rejects(
+    () => turnWith(world, decide, second),
+    /no bot here is named "Nobody"/,
+  );
+  assert.equal(world.store.data.schedule.length, 1, 'a refusal writes nothing');
+});
+
 test('a tool this runtime does not execute is still refused at the call', async () => {
   const world = makeWorld();
   const recorder = fakeServer({
@@ -1073,7 +1271,7 @@ test('a tool this runtime does not execute is still refused at the call', async 
   const woke = await entriesOf(world);
   await assert.rejects(
     () => turnWith(world, decide, woke),
-    /the model called 'delete' and this runtime executes only 'say', 'bash', 'read', 'glob', 'grep', 'write', 'edit'/,
+    /the model called 'delete' and this runtime executes only 'say', 'schedule', 'bash', 'read', 'glob', 'grep', 'write', 'edit'/,
   );
 });
 

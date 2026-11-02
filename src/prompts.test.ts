@@ -410,10 +410,10 @@ function turnValues(card: {
   };
 }
 
-test('the shipped turn artifact is v14, and it says how long ago', () => {
+test('the shipped turn artifact is v15, and every version behind it is still readable', () => {
   const shipped = loadWorkArtifact();
-  assert.equal(shipped.version, 'work-v14');
-  assert.match(shippedWorkPromptPath().pathname, /work-v14\.json$/);
+  assert.equal(shipped.version, 'work-v15');
+  assert.match(shippedWorkPromptPath().pathname, /work-v15\.json$/);
   const twelve = loadWorkArtifact(new URL('./prompts/work-v12.json', import.meta.url));
   const ten = loadWorkArtifact(new URL('./prompts/work-v10.json', import.meta.url));
   const eleven = loadWorkArtifact(new URL('./prompts/work-v11.json', import.meta.url));
@@ -689,7 +689,9 @@ test('the shipped turn artifact is v14, and it says how long ago', () => {
 });
 
 test('v14 says how old an entry is and how long since this bot spoke, and nothing else moves', () => {
-  const shipped = loadWorkArtifact();
+  // v14 by name rather than "whatever ships": this test is about what v14 says, and it
+  // stops being a test of v14 the day the shipped artifact moves on to v15.
+  const shipped = loadWorkArtifact(new URL('./prompts/work-v14.json', import.meta.url));
   const thirteen = loadWorkArtifact(new URL('./prompts/work-v13.json', import.meta.url));
 
   // **What v14 is: the two facts `agent-lifecycle.md` §7 says a bot must be told.** The
@@ -754,6 +756,51 @@ test('v14 says how old an entry is and how long since this bot spoke, and nothin
   assert.ok(
     measured.rest.includes('Your own last message in this room was 4h ago.'),
     'the silence part is rendered when there is a silence to quote',
+  );
+});
+
+test('v15 hands the bot the schedule, and moves nothing else', () => {
+  const shipped = loadWorkArtifact();
+  const fourteen = loadWorkArtifact(new URL('./prompts/work-v14.json', import.meta.url));
+
+  // **What v15 is: §12's tool.** "One table, one tool, and a due row arrives as a message."
+  // Everything else about the schedule was already here — the row, the comparator, and the
+  // delivery a due row becomes — so what a bot could not do was write one, which is what made
+  // "I will look at this tomorrow" a sentence with nothing behind it.
+  const added = shipped.tools.filter(
+    (tool) => !fourteen.tools.some((own) => own.name === tool.name),
+  );
+  assert.deepEqual(added.map((tool) => tool.name), ['schedule'], 'one tool, and it is schedule');
+
+  const declared = added[0].parameters as {
+    properties: Record<string, unknown>;
+    required?: string[];
+  };
+  assert.deepEqual(
+    Object.keys(declared.properties),
+    ['verb', 'when', 'text', 'for', 'row'],
+    'the three verbs and the facts they need, and nothing else',
+  );
+  assert.deepEqual(declared.required, ['verb'], 'every call says which verb it is');
+  const verb = declared.properties.verb as { enum?: string[] };
+  assert.deepEqual(
+    verb.enum,
+    ['list', 'add', 'cancel'],
+    'the three the design names — no run now, no repeat, no priority — and no fourth',
+  );
+
+  // **What it does not do: change a word.** A tool's description is prompt text, so what a
+  // reminder is lives in its own entry; the parts, the system line and the two line fragments
+  // stay v14's, because what a bot may do is not the same question as what it is told it is.
+  assert.deepEqual(shipped.parts, fourteen.parts, 'v15 adds no part');
+  assert.equal(shipped.system, fourteen.system, "the system line is v14's");
+  assert.equal(shipped.pictureLine, fourteen.pictureLine, "the picture line is v14's");
+  assert.equal(shipped.entryRoomLine, fourteen.entryRoomLine, "the room tag is v14's");
+  assert.equal(shipped.entryAgeLine, fourteen.entryAgeLine, "the age words are v14's");
+  assert.deepEqual(
+    shipped.tools.filter((tool) => tool.name !== 'schedule'),
+    fourteen.tools,
+    'v15 adds the schedule and changes no other tool',
   );
 });
 
