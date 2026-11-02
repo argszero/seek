@@ -20,7 +20,7 @@ import { deliver, toggleReaction } from '../../src/delivery.ts'
 import { gate } from '../../src/gate.ts'
 import { emptyData, SeekStore } from '../../src/store.ts'
 import { runTurn } from '../../src/turn.ts'
-import { snapshotOf } from './snapshot.js'
+import { readingDayOf, snapshotOf } from './snapshot.js'
 
 const AT = '2026-10-25T01:00:00.000Z'
 
@@ -649,7 +649,11 @@ test('a room carries what its bots spent, per bot and in total, read off the tur
     output_tokens: 1,
   }))
 
-  const room = snapshotOf(store, '/tmp/seek.json').rooms[0]
+  // The day is named from the turn the kernel wrote rather than left to the clock: a snapshot
+  // taken across local midnight would otherwise drop the turn out of its own day and make this
+  // test fail for a reason that has nothing to do with the reading it is about.
+  const today = readingDayOf(store.data.turns[0].started_at)
+  const room = snapshotOf(store, '/tmp/seek.json', null, null, null, null, today).rooms[0]
 
   assert.deepEqual(
     { turns: room.spend.turns, input: room.spend.input_tokens, output: room.spend.output_tokens },
@@ -659,6 +663,67 @@ test('a room carries what its bots spent, per bot and in total, read off the tur
   assert.deepEqual(room.spend.bots, [
     { id: 'bo_watch', name: 'watch-bot', turns: 1, input_tokens: 1_204, output_tokens: 312 },
   ])
+})
+
+/**
+ * The figure is **today's**, which is the only figure §8 item 6 asks for.
+ *
+ * The header used to sum every turn the room had ever run, so a room that talked last week
+ * showed a number nothing in the reader's day accounted for. A day boundary is one of the few
+ * things a test cannot wait for, and it does not have to: `runTurn` takes the instant it
+ * writes (`spec.now`), so both turns are opened by the kernel with a day of their own. The
+ * instants are built from local parts and read back as local parts, so the test says the same
+ * thing in any timezone.
+ */
+test('the spend a room shows is the day it is shown on, not every day it ever had', async () => {
+  const store = seeded()
+  store.data.agents['ag_work'] = {
+    id: 'ag_work',
+    bot_id: 'bo_watch',
+    role: 'work',
+    home: '/tmp/home',
+    model: 'big',
+    prompt: 'work-v1',
+    tools: ['say'],
+  }
+
+  const spendOn = (when, input, output) =>
+    runTurn(
+      store,
+      { agentId: 'ag_work', roomId: 'rm_ops', entries: [], now: when.toISOString() },
+      () => ({ input_tokens: input, output_tokens: output }),
+    )
+
+  const first = new Date(2020, 0, 1, 12, 0, 0)
+  const second = new Date(2020, 0, 2, 12, 0, 0)
+  await spendOn(first, 1_000, 0)
+  await spendOn(second, 7, 3)
+
+  const today = snapshotOf(
+    store, '/tmp/seek.json', null, null, null, null, readingDayOf(second.toISOString()),
+  ).rooms[0]
+  assert.deepEqual(
+    { turns: today.spend.turns, input: today.spend.input_tokens, output: today.spend.output_tokens },
+    { turns: 1, input: 7, output: 3 },
+    'the turn from the earlier day is not part of today',
+  )
+  assert.deepEqual(
+    today.spend.bots,
+    [{ id: 'bo_watch', name: 'watch-bot', turns: 1, input_tokens: 7, output_tokens: 3 }],
+    "and it is not part of today's per-bot split either",
+  )
+
+  // Asked about the earlier day, the same store answers with that day's turn. Without this the
+  // reading above would pass just as well if the day were a threshold that dropped old turns,
+  // which is a different and wrong thing to draw.
+  const then = snapshotOf(
+    store, '/tmp/seek.json', null, null, null, null, readingDayOf(first.toISOString()),
+  ).rooms[0]
+  assert.deepEqual(
+    { turns: then.spend.turns, input: then.spend.input_tokens },
+    { turns: 1, input: 1_000 },
+    'a day the room did spend on still reads its own turns',
+  )
 })
 
 test('a room nothing has been spent in reads zeros, which is a reading rather than a gap', () => {

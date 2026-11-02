@@ -64,7 +64,7 @@
     "ui.chat.more": "More",
     "ui.chat.no-messages": "no messages yet",
     "ui.chat.no-room": "no room in this store",
-    "ui.chat.no-turn-yet": "no turn has run in this room yet",
+    "ui.chat.no-turn-today": "no turn has run in this room today",
     "ui.chat.nothing-said": "nothing said here yet",
     "ui.chat.open-thread-hint": "Open this thread",
     "ui.chat.opening-picture": "opening the picture…",
@@ -88,8 +88,8 @@
     "ui.chat.said.picture": "a picture",
     "ui.chat.send": "Send",
     "ui.chat.spend": {
-      "one": "{count} token",
-      "other": "{count} tokens"
+      "one": "{count} token today",
+      "other": "{count} tokens today"
     },
     "ui.chat.stop-addressing": "stop addressing {name}",
     "ui.chat.stop-quoting": "Stop quoting",
