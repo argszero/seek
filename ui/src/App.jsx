@@ -1896,6 +1896,23 @@ export default function App() {
                       <li key={member.id} className="room-member" data-room-member={member.id}>
                         <span className="room-member-name">{member.name}</span>
                         {member.bot && <span className="msg-bot">{t('ui.chat.bot')}</span>}
+                        {/* **What it has done with what reached it here**, as one number
+                            against another: this bot took these on and let those go by. The
+                            window words it and the snapshot derived it, because the record
+                            holds two facts — a verdict and a turn — and neither is a sentence.
+                            A bot nothing has been settled about has no reading, so the line is
+                            absent rather than a pair of zeros. */}
+                        {member.judged && (
+                          <span
+                            className="room-member-judged"
+                            data-room-member-judged={`${member.judged.acted}/${member.judged.passed}`}
+                          >
+                            {t('ui.room.judged', {
+                              acted: member.judged.acted,
+                              passed: member.judged.passed,
+                            })}
+                          </span>
+                        )}
                         {member.id === snap.me && (
                           <span className="room-member-me">{t('ui.room.me')}</span>
                         )}

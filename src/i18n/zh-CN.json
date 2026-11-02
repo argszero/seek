@@ -187,6 +187,7 @@
     "ui.room.field.name": "名称",
     "ui.room.field.tag": "标签",
     "ui.room.field.tag-hint": "选填，比如：外部群",
+    "ui.room.judged": "动手 {acted} 次 · 放过 {passed} 次",
     "ui.room.kind-group": "群聊",
     "ui.room.kind-p2p": "单聊",
     "ui.room.leave": "退出这个房间",

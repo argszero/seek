@@ -194,6 +194,7 @@
     "ui.room.field.name": "Name",
     "ui.room.field.tag": "Label",
     "ui.room.field.tag-hint": "optional, for example: external",
+    "ui.room.judged": "acted on {acted} · passed on {passed}",
     "ui.room.kind-group": "group",
     "ui.room.kind-p2p": "direct message",
     "ui.room.leave": "Leave this room",

@@ -577,6 +577,87 @@ function silenceByRoom(store) {
 }
 
 /**
+ * What each bot in a room has done with what reached it — how many it took on, and how many it
+ * passed on.
+ *
+ * `docs/design/agent-lifecycle.md` §3 gives an arrival two endings that are recorded: the rules
+ * or the judgement settle it as `ignore`, or it opens a turn. This turns those two endings into
+ * the one reading a reader of a room wants about a bot — *is it picking things up, or is it
+ * letting the room talk past it* — and it reads two things the kernel already writes rather
+ * than keeping a third counter beside them.
+ *
+ * **Why the verdict alone cannot supply the first number.** `entry.verdict === 'act'` is written
+ * on one path only: the judgement's. The rules' fast pass — an @-mention, a reply, a direct
+ * message, a due reminder (`src/gate.ts`, row 2) — is certain and free, so it consumes the entry
+ * **without writing a verdict at all** (`data-model.md`, the Observation row, says exactly
+ * that). A count of `'act'` verdicts would therefore report a bot that answers every message
+ * addressed to it as having acted on none of them. What that half reads instead is the turn:
+ * `src/inbox.ts` opens one with the entries that survived the gate, and `Turn.entries` names
+ * them (`src/turn.ts`), so "this entry opened a turn for that bot" is already on the record.
+ *
+ * **Passed on is the verdict and nothing else.** `ignore` is written by `gate.ts` for a muted
+ * room or another bot's broadcast and by `watch.ts` for a judgement that said no, and to a
+ * reader both mean the same thing: it read this, and this was not for it. `snooze` and `keep`
+ * are the other two members of `Verdict` and nothing writes either today, so neither is
+ * counted — a row drawn for a state no entry can be in is the same shape as the fourth state
+ * dot §8 item 1 does not have.
+ *
+ * **The two are disjoint by construction**, which is why one entry is one number: an entry
+ * settled `ignore` opens no turn, and an entry that opened a turn was not ignored. The `Set`
+ * below is belt and braces against the one shape that could break that — an entry the chain
+ * wall put back (§11.4) and a later turn then opened with.
+ *
+ * A reminder has no room (§12: a bot's own work is not a contribution to a room), so it is
+ * counted for no room and reaches no row.
+ */
+function judgedByRoom(store) {
+  const byRoom = new Map()
+  const rowFor = (roomId, botId) => {
+    let room = byRoom.get(roomId)
+    if (room === undefined) {
+      room = new Map()
+      byRoom.set(roomId, room)
+    }
+    let row = room.get(botId)
+    if (row === undefined) {
+      row = { acted: 0, passed: 0 }
+      room.set(botId, row)
+    }
+    return row
+  }
+
+  for (const entries of Object.values(store.data.observations)) {
+    for (const entry of entries) {
+      if (entry.verdict !== 'ignore' || entry.room_id === undefined) continue
+      rowFor(entry.room_id, entry.bot_id).passed += 1
+    }
+  }
+
+  const roomOf = roomOfSession(store)
+  const entryById = entriesById(store)
+  const counted = new Set()
+  for (const turn of store.data.turns) {
+    const roomId = roomOf.get(turn.session_id)
+    if (roomId === undefined) continue
+    const agent = store.data.agents[turn.agent_id]
+    const botId = agent === undefined ? undefined : agent.bot_id
+    if (botId === undefined) continue
+    for (const id of Array.isArray(turn.entries) ? turn.entries : []) {
+      const entry = entryById.get(id)
+      // The entry's own room is what this row is about. A session's room is where the turn ran,
+      // and the two can only disagree on a store somebody edited by hand.
+      if (entry === undefined || entry.room_id !== roomId) continue
+      const seen = `${botId}\u0000${id}`
+      if (counted.has(seen)) continue
+      counted.add(seen)
+      rowFor(roomId, botId).acted += 1
+    }
+  }
+
+  return byRoom
+}
+
+/**
  * Which of a bot's messages were its own idea, per message id.
  *
  * `docs/design/agent-lifecycle.md` §8 item 2 asks the window to mark "proactive messages ...
@@ -724,6 +805,8 @@ function snapshotOf(
   const silences = silenceByRoom(store)
   // §8 item 2, read off the record once for the same reason.
   const proactives = proactiveByMessage(store)
+  // What each bot has taken on and passed on here — one pass for the same reason as `spent`.
+  const judged = judgedByRoom(store)
   // **The list is the rooms this person is in.** It was every room in the store, which was the
   // same list while a membership could only be *added*; `removeMember()` and the panel's `Leave`
   // (2026-10-27) made a room somebody is not in reachable, and the window went on listing the
@@ -770,6 +853,11 @@ function snapshotOf(
         id: membership.principal_id,
         name: who && typeof who.name === 'string' ? who.name : membership.principal_id,
         bot: isBot,
+        // What this bot has taken on and passed on **in this room**, or `null` for a person —
+        // who has no inbox for it to be counted from — and for a bot nothing here has been
+        // settled about yet, where a pair of zeros would claim a reading the record does not
+        // hold. `judgedByRoom()` decides; the window words it.
+        judged: judged.get(room.id)?.get(membership.principal_id) ?? null,
       }
     }),
     messages: store.messagesOf(room.id).map((message) => ({
