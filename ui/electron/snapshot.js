@@ -393,6 +393,46 @@ function silenceByRoom(store) {
 }
 
 /**
+ * What every bot in this organization is doing, as the kernel reported it.
+ *
+ * `docs/design/agent-lifecycle.md` §8 item 1 asks the window for "a state dot: watching /
+ * working / asleep / needy, as an avatar badge", and §2 lists `state` among a bot's life
+ * facts. **None of those four words is stored, and none of them is invented here either.**
+ * The kernel answers two readings — which bots are in a turn, which have a wait armed — and
+ * this maps them onto the vocabulary; a bot in neither reading is asleep. The derivation
+ * belongs at this seam for the reason `mentionsMe` and `depth` do: the record holds facts,
+ * the window holds words.
+ *
+ * **`needy` is not among the answers, because nothing produces it.** It means "waiting on
+ * your decision", and the kernel has no path that asks a person for one and waits: a bot
+ * either reads what arrived or it does not. A fourth word drawn here would be a state no
+ * bot can be in — the same shape as the `reason` a silent bot never has (`src/llama.ts`
+ * writes no sentence), which the design's own §8 item 4 has to state rather than draw.
+ *
+ * **Every bot the store still offers is in the answer**, asleep included. A missing entry
+ * therefore means "not a bot here any more" — the author of a message no longer in the
+ * organization — and a window drawing a dot for one of those would be reporting on a bot
+ * that has left.
+ */
+function botStatesOf(activity, people) {
+  const states = {}
+  const listed = (value) => (Array.isArray(value) ? value : [])
+  for (const person of people) {
+    if (person.bot) states[person.id] = 'asleep'
+  }
+  if (!activity || typeof activity !== 'object') return states
+  for (const id of listed(activity.watching)) {
+    if (id in states) states[id] = 'watching'
+  }
+  // Working last, so a bot that is somehow in both readings is drawn as the one that is
+  // spending a turn: the wait is over the moment the tick it ends in opens.
+  for (const id of listed(activity.working)) {
+    if (id in states) states[id] = 'working'
+  }
+  return states
+}
+
+/**
  * What the interface is allowed to see, in one plain object.
  *
  * `storeRefusal` is why the kernel would not open the store, as the kernel said it, or
@@ -402,8 +442,14 @@ function silenceByRoom(store) {
  * drew the second as the first would show a broken install as a slow one, and the person
  * would wait for a store that is never coming (the design's reasoning, one
  * layer down). Both are strings or `null`, so the renderer still holds no error object.
+ *
+ * `activity` is the kernel's own answer to "what is each bot doing" — `Kernel.activity()`'s
+ * two lists, handed over by the caller that holds the kernel, because nothing in this file
+ * may read one. It is the sixth argument rather than a fact hung off the store for the reason
+ * the store holds no such field: the reading is true for a moment and would go stale by the
+ * next write.
  */
-function snapshotOf(store, storeFile, stage1 = null, stage2 = null, storeRefusal = null) {
+function snapshotOf(store, storeFile, stage1 = null, stage2 = null, storeRefusal = null, activity = null) {
   // Read once, so the halves and the one fact drawn from both cannot disagree — a window
   // that listed a quiet bot in one field and not the other would be two readings of one
   // state.
@@ -425,6 +471,8 @@ function snapshotOf(store, storeFile, stage1 = null, stage2 = null, storeRefusal
       // this store, so it is here even on a window that never opened one: a refusal is when a
       // reader most needs to know what the app is for.
       firstLaw: FIRST_LAW,
+      // A store that never opened has no bots, so there is nothing to be doing anything.
+      activity: {},
       error: 'the store is not open yet',
     }
   }
@@ -439,6 +487,9 @@ function snapshotOf(store, storeFile, stage1 = null, stage2 = null, storeRefusal
   // sender is not a member. Measured the same day: after leaving a three-member group the room
   // stayed in the column with `2 members` in the store and nobody of them the reader.
   const me = meOf(store)
+  // Read once, like `spent` and `silences`: the state table and the list of bots it is about
+  // must not be two reads of one store.
+  const people = peopleOf(store)
   const mine = new Set(
     Object.values(store.data.memberships)
       .filter((row) => row.principal_id === me)
@@ -565,7 +616,10 @@ function snapshotOf(store, storeFile, stage1 = null, stage2 = null, storeRefusal
 
   return {
     rooms,
-    people: peopleOf(store),
+    people,
+    // What each of those bots is doing, in the four words of §8 item 1 as far as anything
+    // produces them — see `botStatesOf`, which also says why the fourth is not here.
+    activity: botStatesOf(activity, people),
     // A message may name someone no longer in the room, so the window gets the names that are
     // not offers as well — see `namedOf`.
     named: namedOf(store),

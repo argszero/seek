@@ -372,6 +372,8 @@ body {
   font-weight: 600;
   display: grid;
   place-items: center;
+  /* The same anchor as `.msg-av`, for the same badge. */
+  position: relative;
 }
 
 .conv-body { display: flex; flex-direction: column; min-width: 0; flex: 1; }
@@ -565,6 +567,9 @@ body {
   font-size: 11px;
   display: grid;
   place-items: center;
+  /* The state dot is a badge on the corner of this square, so this is the anchor it is
+     placed against — the initials stay centred, because the dot is out of the grid. */
+  position: relative;
 }
 
 /* `position: relative` is the anchor the hover toolbar is placed against, and the max-width is
@@ -878,6 +883,36 @@ body {
 /* A bot's avatar is a different shape, not a different colour: the palette has no
    second accent to spare, and the badge beside the name says the same thing twice. */
 .msg-av.bot { border-radius: 9px; background: var(--B100); color: var(--B700); }
+
+/* **The state dot** (`docs/design/agent-lifecycle.md` §8 item 1) — what a bot is doing, on the
+   corner of its avatar. Three of the design's four states have a producer, and the fourth
+   (`needy`) has none, so there is no colour for it here either.
+
+   **The same mark the rail's own avatar wears** (`.presence` above): 10px hanging 1px off the
+   corner, ringed in the surface it sits on so it reads as a badge rather than as a speck on
+   the face. The ring is the surface's own token and not one colour, because these two avatars
+   stand on two: the message column's canvas and the list's. Nothing is drawn at all for a
+   reader who cannot use colour — the word in the `title` is the same reading. */
+.state-dot {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid var(--bg-content-base);
+}
+
+/* The roster's avatars stand on the list's surface, not the room's. */
+.conv-av .state-dot { border-color: var(--bg-list); }
+
+/* Asleep is the absence of work, so it is a grey one: still a dot, because "asleep" is an
+   answer and an empty corner would be the window saying nothing. */
+.state-dot.asleep { background: var(--N400); }
+/* Something is waiting to be read. */
+.state-dot.watching { background: var(--B400); }
+/* A turn is being spent, which is the one state a person used to have no way to see. */
+.state-dot.working { background: var(--G400); }
 
 .msg-bot {
   margin-left: 6px;

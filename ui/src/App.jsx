@@ -6,6 +6,7 @@ import Gutter from './Gutter.jsx'
 import Groups from './Groups.jsx'
 import Icon from './icons.jsx'
 import Settings from './Settings.jsx'
+import StateDot from './StateDot.jsx'
 import Topics from './Topics.jsx'
 import { fileSize, joinList, size, t, weightsSentence, when, whenShort } from './catalogue.mjs'
 import {
@@ -1295,6 +1296,7 @@ export default function App() {
       ) : view === 'contacts' ? (
         <Contacts
           people={snap.people ?? []}
+          activity={snap.activity ?? null}
           me={snap.me}
           firstLaw={snap.firstLaw}
           // A room this view asked for and did not get is the kernel's sentence, drawn beside
@@ -1566,6 +1568,7 @@ export default function App() {
                   onOpen={openThreadOf}
                   me={snap.me}
                   actions={actions}
+                  activity={snap.activity ?? null}
                   chip
                 />
               ))}
@@ -1717,6 +1720,7 @@ export default function App() {
                 onOpen={openThreadOf}
                 me={snap.me}
                 actions={actions}
+                activity={snap.activity ?? null}
               />
             ))}
             {thread.length === 0 && <li className="empty">{t('ui.chat.thread-empty')}</li>}
@@ -2458,7 +2462,7 @@ function SilenceLine({ who }) {
  * when it has none — because a thread that cannot be started from the message it would
  * belong to is a panel nobody can open.
  */
-function Line({ message, sender, replies, inThread, onOpen, chip = false, me = null, people = null, actions = null }) {
+function Line({ message, sender, replies, inThread, onOpen, chip = false, me = null, people = null, actions = null, activity = null }) {
   const name = sender?.name ?? message.sender
   // A picture is drawn because the kernel's `kind` says so,
   // never because the text looks like one: a message whose kind disowns its bytes is one
@@ -2482,7 +2486,12 @@ function Line({ message, sender, replies, inThread, onOpen, chip = false, me = n
   const deleted = Boolean(message.deletedAt)
   return (
     <li className={`msg${inThread ? ' on' : ''}`}>
-      <span className={`msg-av${sender?.bot ? ' bot' : ''}`}>{name.slice(0, 2)}</span>
+      <span className={`msg-av${sender?.bot ? ' bot' : ''}`}>
+        {name.slice(0, 2)}
+        {/* The person this window speaks as is not a bot and gets no dot; a bot's dot is
+            what the kernel says it is doing, and the absence of one says it is not here. */}
+        {sender?.bot && <StateDot state={activity?.[message.sender]} />}
+      </span>
       <span className="msg-body">
         <span className="msg-sender">
           {name}

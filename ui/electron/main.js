@@ -34,6 +34,7 @@ const {
   postMessage,
   reactToMessage,
   deleteBot,
+  hostSnapshot,
   removeMember,
   updateRoom,
 } = require('./host.js')
@@ -279,13 +280,23 @@ function snapshotNow() {
     if (modelServerRefusal !== null) return { ...stage, pending: null, refusal: modelServerRefusal }
     return stage
   }
-  const snapshot = snapshotOf(
-    host?.store ?? null,
-    STORE_FILE,
-    half(host?.stage1 ?? null),
-    half(host?.stage2 ?? null),
+  // **Built by the host, not here.** `hostSnapshot()` is the one read that knows the store,
+  // the two halves, the refusal *and* what the kernel says each bot is doing; a second
+  // `snapshotOf(...)` in this file is a second place to forget one of them, and it was: the
+  // window's state dots said every bot was asleep while a send's own returned snapshot — the
+  // host's — said the bot was watching. What this file adds is what the host cannot know: the
+  // model-server facts, and the organizations on this machine.
+  const opened = host
+    ? hostSnapshot(host)
+    : snapshotOf(null, STORE_FILE, null, null, storeRefusal)
+  const snapshot = {
+    ...opened,
+    // The halves come back from the host as the kernel bound them, and `half()` is what the
+    // window is allowed to see of them — see the three facts above.
+    stage1: half(opened.stage1),
+    stage2: half(opened.stage2),
     storeRefusal,
-  )
+  }
   // The organizations, as the window may see them: an id to name, a name to draw, and which one
   // is open. The directory is not here — it is a path on this machine, and the window has no
   // business with one.
@@ -356,6 +367,11 @@ function waitIn([low, high]) {
 
 const hostCallbacks = {
   onChanged: pushChanged,
+  // **The state dot is the one thing a person can watch between messages.** A bot's turn and
+  // its reading wait write nothing to the store, so `onChanged` never says they began; the
+  // kernel reports them here and the window is sent the same `seek:changed` snapshot every
+  // other change sends — one shape on the wire, and the renderer draws whichever part moved.
+  onActivity: pushChanged,
   wakeDelay: (arrived) => waitIn(arrived.addressed ? WAKE_SECONDS.addressed : WAKE_SECONDS.ambient),
   onError: (error, botId) =>
     console.error(
