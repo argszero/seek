@@ -213,10 +213,15 @@ async function entriesOf(world: World, text = 'the batch failed'): Promise<Obser
 }
 
 /** Run one turn of A's work agent with this decision, and report what it said. */
-async function turnWith(world: World, decide: Awaited<ReturnType<typeof workOverServer>>, entries: Observation[]) {
+async function turnWith(
+  world: World,
+  decide: Awaited<ReturnType<typeof workOverServer>>,
+  entries: Observation[],
+  now?: string,
+) {
   return runTurn(
     world.store,
-    { agentId: world.agentA2, roomId: world.room, entries },
+    { agentId: world.agentA2, roomId: world.room, entries, ...(now === undefined ? {} : { now }) },
     decide,
   );
 }
@@ -334,7 +339,11 @@ test('the request says when each entry arrived, so a week apart does not read as
   const decide = await workOverServer(world.store, world.botA, serverOf(recorder), {
     prompt: ARTIFACT,
   });
-  await turnWith(world, decide, entries);
+  // The clock is fixed as well, so the age on each line is a number this test can state:
+  // the turn's own reading is what the box measures against (`turn.ts`, `boxFor`), which
+  // is what keeps "when" one answer inside one turn.
+  const reading = '2026-11-01T02:00:00.000Z';
+  await turnWith(world, decide, entries, reading);
 
   const chat = recorder.calls.find((call) => call.path === '/v1/chat/completions');
   assert.ok(chat, 'the model was asked');
@@ -351,8 +360,62 @@ test('the request says when each entry arrived, so a week apart does not read as
       .join('\n')
       .split('\n')
       .find((line) => line.includes(said));
-  assert.equal(lineOf('the deploy is red'), `[${week}] me [room]: the deploy is red`);
-  assert.equal(lineOf('it is green again'), `[${today}] me [room]: it is green again`);
+  assert.equal(lineOf('the deploy is red'), `[${week}, 8d ago] me [room]: the deploy is red`);
+  assert.equal(lineOf('it is green again'), `[${today}, 1d ago] me [room]: it is green again`);
+});
+
+test('a turn is told how long ago it last spoke in the room, and nothing when it never has', async () => {
+  const world = makeWorld();
+  // A bot's own message wakes everyone except itself, so "when I last spoke" is a fact of
+  // the room and never of its own delta (`box.ts`, `lastWordOf`). This is the one shape a
+  // test can reach that branch with.
+  deliver(world.store, {
+    roomId: world.room,
+    senderId: world.botA,
+    text: 'I will take the retry queue',
+    now: '2026-11-01T02:00:00.000Z',
+  });
+  deliver(world.store, {
+    roomId: world.room,
+    senderId: world.me,
+    text: 'the batch failed',
+    now: '2026-11-01T05:00:00.000Z',
+  });
+  const entries = await world.store.drain(world.botA);
+
+  const recorder = fakeServer({});
+  const decide = await workOverServer(world.store, world.botA, serverOf(recorder), {
+    prompt: ARTIFACT,
+  });
+  // The turn opens at 06:00, so its own last word is four hours behind it — a number this
+  // test states rather than reads off a duration it cannot predict.
+  await turnWith(world, decide, entries, '2026-11-01T06:00:00.000Z');
+
+  const chat = recorder.calls.find((call) => call.path === '/v1/chat/completions');
+  assert.ok(chat, 'the model was asked');
+  const asked = (chat.body.messages as { content: string }[])
+    .map((message) => message.content)
+    .join('\n');
+  assert.match(
+    asked,
+    /last message in this room was 4h ago/,
+    'the part quotes the distance, measured off the turn’s own reading',
+  );
+
+  // A bot that has never opened its mouth in the room is told nothing there. `0s` would be
+  // an answer — it would say it spoke a moment ago — so the part is skipped instead.
+  const quiet = makeWorld();
+  const other = fakeServer({});
+  const ask = await workOverServer(quiet.store, quiet.botA, serverOf(other), {
+    prompt: ARTIFACT,
+  });
+  await turnWith(quiet, ask, await entriesOf(quiet), '2026-11-01T06:00:00.000Z');
+  const second = other.calls.find((call) => call.path === '/v1/chat/completions');
+  assert.ok(second, 'the model was asked');
+  const heard = (second.body.messages as { content: string }[])
+    .map((message) => message.content)
+    .join('\n');
+  assert.doesNotMatch(heard, /last message in this room was/, 'no last word, no line about one');
 });
 
 /**
@@ -439,13 +502,13 @@ test('a picture reaches the turn as an image, and the words still say which line
   assert.ok(said, 'the picture has a line of its own');
   assert.match(
     said,
-    /^\[\S+\] me \[[^\]]+\]: +\S/,
+    /^\[[^\]]+\] me \[[^\]]+\]: +\S/,
     'nothing was consolidated away, and the line is not blank',
   );
   assert.equal(JSON.stringify(chat.body).includes(media.key), false, 'the blob key is not part of what the model reads');
 
   const plain = text.split('\n').find((line) => line.includes('and this one is only words'));
-  assert.match(String(plain), /^\[\S+\] me \[[^\]]+\]: and this one is only words$/);
+  assert.match(String(plain), /^\[[^\]]+\] me \[[^\]]+\]: and this one is only words$/);
 });
 
 /**

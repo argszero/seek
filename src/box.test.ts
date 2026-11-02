@@ -266,6 +266,7 @@ test('the box is what the judgement is told, and it carries no question', () => 
   assert.deepEqual(Object.keys(box).sort(), [
     'botId',
     'delta',
+    'elapsed',
     'media',
     'read',
     'rooms',
@@ -273,6 +274,40 @@ test('the box is what the judgement is told, and it carries no question', () => 
     'unread',
     'whoSpoke',
   ]);
+});
+
+test('the box says how long ago off the stamps it already holds, and clamps a clock that lags', () => {
+  const world = makeWorld();
+  fill(world, 1);
+  // **A bot's own message wakes everyone else, so it is not in its own delta.** The record
+  // of "when I last spoke" is therefore the room's messages, which is where the box reads
+  // it — and this is the only way to see that branch at all.
+  fill(world, 1, world.botA);
+
+  const own = world.store.messagesOf(world.room).filter((one) => one.sender_id === world.botA);
+  assert.equal(own.length, 1, 'the bot posted one message in this room');
+  const spokeAt = Date.parse(own[0].created_at);
+  const nowMs = spokeAt + 150_000;
+
+  const box = buildBox(world.store, world.botA, {
+    window: 10,
+    now: () => new Date(nowMs).toISOString(),
+  });
+
+  assert.equal(box.elapsed.now, new Date(nowMs).toISOString(), 'the reading is the caller’s');
+  assert.deepEqual(
+    box.elapsed.spoke,
+    [{ roomId: world.room, seconds: 150 }],
+    'two and a half minutes since this bot last said anything here',
+  );
+
+  // Two clocks disagreeing is not an age. A stamp ahead of the reading is `0`, never a
+  // negative a prompt would have to explain.
+  const behind = buildBox(world.store, world.botA, {
+    window: 10,
+    now: () => new Date(spokeAt - 60_000).toISOString(),
+  });
+  assert.deepEqual(behind.elapsed.spoke, [{ roomId: world.room, seconds: 0 }]);
 });
 
 test('building a box writes nothing and opens no turn', () => {

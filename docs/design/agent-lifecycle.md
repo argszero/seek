@@ -201,6 +201,7 @@ One box per bot. **Not per room**: it travels with the bot, and what the bot gat
 | **Observations** | everything that arrived after the compaction, each carrying its room, who spoke, when and what | whoever gathers one, by appending | every arrival |
 | **Last verdict** | when it was taken, what it was, and the reason if one came back | the loop | every tick |
 | **Question set** | the named questions the judgement answers, with their options | the prompt artifact, per version | static |
+| **Elapsed** | how long ago: the clock reading, and how long since this bot's own last word in each room | the runtime, at assembly, off stamps the record already holds | every read, and stored nowhere |
 
 - **The question set is the prompt artifact's, not the roster's.** `watch-v3` declares one choice question as the assembly's last part, with two named answers, and the shipped cut is a threshold on the probability the endpoint answers with — so the question, its two answer names and the threshold are one artifact. A bot that needs a different question needs a different artifact with its own labelled cases, not a row in `agents.yml`: the roster has no field for one, and a per-bot question would move what a cut means without moving the number.
 
@@ -405,7 +406,7 @@ Because the watch side is a decision model, **watch tokens are not money and the
 | The observations outgrow what the judgement can read | the box handed over always fits — the newest observations, with an unread count for the rest — so the verdict degrades visibly instead of silently. Compaction normally prevents it; when compaction cannot run, it backs off rather than re-firing every tick |
 | Inbox explosion | the judgement reads a fixed-size box: when the observations have piled up it asks for a compaction that folds them into it, so what is spent per judgement stays flat however busy the room gets |
 | Long-lived means creeping corruption | checkpoint at the end of every tick; on restart, self-check (queue, time since it last spoke, spent); persona drift corrected against the diary |
-| No sense of time | every tick injects "how long since you last spoke in this room" and "how old this message is"; without that it asks the same question forever |
+| No sense of time | every tick injects "how long since you last spoke in this room" and "how old this message is"; without that it asks the same question forever. The box measures both when it is assembled (`src/box.ts`), off `Observation.delivered_at` and `Message.created_at`, and **the half that answers** is told them (`work-v14`: an age on every entry line, and one part for the bot's own silence). The judgement's state does not carry them, because the shape its cut was measured on is who is being asked plus the messages |
 
 ---
 

@@ -59,7 +59,7 @@ measures the prompt the reader has; `LLAMA=<path>` names another `llama-server` 
 `src/prompts/work-v1.json` changed, which is what makes the rows comparable: the only
 variable left is the model.
 
-**The tree now ships `work-v13.json`, and every row below was measured on `work-v1.json`.** A
+**The tree now ships `work-v14.json`, and every row below was measured on `work-v1.json`.** A
 prompt is versioned rather than edited in place, so v1 stays in the tree exactly as it was
 measured. v2 adds two parts — what the bot does in its organization, and how it talks and
 works — and both are skipped when a bot's card says nothing; v3 adds one part, the note the
@@ -69,7 +69,12 @@ reads may come from several — and leaves the rest of v11 as it stood. v13 decl
 tool: `bash`, a single command run inside the operating system's own fence (`src/sandbox.ts`),
 so the half that answers may look at the machine its directory sits on rather than only at the
 directory. The rows below were measured with `say` alone declared, so v13 moves the tool list
-and not the sentence a model is asked in, and nothing in the table was re-taken for it.
+and not the sentence a model is asked in, and nothing in the table was re-taken for it. v14
+gives a turn a sense of time: every entry line says how long ago it arrived, and one added part
+says how long since the bot's own last message in that room. The clock is read once when the box
+is assembled (`src/box.ts`) and the durations are measured off stamps already stored, so no
+field was added to the record for them. A row here hands over neither a clock nor an age, so it
+still assembles the v1 text, and nothing in the table was re-taken for v14 either.
 So a bot with an empty card, in a room nothing has been compacted in, was asked the v1 text
 byte for byte for as long as v2 and v3 shipped (`src/prompts.test.ts` compared the two
 assemblies, and says why it no longer can).
@@ -86,7 +91,8 @@ set.
 **v5 is the same kind of change and the last one this record does not cover: the entry line
 now says when the entry arrived.** It renders `[{at}] {sender}: {text}`, which is the shape
 `watch-v3` already used for the same fact, and the value is the observation's own
-`delivered_at` — not "a week ago", which would need a clock reading at assembly time. Two
+`delivered_at` — the stamp itself, because v5 read no clock at assembly time (v14 adds the
+distance). Two
 messages a week apart used to arrive as two lines of one shape, so the half that answers could
 not tell a reply from an answer to something said seven days earlier, and the parts `work-v5`
 inherits from v4 ask it to say when it will know a thing works and when it looks again. The

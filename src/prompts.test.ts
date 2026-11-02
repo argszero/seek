@@ -410,10 +410,10 @@ function turnValues(card: {
   };
 }
 
-test('the shipped turn artifact is v13, and a picture is named on the line it came with', () => {
+test('the shipped turn artifact is v14, and it says how long ago', () => {
   const shipped = loadWorkArtifact();
-  assert.equal(shipped.version, 'work-v13');
-  assert.match(shippedWorkPromptPath().pathname, /work-v13\.json$/);
+  assert.equal(shipped.version, 'work-v14');
+  assert.match(shippedWorkPromptPath().pathname, /work-v14\.json$/);
   const twelve = loadWorkArtifact(new URL('./prompts/work-v12.json', import.meta.url));
   const ten = loadWorkArtifact(new URL('./prompts/work-v10.json', import.meta.url));
   const eleven = loadWorkArtifact(new URL('./prompts/work-v11.json', import.meta.url));
@@ -528,15 +528,19 @@ test('the shipped turn artifact is v13, and a picture is named on the line it ca
   // check now (`sandbox.ts`: no writing outside the bot's directory, no network, none of the
   // person's own files), and the tool is offered on the strength of it. No part moves, and
   // no other tool changes: this is what a bot may do, not what it is like.
-  assert.deepEqual(shipped.parts, twelve.parts, 'v13 adds no part: the tool is the whole of it');
-  assert.equal(shipped.system, twelve.system, "the system line is v12's");
-  assert.equal(shipped.pictureLine, twelve.pictureLine, "the picture line is v12's");
+  // v14 ships now and this section is about v13, so the comparison is against v13; what
+  // v14 adds is asserted on its own above, where the silence part and the age site are
+  // the whole of it.
+  const thirteen = loadWorkArtifact(new URL('./prompts/work-v13.json', import.meta.url));
+  assert.deepEqual(thirteen.parts, twelve.parts, 'v13 adds no part: the tool is the whole of it');
+  assert.equal(thirteen.system, twelve.system, "the system line is v12's");
+  assert.equal(thirteen.pictureLine, twelve.pictureLine, "the picture line is v12's");
   assert.deepEqual(
-    shipped.tools.filter((tool) => tool.name !== 'bash'),
+    thirteen.tools.filter((tool) => tool.name !== 'bash'),
     twelve.tools,
     'v13 adds bash and changes no other tool',
   );
-  const shell = shipped.tools.find((tool) => tool.name === 'bash');
+  const shell = thirteen.tools.find((tool) => tool.name === 'bash');
   assert.ok(shell, 'v13 offers bash, because this runtime now executes it');
   assert.ok(
     shell.description.includes('own directory') && shell.description.includes('no network'),
@@ -615,7 +619,7 @@ test('the shipped turn artifact is v13, and a picture is named on the line it ca
   // who spoke, when and what was said"*. Three things follow, and this is the whole of v12:
   // the entry line says which room it came from, the part that quotes the note stops
   // calling it this room's, and the index of other rooms' notes leaves the file.
-  const roomless = shipped.parts.filter((part) => part.name === 'memories');
+  const roomless = thirteen.parts.filter((part) => part.name === 'memories');
   assert.equal(roomless.length, 0, 'v12 has no index of other rooms: there is one note per bot');
   assert.equal(
     eleven.parts.filter((part) => part.name === 'memories').length,
@@ -629,7 +633,7 @@ test('the shipped turn artifact is v13, and a picture is named on the line it ca
       (part) => part.name !== 'memories' && part.name !== 'memory' && part.name !== 'entry',
     );
   assert.deepEqual(
-    kept(shipped),
+    kept(thirteen),
     kept(eleven),
     'v12 moves no part but the index, the note and the entry line',
   );
@@ -681,6 +685,75 @@ test('the shipped turn artifact is v13, and a picture is named on the line it ca
     alone.rest,
     assembleWorkPrompt(eight, blank).rest,
     'a bot with nothing compacted and nothing to place is asked the v8 text byte for byte',
+  );
+});
+
+test('v14 says how old an entry is and how long since this bot spoke, and nothing else moves', () => {
+  const shipped = loadWorkArtifact();
+  const thirteen = loadWorkArtifact(new URL('./prompts/work-v13.json', import.meta.url));
+
+  // **What v14 is: the two facts `agent-lifecycle.md` §7 says a bot must be told.** The
+  // stamp on each line was already there (v5) and nothing gave the turn a clock, so a
+  // message said ten minutes ago and one said ten days ago arrived as two stamps a model
+  // can compare digit by digit and not subtract. The box measures both when it is
+  // assembled (`box.ts`, `BoxElapsed`), so what the file gained is sites for them.
+  const silence = shipped.parts.filter((part) => part.name === 'silence');
+  assert.equal(silence.length, 1, 'one part says how stale the bot’s own last word is');
+  assert.ok(
+    silence[0].text.includes('{silence}'),
+    'the part quotes the fact it depends on, or it says nothing about it',
+  );
+  assert.equal(silence[0].when, 'silence', 'and it is skipped when it has none to quote');
+
+  // The entry part is v13's line with one site added, and the words around it are the
+  // file's `entryAgeLine` — the same division `pictureLine` and `entryRoomLine` make. A
+  // part reworded here would be a change to what every bot says, not to what it knows.
+  const entry = shipped.parts.find((part) => part.name === 'entry');
+  const before = thirteen.parts.find((part) => part.name === 'entry');
+  assert.ok(entry && before, 'both versions carry an entry line');
+  assert.equal(entry.text, before.text.replace(']', '{age}]'), 'the age site is the whole change');
+  assert.deepEqual(
+    shipped.parts.filter((part) => part.name !== 'silence' && part.name !== 'entry'),
+    thirteen.parts.filter((part) => part.name !== 'entry'),
+    'v14 adds the silence part and renumbers nothing else',
+  );
+  assert.equal(shipped.system, thirteen.system, "the system line is v13's");
+  assert.equal(shipped.pictureLine, thirteen.pictureLine, "the picture line is v13's");
+  assert.equal(shipped.entryRoomLine, thirteen.entryRoomLine, "the room tag is v13's");
+  assert.deepEqual(shipped.tools, thirteen.tools, 'v14 adds no tool: a clock is not a call');
+  assert.equal(thirteen.entryAgeLine, undefined, 'v13 had no words for an age');
+  assert.ok(shipped.entryAgeLine, 'v14 says how the number is spoken');
+
+  // **A caller that measured nothing is asked the v13 text byte for byte.** The age
+  // fragment carries its own punctuation and fills `''` when there is no age, so a box
+  // with no clock reading cannot leave `,  ago` in front of a model.
+  const unmeasured = {
+    ...turnValues({}),
+    entries: [{ sender: '邵安清', text: 'deploy is red', at: '2026-11-02T04:00:00.000Z' }],
+  };
+  assert.equal(
+    assembleWorkPrompt(shipped, unmeasured).rest,
+    assembleWorkPrompt(thirteen, unmeasured).rest,
+    'an unmeasured age leaves the prompt exactly as v13 left it',
+  );
+
+  // And the measured case is what the box hands over: seconds became a compact
+  // duration (`ageWords`), the file said where it goes, and the room's silence arrives
+  // as its own sentence rather than as a number beside a stamp.
+  const measured = assembleWorkPrompt(shipped, {
+    ...unmeasured,
+    silence: '4h',
+    entries: [
+      { sender: '邵安清', text: 'deploy is red', at: '2026-11-02T04:00:00.000Z', age: '9d' },
+    ],
+  });
+  assert.ok(
+    measured.rest.includes('[2026-11-02T04:00:00.000Z, 9d ago] 邵安清: deploy is red'),
+    `the entry line carries its age beside its stamp, got:\n${measured.rest}`,
+  );
+  assert.ok(
+    measured.rest.includes('Your own last message in this room was 4h ago.'),
+    'the silence part is rendered when there is a silence to quote',
   );
 });
 

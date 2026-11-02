@@ -33,7 +33,7 @@
  * two turns rather than one turn with two rooms in it.
  */
 
-import { buildBox, type BoxMedia } from './box.ts';
+import { buildBox, type BoxElapsed, type BoxMedia } from './box.ts';
 import { bumpAgentTurns } from './chain.ts';
 import { identityFor, type AgentIdentity } from './identity.ts';
 import type { RunTurn } from './inbox.ts';
@@ -135,6 +135,14 @@ export interface TurnBox {
    * further out, in `messagesWithPictures`, because that is where bytes exist.
    */
   media: BoxMedia[];
+  /**
+   * How long ago, measured when the box was read (`box.ts`, `BoxElapsed`).
+   *
+   * Carried rather than recomputed here: the durations are the box's fifth part, and a
+   * second clock reading in this file would be a second answer to "how old is this
+   * message" — free to disagree with the one the judgement was handed in the same tick.
+   */
+  elapsed?: BoxElapsed;
 }
 
 /**
@@ -302,7 +310,7 @@ export async function runTurn(
   // window into a conversation it is being asked to continue. It is the bot's and
   // not a room's (`box.ts`): a reminder's turn, the one with no room, reads the same
   // box as any other, because the box travels with the bot.
-  const box = boxFor(store, agent.bot_id);
+  const box = boxFor(store, agent.bot_id, now);
 
   let spent: TokenUsage | null = null;
   try {
@@ -454,13 +462,20 @@ function handOver(entry: Observation): HandedEntry {
  * and the reason off every entry, exactly as it does for the entries that woke the
  * turn — the box is the record, never the watch side's answer to it.
  */
-function boxFor(store: SeekStore, botId: Id): TurnBox {
-  const built = buildBox(store, botId, { window: Number.POSITIVE_INFINITY });
+function boxFor(store: SeekStore, botId: Id, now: string): TurnBox {
+  // The turn's own reading, not a second one taken here: `started_at` and the box's
+  // elapsed part then answer "when" with one instant, and an age in the prompt cannot
+  // disagree with the turn row it was measured in.
+  const built = buildBox(store, botId, {
+    window: Number.POSITIVE_INFINITY,
+    now: () => now,
+  });
   // Both lists are reversed together: `buildBox` fills them newest-first, and a picture
   // reversed on its own would be read against the wrong line of the conversation.
   const box: TurnBox = {
     entries: [...built.delta].reverse().map(handOver),
     media: [...built.media].reverse(),
+    elapsed: built.elapsed,
   };
   if (built.summary !== undefined) box.summary = built.summary;
   return box;

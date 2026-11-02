@@ -75,6 +75,7 @@ import {
   type WorkValues,
 } from './prompts.ts';
 import type { Summarise, SummariseInput } from './compact.ts';
+import { secondsBetween, type BoxElapsed } from './box.ts';
 import {
   BASH_OUTPUT_LIMIT,
   BASH_TIMEOUT_MS,
@@ -131,7 +132,7 @@ const ROOM_SAMPLE = 'oc_0000000000000000';
  * machine without that fence refuses the call rather than running it unconfined.
  *
  * A tool named in the artifact and absent here is refused at bind (§ below), so this set
- * and `work-v13.json` are held against each other before the first turn.
+ * and `work-v14.json` are held against each other before the first turn.
  */
 const EXECUTABLE = new Set(['say', 'bash', 'read', 'glob', 'grep', 'write', 'edit']);
 
@@ -1028,6 +1029,12 @@ function valuesOf(store: SeekStore, context: TurnContext): WorkValues {
   const box = context.box;
   const readable =
     box !== undefined && box.entries.length > 0 ? box.entries : context.entries;
+  // **The box's fifth part** (`box.ts`), and the reason it exists: a turn handed two ISO
+  // stamps and no clock can compare their digits but not their distance, so it could not
+  // tell an answer to something said ten minutes ago from one said ten days ago — §7's
+  // "No sense of time". Absent when the caller handed a box without one, and then both
+  // facts leave the prompt rather than quoting a duration nothing measured.
+  const elapsed = box?.elapsed;
   return {
     bot: bot.name,
     description: bot.description ?? '',
@@ -1038,9 +1045,10 @@ function valuesOf(store: SeekStore, context: TurnContext): WorkValues {
     roster: rosterOf(context.identity),
     others: othersOf(store, context, bot.id),
     turns: context.roomId === undefined ? undefined : turnsSincePerson(store, context.roomId),
+    silence: elapsed === undefined ? undefined : silenceOf(elapsed, context.roomId),
     summary: box?.summary ?? '',
     archive: archivePlaceOf(store.data.agents[context.agentId]?.home ?? ''),
-    entries: readable.map((entry) => entryOf(store, bot.name, entry)),
+    entries: readable.map((entry) => entryOf(store, bot.name, entry, elapsed?.now)),
   };
 }
 
@@ -1216,16 +1224,23 @@ function nameOf(store: SeekStore, id: Id): string {
  * `at` is the entry's own `delivered_at`, and it is the one fact here that does not
  * come off the message: the entry is stamped when it reaches this bot, so a reminder,
  * a message and a message whose body has been erased all carry the time they arrived
- * even when nothing else about them survives. It is handed over as the record writes
- * it — never rephrased as "a week ago", which would need a clock reading here and is
- * the separate question `agent-lifecycle.md` leaves open.
+ * even when nothing else about them survives.
+ *
+ * `age` is the second half of that fact, and it is the question this comment used to
+ * leave open. A stamp is something a model can read and not subtract, so the box
+ * measures the distance when it is assembled (`box.ts`, `BoxElapsed`) and this hands the
+ * duration over as a compact `7m` / `4h` / `3d`; the sentence around it is the
+ * artifact's (`work-v14`). `''` when the caller's box carried no clock reading, so a
+ * caller that measured nothing says nothing rather than "just now".
  */
 function entryOf(
   store: SeekStore,
   botName: string,
   entry: HandedEntry,
-): { sender: string; text: string; at: string; picture: boolean; room: string } {
+  now?: string,
+): { sender: string; text: string; at: string; picture: boolean; room: string; age: string } {
   const at = entry.delivered_at;
+  const age = ageWords(now === undefined ? undefined : secondsBetween(now, at));
   // **Which room the line came from, because one box holds several now** (`box.ts`).
   // The design asks for it in as many words — an observation carries *"its room, who
   // spoke, when and what was said"* — and a line with no room in it is a line the
@@ -1234,14 +1249,14 @@ function entryOf(
   const room = entry.room_id === undefined ? '' : roomNameOf(store, entry.room_id);
   const messageId = entry.message_id;
   if (messageId === undefined) {
-    return { sender: botName, text: entry.text ?? '', at, picture: false, room };
+    return { sender: botName, text: entry.text ?? '', at, picture: false, room, age };
   }
 
   const message =
     entry.room_id === undefined
       ? undefined
       : store.messagesOf(entry.room_id).find((own) => own.id === messageId);
-  if (!message) return { sender: '', text: '', at, picture: false, room };
+  if (!message) return { sender: '', text: '', at, picture: false, room, age };
   return {
     sender: store.principal(message.sender_id)?.name ?? message.sender_id,
     text: message.text,
@@ -1254,7 +1269,38 @@ function entryOf(
     // could be told apart from an empty message by nothing at all. The words for it
     // are the artifact's `pictureLine` — this is the fact, not the sentence.
     picture: message.media !== undefined,
+    age,
   };
+}
+
+/**
+ * A duration as the artifact can quote it: `0s`, `42s`, `7m`, `4h`, `3d`.
+ *
+ * Coarse on purpose, and rounded down. A turn is told roughly how stale something is,
+ * not to the second: `7m` is a fact it can act on, while `437.2 seconds` invites an
+ * arithmetic the half that answers was never asked to do. `''` for a duration nothing
+ * measured, which is the caller that handed a box with no clock reading.
+ */
+function ageWords(seconds: number | undefined): string {
+  if (seconds === undefined) return '';
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+  if (seconds < 86_400) return `${Math.floor(seconds / 3600)}h`;
+  return `${Math.floor(seconds / 86_400)}d`;
+}
+
+/**
+ * How long ago this bot last spoke in the turn's own room, as `{silence}` is filled.
+ *
+ * `undefined` when the turn has no room (a reminder) or when the bot has never spoken
+ * there: the part that quotes it is then skipped, because a bot with no last word has
+ * nothing to be told about it — `0s` would say it spoke a moment ago in a room it has
+ * never opened its mouth in.
+ */
+function silenceOf(elapsed: BoxElapsed, roomId: Id | undefined): string | undefined {
+  if (roomId === undefined) return undefined;
+  const spoke = elapsed.spoke.find((one) => one.roomId === roomId);
+  return spoke === undefined ? undefined : ageWords(spoke.seconds);
 }
 
 /**
