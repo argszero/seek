@@ -27,6 +27,8 @@
     "ui.chat.attach-file": "添加附件",
     "ui.chat.attach": "添加图片",
     "ui.chat.bot": "机器人",
+    "ui.chat.answered-you": "它答了你",
+    "ui.chat.came-to-find-you": "它来找你",
     "ui.chat.cancel": "取消",
     "ui.chat.close-thread": "关闭话题",
     "ui.chat.copied": "已复制到剪贴板",

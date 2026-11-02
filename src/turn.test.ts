@@ -122,8 +122,38 @@ test('the ledger records which agent acted, in which session, and what it produc
   assert.equal(record.turn.input_tokens, 0);
   assert.equal(record.turn.output_tokens, 0);
   assert.equal(record.turn.cost, 0);
+  // §10.1's "what triggered it", on a turn nothing woke: `[]` is that fact and not an
+  // absence, and it is what keeps "no entry woke me" apart from "this row is too old to say".
+  assert.deepEqual(record.turn.entries, []);
   // The session opened in the agent's own home.
   assert.equal(record.session.workspace, world.store.data.agents[world.agentA2].home);
+});
+
+test('the ledger names the entries that woke the turn', async () => {
+  const world = makeWorld();
+  // The shipped decision, so the test is about the wake and not about what was said.
+  const loop = new InboxLoop(world.store, makeTurn(world.store, world.botA));
+
+  deliver(world.store, {
+    roomId: world.room,
+    senderId: world.me,
+    text: '@A over to you',
+    mentions: [{ id: world.botA, name: 'A' }],
+    now: '2026-10-24T01:00:00.000Z',
+  });
+  const result = await loop.tick(world.botA);
+
+  // §10.1 lists "what triggered it" among the four things a turn records, and this is the
+  // only moment it is known: the tick holds the entries for one call and then drops them.
+  // §8 item 2's mark is read back through them — whether anything in this list addressed the
+  // bot is what tells "it answered you" from "it came to find you" — so a row without them
+  // would be a mark with nothing behind it.
+  assert.deepEqual(
+    world.store.data.turns[0].entries,
+    result.entries.map((entry) => entry.id),
+  );
+  assert.deepEqual(world.store.data.turns[0].entries, [result.entries[0].id]);
+  assert.equal(result.entries[0].kind, 'mention');
 });
 
 test('one session per agent per room, reused across turns', async () => {

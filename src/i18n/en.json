@@ -29,6 +29,8 @@
     "ui.chat.attach-file": "Attach a file",
     "ui.chat.attach": "Attach a picture",
     "ui.chat.bot": "bot",
+    "ui.chat.answered-you": "answered you",
+    "ui.chat.came-to-find-you": "came to find you",
     "ui.chat.cancel": "Cancel",
     "ui.chat.close-thread": "Close the thread",
     "ui.chat.copied": "copied to the clipboard",

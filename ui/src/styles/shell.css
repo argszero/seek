@@ -923,6 +923,17 @@ body {
   font-size: 11px;
 }
 
+/* Which of the two things a bot's message is (`agent-lifecycle.md` §8 item 2). A word, not a
+   chip: the bot chip beside it already answers "who is this", and a second box there would
+   draw two tags of equal weight for one message. The bot's own choice is the stronger of the
+   two readings, so it takes the colour the chip has and the answer stays grey. */
+.msg-proactive {
+  margin-left: 6px;
+  color: var(--N600);
+  font-size: 11px;
+}
+.msg-proactive[data-proactive='yes'] { color: var(--B700); }
+
 /* The composer sits under the messages and is part of the same column, so the room's
    own width decides it — a fixed width here would drift from the messages above.
    It wraps for one reason: the mention chips take a line of their own above the box, which

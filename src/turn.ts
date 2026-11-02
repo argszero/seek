@@ -269,6 +269,12 @@ export async function runTurn(
     output_tokens: 0,
     cost: 0,
     produced: [],
+    // §10.1's "what triggered it", written before the agent runs because this is the
+    // one moment it is known: the tick drops the entries it settled as soon as this
+    // turn returns. Ids rather than the entries themselves, for the reason the field
+    // gives (`types.ts`). A turn nothing woke — a test's bare `runTurn`, a caller
+    // driving an agent by hand — records `[]`, which is that fact and not an absence.
+    entries: spec.entries.map((entry) => entry.id),
   };
   store.data.turns.push(turn);
 
