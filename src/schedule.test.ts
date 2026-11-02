@@ -342,8 +342,10 @@ test('the three verbs are plain functions too, judged by the caller they are giv
 
 test("an agent whose tool list has no 'schedule' cannot use any verb", () => {
   const world = makeWorld();
-  // The fixture's work agent was given `say` and not `schedule`: the tool list
-  // is what decides, exactly as it does for speaking.
+  // A row that may speak and not schedule: the tool list is what decides, exactly as
+  // it does for speaking. Stated here rather than inherited from the fixture, so that
+  // what the fixture allows and what this test is about stay two separate questions.
+  world.store.data.agents[world.agentA2].tools = ['say'];
   const tool = scheduleAs(world.store, world.botA, world.agentA2);
   for (const verb of [
     () => tool.list(),

@@ -867,7 +867,7 @@ export interface WorkValues {
 /**
  * The shipped turn artifact's location, beside this module.
  *
- * `work-v14.json` ships; `work-v1.json` through `work-v13.json` stay beside it. A prompt is
+ * `work-v15.json` ships; `work-v1.json` through `work-v14.json` stay beside it. A prompt is
  * versioned rather than edited in place, because `calibration/work/` measured v1 and a
  * record that quotes a prompt the tree has changed describes a run nobody can re-read
  * — `work-calibration.test.ts` holds that pair together. What v2 added is the two parts
@@ -946,9 +946,19 @@ export interface WorkValues {
  * belongs to, and one new part for `{silence}`, the bot's own last word in this room. The
  * part is conditional in the ordinary way: a bot that has never spoken in the room is
  * handed no silence, the part is skipped, and what it reads is the v13 text.
+ *
+ * What v15 adds is `schedule`, §12's tool: one table every bot reads and writes, three verbs,
+ * and nothing else. It is the second entry that is not one of the registry's own, beside the
+ * tool that speaks, and `docs/host-rulings.md` names those two as exactly where the count of
+ * additions stops being a coincidence. The row and the comparator and the delivery a due row
+ * becomes were all here already; what a bot could not do was write one, so "I will look at
+ * this tomorrow" was a sentence with nothing behind it. The entry's words say what a reminder
+ * is — a note to a future self that no room ever sees — because a model that believed it had
+ * said something in the room would be relying on a message that was never posted. No part
+ * moves and no other tool changes.
  */
 export function shippedWorkPromptPath(): URL {
-  return new URL('./prompts/work-v14.json', import.meta.url);
+  return new URL('./prompts/work-v15.json', import.meta.url);
 }
 
 /**

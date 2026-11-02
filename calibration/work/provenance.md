@@ -59,7 +59,7 @@ measures the prompt the reader has; `LLAMA=<path>` names another `llama-server` 
 `src/prompts/work-v1.json` changed, which is what makes the rows comparable: the only
 variable left is the model.
 
-**The tree now ships `work-v14.json`, and every row below was measured on `work-v1.json`.** A
+**The tree now ships `work-v15.json`, and every row below was measured on `work-v1.json`.** A
 prompt is versioned rather than edited in place, so v1 stays in the tree exactly as it was
 measured. v2 adds two parts — what the bot does in its organization, and how it talks and
 works — and both are skipped when a bot's card says nothing; v3 adds one part, the note the
@@ -74,7 +74,11 @@ gives a turn a sense of time: every entry line says how long ago it arrived, and
 says how long since the bot's own last message in that room. The clock is read once when the box
 is assembled (`src/box.ts`) and the durations are measured off stamps already stored, so no
 field was added to the record for them. A row here hands over neither a clock nor an age, so it
-still assembles the v1 text, and nothing in the table was re-taken for v14 either.
+still assembles the v1 text, and nothing in the table was re-taken for v14 either. v15 hands the
+bot §12's tool: `schedule`, one table every bot reads and writes, three verbs and no fourth. Nothing
+about it was missing except the half a bot writes with — the row, the comparator and the delivery a
+due row becomes were all here already — so v15 is a call and not a sentence, and since the rows below
+were measured with `say` alone declared, nothing in the table was re-taken for v15.
 So a bot with an empty card, in a room nothing has been compacted in, was asked the v1 text
 byte for byte for as long as v2 and v3 shipped (`src/prompts.test.ts` compared the two
 assemblies, and says why it no longer can).

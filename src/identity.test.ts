@@ -63,7 +63,7 @@ test('each roster row carries its role, its home and what it may do — itself i
   assert.equal(watch.self, false);
   assert.deepEqual(
     self[0].tools,
-    ['say', 'bash', 'read', 'glob', 'grep', 'write', 'edit'],
+    ['say', 'schedule', 'bash', 'read', 'glob', 'grep', 'write', 'edit'],
     'what the work agent may do is its allowlist',
   );
 });
@@ -160,16 +160,16 @@ test('the answer is a copy: rewriting what it was told cannot rewrite the store'
 
   identity.bot.name = 'rewritten';
   identity.bot.personality = 'rewritten';
-  identity.roster.find((row) => row.role === 'work')?.tools.push('schedule');
+  identity.roster.find((row) => row.role === 'work')?.tools.push('boss');
 
   assert.equal(world.store.data.bots[world.botA].name, 'A');
   assert.equal(world.store.data.bots[world.botA].personality, 'the words as written');
-  assert.deepEqual(world.store.data.agents[world.agentA2].tools, ['say', 'bash', 'read', 'glob', 'grep', 'write', 'edit']);
+  assert.deepEqual(world.store.data.agents[world.agentA2].tools, ['say', 'schedule', 'bash', 'read', 'glob', 'grep', 'write', 'edit']);
 
   // A second read is unaffected by what a caller did to the first.
   const fresh = identityFor(world.store, world.botA, world.agentA2);
   assert.equal(fresh.bot.name, 'A');
-  assert.deepEqual(fresh.roster.find((row) => row.role === 'work')?.tools, ['say', 'bash', 'read', 'glob', 'grep', 'write', 'edit']);
+  assert.deepEqual(fresh.roster.find((row) => row.role === 'work')?.tools, ['say', 'schedule', 'bash', 'read', 'glob', 'grep', 'write', 'edit']);
 });
 
 test('the roster it is told is this bot’s own: two bots in one store never mix', () => {
