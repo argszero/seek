@@ -42,10 +42,12 @@ const ids = () => {
 }
 
 test('an organization keeps its store, its pictures and its roster in one directory', () => {
+  // Joined for the same reason as above: what this asserts is which directory each file sits
+  // in, not how this machine writes a path.
   const paths = layoutOf('/data')
-  assert.equal(paths.indexPath, '/data/organizations.json')
-  assert.equal(paths.storePath('org-1'), '/data/org-1/seek.json')
-  assert.equal(paths.orgDir('org-1'), '/data/org-1')
+  assert.equal(paths.indexPath, join('/data', 'organizations.json'))
+  assert.equal(paths.storePath('org-1'), join('/data', 'org-1', 'seek.json'))
+  assert.equal(paths.orgDir('org-1'), join('/data', 'org-1'))
 })
 
 test('a machine with nothing gets one organization, called me, and no directory yet', async () => {
