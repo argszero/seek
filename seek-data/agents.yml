@@ -29,14 +29,17 @@ agents:
     tools: []
   - bot: Echo
     role: work
-    # `say` is the only way into a room (checklist line 14), so a work agent
-    # without it could not answer at all. `read` is how it goes back to what a
-    # note already folded away (`src/archive.ts`): the ruling that gives it an
-    # archive also gives it the way to read one day of it. `glob` and `grep` are the
-    # registry's own two, and they answer what that archive holds rather than one day of
-    # it: which files were filed, and which of them holds a word. `write` and `edit` are
-    # the registry's two that keep something: the same directory, and the only two here
-    # that change what is on the disk (`docs/host-rulings.md`, "The tools"). `bash` is
-    # not here — it is the machine rather than the bot's own files, and no artifact
-    # offers it, so a row naming it would allow a tool nothing can call.
-    tools: [say, read, glob, grep, write, edit]
+    # This is the permission ceiling, and it names the whole registry
+    # (`docs/host-rulings.md`, "The tools") rather than the tools today's artifact
+    # happens to offer. The two are different questions, and reading them as one is what
+    # muted every bot on a real install: a row written by an older first run named two
+    # tools, the artifact grew to six, and the bind refused — the person's file and the
+    # shipped prompt drifting apart, reported as a model that was not ready.
+    #
+    # So the row says everything this agent may ever call, and each turn is offered the
+    # intersection of that ceiling with the artifact. A tool here that no artifact offers
+    # yet costs nothing (it is never declared to a model) and is what makes a capability
+    # arrive without the file having to be edited again. `say` is the one entry the row
+    # cannot do without — it is the only way into a room — and a row that lost it is
+    # refused at bind.
+    tools: [say, schedule, bash, read, write, edit, glob, grep, subagent, submit_rant, boss]

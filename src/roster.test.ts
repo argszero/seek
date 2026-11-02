@@ -43,7 +43,26 @@ test('the roster shipped with the tree parses: the watch row may call nothing, t
     rows.map((row) => [row.bot, row.role, row.tools]),
     [
       ['Echo', 'watch', []],
-      ['Echo', 'work', ['say', 'read', 'glob', 'grep', 'write', 'edit']],
+      // The whole registry, because a row is a permission ceiling and not a copy of the
+      // tools one artifact happens to offer: the two drifting apart is what muted every
+      // bot on a real install (`work-server.ts`, the bind).
+      [
+        'Echo',
+        'work',
+        [
+          'say',
+          'schedule',
+          'bash',
+          'read',
+          'write',
+          'edit',
+          'glob',
+          'grep',
+          'subagent',
+          'submit_rant',
+          'boss',
+        ],
+      ],
     ],
   );
 });
