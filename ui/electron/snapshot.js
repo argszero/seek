@@ -287,6 +287,39 @@ function textOrNull(value) {
   return typeof value === 'string' && value !== '' ? value : null
 }
 
+/** A bot as a person reads it, falling back to the id a nameless one is recorded by. */
+function nameOfBot(bot, id) {
+  return bot !== undefined && typeof bot.name === 'string' && bot.name !== '' ? bot.name : id
+}
+
+/**
+ * The room each session worked in, by session id.
+ *
+ * A turn names its session and a session names its room (`src/types.ts`), so this is the whole
+ * join between a ledger row and a room a window draws. Two readings need it — what a room spent
+ * and who went quiet in it — and neither of them keeps a counter beside it, because two
+ * accountings of one fact are two answers that can disagree.
+ *
+ * A reminder's session has no room (§12: a bot's own work is not a contribution to a room), so
+ * it is absent from this map rather than mapped to nothing.
+ */
+function roomOfSession(store) {
+  const roomOf = new Map()
+  for (const sessions of Object.values(store.data.sessions)) {
+    for (const session of sessions) roomOf.set(session.id, session.room_id)
+  }
+  return roomOf
+}
+
+/** Every observation in the store by id — the join a turn's `entries` are read through. */
+function entriesById(store) {
+  const byId = new Map()
+  for (const entries of Object.values(store.data.observations)) {
+    for (const entry of entries) byId.set(entry.id, entry)
+  }
+  return byId
+}
+
 /**
  * What the bots in each room have spent, read off the ledger the kernel already keeps.
  *
@@ -308,14 +341,11 @@ function textOrNull(value) {
  * *in* it, which is the only thing a room's header can honestly show.
  */
 function spendByRoom(store) {
-  const roomOfSession = new Map()
-  for (const sessions of Object.values(store.data.sessions)) {
-    for (const session of sessions) roomOfSession.set(session.id, session.room_id)
-  }
+  const roomOf = roomOfSession(store)
 
   const byRoom = new Map()
   for (const turn of store.data.turns) {
-    const roomId = roomOfSession.get(turn.session_id)
+    const roomId = roomOf.get(turn.session_id)
     if (roomId === undefined) continue
 
     const agent = store.data.agents[turn.agent_id]
@@ -337,7 +367,7 @@ function spendByRoom(store) {
       const bot = botId === null ? undefined : store.data.bots[botId]
       spend.bots.push({
         id: botId,
-        name: bot && typeof bot.name === 'string' && bot.name !== '' ? bot.name : botId,
+        name: nameOfBot(bot, botId),
         turns: 1,
         input_tokens: turn.input_tokens,
         output_tokens: turn.output_tokens,
@@ -355,23 +385,43 @@ const NOTHING_SPENT = { turns: 0, input_tokens: 0, output_tokens: 0, bots: [] }
 /**
  * Who read a message and said nothing, per room and per message.
  *
- * A bot that decided not to answer left no message behind, so nothing in the room's log says
- * it was ever there. What says so is the verdict the kernel wrote on the entry it judged —
- * `gate.ts` for the rules, `watch.ts` for the judgement — and the inbox is append-only, so
- * that entry stays (`Observation.verdict`).
+ * A bot that did not answer leaves no message behind, so nothing in the room's log says it was
+ * ever there. **Two different things leave that same hole, and §8 asks for both**
+ * (`docs/design/agent-lifecycle.md`): item 4 — *"why did it ignore me?"* — and item 5 — *"why
+ * is it silent? ... a turn that ended without sending is a turn on the record, so the same
+ * expansion can say what the bot decided instead of speaking."* They are not the same reading,
+ * so every entry says which one it is in `because`:
  *
- * **`ignore` is the whole test.** `act` is a bot that is answering, and an entry with no
- * verdict is one the rules fast-passed (a mention, a reply, a direct message) or one no half
- * has reached yet — neither is a silence, and drawing either as one would report a bot that is
- * working as a bot that refused.
+ * - `not-addressed` — the judgement wrote `ignore` on the entry it read (`gate.ts` for the
+ *   rules, `watch.ts` for the model). No turn ran and nothing was spent. **`ignore` is the
+ *   whole test here**: `act` is a bot that is answering, and an entry with no verdict is one
+ *   the rules fast-passed (a mention, a reply, a direct message) or one no half has reached
+ *   yet — neither is a silence, and drawing either as one would report a bot that is working
+ *   as a bot that refused.
+ * - `nothing-sent` — a turn ran, closed, and produced no message (`Turn.produced` empty). The
+ *   bot was handed the room and sent nothing: either it chose nothing to say, or its answer
+ *   never became a message — a model that writes prose instead of calling `say` is a case this
+ *   repository has measured (`seek-work-model-cannot-call`). Both look identical from outside,
+ *   so the sentence the window draws says what the record says and no more.
+ *
+ * **Two turns that are not silences.** One still deciding has no `ended_at` — `turn.ts` writes
+ * it in its `finally` — and reading it as silence would report a bot that is working as a bot
+ * that refused. One that ran no model spent nothing (the row keeps the zeros it was created
+ * with), and a turn where nothing decided is not a decision: that is the same `null` the
+ * proactive mark draws for a message no turn produced.
+ *
+ * **The message is the reader's unit, the turn is where the second kind lives.** A turn may be
+ * woken by several entries, and every one of them was handed to the bot that then sent nothing,
+ * so it is drawn under each of them — the same multiplicity the `ignore` reading already has,
+ * one line per message a bot passed on.
  *
  * **Read once per room, not once per message.** The inbox is unbounded — "no entry has to be
  * silently dropped to keep it small" — so asking this per message is quadratic in a room's
  * life; this is the index that makes it one pass.
  *
- * **A bot no longer in the room is not read.** Its verdict is still on the record, but "it
- * stayed out of this" printed over a room that does not hold it is a sentence about someone
- * who is not there.
+ * **A bot no longer in the room is not read.** Its verdict and its turn are still on the
+ * record, but "it stayed out of this" printed over a room that does not hold it is a sentence
+ * about someone who is not there.
  */
 function silenceByRoom(store) {
   const byRoom = new Map()
@@ -383,12 +433,38 @@ function silenceByRoom(store) {
       for (const entry of store.inbox(bot.id)) {
         if (entry.verdict !== 'ignore' || entry.message_id === undefined) continue
         const row = byMessage.get(entry.message_id) ?? []
-        row.push({ id: bot.id, name: typeof bot.name === 'string' && bot.name !== '' ? bot.name : bot.id })
+        if (row.some((one) => one.id === bot.id)) continue
+        row.push({ id: bot.id, name: nameOfBot(bot, bot.id), because: 'not-addressed' })
         byMessage.set(entry.message_id, row)
       }
     }
     byRoom.set(room.id, byMessage)
   }
+
+  // §8 item 5's half, read off the same ledger and appended to the same index.
+  const roomOf = roomOfSession(store)
+  const entryById = entriesById(store)
+  for (const turn of store.data.turns) {
+    if (turn.ended_at === undefined) continue
+    if (Array.isArray(turn.produced) && turn.produced.length > 0) continue
+    if ((turn.input_tokens ?? 0) + (turn.output_tokens ?? 0) <= 0) continue
+    const roomId = roomOf.get(turn.session_id)
+    const byMessage = roomId === undefined ? undefined : byRoom.get(roomId)
+    if (byMessage === undefined) continue
+    const agent = store.data.agents[turn.agent_id]
+    const bot = agent === undefined ? undefined : store.data.bots[agent.bot_id]
+    if (bot === undefined) continue
+    if (!store.membershipsOf(roomId).some((own) => own.principal_id === bot.id)) continue
+    for (const id of Array.isArray(turn.entries) ? turn.entries : []) {
+      const entry = entryById.get(id)
+      if (entry === undefined || entry.message_id === undefined) continue
+      const row = byMessage.get(entry.message_id) ?? []
+      if (row.some((one) => one.id === bot.id)) continue
+      row.push({ id: bot.id, name: nameOfBot(bot, bot.id), because: 'nothing-sent' })
+      byMessage.set(entry.message_id, row)
+    }
+  }
+
   return byRoom
 }
 
@@ -420,10 +496,7 @@ function silenceByRoom(store) {
  */
 function proactiveByMessage(store) {
   const ADDRESSED = new Set(['mention', 'reply', 'direct'])
-  const entryById = new Map()
-  for (const entries of Object.values(store.data.observations)) {
-    for (const entry of entries) entryById.set(entry.id, entry)
-  }
+  const entryById = entriesById(store)
 
   const byMessage = new Map()
   for (const turn of store.data.turns) {
@@ -656,12 +729,13 @@ function snapshotOf(store, storeFile, stage1 = null, stage2 = null, storeRefusal
       rootId: message.root_id ?? null,
       chain: message.chain,
       depth: message.depth,
-      // **Who read this and said nothing, and that is all the window is given.** A bot that
+      // **Who read this and said nothing, and why — the two answers §8 asks for.** A bot that
       // stayed out leaves no message, so this list is the only trace of it the room's log can
-      // carry; `null` reason beside it is honest — the judgement writes no sentence
-      // (`src/llama.ts`), so what the window can say is what `ignore` means, and `ignore`
-      // means the message was not addressed to that bot (`src/gate.ts`: an @, a reply and a
-      // direct message act before the judgement is ever asked).
+      // carry, and each entry names which reading it is: `not-addressed` (the judgement wrote
+      // `ignore`, and the message was not for that bot) or `nothing-sent` (a turn ran, closed
+      // and produced no message — §8 item 5). The words are the catalogue's; this layer carries
+      // the fact and the window chooses the sentence. See `silenceByRoom`, which also says what
+      // it deliberately leaves out: a turn still deciding, and one that ran no model.
       silent: silences.get(room.id)?.get(message.id) ?? [],
       // **Whether the bot chose to speak, or answered something said to it** — §8 item 2,
       // §10.2. `true` is "it came to find you", `false` is "it answered you", and `null` is

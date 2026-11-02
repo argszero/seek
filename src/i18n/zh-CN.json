@@ -37,6 +37,7 @@
     "ui.chat.deleted": "这条消息已删除",
     "ui.chat.silent": "{names} 没有回答这条",
     "ui.chat.silent-why": "{name} 没有回答：这条不是对它说的",
+    "ui.chat.silent-why-nothing": "{name} 没有回答：它读了这条，一个字也没发",
     "ui.chat.state.asleep": "睡着 —— 没有要读的东西",
     "ui.chat.state.watching": "在看 —— 有东西要读，还没读",
     "ui.chat.state.working": "在干活 —— 正在用一轮",

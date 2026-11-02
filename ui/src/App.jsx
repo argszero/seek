@@ -2444,11 +2444,28 @@ function SilenceLine({ who }) {
       </button>
       {open && (
         <span className="msg-silent-why">
-          {who.map((one) => (
-            <span className="msg-silent-one" data-silent-bot={one.id} key={one.id}>
-              {t('ui.chat.silent-why', { name: one.name })}
-            </span>
-          ))}
+          {who.map((one) => {
+            // **Two silences, and they are not the same sentence.** `not-addressed` is the
+            // judgement's `ignore` — the message was not for that bot. `nothing-sent` is a turn
+            // that ran, closed and produced no message (§8 item 5) — the bot was handed the
+            // room and sent nothing, and the record cannot say whether that was a choice or an
+            // answer that never became a message. Both are already known here; neither is
+            // worked out on this side.
+            const why =
+              one.because === 'nothing-sent'
+                ? t('ui.chat.silent-why-nothing', { name: one.name })
+                : t('ui.chat.silent-why', { name: one.name })
+            return (
+              <span
+                className="msg-silent-one"
+                data-silent-bot={one.id}
+                data-silent-because={one.because}
+                key={one.id}
+              >
+                {why}
+              </span>
+            )
+          })}
         </span>
       )}
     </span>

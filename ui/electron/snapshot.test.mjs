@@ -846,8 +846,11 @@ test('a bot that read a message and stayed out reaches the window, and one that 
     .rooms[0].messages.find((one) => one.id === sent.message.id)
 
   // The bot that acted is not on the list, and the one that stayed out is, with the name it was
-  // written with — a room's log says who passed on a message without opening every inbox.
-  assert.deepEqual(message.silent, [{ id: 'bo_quiet', name: 'Quiet' }])
+  // written with and the reading that put it there — a room's log says who passed on a message
+  // without opening every inbox, and says which kind of silence this is (§8 items 4 and 5).
+  assert.deepEqual(message.silent, [
+    { id: 'bo_quiet', name: 'Quiet', because: 'not-addressed' },
+  ])
 
   // Nothing to explain is `[]` rather than a missing list, for the reason `reactions` is: a
   // renderer facing two kinds of nothing draws whatever `undefined` does.
