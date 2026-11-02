@@ -574,6 +574,33 @@ export interface Turn extends TokenUsage {
   cost: number;
   /** Messages produced by the speaking tool — never the turn's own output. */
   produced: Id[];
+  /**
+   * The queue entries that woke it, by id.
+   *
+   * `agent-lifecycle.md` §10.1 lists what a turn records — *"what triggered it, which
+   * tools ran, what changed, what it cost"* — and this is the first of the four. It is
+   * the only place that fact exists: the entries a tick settled are held by the loop for
+   * the length of the tick and then dropped, and re-deriving them afterwards would mean
+   * guessing which of a room's deliveries a turn answered.
+   *
+   * **The ids, not the entries.** An entry belongs to its bot's queue, which is
+   * append-only and never drops one (`Observation.state`), so a copy here would be a
+   * second version of a row the store already holds — and the moment the two disagreed,
+   * neither could be trusted.
+   *
+   * **What reads it.** `agent-lifecycle.md` §8 item 2 and §10.2 ask the interface to
+   * mark a message the bot *chose* to send, apart from one that answers something
+   * addressed to it. "Was I addressed" is already a fact at delivery — a mention, a
+   * reply and a direct message are rows 2 of stage 0 — so the mark is a read of this
+   * field through those entries, and not a judgement made about a message after the
+   * fact.
+   *
+   * Absent means **nothing was recorded**, never "nothing woke it": a row written
+   * before this field existed has no list, and a message whose turn names no entry is a
+   * message the record cannot classify. A guess there would be a claim, so the interface
+   * draws no mark for it.
+   */
+  entries?: Id[];
 }
 
 export type MemoryLevel = 'diary' | 'box_digest' | 'session';

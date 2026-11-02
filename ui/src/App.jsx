@@ -2484,6 +2484,12 @@ function Line({ message, sender, replies, inThread, onOpen, chip = false, me = n
   // the content: there is nothing to quote, forward or react to, and a menu offering `Delete`
   // on a message already deleted would be a button with one outcome.
   const deleted = Boolean(message.deletedAt)
+  // **A bot's message is one of two things** (`agent-lifecycle.md` §8 item 2): something it
+  // chose to say, or an answer to what addressed it. The snapshot reads that off the turn that
+  // produced the message, so this line decides nothing — and `null` is the snapshot saying the
+  // record does not know, which draws no mark rather than the words of an answer. Only a bot
+  // is marked: a person is answered by the room, not by a wake.
+  const proactive = sender?.bot ? message.proactive ?? null : null
   return (
     <li className={`msg${inThread ? ' on' : ''}`}>
       <span className={`msg-av${sender?.bot ? ' bot' : ''}`}>
@@ -2496,6 +2502,18 @@ function Line({ message, sender, replies, inThread, onOpen, chip = false, me = n
         <span className="msg-sender">
           {name}
           {sender?.bot && <span className="msg-bot">{t('ui.chat.bot')}</span>}
+          {/* Which of the two things a bot's message can be (`agent-lifecycle.md` §8 item 2,
+              §10.2): something it chose to say, or an answer to what addressed it. The
+              snapshot hands the reading and this line hands the words, because a sentence is
+              the language's (`catalogue.mjs`); `null` is a message the record cannot classify
+              and draws nothing, rather than borrowing the answer's words for it. */}
+          {proactive !== null && (
+            <span className="msg-proactive" data-proactive={proactive ? 'yes' : 'no'}>
+              {/* Two lookups and not one with a chosen key: a key written where the scan cannot
+                  read it is a key nothing checks was ever shipped (`catalogue.test.mjs`). */}
+              {proactive ? t('ui.chat.came-to-find-you') : t('ui.chat.answered-you')}
+            </span>
+          )}
         </span>
         {/* Everything the message itself carries, on the box the client draws it on
             (`shell.css`, `.msg-bubble`): the client puts a name above a grey box and leaves the

@@ -393,6 +393,56 @@ function silenceByRoom(store) {
 }
 
 /**
+ * Which of a bot's messages were its own idea, per message id.
+ *
+ * `docs/design/agent-lifecycle.md` §8 item 2 asks the window to mark "proactive messages ...
+ * not a reply to you, but something it chose to say", and §10.2 draws the consequence: *"it
+ * came to find you" reads differently from "it answered you"*. **Nothing in this file decides
+ * which of the two a message is.** The facts are on the record twice over: the turn names the
+ * entries that woke it (`src/turn.ts`, `Turn.entries`), and each of those entries carries the
+ * kind delivery computed for it — `mention`, `reply` and `direct` are the three ways a message
+ * addresses this bot (`src/gate.ts`, row 2), while `message` is a room talking near it and
+ * `reminder` is the bot's own note to itself (§12). So "was this addressed" is a read, and the
+ * mark is the answer to it.
+ *
+ * **The message is the reader's unit, the turn is where the fact lives.** A turn may say
+ * several things, and every one of them came out of the same wake: all of them answered, or
+ * none of them did. Reading it per message instead of per turn is what lets a row draw it.
+ *
+ * **`null` is a third answer and the honest one.** A message no turn produced (a seed, a
+ * fixture, anything written before this field existed) has no recorded wake, and a window that
+ * read that as "it answered you" would be claiming something the record does not say. Absent
+ * therefore draws nothing at all.
+ *
+ * Read once per snapshot, not once per message: the inbox is append-only and unbounded
+ * ("no entry has to be silently dropped to keep it small"), so asking per message would be
+ * quadratic in a room's life — the same reason `silenceByRoom` is one pass.
+ */
+function proactiveByMessage(store) {
+  const ADDRESSED = new Set(['mention', 'reply', 'direct'])
+  const entryById = new Map()
+  for (const entries of Object.values(store.data.observations)) {
+    for (const entry of entries) entryById.set(entry.id, entry)
+  }
+
+  const byMessage = new Map()
+  for (const turn of store.data.turns) {
+    const woke = (Array.isArray(turn.entries) ? turn.entries : [])
+      .map((id) => entryById.get(id))
+      .filter((entry) => entry !== undefined)
+    // A turn naming no entry says nothing about why it ran, so it is not a reading.
+    if (woke.length === 0) continue
+    // One addressed entry is enough: the turn was woken by something said to it, and the
+    // rest of what it read does not make the answer less of an answer.
+    const answered = woke.some((entry) => ADDRESSED.has(entry.kind))
+    for (const id of Array.isArray(turn.produced) ? turn.produced : []) {
+      byMessage.set(id, !answered)
+    }
+  }
+  return byMessage
+}
+
+/**
  * What every bot in this organization is doing, as the kernel reported it.
  *
  * `docs/design/agent-lifecycle.md` §8 item 1 asks the window for "a state dot: watching /
@@ -480,6 +530,8 @@ function snapshotOf(store, storeFile, stage1 = null, stage2 = null, storeRefusal
   const spent = spendByRoom(store)
   // Read once, for the same reason `spent` is: one table read beats one read per message.
   const silences = silenceByRoom(store)
+  // §8 item 2, read off the record once for the same reason.
+  const proactives = proactiveByMessage(store)
   // **The list is the rooms this person is in.** It was every room in the store, which was the
   // same list while a membership could only be *added*; `removeMember()` and the panel's `Leave`
   // (2026-10-27) made a room somebody is not in reachable, and the window went on listing the
@@ -611,6 +663,12 @@ function snapshotOf(store, storeFile, stage1 = null, stage2 = null, storeRefusal
       // means the message was not addressed to that bot (`src/gate.ts`: an @, a reply and a
       // direct message act before the judgement is ever asked).
       silent: silences.get(room.id)?.get(message.id) ?? [],
+      // **Whether the bot chose to speak, or answered something said to it** — §8 item 2,
+      // §10.2. `true` is "it came to find you", `false` is "it answered you", and `null` is
+      // "the record does not say": a message no turn produced has no recorded wake, and a
+      // window told `false` there would print an answer to a question nobody asked. See
+      // `proactiveByMessage`, which also says why nothing here decides it.
+      proactive: proactives.get(message.id) ?? null,
     })),
   }))
 
