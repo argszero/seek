@@ -2451,15 +2451,30 @@ function SilenceLine({ who }) {
             // room and sent nothing, and the record cannot say whether that was a choice or an
             // answer that never became a message. Both are already known here; neither is
             // worked out on this side.
+            //
+            // **And the first of them can also say who is answering instead** — item 4's own
+            // wording, *"this was not addressed to me, and someone else is already answering"*.
+            // A bot in the middle of a turn has sent nothing yet, so without this clause the
+            // screen showed a room where nobody was coming. `answering` is a list the snapshot
+            // read off the turns that have not closed; a row without it is one where nobody is,
+            // and the shorter sentence is then the whole truth.
+            const answering = one.answering ?? []
             const why =
               one.because === 'nothing-sent'
                 ? t('ui.chat.silent-why-nothing', { name: one.name })
-                : t('ui.chat.silent-why', { name: one.name })
+                : answering.length > 0
+                  ? t('ui.chat.silent-why-answering', {
+                      name: one.name,
+                      others: joinList(answering.map((bot) => bot.name)),
+                      count: answering.length,
+                    })
+                  : t('ui.chat.silent-why', { name: one.name })
             return (
               <span
                 className="msg-silent-one"
                 data-silent-bot={one.id}
                 data-silent-because={one.because}
+                data-silent-answering={answering.length}
                 key={one.id}
               >
                 {why}

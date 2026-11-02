@@ -848,8 +848,10 @@ test('a bot that read a message and stayed out reaches the window, and one that 
   // The bot that acted is not on the list, and the one that stayed out is, with the name it was
   // written with and the reading that put it there — a room's log says who passed on a message
   // without opening every inbox, and says which kind of silence this is (§8 items 4 and 5).
+  // `answering` is item 4's second clause and empty here: nobody is in a turn on this message,
+  // which is the case `answering.test.mjs` covers from the other side.
   assert.deepEqual(message.silent, [
-    { id: 'bo_quiet', name: 'Quiet', because: 'not-addressed' },
+    { id: 'bo_quiet', name: 'Quiet', because: 'not-addressed', answering: [] },
   ])
 
   // Nothing to explain is `[]` rather than a missing list, for the reason `reactions` is: a
