@@ -37,8 +37,21 @@ const { WEIGHT_FILES } = require('./model-weights.js')
 /** The directory the binary is packaged into (`ui/package.json`, `build.extraResources`). */
 const SERVER_DIRECTORY = 'server'
 
-/** The executable's name, which is llama.cpp's own. */
+/** The executable's name, which is llama.cpp's own — before a platform adds its ending. */
 const SERVER_NAME = 'llama-server'
+
+/**
+ * What that executable is called on a given system.
+ *
+ * Windows names executables with an ending and upstream's Windows archive holds
+ * `llama-server.exe`; the macOS one holds `llama-server`. It is read from the platform rather
+ * than from whatever is on disk, because a build that packed the wrong platform's server
+ * should say which file it looked for — `startBundledServer` names the path when it finds
+ * nothing — instead of silently taking whichever one it happened to find beside it.
+ */
+function serverBinaryName(platform = process.platform) {
+  return platform === 'win32' ? `${SERVER_NAME}.exe` : SERVER_NAME
+}
 
 /**
  * The name the server answers to, for a roster that wants to name the model it expects.
@@ -66,16 +79,17 @@ const WATCH_WINDOW = '24'
 const START_DEADLINE_MS = 180_000
 
 /** Where the packaged binary sits, given the app's `resources` directory. */
-function bundledServerPath(resourcesPath) {
-  return join(resourcesPath, SERVER_DIRECTORY, SERVER_NAME)
+function bundledServerPath(resourcesPath, platform = process.platform) {
+  return join(resourcesPath, SERVER_DIRECTORY, serverBinaryName(platform))
 }
 
 /**
  * Where the two weight files live.
  *
- * `~/Library/Application Support/Seek/weights/`, which is `app.getPath('userData')` and then
- * one directory in: the weights are this app's data, and Electron already keeps its own caches
- * in the directory above. The two names are `model-weights.js`'s, so what a first run
+ * One directory inside `app.getPath('userData')` — `~/Library/Application Support/Seek/` on
+ * macOS, `%APPDATA%\Seek` on Windows — for the same reason on both: the weights are this
+ * app's data, and Electron already keeps its own caches in the directory above. The two names
+ * are `model-weights.js`'s, so what a first run
  * downloads and what this reads cannot drift apart.
  */
 function weightsDirectory(userDataPath) {
@@ -289,6 +303,7 @@ module.exports = {
   START_DEADLINE_MS,
   WATCH_WINDOW,
   bundledServerPath,
+  serverBinaryName,
   serverChoiceFrom,
   startBundledServer,
   weightsDirectory,

@@ -44,6 +44,8 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { dirname, join, resolve, sep } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { serverBinaryName } from './server.js'
+import { serverWinPlan } from '../../packaging/fetch-server-win.mjs'
 import { pkgPlan, signingPlan } from '../../packaging/make-pkg.mjs'
 import {
   failureTextOf,
@@ -649,4 +651,66 @@ test('the entitlements are well-formed XML, which is a stricter question than pl
     // Recorded rather than silently passing: the double-hyphen rule above still held.
     console.log('# xmllint is not installed, so only the double-hyphen rule was checked')
   }
+})
+
+test('the Windows download is one file, and neither platform packs the other one\'s server', () => {
+  // "One file, and nothing to install" is the `portable` target: an NSIS self-extractor
+  // written as a single `.exe`, which unpacks into a temporary directory at launch. Every
+  // other Windows target this project could ask for — `nsis`, `msi` — is an installer, and
+  // would be a second kind of download to explain.
+  const script = pkg.scripts['dist:win']
+  assert.ok(script, 'ui/package.json declares dist:win')
+  assert.match(script, /npm run fetch:server-win/, 'the server the download carries is written first')
+  assert.match(script, /electron-builder --win --x64/, 'and electron-builder cuts it')
+  assert.equal(pkg.scripts['fetch:server-win'], 'node ../packaging/fetch-server-win.mjs')
+
+  assert.deepEqual(build.win.target, [{ target: 'portable', arch: ['x64'] }])
+  assert.equal(build.win.icon, '../assets/icon.png', 'the same mark the macOS build wears')
+
+  // The two platforms carry a server built for different operating systems, so neither may be
+  // packed into the other's app: each names its own directory under its own platform, and the
+  // kernel stays in the list every platform shares. That split is safe because
+  // electron-builder merges a platform's `extraResources` with the common one rather than
+  // replacing it — `getFileMatchers` reads `config[name]` and the platform's options into the
+  // same list of matchers, which is why the kernel is not stranded by moving the server down.
+  assert.ok(
+    build.extraResources.some((entry) => resolve(UI, entry.from) === join(REPO, 'src')),
+    'the kernel travels in both downloads',
+  )
+  assert.ok(
+    !build.extraResources.some((entry) => entry.to === 'server'),
+    'no server is packed for every platform, or one download would carry the other one',
+  )
+  const serverEntry = (platform) => build[platform].extraResources.find((entry) => entry.to === 'server')
+  assert.equal(resolve(UI, serverEntry('mac').from), join(UI, 'resources', 'server'))
+  assert.equal(resolve(UI, serverEntry('win').from), join(UI, 'resources', 'server-win'))
+})
+
+test('the Windows server is the pinned archive, and the file the app looks for is in it', () => {
+  // What this pins is the coupling rather than the download: the plan writes a set of files
+  // out of one archive, and `serverBinaryName('win32')` is the one name the app will look for
+  // inside the directory they land in. A plan that wrote `llama-server` where Windows names
+  // `llama-server.exe` would pack a server nothing starts, and the launch would report a file
+  // that is not there rather than a model that is not there.
+  const plan = serverWinPlan()
+  assert.equal(plan.output, join(UI, 'resources', 'server-win'))
+  assert.equal(plan.upstream.asset, 'llama-b11946-bin-win-cpu-x64.zip')
+  assert.equal(plan.upstream.bytes, 24_376_086)
+  assert.equal(plan.upstream.sha256, '8a702bb07c873b133c56eb3acd92a48d7c5c9ad339c6435eddc5185e46e1a043')
+
+  assert.ok(
+    plan.fromArchive.includes(serverBinaryName('win32')),
+    'the launcher travels under the name the app asks for',
+  )
+  assert.equal(plan.fromArchive.length, 22, 'the launcher, the seven libraries it imports, the fourteen CPU backends')
+
+  // The CPU backends are found by `ggml` scanning the directory rather than by an import, so
+  // the import table does not reach them: dropping one would cost a machine its backend with
+  // no launch failing to say so.
+  assert.equal(plan.fromArchive.filter((name) => name.startsWith('ggml-cpu-')).length, 14)
+
+  // Licences travel with the bytes they cover, because a download redistributes them.
+  const licences = plan.licences.map((licence) => licence.name)
+  assert.ok(licences.includes('LICENSE-llama.cpp'))
+  assert.ok(licences.includes('LICENSE-LLVM-OpenMP'), "libomp.dll is LLVM's, under its own licence")
 })
