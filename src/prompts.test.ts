@@ -410,10 +410,11 @@ function turnValues(card: {
   };
 }
 
-test('the shipped turn artifact is v12, and a picture is named on the line it came with', () => {
+test('the shipped turn artifact is v13, and a picture is named on the line it came with', () => {
   const shipped = loadWorkArtifact();
-  assert.equal(shipped.version, 'work-v12');
-  assert.match(shippedWorkPromptPath().pathname, /work-v12\.json$/);
+  assert.equal(shipped.version, 'work-v13');
+  assert.match(shippedWorkPromptPath().pathname, /work-v13\.json$/);
+  const twelve = loadWorkArtifact(new URL('./prompts/work-v12.json', import.meta.url));
   const ten = loadWorkArtifact(new URL('./prompts/work-v10.json', import.meta.url));
   const eleven = loadWorkArtifact(new URL('./prompts/work-v11.json', import.meta.url));
   const nine = loadWorkArtifact(new URL('./prompts/work-v9.json', import.meta.url));
@@ -520,6 +521,33 @@ test('the shipped turn artifact is v12, and a picture is named on the line it ca
     );
   }
 
+  // **What v13 is: the one registry entry v11 left out.** `docs/host-rulings.md`, "The
+  // tools", lists `bash` beside the file tools, and what kept it out of the artifact was
+  // that a shell names no path — so the bound every other call here has, a name relative to
+  // the bot's own directory, is not one it can be given. It has a bound that is not a name
+  // check now (`sandbox.ts`: no writing outside the bot's directory, no network, none of the
+  // person's own files), and the tool is offered on the strength of it. No part moves, and
+  // no other tool changes: this is what a bot may do, not what it is like.
+  assert.deepEqual(shipped.parts, twelve.parts, 'v13 adds no part: the tool is the whole of it');
+  assert.equal(shipped.system, twelve.system, "the system line is v12's");
+  assert.equal(shipped.pictureLine, twelve.pictureLine, "the picture line is v12's");
+  assert.deepEqual(
+    shipped.tools.filter((tool) => tool.name !== 'bash'),
+    twelve.tools,
+    'v13 adds bash and changes no other tool',
+  );
+  const shell = shipped.tools.find((tool) => tool.name === 'bash');
+  assert.ok(shell, 'v13 offers bash, because this runtime now executes it');
+  assert.ok(
+    shell.description.includes('own directory') && shell.description.includes('no network'),
+    'bash says what the fence is, in the words the model reads',
+  );
+  assert.deepEqual(
+    (shell.parameters as { required?: string[] }).required,
+    ['command'],
+    'a shell call with no command is a call this runtime refuses',
+  );
+
   for (const name of ['glob', 'grep']) {
     const tool = shipped.tools.find((one) => one.name === name);
     assert.ok(tool, `v10 offers ${name}, because the runtime executes it`);
@@ -607,24 +635,24 @@ test('the shipped turn artifact is v12, and a picture is named on the line it ca
   );
   const noteOf = (artifact: { parts: { name: string; text: string }[] }) =>
     artifact.parts.find((part) => part.name === 'memory')?.text ?? '';
-  assert.notEqual(noteOf(shipped), noteOf(eleven), 'the note part is reworded');
+  assert.notEqual(noteOf(twelve), noteOf(eleven), 'the note part is reworded');
   assert.ok(
-    noteOf(eleven).includes('about this room') && !noteOf(shipped).includes('about this room'),
+    noteOf(eleven).includes('about this room') && !noteOf(twelve).includes('about this room'),
     'what v11 called this room\'s note is v12\'s note for the bot, whichever room it worked in',
   );
-  assert.equal(shipped.system, eleven.system, "the system line is v11's");
-  assert.equal(shipped.pictureLine, eleven.pictureLine, "the picture line is v11's");
-  assert.deepEqual(shipped.tools, eleven.tools, 'v12 adds no tool: nothing about the box is a call');
+  assert.equal(twelve.system, eleven.system, "the system line is v11's");
+  assert.equal(twelve.pictureLine, eleven.pictureLine, "the picture line is v11's");
+  assert.deepEqual(twelve.tools, eleven.tools, 'v12 adds no tool: nothing about the box is a call');
 
-  const entry = shipped.parts.find((part) => part.name === 'entry');
+  const entry = twelve.parts.find((part) => part.name === 'entry');
   assert.ok(entry, 'the file still renders one line per observation');
   assert.ok(
     entry.text.includes('{room}'),
     'the entry line says which room it came from, or one box cannot hold two without confusing them',
   );
-  const roomWords = shipped.entryRoomLine;
+  const roomWords = twelve.entryRoomLine;
   assert.ok(roomWords, 'and the words for it are the file\'s, not a phrase invented in the code');
-  assert.ok(shipped.parts.length === eleven.parts.length - 1, 'one part fewer, and only that');
+  assert.ok(twelve.parts.length === eleven.parts.length - 1, 'one part fewer, and only that');
 
   // Rendered both ways. An entry that names a room is placed; one that names none — a
   // reminder is in no room — is exactly the line v11 wrote, so the removal costs a

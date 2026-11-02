@@ -59,13 +59,17 @@ measures the prompt the reader has; `LLAMA=<path>` names another `llama-server` 
 `src/prompts/work-v1.json` changed, which is what makes the rows comparable: the only
 variable left is the model.
 
-**The tree now ships `work-v12.json`, and every row below was measured on `work-v1.json`.** A
+**The tree now ships `work-v13.json`, and every row below was measured on `work-v1.json`.** A
 prompt is versioned rather than edited in place, so v1 stays in the tree exactly as it was
 measured. v2 adds two parts — what the bot does in its organization, and how it talks and
 works — and both are skipped when a bot's card says nothing; v3 adds one part, the note the
 bot wrote about the room before the messages it reads, skipped while the room has no note.
 v12 adds the room each line came from — the box is the bot's and not a room's, so what it
-reads may come from several — and leaves the rest of v11 as it stood.
+reads may come from several — and leaves the rest of v11 as it stood. v13 declares one more
+tool: `bash`, a single command run inside the operating system's own fence (`src/sandbox.ts`),
+so the half that answers may look at the machine its directory sits on rather than only at the
+directory. The rows below were measured with `say` alone declared, so v13 moves the tool list
+and not the sentence a model is asked in, and nothing in the table was re-taken for it.
 So a bot with an empty card, in a room nothing has been compacted in, was asked the v1 text
 byte for byte for as long as v2 and v3 shipped (`src/prompts.test.ts` compared the two
 assemblies, and says why it no longer can).
@@ -99,7 +103,7 @@ says `{picture}` where they go: an entry with a picture says so, an entry withou
 line byte for byte, and a picture with no caption is no longer a blank entry. The driver's rows
 hand over no picture, so they still assemble the v1 text; this record measures nothing about v6.
 
-**v7 changes one sentence and no part, and it is the last version this record does not cover.**
+**v7 changes one sentence and no part, and it is one more version this record does not cover.**
 The fact under v6's sentence changed: the turn that answers is now handed the pictures its box
 holds (`TurnBox.media`, and a byte loader the client supplies), so a line saying "a picture came
 and you cannot see it" would be a lie about a request that carries the picture. v7's

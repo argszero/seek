@@ -75,6 +75,14 @@ import {
   type WorkValues,
 } from './prompts.ts';
 import type { Summarise, SummariseInput } from './compact.ts';
+import {
+  BASH_OUTPUT_LIMIT,
+  BASH_TIMEOUT_MS,
+  placesFor,
+  runFenced,
+  type FenceRunner,
+  type FenceResult,
+} from './sandbox.ts';
 import { requireServedModel } from './served.ts';
 import type { SeekStore } from './store.ts';
 import type { Decide, HandedEntry, TurnContext } from './turn.ts';
@@ -99,31 +107,33 @@ const ROOM_SAMPLE = 'oc_0000000000000000';
  * `docs/host-rulings.md`, "The tools": the work agent's tools are the kernel's registry —
  * `bash / read / write / edit / glob / grep / subagent / submit_rant / boss` — and which
  * of them an agent may call is ordinary per-agent configuration. What ships is the one way
- * a turn speaks (`say`), the four file tools that work inside the bot's own directory, and
- * nothing else. `read` is "The observation box" — the uncompacted content "is archived by
- * day", the model is told where, and it "may go and read it". `glob` and `grep` are the
- * registry's own two: what is filed, and which of those files holds a word. `write` and
- * `edit` are the two that keep something: the same directory, and the first way a turn
- * changes what is on the disk rather than only reading it.
+ * a turn speaks (`say`), the five file tools that work inside the bot's own directory, and
+ * `bash`, which reaches the machine and is therefore the one tool here whose bound is the
+ * operating system's rather than a name check (`sandbox.ts`). `read` is "The observation
+ * box" — the uncompacted content "is archived by day", the model is told where, and it
+ * "may go and read it". `glob` and `grep` are the registry's own two: what is filed, and
+ * which of those files holds a word. `write` and `edit` are the two that keep something:
+ * the same directory, and the first way a turn changes what is on the disk rather than only
+ * reading it.
  *
- * **The four are one surface, and the bound is what makes them one.** Every one of them
- * takes a name relative to `<home>` and refuses a name that leaves it, so the machine is
- * still not reachable from a turn: a bot's own directory is what it may read and what it
- * may write, and there is no second place either call can reach. That is also why `edit`
+ * **The file tools are one surface, and the bound is what makes them one.** Every one of
+ * them takes a name relative to `<home>` and refuses a name that leaves it, so the machine
+ * is still not reachable through a name: a bot's own directory is what it may read and what
+ * it may write, and there is no second place either call can reach. That is also why `edit`
  * is here rather than being a second `write`: a bot that may replace a whole note but not
  * correct one line of it will rewrite the note every time, and a working record rewritten
  * in full every turn is one nobody can read the history of.
  *
- * **`bash` is deliberately absent, and it is the only one that is.** It is not a file tool
- * with a wider root — it is the machine itself, and the ruling's "It has tools" paragraph
- * is about the set a bot is configured with, not a decision this seam may take on the
- * host's behalf. A tool the runtime does not execute stays out of the artifact too, so the
- * absence costs a bot nothing it was promised.
+ * **`bash` is here because the ruling lists it, and it is the only entry that needed a
+ * fence instead of a rule.** A shell names no path, so "relative to the bot's directory" is
+ * not a bound it can be given; `sandbox.ts` puts the kernel around it — no writing outside
+ * the bot's directory, no network, and none of the person's own files for reading. A
+ * machine without that fence refuses the call rather than running it unconfined.
  *
  * A tool named in the artifact and absent here is refused at bind (§ below), so this set
- * and `work-v12.json` are held against each other before the first turn.
+ * and `work-v13.json` are held against each other before the first turn.
  */
-const EXECUTABLE = new Set(['say', 'read', 'glob', 'grep', 'write', 'edit']);
+const EXECUTABLE = new Set(['say', 'bash', 'read', 'glob', 'grep', 'write', 'edit']);
 
 /**
  * How many times one turn may look something up before it has to answer.
@@ -143,6 +153,14 @@ const ARCHIVE_SAMPLE = '/tmp/seek/agents/work/archive (nothing filed yet)';
 export interface WorkServerOptions {
   /** The turn prompt artifact. The shipped `work-v1.json` when absent. */
   prompt?: WorkArtifact;
+  /**
+   * How a `bash` call is run, when that tool is offered and used.
+   *
+   * The real one is `runFenced` (`sandbox.ts`), and it is a seam for the reason `workFetch`
+   * is: what this layer has to be held to is that a call reaches a runner with the command
+   * the model wrote, not that the machine the test runs on has a working shell.
+   */
+  bash?: FenceRunner;
 }
 
 /**
@@ -265,6 +283,11 @@ export async function workOverServer(
     parameters: tool.parameters,
   }));
 
+  // The shell's runner, settled once at bind rather than looked up per call: a turn that
+  // offered `bash` and then found no way to run one would be the artifact and the runtime
+  // disagreeing, which is the failure this whole function's refusals exist to prevent.
+  const bash = options.bash ?? runFenced;
+
   return async (context: TurnContext): Promise<TokenUsage | void> => {
     const values = valuesOf(store, context);
     const assembled = assembleWorkPrompt(artifact, values);
@@ -330,7 +353,10 @@ export async function workOverServer(
       // there is no path from it to a room (`say.ts`).
       const looked: { call: ToolCall; text: string }[] = [];
       for (const call of answer.toolCalls) {
-        const text = run(store, context, call);
+        // Awaited, because one of them is a shell: every other call answers from the store
+        // and returns at once, and a `bash` call returns when the command it started is
+        // over — the turn is the only thing waiting, and the window is not blocked by it.
+        const text = await run(store, context, call, bash);
         // `say` answers with nothing: it has already done what it was asked, and a turn
         // that only spoke is finished. Anything that answers with words is a look, and a
         // look is only worth making if the model is asked again with the answer in hand.
@@ -389,7 +415,12 @@ function add(sofar: TokenUsage | null, more: TokenUsage): TokenUsage {
  * something, and the honest answer to an unreadable request is an error rather than a
  * shrug dressed as a quiet turn.
  */
-function run(store: SeekStore, context: TurnContext, call: ToolCall): string | undefined {
+function run(
+  store: SeekStore,
+  context: TurnContext,
+  call: ToolCall,
+  bash: FenceRunner,
+): Promise<string | undefined> | string | undefined {
   if (!EXECUTABLE.has(call.name)) {
     throw new Error(
       `the model called '${call.name}' and this runtime executes only ` +
@@ -427,6 +458,9 @@ function run(store: SeekStore, context: TurnContext, call: ToolCall): string | u
   }
   if (call.name === 'edit') {
     return edited(store, context, parsed as { path?: unknown; find?: unknown; replace?: unknown });
+  }
+  if (call.name === 'bash') {
+    return shelled(store, context, parsed as { command?: unknown }, bash);
   }
 
   const args = parsed as { room?: unknown; text?: unknown; mentions?: unknown };
@@ -875,6 +909,62 @@ function edited(
     `edited ${name}: replaced 1 occurrence of ${JSON.stringify(args.find)} with ` +
     `${JSON.stringify(args.replace)}. It is now ${Buffer.byteLength(next, 'utf8')} bytes.`
   );
+}
+/**
+ * `bash(command)`: run one command, in a shell the kernel keeps inside this bot's directory.
+ *
+ * **The one tool whose bound is not a name check.** Every other call here takes a path and is
+ * refused when the path leaves the bot's directory; a shell names no path, so the bound is
+ * `sandbox.ts` — writes only under the bot's own directory and a private scratch, no
+ * network, and no reading of the person's home outside it. That file states the rulings each
+ * denial serves, and what the fence does when the machine has none is a refusal.
+ *
+ * **The answer is the command's own words, both streams, with its exit status.** A shell is
+ * not a lookup that can be summarised: a model told "it worked" learns nothing it can act on,
+ * and one told the exit status and the output can decide whether to try again. Both are cut
+ * at `BASH_OUTPUT_LIMIT` and the cut is said out loud, because the box is re-sent with every
+ * look and an unbounded answer is the same long answer paid for on every round after it.
+ *
+ * **A command that ran and failed is not an error.** Non-zero exits are how a shell reports
+ * facts — `grep` finding nothing, `test -f` answering no — so this returns them as text. What
+ * does throw is a call this runtime cannot read: no command, or a command that is not a
+ * string, which is the same rule `say` and `read` are held to.
+ */
+async function shelled(
+  store: SeekStore,
+  context: TurnContext,
+  args: { command?: unknown },
+  bash: FenceRunner,
+): Promise<string> {
+  const command = typeof args.command === 'string' ? args.command.trim() : '';
+  if (command === '') {
+    throw new Error(
+      `the model called bash with command=${JSON.stringify(args.command)}, which is not a ` +
+        'command: the tool declares one string, and a shell started with nothing to run is ' +
+        'a call this runtime cannot read',
+    );
+  }
+
+  const places = placesFor(homeOf(store, context));
+  const result: FenceResult = await bash({
+    ...places,
+    command,
+    timeoutMs: BASH_TIMEOUT_MS,
+    outputLimit: BASH_OUTPUT_LIMIT,
+  });
+
+  // No fence, no command: the machine's own answer is the whole of what there is to say, and
+  // dressing it as an exit status would tell the model its command ran and failed.
+  if (result.refused === true) return result.output;
+
+  const how = result.timedOut
+    ? `the command was still running after ${Math.round(BASH_TIMEOUT_MS / 1000)} s, so it ` +
+      'was killed. What it had printed by then is below.'
+    : result.code === 0
+      ? 'the command exited 0.'
+      : `the command exited ${result.code === null ? 'on a signal' : result.code}.`;
+  const body = result.output.trim() === '' ? '(it printed nothing.)' : result.output.trimEnd();
+  return `${how}${result.cut ? ' The output was cut at the length one turn may read.' : ''}\n\n${body}`;
 }
 
 /**
