@@ -165,7 +165,12 @@ test('the rows appended to agents.yml name the bot by id, and the file still par
     assert.match(text, new RegExp(`- bot: ${made.botId}\\n    role: watch\\n    tools: \\[\\]\\n`))
     assert.match(
       text,
-      new RegExp(`- bot: ${made.botId}\\n    role: work\\n    tools: \\[say, read, glob, grep, write, edit\\]\\n`),
+      // The whole registry: the row is the permission ceiling, and naming only the tools
+      // today's artifact offers is what muted every bot on an upgrade (`src/work-server.ts`).
+      new RegExp(
+        `- bot: ${made.botId}\\n    role: work\\n    tools: \\[say, schedule, bash, read, write, ` +
+          `edit, glob, grep, subagent, submit_rant, boss\\]\\n`,
+      ),
     )
     assert.ok(text.includes('  - bot: Echo\n    role: watch\n'), 'the rows that were there are there')
 
@@ -183,7 +188,10 @@ test('the rows appended to agents.yml name the bot by id, and the file still par
       agents.map((agent) => [agent.role, agent.tools]),
       [
         ['watch', []],
-        ['work', ['say', 'read', 'glob', 'grep', 'write', 'edit']],
+        [
+          'work',
+          ['say', 'schedule', 'bash', 'read', 'write', 'edit', 'glob', 'grep', 'subagent', 'submit_rant', 'boss'],
+        ],
       ],
     )
   } finally {

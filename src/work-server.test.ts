@@ -1014,18 +1014,41 @@ test('a tool this runtime does not execute is still refused at the call', async 
   );
 });
 
-test('a roster whose work row does not allow what the prompt offers is refused at bind', async () => {
+test('a work row that does not allow `say` is refused at bind', async () => {
   const world = makeWorld();
   const recorder = fakeServer({});
   // One word, in the file `README.md` invites a reader to edit afterwards: `say` taken
-  // out of the row of the agent that is supposed to speak.
-  world.store.data.agents[world.agentA2].tools = [];
+  // out of the row of the agent that is supposed to speak. This is the one narrow row
+  // that is refused, because it is the one that leaves nothing to fall back on.
+  world.store.data.agents[world.agentA2].tools = ['read', 'glob'];
 
   await assert.rejects(
     () => workOverServer(world.store, world.botA, serverOf(recorder), { prompt: ARTIFACT }),
-    /the turn prompt offers 'say', 'read', 'glob', 'grep', 'write', 'edit' and the roster's work row allows nothing/,
+    /the roster's work row allows 'read', 'glob' and this turn can answer only through 'say'/,
     'the prompt and the allowlist are two files, and the bind is the only place both are open',
   );
+});
+
+test('a work row narrower than the prompt costs the tools it leaves out and not the voice', async () => {
+  const world = makeWorld();
+  const recorder = fakeServer({ toolCalls: [sayCall(world.room, 'the retry queue is empty')] });
+  // A row an older first run wrote: `say` and one way to look. The row is a ceiling and
+  // the artifact is the offer, so this turn is offered the one tool — and it answers.
+  world.store.data.agents[world.agentA2].tools = ['say'];
+
+  const decide = await workOverServer(world.store, world.botA, serverOf(recorder), {
+    prompt: ARTIFACT,
+  });
+  const record = await turnWith(world, decide, await entriesOf(world));
+
+  const chat = recorder.calls.find((call) => call.path === '/v1/chat/completions');
+  assert.ok(chat, 'the turn reached the model');
+  assert.deepEqual(
+    (chat.body.tools as { function: { name: string } }[]).map((one) => one.function.name),
+    ['say'],
+    'a tool the row does not allow is never offered, so the model cannot ask for it',
+  );
+  assert.equal(record.produced.length, 1, 'and a bot offered one tool still speaks');
 });
 
 test('the roster this repository ships allows everything the prompt it ships offers', async () => {

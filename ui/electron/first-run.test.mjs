@@ -103,9 +103,10 @@ test('a directory with nothing in it opens on a room whose bot answers', async (
       rows.map((row) => [row.role, row.tools]),
       [
         ['watch', []],
-        ['work', ['say', 'read', 'glob', 'grep', 'write', 'edit']],
+        ['work', ['say', 'schedule', 'bash', 'read', 'write', 'edit', 'glob', 'grep', 'subagent', 'submit_rant', 'boss']],
       ],
-      'a watch half that cannot write, and a work half that can speak and look back',
+      'a watch half that cannot write, and a work half whose row is the whole registry — ' +
+        'the ceiling, not the tools today’s artifact offers',
     )
 
     // And the bot holds those agents: a roster nobody applied would fail here.

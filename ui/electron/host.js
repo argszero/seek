@@ -127,15 +127,12 @@ agents:
     tools: []
   - bot: Echo
     role: work
-    # \`say\` is the only way into a room (checklist line 14), so a work agent without it
-    # could not answer at all; \`read\` is how it goes back to what a note folded away
-    # (\`archive.ts\`, and \`docs/host-rulings.md\` "The observation box"). \`glob\` and \`grep\` answer
-    # what that archive holds rather than one day of it, and \`write\` and \`edit\` are how it
-    # keeps something of its own: the same directory, and the one part of the tool set that
-    # changes what is on the disk. A row that allows less than the shipped prompt offers is
-    # refused when the prompt is bound to a server, so these six words and the shipped
-    # turn artifact (work-v11.json) are one decision written twice.
-    tools: [say, read, glob, grep, write, edit]
+    # The permission ceiling, and it names the whole registry (\`host-rulings.md\`,
+    # "The tools") rather than the tools today's artifact offers: a tool listed here that
+    # no artifact offers yet is never declared to a model and costs nothing, while a row
+    # narrower than the artifact would have to be edited by hand every time one arrives.
+    # \`say\` is the one entry the row cannot do without — it is the only way into a room.
+    tools: [say, schedule, bash, read, write, edit, glob, grep, subagent, submit_rant, boss]
 `
 
 /**
@@ -1134,10 +1131,9 @@ async function addMember(host, input) {
  *
  * **The two rows are the shipped ones**, `watch` and `work`, in the same order and with the
  * same tools a first run writes (`FIRST_RUN_ROSTER`): the half that decides cannot write and
- * calls nothing, and the half that answers has `say` — the only way into a room — `read`,
- * which is how it goes back to what a note folded away, and `glob` and `grep`, which find a
- * file or a word in what it filed. A bot with one row is a bot that either never decides or
- * can never speak.
+ * calls nothing, and the half that answers names the whole registry — the ceiling, not the
+ * tools today's artifact happens to offer. A bot with one row is a bot that either never
+ * decides or can never speak.
  */
 function rowsForNewBot(botId) {
   return (
@@ -1146,7 +1142,7 @@ function rowsForNewBot(botId) {
     '    tools: []\n' +
     `  - bot: ${botId}\n` +
     '    role: work\n' +
-    '    tools: [say, read, glob, grep, write, edit]\n'
+    '    tools: [say, schedule, bash, read, write, edit, glob, grep, subagent, submit_rant, boss]\n'
   )
 }
 

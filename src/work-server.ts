@@ -221,34 +221,45 @@ export async function workOverServer(
   }
 
   // What the model is offered and what this bot's agent may call are two lines in two
-  // files: the artifact names the tools, `agents.yml`'s work row allows them. Nothing
-  // ever compared the pair, and the whole cost of that showed up on the other side of
-  // the bind — a row edited to drop `say` (the README invites exactly that edit) left a
-  // bot that opened, listed its rooms, answered the first thing said to it with a turn
-  // error, and kept doing that for every message after. `say.ts` is not the place to
-  // catch it: by the time it refuses, the prompt has already promised the model the tool
-  // exists, which is the mis-description this refusal is for.
+  // files: the artifact names the tools, `agents.yml`'s work row allows them. A row
+  // edited to drop `say` (the README invites exactly that edit) leaves a bot that opens,
+  // lists its rooms, and answers the first thing said to it with a turn error — and every
+  // message after. `say.ts` is not the place to catch it: by the time it refuses, the
+  // prompt has already promised the model the tool exists, which is the mis-description
+  // the refusal below is for.
   //
   // A bot with no work row is nothing to compare against, and it never reaches here from
   // `main.ts` — `sceneOf` refuses a store whose bot has no one to answer before stage 2
   // is bound at all.
   const work = store.agentsOf(botId).find((agent) => agent.role === 'work');
-  if (work) {
-    const notAllowed = artifact.tools
-      .map((tool) => tool.name)
-      .filter((name) => !work.tools.includes(name));
-    if (notAllowed.length > 0) {
-      const allowed = work.tools.map((name) => `'${name}'`).join(', ') || 'nothing';
-      throw new Error(
-        `the turn prompt offers ${notAllowed.map((name) => `'${name}'`).join(', ')} and ` +
-          `the roster's work row allows ${allowed}: a model told to call a tool its own ` +
-          'row does not list asks for something that cannot happen, and the answer would ' +
-          'arrive mid-turn, as a failed call, rather than here as a line to edit',
-      );
-    }
+  if (work && !work.tools.includes('say')) {
+    const allowed = work.tools.map((name) => `'${name}'`).join(', ') || 'nothing';
+    throw new Error(
+      `the roster's work row allows ${allowed} and this turn can answer only through ` +
+        "'say': a bot whose row does not list it is woken with a full box and answers none " +
+        'of it, which is the one row edit that leaves nothing to fall back on',
+    );
   }
 
-  const tools: ChatTool[] = artifact.tools.map((tool) => ({
+  // **The row is a ceiling and the artifact is the offer, so the turn gets what both
+  // allow.** The one thing worth refusing is a row that lost `say` — the edit the
+  // README invites, and the only one that leaves a bot with a full box and no way to
+  // answer. Everything else a narrow row leaves out is a tool this turn is not offered,
+  // which costs it a capability and never its voice.
+  //
+  // A refusal over the whole set used to stand here, and it was wrong in one direction
+  // that took a release to show: `agents.yml` is a file the person owns and the artifact
+  // is a file this repository ships, so each time a tool was added the two drifted — and
+  // a row written by an older first run (`v0.1.17` wrote `[say, read]`, `v0.1.18` offers
+  // six) then refused at bind for **every** bot, which the window could only report as a
+  // model that was not ready. A ceiling that is quiet about what it excludes cannot do
+  // that.
+  const offered =
+    work === undefined
+      ? artifact.tools
+      : artifact.tools.filter((tool) => work.tools.includes(tool.name));
+
+  const tools: ChatTool[] = offered.map((tool) => ({
     name: tool.name,
     description: tool.description,
     parameters: tool.parameters,
