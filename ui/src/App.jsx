@@ -2390,12 +2390,14 @@ function WeightsRefused({ weights }) {
  * believe the drawing. A progress bar toward nothing is a promise in a picture.
  *
  * What the ruling does require is that the spend be **recorded and visible**, and that is
- * what this draws: the turns `turn.ts` wrote down, summed by the snapshot. `0 tokens` is
- * a real reading rather than a hole — the build that ships has no model server, its bot
- * answers through the kernel's placeholder, and a placeholder calls no model, so nothing
- * was spent. The title carries the per-bot split: the first question a cost raises is
- * *who* spent it, and the ruling's answer sends that reader to a persona or a gate, which
- * one total cannot reach.
+ * what this draws: today's turns, summed by the snapshot. **Today** is §8 item 6's own word
+ * (`docs/design/agent-lifecycle.md`), and the number says so in as many words rather than
+ * leaving a figure whose meaning changed quietly — the same room read "822 tokens" when the
+ * snapshot counted every turn it had ever run. `0 tokens today` is a real reading rather than
+ * a hole — the build that ships has no model server, its bot answers through the kernel's
+ * placeholder, and a placeholder calls no model, so nothing was spent. The title carries
+ * today's per-bot split: the first question a cost raises is *who* spent it, and the ruling's
+ * answer sends that reader to a persona or a gate, which one total cannot reach.
  */
 function Spend({ spend }) {
   if (!spend) return null
@@ -2410,7 +2412,7 @@ function Spend({ spend }) {
       data-spend-turns={spend.turns}
       data-spend-in={spend.input_tokens}
       data-spend-out={spend.output_tokens}
-      title={perBot === '' ? t('ui.chat.no-turn-yet') : perBot}
+      title={perBot === '' ? t('ui.chat.no-turn-today') : perBot}
     >
       {t('ui.chat.spend', { count: total })}
     </span>

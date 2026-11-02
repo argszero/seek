@@ -682,7 +682,7 @@ test('the chat page says nothing a catalogue did not say', () => {
     [/`stop addressing /, 'the mention chip title written into the markup'],
     [/`Forward into /, 'a forward destination title written into the markup'],
     [/`Message \$\{/, 'the composer hint built by concatenation'],
-    [/'no turn has run in this room yet'/, 'the spend title written into the markup'],
+    [/'no turn has run in this room today'/, 'the spend title written into the markup'],
     [/'that room'/, 'the fallback room name written into the handler'],
     [/'a picture'/, 'a picture named by the window rather than the catalogue'],
     [/'no words'/, 'a message with no words named by the window'],
@@ -697,8 +697,8 @@ test('the chat page says nothing a catalogue did not say', () => {
   // survive is the singular spelled out, and what a missing number format cannot survive is the
   // thousands separator.
   bindCatalogue(catalogueFor('en'))
-  assert.equal(t('ui.chat.spend', { count: 1 }), '1 token', 'one token, and `one` is English\'s')
-  assert.equal(t('ui.chat.spend', { count: 1204 }), '1,204 tokens', 'a count is the number format\'s too')
+  assert.equal(t('ui.chat.spend', { count: 1 }), '1 token today', 'one token, and `one` is English\'s')
+  assert.equal(t('ui.chat.spend', { count: 1204 }), '1,204 tokens today', 'a count is the number format\'s too')
   bindCatalogue(catalogueFor('zh-CN'))
   assert.equal(
     t('ui.chat.spend', { count: 1 }).replace('1', 'N'),

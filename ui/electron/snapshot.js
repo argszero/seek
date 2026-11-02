@@ -321,6 +321,28 @@ function entriesById(store) {
 }
 
 /**
+ * The calendar day the reader is living in, for an instant the record holds.
+ *
+ * `docs/design/agent-lifecycle.md` §8 item 6 asks for what a room has spent **today**, so
+ * the day this answers for is the reader's own: somebody looking at a room header at 09:00
+ * wants the morning's turns, not the ones since midnight UTC. That is a different question
+ * from the one `src/archive.ts`'s `dayOf()` answers when it names a day file, where the cut
+ * is deliberately the recorded instant's own — an entry is filed under the day it arrived,
+ * and converting that would file one day's messages under another's name. Both are small;
+ * neither is the other's rule.
+ *
+ * An instant the record should not hold — a hand-edited store — gives `null` rather than
+ * throwing. This is read while a window is being drawn, and one unreadable row must not
+ * take the window down with it.
+ */
+function readingDayOf(at) {
+  const when = new Date(at)
+  if (Number.isNaN(when.getTime())) return null
+  const pad = (value) => String(value).padStart(2, '0')
+  return `${when.getFullYear()}-${pad(when.getMonth() + 1)}-${pad(when.getDate())}`
+}
+
+/**
  * What the bots in each room have spent, read off the ledger the kernel already keeps.
  *
  * `docs/host-rulings.md` — "No spending cap" — settles this whole shape: cost is
@@ -339,12 +361,22 @@ function entriesById(store) {
  * A reminder's turn has no room (§12 — it is the bot's own work, not a contribution to a
  * room), so it is counted against no room; a room's figure is therefore what was spent
  * *in* it, which is the only thing a room's header can honestly show.
+ *
+ * **Today, not ever.** §8 item 6's own words are "how much it has spent today", and the day
+ * comes off `turn.started_at` — an instant the kernel already writes. A turn from an earlier
+ * day is left out of the figure rather than aged into it, and `readingDayOf()` above is the
+ * one place that says which day a given instant belongs to.
  */
-function spendByRoom(store) {
+function spendByRoom(store, today) {
   const roomOf = roomOfSession(store)
 
   const byRoom = new Map()
   for (const turn of store.data.turns) {
+    // §8 item 6 asks for today, so a turn from an earlier day is not this figure's business.
+    // The header used to carry every turn the room had ever had, which is the one reading the
+    // design does not ask for: a room that talked all of last week showed a number no reader
+    // could attribute to anything they had done.
+    if (readingDayOf(turn.started_at) !== today) continue
     const roomId = roomOf.get(turn.session_id)
     if (roomId === undefined) continue
 
@@ -648,7 +680,15 @@ function botStatesOf(activity, people) {
  * the store holds no such field: the reading is true for a moment and would go stale by the
  * next write.
  */
-function snapshotOf(store, storeFile, stage1 = null, stage2 = null, storeRefusal = null, activity = null) {
+function snapshotOf(
+  store,
+  storeFile,
+  stage1 = null,
+  stage2 = null,
+  storeRefusal = null,
+  activity = null,
+  today = null,
+) {
   // Read once, so the halves and the one fact drawn from both cannot disagree — a window
   // that listed a quiet bot in one field and not the other would be two readings of one
   // state.
@@ -676,7 +716,10 @@ function snapshotOf(store, storeFile, stage1 = null, stage2 = null, storeRefusal
     }
   }
 
-  const spent = spendByRoom(store)
+  // The day the header's figure is about (§8 item 6's "today"), named by the caller when it has
+  // one so that a test — or a window drawing the day it was opened on — is not at the mercy of
+  // the clock being read mid-snapshot.
+  const spent = spendByRoom(store, today ?? readingDayOf(Date.now()))
   // Read once, for the same reason `spent` is: one table read beats one read per message.
   const silences = silenceByRoom(store)
   // §8 item 2, read off the record once for the same reason.
@@ -850,4 +893,4 @@ function snapshotOf(store, storeFile, stage1 = null, stage2 = null, storeRefusal
   }
 }
 
-module.exports = { meOf, peopleOf, namedOf, snapshotOf }
+module.exports = { meOf, peopleOf, namedOf, snapshotOf, readingDayOf }

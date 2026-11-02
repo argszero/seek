@@ -61,7 +61,7 @@
     "ui.chat.more": "更多",
     "ui.chat.no-messages": "还没有消息",
     "ui.chat.no-room": "这个存储里没有房间",
-    "ui.chat.no-turn-yet": "这个房间还没有跑过回合",
+    "ui.chat.no-turn-today": "这个房间今天还没有跑过回合",
     "ui.chat.nothing-said": "这里还没有人说话",
     "ui.chat.open-thread-hint": "打开这个话题",
     "ui.chat.opening-picture": "正在打开图片…",
@@ -85,7 +85,7 @@
     "ui.chat.said.picture": "一张图片",
     "ui.chat.send": "发送",
     "ui.chat.spend": {
-      "other": "{count} 个 token"
+      "other": "今天 {count} 个 token"
     },
     "ui.chat.stop-addressing": "取消点名 {name}",
     "ui.chat.stop-quoting": "取消引用",
