@@ -136,7 +136,10 @@ test('a build with no server in it says so, and starts nothing', async () => {
 
     assert.equal(result.origin, undefined)
     assert.match(result.refusal, /carries no model server/, 'it says which kind of failure this is')
-    assert.match(result.refusal, /absent\/llama-server/, 'and names the path it looked at')
+    assert.ok(
+      result.refusal.includes(join('absent', 'llama-server')),
+      'and names the path it looked at',
+    )
     assert.equal(calls.length, 0, 'nothing was spawned')
   } finally {
     await room.done()
@@ -266,8 +269,10 @@ test('a server that dies on start-up is refused with its own last words', async 
 })
 
 test('the packaged paths are the ones the manifest ships', () => {
+  // The argument defaults to the running platform, which is what a build wants and what a test
+  // cannot assume: this is the macOS package, so it asks for the name macOS uses.
   assert.equal(
-    bundledServerPath('/Applications/Seek.app/Contents/Resources'),
+    bundledServerPath('/Applications/Seek.app/Contents/Resources', 'darwin'),
     join('/Applications/Seek.app/Contents/Resources', 'server', 'llama-server'),
     'the binary sits under the resources directory the package is built with',
   )

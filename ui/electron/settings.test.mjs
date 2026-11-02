@@ -49,10 +49,8 @@ async function scratch() {
 }
 
 test('the settings file sits in the app data directory', () => {
-  assert.equal(
-    defaultSettingsPath('/Users/someone/Library/Application Support/Seek'),
-    '/Users/someone/Library/Application Support/Seek/settings.json',
-  )
+  const appData = '/Users/someone/Library/Application Support/Seek'
+  assert.equal(defaultSettingsPath(appData), join(appData, 'settings.json'))
 })
 
 test('a file that is not there is no settings and no refusal', async () => {
@@ -138,8 +136,13 @@ test('a save writes the endpoint, at 0600, and leaves no temporary behind', asyn
   const path = join(dir, 'settings.json')
   try {
     await writeSettings(path, { llm: { baseUrl: 'https://endpoint.test/v1', model: 'a-model' } })
-    const mode = (await stat(path)).mode & 0o777
-    assert.equal(mode.toString(8), '600')
+    // `0600` is a POSIX claim. Windows keeps no such bits and reports every file as `0666`
+    // however it was asked for, so the claim is checked where it can be true and named where it
+    // cannot, rather than dropped without a word.
+    if (process.platform !== 'win32') {
+      const mode = (await stat(path)).mode & 0o777
+      assert.equal(mode.toString(8), '600')
+    }
     const written = JSON.parse(await readFile(path, 'utf8'))
     assert.equal(written.llm.baseUrl, 'https://endpoint.test/v1')
     assert.equal(written.llm.model, 'a-model')

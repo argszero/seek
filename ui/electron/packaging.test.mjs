@@ -99,7 +99,9 @@ test('the kernel is unpacked exactly where the app already looks for it', () => 
 
     // Packed: the same string leaves the asar, and `extraResources` has to have put the
     // kernel at the other end of it. This is the whole coupling, in one assertion.
-    const packed = resolve(packedElectron, specifier)
+    // Joined, not resolved: resolving a root-relative path on Windows attaches the current
+    // drive, and this assertion is about where the file sits inside the package.
+    const packed = join(packedElectron, specifier)
     assert.ok(
       packed.startsWith(join(resources, kernelEntry.to) + sep),
       `${specifier} lands on ${packed}, which extraResources does not fill`,

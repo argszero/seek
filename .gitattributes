@@ -1,0 +1,21 @@
+# The bytes on disk are the bytes in the commit, on every platform.
+#
+# Windows checks text out with CRLF by default, and this repository's tests read its own source
+# and compare it line by line: a `\n` in the expectation against a `\r\n` on disk fails every
+# such test on a runner that is otherwise fine. The first Windows build failed exactly that way —
+# fifteen interface tests, none of them about Windows. Pinning the ending here is what makes "the
+# suite is green" mean the same thing on both runners.
+* text=auto eol=lf
+
+# Anything whose bytes are its meaning keeps its bytes.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.icns binary
+*.zip binary
+*.exe binary
+*.gguf binary
+*.dylib binary

@@ -219,7 +219,10 @@ test('a blank variable is not a variable, on either side of the rule', async () 
 })
 
 test('the path is the one the config lives at, under the home it is given', () => {
-  assert.equal(defaultConfigPath('/Users/someone'), '/Users/someone/.emrg/config.toml')
+  // Joined, not spelled: the claim is which file sits under that home, and the separator is the
+  // platform's business. A test that writes its own separator passes on macOS and fails on
+  // Windows with the code unchanged.
+  assert.equal(defaultConfigPath('/Users/someone'), join('/Users/someone', '.emrg', 'config.toml'))
 })
 
 test('the table reader keeps the last value of a repeated key, as a TOML file means it', () => {
