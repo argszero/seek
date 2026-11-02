@@ -29,6 +29,15 @@
  * a tool whose promise quietly depends on the host. `fenceFor` answers with what is missing
  * and the call is refused in words rather than spent.
  *
+ * **A platform that never had it is a second fact, not the same one.** `bash` is offered on
+ * every platform this build ships to, so where the kernel cannot fence a shell the call is
+ * refused with the rest — but the sentence has to be about the platform. Telling a bot on
+ * Windows that `/usr/bin/sandbox-exec` "is not on this machine" describes a broken install,
+ * and a model reading it goes looking for a file that will never be there; what is true is
+ * that this build knows one fence, the fence is macOS's, and this host has no way to bound
+ * the call. Read as one fact, the two sentences are the same refusal; read by the model they
+ * differ in the only way that matters, which is whether trying again could ever help.
+ *
  * **What a profile means is the kernel's answer, not this file's.** The text is checked as
  * text below; that the denials actually deny was measured on the machine this ships to and
  * is recorded in `docs/host-rulings.md` beside the ruling it serves. A denial that reads
@@ -43,6 +52,15 @@ import { join } from 'node:path';
 
 /** Where the profile is enforced from. Part of macOS; absent is a refusal. */
 const SANDBOX_EXEC = '/usr/bin/sandbox-exec';
+
+/**
+ * The platform whose kernel applies that profile — the same fact as the path above, stated
+ * separately because the two absences are not the same absence: `sandbox-exec` missing from
+ * macOS is a machine that has lost something, and on any other platform there is nothing to
+ * lose. Named as the one platform it holds for rather than as the one it does not, so a
+ * platform this build was never measured on reads as unfenced instead of as excluded.
+ */
+const FENCED_PLATFORM = 'darwin';
 
 /** The shell a call runs in: no login files, so nothing a person aliased is in reach. */
 const SHELL = '/bin/bash';
@@ -110,13 +128,33 @@ export interface Fence {
 }
 
 /**
- * The fence for one call, or the sentence saying what this machine is missing.
+ * The fence for one call, or the sentence saying what this machine cannot do.
  *
  * The profile travels on the command line (`-p`) rather than in a file: it is a few hundred
  * bytes, it holds no secret — the paths are ones the bot already knows — and a file would be
  * a second thing to write, race over and clean up per call.
+ *
+ * **The platform is a parameter for the same reason `probe` is one.** A test cannot run this
+ * suite on Windows, so a suite that could only ever see macOS would leave the sentence a
+ * Windows bot reads unpinned — and that sentence is the whole of what this branch exists to
+ * get right. The default is the machine the call is really on.
  */
-export function fenceFor(request: FenceRequest): Fence | { refusal: string } {
+export function fenceFor(
+  request: FenceRequest,
+  platform: string = process.platform,
+): Fence | { refusal: string } {
+  // Two facts, asked in this order because the first one explains the second: a platform this
+  // build cannot fence is not a machine that has lost its fence, and only the second of those
+  // is something a person could ever put right.
+  if (platform !== FENCED_PLATFORM) {
+    return {
+      refusal:
+        'this platform is not one this build can fence a shell on: the fence it knows is ' +
+        "macOS's `sandbox-exec`, and a bot's shell runs only inside a fence — this build " +
+        'will not run one outside it, so the call is refused rather than answered without ' +
+        'the bound every other tool here has',
+    };
+  }
   if (!existsSync(SANDBOX_EXEC)) {
     return {
       refusal:

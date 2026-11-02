@@ -7,7 +7,8 @@
  * measured on the machine this ships to and is recorded beside the ruling it serves
  * (`docs/host-rulings.md`, "The tools"). What it can prove is the thing that failed here
  * once already, silently: that the profile says what the ruling says, that the shell is
- * started inside it, and that a machine without `sandbox-exec` refuses rather than runs.
+ * started inside it, and that a machine without `sandbox-exec` — or a platform that never
+ * had one — refuses rather than runs.
  */
 
 import assert from 'node:assert/strict';
@@ -63,7 +64,10 @@ test('a path with a quote in it cannot end the string it is in', () => {
 });
 
 test('the shell is started inside the profile, in the bot’s own directory, with no sign of the person’s environment', () => {
-  const fence = fenceFor({ home: HOME, scratch: SCRATCH, person: PERSON, command: 'wc -l notes.md' });
+  const fence = fenceFor(
+    { home: HOME, scratch: SCRATCH, person: PERSON, command: 'wc -l notes.md' },
+    'darwin',
+  );
   assert.ok(!('refusal' in fence), 'a machine with sandbox-exec runs the call');
 
   assert.equal(fence.file, '/usr/bin/sandbox-exec', 'the fence is the kernel’s, not this file’s');
@@ -80,9 +84,24 @@ test('the shell is started inside the profile, in the bot’s own directory, wit
 });
 
 test('a bot with no directory has nowhere to fence a shell, and is refused in words', () => {
-  const fence = fenceFor({ home: '', scratch: SCRATCH, person: PERSON, command: 'ls' });
+  const fence = fenceFor({ home: '', scratch: SCRATCH, person: PERSON, command: 'ls' }, 'darwin');
   assert.ok('refusal' in fence);
   assert.match(fence.refusal, /no directory on this machine/);
+});
+
+test('a platform this build cannot fence is refused as a platform, not as a machine missing a file', () => {
+  // The sentence a Windows bot reads. `bash` is offered there like everywhere else, so the call
+  // is refused — but `/usr/bin/sandbox-exec` "is not on this machine" describes a broken
+  // install, and a model told that goes looking for a file that is never coming. What is true
+  // is that the one fence this build knows belongs to macOS and this host cannot bound the call
+  // at all, which is the only reading a turn cannot mistake for something to retry.
+  for (const platform of ['win32', 'linux']) {
+    const fence = fenceFor({ home: HOME, scratch: SCRATCH, person: PERSON, command: 'ls' }, platform);
+    assert.ok('refusal' in fence, `${platform} gets no shell, so there is a refusal to read`);
+    assert.match(fence.refusal, /not one this build can fence a shell on/, 'it names the fact');
+    assert.match(fence.refusal, /macOS/, 'and the one fence this build does know, so the reason is not a mystery');
+    assert.doesNotMatch(fence.refusal, /is not on this machine/, 'it is not read as a missing file');
+  }
 });
 
 test('a machine that will not apply the fence refuses the call, and no command is run', async () => {
