@@ -383,6 +383,62 @@ function spendByRoom(store) {
 const NOTHING_SPENT = { turns: 0, input_tokens: 0, output_tokens: 0, bots: [] }
 
 /**
+ * Who is in the middle of answering each message — the second half of §8 item 4.
+ *
+ * The work order spells the whole sentence out: *"'Why did it ignore me?' is expandable:
+ * translate the `reason` into plain language ('this was not addressed to me, and someone else
+ * is already answering')"*. The first clause has been on the screen since the silence line
+ * landed; **the second one is the fact the record holds and nothing read**. A bot that is
+ * working has sent nothing yet, so a room where an answer is on its way looked exactly like a
+ * room where nobody was coming — and the reader's next move, asking again, is what that
+ * mistake costs.
+ *
+ * **Unfinished is the whole test.** `turn.ts` writes `ended_at` in its `finally`, so a row
+ * without it is a decision that has not come in yet. This is the same field `silenceByRoom`
+ * reads the other way round for `nothing-sent` (there: closed, and produced no message), so one
+ * turn can never answer both — the two readings partition the ledger rather than overlapping.
+ *
+ * **The join is the ledger's own, not a counter beside it.** A turn names the entries that woke
+ * it (`src/turn.ts`, `Turn.entries`) and an entry names its message (`src/delivery.ts`), so
+ * "which message is this bot answering" is a read. A turn woken by several entries is answering
+ * all of them, which is the same multiplicity the `ignore` reading has.
+ *
+ * Read once per snapshot, for the reason `silenceByRoom` is: the inbox is unbounded, so asking
+ * this per message would be quadratic in a room's life.
+ */
+function answeringByRoom(store) {
+  const roomOf = roomOfSession(store)
+  const entryById = entriesById(store)
+
+  const byRoom = new Map()
+  for (const turn of store.data.turns) {
+    if (turn.ended_at !== undefined) continue
+    const roomId = roomOf.get(turn.session_id)
+    if (roomId === undefined) continue
+
+    const agent = store.data.agents[turn.agent_id]
+    const bot = agent === undefined ? undefined : store.data.bots[agent.bot_id]
+    if (bot === undefined) continue
+    // A bot that has left the room is not answering in it: its turn may still be on the
+    // record, but "it is answering you" over a room that does not hold it is a sentence about
+    // someone who is not there.
+    if (!store.membershipsOf(roomId).some((own) => own.principal_id === bot.id)) continue
+
+    const byMessage = byRoom.get(roomId) ?? new Map()
+    for (const id of Array.isArray(turn.entries) ? turn.entries : []) {
+      const entry = entryById.get(id)
+      if (entry === undefined || entry.message_id === undefined) continue
+      const row = byMessage.get(entry.message_id) ?? []
+      if (row.some((one) => one.id === bot.id)) continue
+      row.push({ id: bot.id, name: nameOfBot(bot, bot.id) })
+      byMessage.set(entry.message_id, row)
+    }
+    byRoom.set(roomId, byMessage)
+  }
+  return byRoom
+}
+
+/**
  * Who read a message and said nothing, per room and per message.
  *
  * A bot that did not answer leaves no message behind, so nothing in the room's log says it was
@@ -422,8 +478,17 @@ const NOTHING_SPENT = { turns: 0, input_tokens: 0, output_tokens: 0, bots: [] }
  * **A bot no longer in the room is not read.** Its verdict and its turn are still on the
  * record, but "it stayed out of this" printed over a room that does not hold it is a sentence
  * about someone who is not there.
+ *
+ * **A `not-addressed` entry also carries who is answering instead** (`answeringByRoom`), and a
+ * `nothing-sent` one does not. That is not a gap: §8 item 4's sentence is the only one with a
+ * slot for it ("… this was not addressed to me, and someone else is already answering"), while
+ * a bot that ran a turn and closed it has already decided — another bot's open turn explains
+ * nothing about it, and carrying a list the only sentence for that row cannot name would be a
+ * second reading of one fact that can disagree with the first.
  */
 function silenceByRoom(store) {
+  const answering = answeringByRoom(store)
+
   const byRoom = new Map()
   for (const room of Object.values(store.data.rooms)) {
     const byMessage = new Map()
@@ -434,7 +499,18 @@ function silenceByRoom(store) {
         if (entry.verdict !== 'ignore' || entry.message_id === undefined) continue
         const row = byMessage.get(entry.message_id) ?? []
         if (row.some((one) => one.id === bot.id)) continue
-        row.push({ id: bot.id, name: nameOfBot(bot, bot.id), because: 'not-addressed' })
+        // Everyone mid-turn on this message, minus this bot: a bot cannot be silent here and
+        // answering there, but the filter costs one line and keeps the sentence true if that
+        // ever changes.
+        const elsewhere = (answering.get(room.id)?.get(entry.message_id) ?? []).filter(
+          (one) => one.id !== bot.id,
+        )
+        row.push({
+          id: bot.id,
+          name: nameOfBot(bot, bot.id),
+          because: 'not-addressed',
+          answering: elsewhere,
+        })
         byMessage.set(entry.message_id, row)
       }
     }
@@ -733,9 +809,13 @@ function snapshotOf(store, storeFile, stage1 = null, stage2 = null, storeRefusal
       // stayed out leaves no message, so this list is the only trace of it the room's log can
       // carry, and each entry names which reading it is: `not-addressed` (the judgement wrote
       // `ignore`, and the message was not for that bot) or `nothing-sent` (a turn ran, closed
-      // and produced no message — §8 item 5). The words are the catalogue's; this layer carries
-      // the fact and the window chooses the sentence. See `silenceByRoom`, which also says what
-      // it deliberately leaves out: a turn still deciding, and one that ran no model.
+      // and produced no message — §8 item 5). A `not-addressed` entry also names who is
+      // answering instead (`answering`), which is item 4's second clause: the bot that is
+      // working has sent nothing yet, so without it a room with an answer on the way drew the
+      // same nothing as a room where nobody was coming. The words are the catalogue's; this
+      // layer carries the fact and the window chooses the sentence. See `silenceByRoom`, which
+      // also says what it deliberately leaves out: a turn still deciding, and one that ran no
+      // model.
       silent: silences.get(room.id)?.get(message.id) ?? [],
       // **Whether the bot chose to speak, or answered something said to it** — §8 item 2,
       // §10.2. `true` is "it came to find you", `false` is "it answered you", and `null` is

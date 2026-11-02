@@ -39,6 +39,10 @@
     "ui.chat.deleted": "This message was deleted",
     "ui.chat.silent": "{names} did not answer",
     "ui.chat.silent-why": "{name} did not answer: this was not addressed to it",
+    "ui.chat.silent-why-answering": {
+      "one": "{name} did not answer: this was not addressed to it, and {others} is answering",
+      "other": "{name} did not answer: this was not addressed to it, and {others} are answering"
+    },
     "ui.chat.silent-why-nothing": "{name} did not answer: it read this, and sent nothing",
     "ui.chat.state.asleep": "asleep — nothing to read",
     "ui.chat.state.watching": "watching — something to read, not read yet",

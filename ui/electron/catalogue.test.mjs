@@ -83,6 +83,10 @@ const SAMPLES = {
   // The bots a missing model leaves quiet, already joined by `joinList()` for the same reason
   // `hosts` is: a list's form is this layer's, so the entry receives the phrase.
   bots: 'Echo and Scout',
+  // The bots that are answering instead — the same phrase for the same reason, and the one
+  // whose key is a plural entry because English needs "Echo is answering" and "Echo and Scout
+  // are": the count is supplied by the loop, the names by this sample.
+  others: 'Echo and Scout',
   // The room panel's two. `when` is an instant already written in the language's form —
   // `when()` in `catalogue.mjs` is what writes it, exactly as `size()` writes `got`/`all` — and
   // `tag` is the label a person typed on the room, which is theirs and stays as they wrote it.
