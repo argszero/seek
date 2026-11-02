@@ -381,6 +381,23 @@ function roomTagOf(room: string | undefined, artifact: { entryRoomLine?: string 
   return line === undefined ? room : fill(line, { room });
 }
 
+/**
+ * How long ago an entry arrived, as a fragment — or nothing at all.
+ *
+ * The fact is `age` on the entry (a compact `9d`, measured by the box) and the words
+ * around it are the artifact's `entryAgeLine`, for `roomTagOf`'s reason: a model told
+ * `9d` beside a stamp has to be told what the `9d` is, and that sentence is nobody's but
+ * the file's. An entry with no measured age fills `''`, and because the fragment carries
+ * its own leading punctuation the line is then byte for byte the line it was before any
+ * of this existed — which is what keeps a caller that hands no clock from leaving
+ * `,  ago` in front of a model.
+ */
+function ageTagOf(age: string | undefined, artifact: { entryAgeLine?: string }): string {
+  if (age === undefined || age === '') return '';
+  const line = artifact.entryAgeLine;
+  return line === undefined ? age : fill(line, { age });
+}
+
 /** One template, filled in a single pass. */
 function fill(template: string, values: Record<string, string>): string {
   return template.replace(/\{(\w+)\}/g, (whole, name: string) => values[name] ?? whole);
@@ -717,6 +734,12 @@ export interface WorkArtifact {
    * writes ` [{room}]` prints nothing at all for a reminder rather than an empty bracket.
    */
   entryRoomLine?: string;
+  /**
+   * How an entry's age is said, as a fragment the file owns — `, {age} ago` in the shipped
+   * one. Filled for an entry whose age was measured and left empty for one that was not,
+   * so a caller that hands no clock prints exactly the line it printed before.
+   */
+  entryAgeLine?: string;
   /** The parts, in the order they are rendered. */
   parts: WorkPart[];
   /**
@@ -801,6 +824,17 @@ export interface WorkValues {
    */
   turns?: string;
   /**
+   * How long ago this bot last spoke in this room — absent until it has spoken there.
+   *
+   * The other number §7's "No sense of time" row names, and the one a bot cannot work out
+   * for itself: the room's lines carry stamps and its own last words may not even be in
+   * the box (its message wakes everyone else, so it produced no entry of its own). The
+   * box measures it (`box.ts`, `BoxElapsed.spoke`); this is the value the artifact quotes.
+   * Absent rather than `0s`, because zero says "a moment ago" and a bot that has never
+   * spoken here has no last word to be reminded of.
+   */
+  silence?: string;
+  /**
    * The observations since that note, **oldest first**.
    *
    * Each carries when it landed, as the record timestamps it (`Observation.delivered_at`),
@@ -810,23 +844,30 @@ export interface WorkValues {
    * a reply from an answer to something said seven days earlier — and `work-v5`'s own
    * parts ask it to say when it will know something works and when it looks again.
    *
-   * The value is the stored stamp and never a phrase like "a week ago": that would need
-   * a clock reading at assembly time, which is a separate question this artifact does
-   * not answer (a `now` is not in the values, and the no-copy rule below is the same
-   * rule — the record's own words rather than this module's).
+   * `at` is the stored stamp. `age` is how long ago that was, as a compact duration the
+   * box measured when it assembled (`box.ts`, `BoxElapsed`) — measured once, at one
+   * instant, rather than left to the model, which can read two stamps and not subtract
+   * them. Absent reads as no age, which is the caller that handed no clock reading.
    *
    * `picture` says the message carried one. A boolean rather than a sentence, because
    * the sentence is the artifact's `pictureLine`: this field reports the fact, the file
    * decides how to say it. Absent reads as no picture, which is what a caller that does
    * not report it — the calibration driver's rows — actually knows.
    */
-  entries: { sender: string; text: string; at: string; picture?: boolean; room?: string }[];
+  entries: {
+    sender: string;
+    text: string;
+    at: string;
+    age?: string;
+    picture?: boolean;
+    room?: string;
+  }[];
 }
 
 /**
  * The shipped turn artifact's location, beside this module.
  *
- * `work-v13.json` ships; `work-v1.json` through `work-v12.json` stay beside it. A prompt is
+ * `work-v14.json` ships; `work-v1.json` through `work-v13.json` stay beside it. A prompt is
  * versioned rather than edited in place, because `calibration/work/` measured v1 and a
  * record that quotes a prompt the tree has changed describes a run nobody can re-read
  * — `work-calibration.test.ts` holds that pair together. What v2 added is the two parts
@@ -894,9 +935,20 @@ export interface WorkValues {
  * person's own files for reading. The entry's words say exactly that, because a model that
  * believes it may write anywhere would spend a turn discovering otherwise. No part moves,
  * and no other tool changes.
+ *
+ * What v14 adds is time, in the two places `agent-lifecycle.md` §7 says it has to be —
+ * *"every tick injects 'how long since you last spoke in this room' and 'how old this
+ * message is'"*. Until v14 those were the facts a turn had and could not use: `at` gave
+ * every entry a stamp and nothing gave it a clock, so a message said ten minutes ago and
+ * one said ten days ago arrived as two stamps a model can compare digit by digit and not
+ * subtract. The box measures both now, once, when it is assembled (`box.ts`,
+ * `BoxElapsed`), and this file says them: `{age}` on the entry line, beside the stamp it
+ * belongs to, and one new part for `{silence}`, the bot's own last word in this room. The
+ * part is conditional in the ordinary way: a bot that has never spoken in the room is
+ * handed no silence, the part is skipped, and what it reads is the v13 text.
  */
 export function shippedWorkPromptPath(): URL {
-  return new URL('./prompts/work-v13.json', import.meta.url);
+  return new URL('./prompts/work-v14.json', import.meta.url);
 }
 
 /**
@@ -966,6 +1018,7 @@ export function assembleWorkPrompt(
     memories: values.memories ?? '',
     others: values.others ?? '',
     turns: values.turns ?? '',
+    silence: values.silence ?? '',
   };
 
   // `afterSystem` opens the user turn rather than closing the system block: it is
@@ -992,6 +1045,7 @@ export function assembleWorkPrompt(
             // leaves an unknown placeholder whole, so a site left out would print
             // `{picture}` at a model rather than say nothing.
             picture: entry.picture === true ? (artifact.pictureLine ?? '') : '',
+            age: ageTagOf(entry.age, artifact),
             room: roomTagOf(entry.room, artifact),
           }),
           part.after,
@@ -1023,6 +1077,7 @@ const WORK_FACTS = [
   'memories',
   'others',
   'turns',
+  'silence',
 ] as const;
 
 /** The four a bot may simply not have, in the order an error message lists them. */
@@ -1051,6 +1106,7 @@ function isSkippable(name: unknown): boolean {
     name === 'memories' ||
     name === 'others' ||
     name === 'turns' ||
+    name === 'silence' ||
     isOptionalFact(name)
   );
 }
@@ -1094,6 +1150,12 @@ function assertWorkArtifact(value: unknown, source: string): WorkArtifact {
     (typeof artifact.entryRoomLine !== 'string' || artifact.entryRoomLine.trim() === '')
   ) {
     return fail('`entryRoomLine` must be a non-empty string when present, or be left out');
+  }
+  if (
+    artifact.entryAgeLine !== undefined &&
+    (typeof artifact.entryAgeLine !== 'string' || artifact.entryAgeLine.trim() === '')
+  ) {
+    return fail('`entryAgeLine` must be a non-empty string when present, or be left out');
   }
   if (!Array.isArray(artifact.parts) || artifact.parts.length === 0) {
     return fail('`parts` must be a non-empty array');
@@ -1157,7 +1219,13 @@ function assertWorkArtifact(value: unknown, source: string): WorkArtifact {
     }
 
     for (const name of placeholdersIn(row.text)) {
-      if (name === 'sender' || name === 'text' || name === 'at' || name === 'picture') {
+      if (
+        name === 'sender' ||
+        name === 'text' ||
+        name === 'at' ||
+        name === 'age' ||
+        name === 'picture'
+      ) {
         if (row.each !== 'entry') {
           return fail(
             `${where} fills {${name}} without \`each: "entry"\`, so it has nothing to fill from`,
@@ -1170,6 +1238,14 @@ function assertWorkArtifact(value: unknown, source: string): WorkArtifact {
           return fail(
             `${where} fills {picture}, and this artifact declares no \`pictureLine\` to put ` +
               "there: the word for a picture is the file's to say",
+          );
+        }
+        // The same rule for the age: `9d` dropped into a bracket is a number nothing
+        // explains, and the words around it are the file's or nobody's.
+        if (name === 'age' && artifact.entryAgeLine === undefined) {
+          return fail(
+            `${where} fills {age}, and this artifact declares no \`entryAgeLine\` to put ` +
+              "there: how an age is said is the file's to say",
           );
         }
         continue;
@@ -1265,6 +1341,7 @@ function assertWorkArtifact(value: unknown, source: string): WorkArtifact {
     afterSystem: artifact.afterSystem,
     ...(artifact.pictureLine === undefined ? {} : { pictureLine: artifact.pictureLine }),
     ...(artifact.entryRoomLine === undefined ? {} : { entryRoomLine: artifact.entryRoomLine }),
+    ...(artifact.entryAgeLine === undefined ? {} : { entryAgeLine: artifact.entryAgeLine }),
     parts,
     tools,
   };

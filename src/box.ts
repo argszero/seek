@@ -1,7 +1,7 @@
 /**
  * The observation box: what a judgement actually reads.
  *
- * `docs/design/agent-lifecycle.md` §3 ("The observation box") names four parts,
+ * `docs/design/agent-lifecycle.md` §3 ("The observation box") names five parts,
  * and this file assembles them — it does not decide any of them:
  *
  * | Part | Where it comes from |
@@ -10,6 +10,17 @@
  * | **Delta** | the record's entries after that note's consumed-to point (`deltaFor`) |
  * | **Last verdict** | read off the entry the loop wrote it on — never a second copy |
  * | **Question set** | the caller's (`agents.yml`), absent until a ruling fixes its shape |
+ * | **Elapsed** | a clock reading, and the durations it makes of the record's own stamps (`elapsedOf`) |
+ *
+ * **The fifth part is how old the box is, and it adds no stored field.** §7 lists
+ * "No sense of time" as a failure and says what answers it — *"how long since you last
+ * spoke in this room"* and *"how old this message is"* — against a record that already
+ * carries both stamps those questions need: `Observation.delivered_at` says when an
+ * entry arrived and `Message.created_at` says when a message was written. What neither
+ * reader can do is subtract them. A decision model reads one state and returns one
+ * answer; a chat model handed two ISO stamps can compare their digits and not their
+ * distance. So the subtraction happens here, once, when the box is assembled, and what
+ * it hands on is seconds — the artifact owns the words for them (`work-v14`).
  *
  * Three rules from the same section drive the shape here:
  *
@@ -69,6 +80,14 @@ export interface BoxOptions {
    * would let the fill loop run past the window it is supposed to respect.
    */
   weigh?: (entry: Observation) => number;
+  /**
+   * The clock the elapsed part is measured from. Defaults to this machine's.
+   *
+   * Taken the way `compact.ts` takes its clock, and for the same reason: a reading made
+   * from `Date` inside this file would make every test that asserts a duration depend on
+   * when it ran. A caller that wants a fixed answer passes a fixed reading.
+   */
+  now?: () => string;
 }
 
 /** The last verdict, put in as a fact about the record. */
@@ -181,6 +200,35 @@ export interface BotBox {
   observationsSinceLastVerdict?: number;
   /** Everyone who spoke across the delta. */
   whoSpoke: BoxSpeaker[];
+  /**
+   * How long ago, measured when this box was read — §3's fifth part.
+   *
+   * Always present, because a clock is always readable; what is absent is a duration the
+   * record cannot support (a room this bot has never spoken in, a stamp nothing wrote).
+   * Absent rather than zero for the reason `summary` is: a zero reads as "just now", and
+   * a bot told it spoke a moment ago in a room it has never spoken in has been lied to.
+   */
+  elapsed: BoxElapsed;
+}
+
+/**
+ * The durations a box carries, in seconds, off the stamps that are already stored.
+ *
+ * **Seconds rather than phrases**, because "a week ago" is a sentence and sentences
+ * belong to the prompt artifact: what this file can be sure of is the number, and the
+ * number is what a test can assert without depending on a clock.
+ */
+export interface BoxElapsed {
+  /** When this box was read, exactly as the caller's clock gave it. */
+  now: string;
+  /**
+   * Per room this bot has itself spoken in, how long ago it last did.
+   *
+   * §7's *"how long since you last spoke in this room"*, and a list rather than one
+   * number because the box is the bot's and holds several rooms while the question is
+   * asked about one of them. A room the bot has never spoken in contributes nothing.
+   */
+  spoke: { roomId: Id; seconds: number }[];
 }
 
 /**
@@ -193,6 +241,7 @@ export interface BotBox {
  */
 export function buildBox(store: SeekStore, botId: Id, options: BoxOptions): BotBox {
   const weigh = options.weigh ?? (() => 1);
+  const clock = options.now ?? (() => new Date().toISOString());
   // No `inFlight` to add: the entries that woke this judgement are on the record
   // the delta is read from, so the box holds the line that woke it without any
   // caller handing it back in.
@@ -228,6 +277,9 @@ export function buildBox(store: SeekStore, botId: Id, options: BoxOptions): BotB
     total: total.length,
     unread: total.length - kept.length,
     whoSpoke: speakersOf(store, messages, total),
+    // One reading, shared by every duration in the part: two readings inside one assembly
+    // would put two different "now"s in a box that answers one question.
+    elapsed: elapsedOf(store, botId, total, clock()),
   };
   if (summary !== undefined) box.summary = summary;
   if (lastVerdict) {
@@ -278,6 +330,70 @@ function roomsOf(entries: Observation[]): Id[] {
     if (entry.room_id !== undefined && !rooms.includes(entry.room_id)) rooms.push(entry.room_id);
   }
   return rooms;
+}
+
+/**
+ * The box's fifth part, built from one clock reading and the stamps already stored.
+ *
+ * Nothing here is written down: no field was added to `Observation`, `Message` or `Turn`
+ * for it, for the reason the last verdict is derived rather than stored — a saved copy
+ * of "when this was read" is a second version of a fact, free to disagree with the
+ * stamps it summarises.
+ */
+function elapsedOf(
+  store: SeekStore,
+  botId: Id,
+  entries: Observation[],
+  now: string,
+): BoxElapsed {
+  const spoke: { roomId: Id; seconds: number }[] = [];
+  // A clock that cannot be read gives an elapsed part with no durations rather than a
+  // row of `NaN`, which a prompt would then quote as an age — `secondsBetween` answers
+  // `undefined` for an unreadable reading, so there is nothing here to guard.
+  for (const roomId of roomsOf(entries)) {
+    const seconds = secondsBetween(now, lastWordOf(store, botId, roomId)?.created_at);
+    if (seconds !== undefined) spoke.push({ roomId, seconds });
+  }
+  return { now, spoke };
+}
+
+/**
+ * The newest message this bot itself posted in one room, if it ever has.
+ *
+ * Read off `Message.created_at` rather than off an observation, because a bot's own
+ * message does not produce an entry in its own box — it wakes everyone else — so the
+ * record of "when I last spoke" is the room's messages and never the delta.
+ */
+function lastWordOf(store: SeekStore, botId: Id, roomId: Id): Message | undefined {
+  let newest: Message | undefined;
+  let newestAt = Number.NEGATIVE_INFINITY;
+  for (const message of store.messagesOf(roomId)) {
+    if (message.sender_id !== botId) continue;
+    const at = Date.parse(message.created_at);
+    if (!Number.isFinite(at) || at <= newestAt) continue;
+    newest = message;
+    newestAt = at;
+  }
+  return newest;
+}
+
+/**
+ * How many seconds ago a stamp was, or `undefined` when either stamp cannot be read.
+ *
+ * Exported because a duration appears in two places and they have to agree: the box
+ * measures the room's silence (`elapsedOf`), and the half that answers measures each
+ * entry's age (`work-server.ts`). One subtraction, so the two cannot disagree.
+ *
+ * A stamp **ahead** of the clock reads as `0` rather than as a negative age: whatever
+ * wrote that record and this machine are two clocks, and a negative duration in a prompt
+ * reads as a bug in the bot rather than as the skew it is.
+ */
+export function secondsBetween(now: string, stamp: string | undefined): number | undefined {
+  if (stamp === undefined) return undefined;
+  const nowMs = Date.parse(now);
+  const then = Date.parse(stamp);
+  if (!Number.isFinite(nowMs) || !Number.isFinite(then)) return undefined;
+  return then >= nowMs ? 0 : Math.round((nowMs - then) / 1000);
 }
 
 /**
