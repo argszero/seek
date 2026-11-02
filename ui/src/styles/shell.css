@@ -1869,6 +1869,7 @@ textarea.dialog-input {
 .room-member {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
   padding: 4px 0;
   font-size: var(--fs-body);
@@ -1876,6 +1877,11 @@ textarea.dialog-input {
 }
 
 .room-member-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* What a bot took on and what it passed on, on a line of its own: the row is one column wide and
+   the sentence is longer than the name beside it, so sharing the line would cut the numbers
+   rather than the name — and a half-drawn count is worse than no count. */
+.room-member-judged { flex-basis: 100%; color: var(--N500); font-size: 12px; }
 
 .room-member-me { margin-left: auto; color: var(--N500); font-size: 12px; }
 

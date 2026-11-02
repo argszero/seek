@@ -924,3 +924,87 @@ test('a bot that read a message and stayed out reaches the window, and one that 
   const plain = snapshotOf(seeded(), '/tmp/seek.json').rooms[0].messages[0]
   assert.deepEqual(plain.silent, [], 'a message nobody passed on says so rather than leaving it off')
 })
+
+/**
+ * **What a bot did with what reached it, and why the verdict alone is not the reading.**
+ *
+ * Two endings are recorded in a room: an entry is settled `ignore`, or it opens a turn. The
+ * reading this asks for is one pair of numbers per bot per room — how much it took on and how
+ * much it passed on — and the first of them **cannot** be a count of `'act'` verdicts, because
+ * the rules' fast pass writes none: an @-mention is certain and free, so it consumes the entry
+ * without a verdict (`src/gate.ts`, row 2). That is measured below rather than assumed, and it
+ * is the whole reason the acted half reads the turn instead.
+ *
+ * A reading of `{acted: 0, passed: 0}` is not drawn anywhere here, on purpose: nothing has been
+ * settled about that entry yet, and a zero standing in for "not decided" is the two kinds of
+ * nothing this file keeps apart everywhere else.
+ */
+test('a bot in a room says what it took on and what it passed on', async () => {
+  const store = new SeekStore(emptyData())
+  store.data.principals['pr_me'] = { id: 'pr_me', kind: 'human', name: 'argszero' }
+  store.data.bots['bo_named'] = { id: 'bo_named', name: 'Named' }
+  store.data.bots['bo_quiet'] = { id: 'bo_quiet', name: 'Quiet' }
+  store.data.bots['bo_other'] = { id: 'bo_other', name: 'Other' }
+  store.data.rooms['rm_ops'] = { id: 'rm_ops', name: 'Ops room', chat_mode: 'group', created_at: AT }
+  const members = ['pr_me', 'bo_named', 'bo_quiet', 'bo_other']
+  members.forEach((who, index) => {
+    store.data.memberships[`mb_${index}`] = {
+      id: `mb_${index}`,
+      room_id: 'rm_ops',
+      principal_id: who,
+      joined_at: AT,
+      role: who === 'pr_me' ? 'owner' : 'member',
+    }
+  })
+  store.data.agents['ag_work'] = {
+    id: 'ag_work',
+    bot_id: 'bo_named',
+    role: 'work',
+    home: '/tmp/home',
+    model: 'big',
+    prompt: 'work-v1',
+    tools: ['say'],
+  }
+
+  // One message that names one bot. The rules settle it for free, and the entry they settle
+  // carries no verdict at all — asserted here, because it is what makes the figure honest.
+  deliver(store, {
+    roomId: 'rm_ops',
+    senderId: 'pr_me',
+    text: '@Named the build is red',
+    mentions: [{ id: 'bo_named', name: 'Named' }],
+    now: AT,
+  })
+  const settled = gate(store, 'bo_named', store.pending('bo_named'))
+  assert.equal(settled.act.length, 1, 'the mention is settled by the rules, with nothing asked')
+  const took = settled.act[0]
+  assert.equal(took.verdict, undefined, "row 2 writes no verdict, so 'act' cannot be counted from it")
+
+  // The turn is what records it, and `runTurn` is the kernel's own — the ledger row read below
+  // is the one the app writes.
+  await runTurn(store, { agentId: 'ag_work', roomId: 'rm_ops', entries: [took], now: AT })
+
+  // A second message, this one from another bot: row 3 settles a broadcast as `ignore`, which is
+  // the only record of something having been passed on.
+  deliver(store, {
+    roomId: 'rm_ops',
+    senderId: 'bo_other',
+    text: 'the deploy window is 22:00',
+    now: '2026-10-25T01:02:00.000Z',
+  })
+  gate(store, 'bo_named', store.pending('bo_named'))
+  gate(store, 'bo_quiet', store.pending('bo_quiet'))
+
+  const room = snapshotOf(store, '/tmp/seek.json').rooms[0]
+  const member = (id) => room.members.find((one) => one.id === id)
+
+  // One of each, on the bot the mention named.
+  assert.deepEqual(member('bo_named').judged, { acted: 1, passed: 1 })
+  // The muted neighbour took on nothing and passed on the broadcast — `0` on the left is a
+  // reading, not a gap.
+  assert.deepEqual(member('bo_quiet').judged, { acted: 0, passed: 1 })
+  // Nothing has been settled about this bot's observation, so it has no reading to draw.
+  assert.equal(member('bo_other').judged, null, 'a bot nothing was decided about has no reading')
+  // A person has no inbox, so there is nothing here for one to be counted from.
+  assert.equal(member('pr_me').judged, null, 'a person is never given a reading')
+})

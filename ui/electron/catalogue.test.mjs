@@ -92,6 +92,10 @@ const SAMPLES = {
   // `tag` is the label a person typed on the room, which is theirs and stays as they wrote it.
   when: 'Oct 20',
   tag: 'Design',
+  // A member row's pair: what a bot took on and what it passed on. Two counts, so the language
+  // supplies only the words around them.
+  acted: 3,
+  passed: 5,
 }
 
 function paramsFor(template) {
