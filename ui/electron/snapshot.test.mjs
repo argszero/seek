@@ -20,7 +20,7 @@ import { deliver, toggleReaction } from '../../src/delivery.ts'
 import { gate } from '../../src/gate.ts'
 import { emptyData, SeekStore } from '../../src/store.ts'
 import { runTurn } from '../../src/turn.ts'
-import { readingDayOf, snapshotOf } from './snapshot.js'
+import { readingDayOf, snapshotOf, withServerFacts } from './snapshot.js'
 
 const AT = '2026-10-25T01:00:00.000Z'
 
@@ -1007,4 +1007,60 @@ test('a bot in a room says what it took on and what it passed on', async () => {
   assert.equal(member('bo_other').judged, null, 'a bot nothing was decided about has no reading')
   // A person has no inbox, so there is nothing here for one to be counted from.
   assert.equal(member('pr_me').judged, null, 'a person is never given a reading')
+})
+
+/**
+ * The model-server facts reach the window in the shape the window reads them.
+ *
+ * `snapshotNow()` in `ui/electron/main.js` adds what the host cannot know on top of the snapshot
+ * the host built: a download under way, why it stopped, a server that died. It added them by
+ * spreading each half and overwriting `pending` and `weights` with the reading exactly as it was
+ * measured, one line after the host's own validated reading had arrived — so the raw shape won,
+ * and the window was handed `undefined` where a file's name goes. A first run draws this line
+ * while it fetches the weights, and what a person got was a window with nothing in it, for as
+ * long as the download took.
+ *
+ * **This drives the call `main.js` makes**, because `main.js` cannot be imported by a test —
+ * which is how the disagreement lived through a green suite. Both readings are spelled the way
+ * their producers spell them (`weights-fetch.js`), not the way the window reads them.
+ */
+test('the model-server facts arrive in the shape the window reads', () => {
+  const opened = snapshotOf(seeded(), '/tmp/seek.json')
+
+  const downloading = withServerFacts(opened, {
+    pending: { received: 200_000_000, total: 2_177_004_928, name: 'LFM2.5-VL-3B-Q4_0.gguf' },
+  })
+  assert.deepEqual(
+    downloading.stage1.pending,
+    { received: 200_000_000, total: 2_177_004_928, file: 'LFM2.5-VL-3B-Q4_0.gguf' },
+    'the file arrives under the snapshot own name, which is the one the window fills',
+  )
+  assert.equal(
+    'name' in downloading.stage1.pending,
+    false,
+    'and not under the producer own one: the window read `file`, found nothing, and threw',
+  )
+  assert.deepEqual(downloading.stage2.pending, downloading.stage1.pending, 'both halves read one download')
+
+  // A download that stopped, in the shape `weights-fetch.js` reports it: a host and its words.
+  const stopped = withServerFacts(opened, {
+    weights: { kind: 'refused', host: 'huggingface.co', words: 'the host said no' },
+  })
+  assert.deepEqual(stopped.stage1.weights, { kind: 'stopped', hosts: ['huggingface.co'] })
+  assert.equal('words' in stopped.stage1.weights, false, 'a sender own sentence does not reach the window')
+
+  // The order they win, which `main.js` stated when it owned the merge.
+  const both = withServerFacts(opened, {
+    pending: { received: 1, total: 2, name: 'a.gguf' },
+    weights: { kind: 'refused', host: 'huggingface.co', words: 'the host said no' },
+    refusal: 'the model server this app started stopped',
+  })
+  assert.deepEqual(both.stage1.pending, { received: 1, total: 2, file: 'a.gguf' }, 'a download is the newest fact')
+  assert.equal(both.stage1.weights, null)
+  assert.equal(both.stage1.refusal, null, 'and it says nothing about a server that died')
+
+  const only = withServerFacts(opened, { refusal: 'the model server this app started stopped' })
+  assert.equal(only.stage1.refusal, 'the model server this app started stopped')
+  assert.equal(only.stage1.pending, null)
+  assert.equal(only.stage2.refusal, only.stage1.refusal, 'both halves were bound to the one server')
 })
