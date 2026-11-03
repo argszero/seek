@@ -197,6 +197,46 @@ function stageTwoOf(stage2) {
 }
 
 /**
+ * The model-server facts, merged into the snapshot the host built and validated on the way in.
+ *
+ * `snapshotNow()` in `ui/electron/main.js` adds what the host cannot know — a download under
+ * way, why it stopped, a server that died while the window was open. It used to add them there,
+ * by spreading each half and overwriting `pending` and `weights` with the reading exactly as it
+ * was measured, one line after the host's own validated reading had arrived. Those two readings
+ * do not travel in the window's shape: `weights-fetch.js` names a file `name` and reports a
+ * failure as `{kind: 'refused', host, words}`, while the window reads `file` and
+ * `{kind: 'stopped', hosts}`. So the validated fields were thrown away immediately after being
+ * built, and a first run — which draws this line while it fetches the weights — handed the
+ * renderer `undefined` where a file's name goes. The catalogue's guard is what caught it, by
+ * throwing: the window drew nothing at all, for as long as the download took.
+ *
+ * **It lives here because it can be run here.** `main.js` is an Electron main process, which no
+ * test imports — the reason a disagreement on this edge survived a whole green suite. What
+ * cannot be imported cannot be held to anything.
+ *
+ * **Validated after the merge, and only once.** The readings arrive raw and leave in the shape
+ * `pendingOf` and `weightsOf` produce, so exactly one place names a field. Neither validator is
+ * idempotent — `pendingOf` reads `name` and writes `file` — which is why the merge must never
+ * hand a validated value back through them, and why nothing else may write these four fields.
+ *
+ * The order they win is the one `main.js` stated when it owned this: a download under way is the
+ * newest fact, the reason it stopped is the next, and a server that died is the last.
+ */
+function withServerFacts(snapshot, { pending = null, weights = null, refusal = null } = {}) {
+  const half = (stage) => {
+    if (pending !== null) {
+      return { ...stage, pending: pendingOf(pending), refusal: null, weights: null }
+    }
+    if (weights !== null) {
+      return { ...stage, pending: null, refusal: null, weights: weightsOf(weights) }
+    }
+    if (refusal !== null) return { ...stage, pending: null, refusal }
+    return stage
+  }
+  return { ...snapshot, stage1: half(snapshot.stage1), stage2: half(snapshot.stage2) }
+}
+
+/**
  * Everyone the store knows, so a room that does not exist yet can be given members.
  *
  * A room's own `members` answer "who is in this room"; making one needs the other
@@ -981,4 +1021,4 @@ function snapshotOf(
   }
 }
 
-module.exports = { meOf, peopleOf, namedOf, snapshotOf, readingDayOf }
+module.exports = { meOf, peopleOf, namedOf, snapshotOf, readingDayOf, withServerFacts }

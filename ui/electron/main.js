@@ -79,7 +79,7 @@ const {
   startBundledServer,
   weightsDirectory,
 } = require('./server.js')
-const { snapshotOf } = require('./snapshot.js')
+const { snapshotOf, withServerFacts } = require('./snapshot.js')
 
 const DEV_URL = process.env.SEEK_UI_DEV_URL
 const DATA_DIR = process.env.SEEK_DATA_DIR || join(app.getPath('userData'), 'seek-data')
@@ -267,19 +267,6 @@ function createWindow() {
 
 /** What the interface is allowed to see: a plain, serialisable read of the store. */
 function snapshotNow() {
-  // The model-server facts replace each half's own reading and nothing else: the origin each
-  // half was bound to is still true, and `server` is what the window prints beside it. They
-  // are stated in the order they win — a download under way is the newest fact, the reason it
-  // stopped is the next, and a server that died while the window was open is the last.
-  const half = (stage) => {
-    if (weightsPending !== null) return { ...stage, pending: weightsPending, refusal: null, weights: null }
-    // The weights failure keeps its own field and clears `refusal`: the window draws those facts
-    // in its own language, so the kernel's English sentence about the same thing has no business
-    // reaching a screen. Two producers, two shapes, and the sentence stops at the process edge.
-    if (weightsWhy !== null) return { ...stage, pending: null, refusal: null, weights: weightsWhy }
-    if (modelServerRefusal !== null) return { ...stage, pending: null, refusal: modelServerRefusal }
-    return stage
-  }
   // **Built by the host, not here.** `hostSnapshot()` is the one read that knows the store,
   // the two halves, the refusal *and* what the kernel says each bot is doing; a second
   // `snapshotOf(...)` in this file is a second place to forget one of them, and it was: the
@@ -289,12 +276,18 @@ function snapshotNow() {
   const opened = host
     ? hostSnapshot(host)
     : snapshotOf(null, STORE_FILE, null, null, storeRefusal)
+  // **Merged and validated by the snapshot's own rule.** This file holds the three readings
+  // exactly as they are measured — `weightsPending` names a file `name`, `weightsWhy` is one
+  // host's refusal with its own sentence — and `withServerFacts` is what turns them into the
+  // fields the window reads, in the order they win. Merging them here instead is what drew a
+  // blank window on every first run: the raw reading overwrote the validated one, and the
+  // window was handed `undefined` where a file's name goes.
   const snapshot = {
-    ...opened,
-    // The halves come back from the host as the kernel bound them, and `half()` is what the
-    // window is allowed to see of them — see the three facts above.
-    stage1: half(opened.stage1),
-    stage2: half(opened.stage2),
+    ...withServerFacts(opened, {
+      pending: weightsPending,
+      weights: weightsWhy,
+      refusal: modelServerRefusal,
+    }),
     storeRefusal,
   }
   // The organizations, as the window may see them: an id to name, a name to draw, and which one
