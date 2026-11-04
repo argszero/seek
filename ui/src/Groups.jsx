@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { t } from './catalogue.mjs'
 import Dialog from './Dialog.jsx'
 import Gutter from './Gutter.jsx'
+import { roomTitle } from './room-name.mjs'
 
 /**
  * The groups view: the rooms in this store that are not one person's conversation with one
@@ -79,7 +80,9 @@ export default function Groups({ rooms, people, me, onOpen, onSnapshot, ask, onA
   const others = people.filter((person) => person.id !== me)
   const wanted = query.trim().toLowerCase()
   const listed =
-    wanted === '' ? groups : groups.filter((room) => room.name.toLowerCase().includes(wanted))
+    // What is searched is what is drawn: a nameless group is found by the names of the people
+    // in it, which is the only title the row shows.
+    wanted === '' ? groups : groups.filter((room) => roomTitle(room).toLowerCase().includes(wanted))
   const open = groups.find((room) => room.id === openId) ?? null
 
   /**
@@ -253,10 +256,10 @@ export default function Groups({ rooms, people, me, onOpen, onSnapshot, ask, onA
                 data-group-row={room.id}
                 onClick={() => setOpenId(room.id)}
               >
-                <span className="conv-av">{room.name.slice(0, 1).toUpperCase()}</span>
+                <span className="conv-av">{roomTitle(room).slice(0, 1).toUpperCase()}</span>
                 <span className="conv-body">
                   <span className="conv-name">
-                    {room.name}
+                    {roomTitle(room)}
                     {room.kind === 'topic' && (
                       <span className="chip blue">{t('ui.groups.kind.topic')}</span>
                     )}
@@ -313,7 +316,7 @@ function GroupPane({ room, me, onOpen }) {
   const members = room.members ?? []
   return (
     <div className="pane" data-group-card={room.id}>
-      <h2 className="pane-title">{room.name}</h2>
+      <h2 className="pane-title">{roomTitle(room)}</h2>
       <p className="pane-desc">
         {t(room.kind === 'topic' ? 'ui.groups.kind.topic-long' : 'ui.groups.kind.group-long')}
       </p>

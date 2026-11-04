@@ -421,7 +421,7 @@ test('a name of only spaces makes a room with no name, not a room called spaces'
   try {
     const made = await createRoom(w.host, { name: '   ', members: [w.scene.me] })
     const room = made.snapshot.rooms.find((one) => one.id === made.roomId)
-    assert.equal(room.name, made.roomId, 'draws by its id, as any nameless room does')
+    assert.equal(room.name, null, 'and the reading says so, rather than naming it by its id')
 
     const reloaded = await SeekStore.load(w.storeFile)
     assert.equal(reloaded.data.rooms[made.roomId].name, undefined, 'and no name was written')

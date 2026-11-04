@@ -42,6 +42,18 @@ let fileSizes = null
 let lists = null
 
 /**
+ * The formatter for a list that is **not a sentence**: names after names, punctuation only.
+ *
+ * Bound by the same call as `lists`, `null` until a catalogue arrives. It exists because the
+ * two shapes are not the same fact: `joinList()` writes `A, B and C`, which is what a sentence
+ * wants, and a room with no name is titled by who is in it — a list with no verb anywhere near
+ * it. Measured 2026-11-04 on the client's own group list (a screenshot read by OCR rather than
+ * by eye): an unnamed group reads `邵安清，张杰，李玉峰`, every name separated and no conjunction
+ * at the end.
+ */
+let names = null
+
+/**
  * The two halves of a *narrow* instant: a clock for something that happened today, and a day
  * for anything older. Bound by the same call; `null` until a catalogue arrives.
  *
@@ -115,6 +127,13 @@ export function bindCatalogue(catalogue) {
   // it too (`joinList` in `src/i18n.ts`), and the two are held to one answer per language in
   // `ui/electron/catalogue.test.mjs`.
   lists = new Intl.ListFormat(catalogue.locale, { style: 'long', type: 'conjunction' })
+  // The same formatter asked for names instead of a sentence. `narrow` is the style that
+  // separates every item and puts no conjunction before the last one, which is the shape the
+  // client's own group list has; `long` and `short` would write `and`/`und`/`和` into a room's
+  // title, where nothing is being said. The punctuation is still the locale's own — English
+  // `A, B, C`, Chinese `A、B、C` — which is the whole reason this is bound here rather than
+  // joined wherever a title happens to be drawn.
+  names = new Intl.ListFormat(catalogue.locale, { style: 'narrow', type: 'conjunction' })
 
   translate = (key, params = {}) => {
     const message = catalogue.messages[key]
@@ -304,6 +323,30 @@ export function joinList(items) {
     )
   }
   return lists.format(items)
+}
+
+/**
+ * Several names in a row, with nothing said between them.
+ *
+ * **Not `joinList()` above**, and the difference is a written one: that one writes the
+ * conjunction a sentence needs, this one writes none, because a room's title is not a sentence
+ * and `A、B和李玉峰` in a title claims somebody said something about a fourth thing. The shape
+ * was read off the client's group list on 2026-11-04 (OCR of a screenshot, not an eye): every
+ * name separated and no conjunction — which is `narrow`.
+ *
+ * The kernel has no twin of this one, and does not need one: `joinList()` is in `src/i18n.ts`
+ * because the kernel writes sentences of its own about weights and hosts, and no kernel module
+ * ever draws a room's title. Where the two layers both join a list, they are held to one
+ * answer per language in `ui/electron/catalogue.test.mjs`; this shape has only one writer.
+ */
+export function joinNames(items) {
+  if (names === null) {
+    throw new Error(
+      'no catalogue is bound yet, so a list of names has no form — the window draws nothing ' +
+        'until seek:catalogue has answered',
+    )
+  }
+  return names.format(items)
 }
 
 /**

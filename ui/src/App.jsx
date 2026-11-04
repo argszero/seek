@@ -20,6 +20,7 @@ import {
   THEME_TO_LIGHT,
 } from './rail.mjs'
 import { peopleInRoom } from './people-in-room.mjs'
+import { roomTitle } from './room-name.mjs'
 import { roomToOpen } from './room-to-open.mjs'
 /**
  * Tokens are counts, so they are drawn by `Intl.NumberFormat` rather than by string
@@ -729,7 +730,10 @@ export default function App() {
       if (result.ok) {
         setSnap(result.snapshot)
         const target = result.snapshot.rooms.find((room) => room.id === targetId)
-        setNote(t('ui.chat.forwarded-into', { room: target?.name ?? t('ui.chat.that-room') }))
+        // The title the room is drawn by everywhere else, so the note names it the way the
+        // list does. `target ? …` rather than `target?.name`: a room with no name has `null`
+        // there now, and a placeholder left unfilled makes `t()` throw.
+        setNote(t('ui.chat.forwarded-into', { room: target ? roomTitle(target) : t('ui.chat.that-room') }))
       } else {
         setError({ where: 'room', message: result.error })
       }
@@ -1006,7 +1010,7 @@ export default function App() {
   function openEdit() {
     if (!active) return
     setRoomError(null)
-    setEditName(active.name)
+    setEditName(active.name ?? '')
     setEditDescription(active.description ?? '')
     setEditAnnouncement(active.announcement ?? '')
     setEditTag(active.tag ?? '')
@@ -1411,7 +1415,7 @@ export default function App() {
                 className={`conv${room.id === activeId ? ' on' : ''}`}
                 onClick={() => enterRoom(room.id)}
               >
-                <span className="conv-av">{room.name.slice(0, 1).toUpperCase()}</span>
+                <span className="conv-av">{roomTitle(room).slice(0, 1).toUpperCase()}</span>
                 <span className="conv-body">
                   {/* The name and, at the other end of the same line, when this room was
                       last spoken in — the shape the client's list has, measured 2026-10-27.
@@ -1419,7 +1423,7 @@ export default function App() {
                       the kernel's `created_at`; a room nobody has spoken in has no time and
                       draws none, rather than the time it was made. */}
                   <span className="conv-top">
-                    <span className="conv-name">{room.name}</span>
+                    <span className="conv-name">{roomTitle(room)}</span>
                     {room.messages.length > 0 && (
                       <span className="conv-time">{whenShort(room.messages.at(-1).at)}</span>
                     )}
@@ -1468,7 +1472,7 @@ export default function App() {
         {active ? (
           <>
             <header className="main-head">
-              <h2>{active.name}</h2>
+              <h2>{roomTitle(active)}</h2>
               {/* The count is the way in. The one screen that answers "who is in this room" is
                   also the one that changes it, because a member list that cannot grow is a
                   read-only list — and this store's rooms are made by people. */}
@@ -1611,7 +1615,7 @@ export default function App() {
                   className="composer-input"
                   rows={1}
                   value={draft}
-                  placeholder={t('ui.chat.message-hint', { room: active.name })}
+                  placeholder={t('ui.chat.message-hint', { room: roomTitle(active) })}
                   onChange={(event) => setDraft(event.target.value)}
                   onKeyDown={(event) => keyDown(event, draft, undefined, roomMention)}
                 />
@@ -1849,7 +1853,7 @@ export default function App() {
 
             <div className="room-body">
               <h4 className="room-name" data-room-field="name">
-                {active.name}
+                {roomTitle(active)}
               </h4>
               <p className="room-sub">
                 {active.kind === 'p2p' ? t('ui.room.kind-p2p') : t('ui.room.kind-group')}
@@ -2725,10 +2729,10 @@ function Line({ message, sender, replies, inThread, onOpen, chip = false, me = n
               <button
                 key={room.id}
                 data-forward-into={room.id}
-                title={t('ui.chat.forward-into', { room: room.name })}
+                title={t('ui.chat.forward-into', { room: roomTitle(room) })}
                 onClick={() => actions.forwardInto(room.id)}
               >
-                {room.name}
+                {roomTitle(room)}
               </button>
             ))}
           </span>
