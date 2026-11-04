@@ -28,6 +28,7 @@ import {
   bindCatalogue,
   catalogueBound,
   joinList as rendererJoinList,
+  joinNames,
   size,
   t,
   weightsReason,
@@ -264,6 +265,35 @@ test('a list is the language’s to join, and the two layers agree on every one'
   const chinese = rendererJoinList(items)
   assert.notEqual(chinese, kernelJoinList('en', items), 'the list is not the English one in Chinese')
   assert.match(chinese, /、/, 'Chinese separates its items with an enumeration comma')
+})
+
+/**
+ * A list of names is not a sentence, and the window asks for the one it wants.
+ *
+ * The two shapes are not interchangeable. `joinList()` writes the conjunction a sentence needs,
+ * and the sentence it was built for is about hosts that refused; a room with no name is titled
+ * by who is in it, and `邵安清、张杰和李玉峰` in a title claims that somebody said something
+ * about a fourth thing. What the client's own group list writes was read off a screenshot by
+ * OCR on 2026-11-04: every name separated, no conjunction.
+ */
+test('names are joined without the conjunction a sentence needs', () => {
+  const names = ['邵安清', '张杰', '李玉峰']
+
+  bindCatalogue(catalogueFor('en'))
+  assert.equal(joinNames(names), '邵安清, 张杰, 李玉峰', 'English separates every name')
+  assert.doesNotMatch(joinNames(names), / and | & /, 'and writes no conjunction into a title')
+  assert.notEqual(joinNames(names), rendererJoinList(names), 'which is not what `joinList()` answers')
+
+  bindCatalogue(catalogueFor('zh-CN'))
+  assert.equal(joinNames(names), '邵安清、张杰、李玉峰', 'Chinese separates every name with 、')
+  assert.doesNotMatch(joinNames(names), /和/, 'and writes no conjunction either')
+  assert.notEqual(joinNames(names), names.join(''), 'and never runs the names together')
+
+  // Two names are where the two shapes differ most plainly: `joinList()` writes a conjunction
+  // and this one only a separator, in both languages.
+  bindCatalogue(catalogueFor('en'))
+  assert.equal(joinNames(['a', 'b']), 'a, b')
+  assert.equal(rendererJoinList(['a', 'b']), 'a and b')
 })
 
 test('why the weights did not arrive is the window’s to write, in the language it runs in', () => {

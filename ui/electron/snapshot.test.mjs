@@ -138,7 +138,7 @@ test('an empty store is an empty room list, not a failure', () => {
 })
 
 /** A room may carry no name at all, and the rail draws the first character of it. */
-test('a room with no name is drawn by its id rather than throwing', () => {
+test('a room with no name has none, and is not named by its id', () => {
   const store = new SeekStore(emptyData())
   store.data.principals['pr_me'] = { id: 'pr_me', kind: 'human', name: 'argszero' }
   store.data.rooms['oc_1'] = { id: 'oc_1', chat_mode: 'group', created_at: AT }
@@ -150,7 +150,17 @@ test('a room with no name is drawn by its id rather than throwing', () => {
     joined_at: AT,
     role: 'owner',
   }
-  assert.equal(snapshotOf(store, '/tmp/seek.json').rooms[0].name, 'oc_1')
+  // `null` is the fact. This used to answer `oc_1`, which put a machine's identifier where the
+  // window draws a title and made a nameless room indistinguishable from one somebody had
+  // named `oc_1`; what to call it instead is `ui/src/room-name.mjs`'s answer, because it is the
+  // members' names and a list's punctuation is the language's (`docs/design/i18n.md` §4).
+  const snapshot = snapshotOf(store, '/tmp/seek.json')
+  assert.equal(snapshot.rooms[0].name, null, 'the reading says there is no name')
+  assert.deepEqual(
+    snapshot.rooms[0].members.map((member) => member.name),
+    ['argszero'],
+    'and hands up who is in it, which is all a title needs',
+  )
 })
 
 /**

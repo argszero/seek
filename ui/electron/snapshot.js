@@ -866,9 +866,16 @@ function snapshotOf(
     .filter((room) => mine.has(room.id))
     .map((room) => ({
     id: room.id,
-    // A room's name is optional in the kernel's own type, and a room the roster
-    // created may have none — drawing `undefined.slice` would throw on it.
-    name: typeof room.name === 'string' && room.name !== '' ? room.name : room.id,
+    // **A room's name is the store's, or it is nothing.** It is optional in the kernel's own
+    // type and a room made from a name of only spaces has none. This answered `room.id` for
+    // both, which put a machine's identifier where the interface draws a title — measured in a
+    // real window on 2026-11-03: an unnamed group was listed as `oc_f63ba78b67f84769`. `null`
+    // is the fact, and what to call such a room is the window's answer
+    // (`ui/src/room-name.mjs`), because it is the members' names and how a language separates
+    // names is a format (`docs/design/i18n.md` §4) — a decision this layer, holding no locale,
+    // cannot make. `null` and not `undefined` for the reason `description` is: the two kinds of
+    // nothing would otherwise draw differently.
+    name: typeof room.name === 'string' && room.name !== '' ? room.name : null,
     // `chat_mode` is the field; it is stored and never branched on
     // (`src/README.md` line 32), which is why the interface may show it.
     kind: room.chat_mode,

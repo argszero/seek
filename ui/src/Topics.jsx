@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { t, when } from './catalogue.mjs'
 import Gutter from './Gutter.jsx'
 import { topicKeyOf as keyOf, topicsOf } from './topics-of.mjs'
+import { roomTitle } from './room-name.mjs'
 
 /**
  * The topics view: every thread in this store, whichever room it started in.
@@ -89,14 +90,14 @@ export default function Topics({ rooms, onOpen, onDelete }) {
                 data-topic-row={keyOf(topic)}
                 onClick={() => setOpenKey(keyOf(topic))}
               >
-                <span className="conv-av">{topic.room.name.slice(0, 1).toUpperCase()}</span>
+                <span className="conv-av">{roomTitle(topic.room).slice(0, 1).toUpperCase()}</span>
                 <span className="conv-body">
                   <span className="conv-name">{said(topic.root)}</span>
                   {/* Which room it is in, and how much was said in it — one sentence, so a
                       language may order the two halves as it needs to. */}
                   <span className="conv-last">
                     {t('ui.topics.row', {
-                      room: topic.room.name,
+                      room: roomTitle(topic.room),
                       count: topic.replies.length,
                     })}
                   </span>
@@ -162,14 +163,14 @@ function TopicPane({ topic, onOpen, onDelete }) {
       <p className="pane-desc">
         {t('ui.topics.started-by', {
           name: nameOf(topic.room, root.sender),
-          room: topic.room.name,
+          room: roomTitle(topic.room),
         })}
       </p>
 
       <div className="card">
         <div className="card-body">
           <div className="card-rows">
-            <Row label={t('ui.topics.card.room')} value={topic.room.name} />
+            <Row label={t('ui.topics.card.room')} value={roomTitle(topic.room)} />
             <Row
               label={t('ui.topics.card.replies')}
               value={t('ui.topics.reply-count', { count: topic.replies.length })}
