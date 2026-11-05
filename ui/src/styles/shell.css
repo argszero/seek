@@ -402,6 +402,14 @@ body {
   text-overflow: ellipsis;
 }
 
+/* A row whose whole content is its title. The groups list is a directory of rooms rather than a
+   column of conversations, and the client draws it that way: one line per group, every row 54
+   device px from the next — measured on 2026-11-05 against `feishu-groups-3.png`, twice (the
+   full screenshot and a 1:1 crop of it), 54.0 across seven rows. A screenshot of unhighlighted
+   rows gives the pitch and not the box, so what is pinned here is the pitch: 52 for the row and
+   the 2px `.conv-list` already puts between two of them. */
+.conv.single-line { height: 52px; }
+
 /* The contacts list's own two pieces: a search box under the heading, and the kind chip that
    sits beside a name. Both reuse what is already here — `.field-input` is the window's one
    text input — so this is spacing, not a second look. */
