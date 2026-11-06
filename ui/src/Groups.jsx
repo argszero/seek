@@ -251,8 +251,11 @@ export default function Groups({ rooms, people, me, onOpen, onSnapshot, ask, onA
         <ul className="conv-list">
           {listed.map((room) => (
             <li key={room.id}>
+              {/* One line per group, which is what the reference draws: this list is a
+                  directory of rooms, and the count of people in one is on the card beside it
+                  and in the room's own header. */}
               <button
-                className={`conv${room.id === openId ? ' on' : ''}`}
+                className={`conv single-line${room.id === openId ? ' on' : ''}`}
                 data-group-row={room.id}
                 onClick={() => setOpenId(room.id)}
               >
@@ -263,11 +266,6 @@ export default function Groups({ rooms, people, me, onOpen, onSnapshot, ask, onA
                     {room.kind === 'topic' && (
                       <span className="chip blue">{t('ui.groups.kind.topic')}</span>
                     )}
-                  </span>
-                  {/* The count of people in it, which is also what made it a group. The
-                      catalogue's own plural entry, the same one the room header draws. */}
-                  <span className="conv-last">
-                    {t('ui.members', { count: (room.members ?? []).length })}
                   </span>
                 </span>
               </button>
