@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-import { t, when } from './catalogue.mjs'
+import { t, when, whenShort } from './catalogue.mjs'
 import Gutter from './Gutter.jsx'
 import { topicKeyOf as keyOf, topicsOf } from './topics-of.mjs'
 import { roomTitle } from './room-name.mjs'
@@ -33,11 +33,13 @@ import { roomTitle } from './room-name.mjs'
  * starts its own topic; this view is about threads, which any room can have, and `chat_mode`
  * is stored and never branched on (`src/rooms.ts`).
  *
- * **Time is the locale's.** `when()` (`catalogue.mjs`) formats the instant with
- * `Intl.DateTimeFormat` for the catalogue's locale — `docs/design/i18n.md` §4 asks for absolute
- * dates formatted per locale, and the prototype's `listTime()` also draws 昨天 and weekday
- * names, which are translated words this store has no key for yet. So every row carries a
- * date and a time, and no relative word is written here to be translated later.
+ * **Time is the locale's, and two of `catalogue.mjs`'s formatters draw it** — both
+ * `Intl.DateTimeFormat` for the catalogue's locale. A row carries `whenShort()`, the narrow form
+ * a list of conversations uses: a clock when the thread was last spoken in today, a date when it
+ * was not. The card carries `when()`, the full date and time. `docs/design/i18n.md` §4 asks for
+ * absolute dates formatted per locale, and the prototype's `listTime()` also drew 昨天 and
+ * weekday names, which are translated words this store has no key for yet. So no relative word
+ * is written here to be translated later.
  *
  * **Every word here is the catalogue's** (`docs/design/i18n.md` §1), which is why this is a
  * file of its own: `ui/electron/catalogue.test.mjs` holds a view to having no words of its
@@ -92,7 +94,15 @@ export default function Topics({ rooms, onOpen, onDelete }) {
               >
                 <span className="conv-av">{roomTitle(topic.room).slice(0, 1).toUpperCase()}</span>
                 <span className="conv-body">
-                  <span className="conv-name">{said(topic.root)}</span>
+                  {/* The thread's words and, at the other end of the same line, when it was last
+                      spoken in — the row the prototype's topics branch drew (the root's words,
+                      then `listTime()` of `last_reply`), and the arrangement the chat list
+                      already uses. The instant is the last reply's own `at` and never the
+                      root's: a thread was spoken in more recently than it was started. */}
+                  <span className="conv-top">
+                    <span className="conv-name">{said(topic.root)}</span>
+                    <span className="conv-time">{whenShort(topic.replies.at(-1).at)}</span>
+                  </span>
                   {/* Which room it is in, and how much was said in it — one sentence, so a
                       language may order the two halves as it needs to. */}
                   <span className="conv-last">
