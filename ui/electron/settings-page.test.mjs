@@ -56,10 +56,16 @@ test('the machine comes first, and the organizations after it', () => {
       'with organizations first the model reads as a property of whichever one is open',
   )
 
-  // Two sections, each wrapping its own heading: the wrapper is what lets the pair be separated
-  // by something other than a heading, which is all the page had before.
+  // One section per subject, each wrapping its own heading: the wrapper is what lets them be
+  // separated by something other than a heading, which is all the page had before.
+  //
+  // Three, since 2026-11-09: the window's own language is a third subject and not a property of
+  // either of these two — it is the application's chrome, which `docs/design/i18n.md` §2 keeps
+  // apart from the machine's models and from the worlds the organizations are. It is drawn last,
+  // so the two assertions below still say what they were written to say: the model is in the
+  // first section and the organizations in the second.
   const sections = PAGE.split('className="settings-section"').length - 1
-  assert.equal(sections, 2, 'the pane is cut into exactly two sections')
+  assert.equal(sections, 3, 'the pane is cut into exactly three sections')
   const machineSection = PAGE.indexOf('className="settings-section"')
   const secondSection = PAGE.indexOf('className="settings-section"', machineSection + 1)
   assert.ok(machineSection < machine && machine < secondSection, 'the model sits in the first')

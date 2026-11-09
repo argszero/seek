@@ -25,6 +25,12 @@ Promise.all([
   window.seekHost.theme().catch(() => 'light'),
 ]).then(([catalogue, theme]) => {
   bindCatalogue(catalogue)
+  // **The page says which language it is in**, and it says it from the catalogue rather than
+  // from a constant: `main.jsx` is the one place that knows which one the host answered with, and
+  // `<html lang>` is what a screen reader and a spell checker read the text as. The prototype
+  // does the same for the same reason (`prototype/src/main.jsx`) — a document whose `lang` says
+  // one language over the words of another is a lie about the text, not a detail.
+  document.documentElement.setAttribute('lang', catalogue.locale)
   document.documentElement.setAttribute('data-theme', theme === 'dark' ? 'dark' : 'light')
   createRoot(document.getElementById('root')).render(
     <React.StrictMode>

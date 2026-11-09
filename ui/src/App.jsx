@@ -9,6 +9,7 @@ import Settings from './Settings.jsx'
 import StateDot from './StateDot.jsx'
 import Topics from './Topics.jsx'
 import { fileSize, joinList, size, t, weightsSentence, when, whenShort } from './catalogue.mjs'
+import { switchLanguage } from './language.mjs'
 import {
   ADD_MENU,
   ADD_TITLE,
@@ -283,6 +284,14 @@ export default function App() {
   )
   const dark = theme === 'dark'
 
+  // **The language, read the same way and for the same reason.** `main.jsx` binds a catalogue and
+  // writes its tag onto `<html lang>` before the first frame, so this state starts at what the
+  // page is already speaking rather than at a default that would draw one language and then
+  // repaint in another. It is held here because a language change is a repaint of everything:
+  // `t()` reads a module-level binding, so the binding changing is not enough — the tree has to
+  // be asked to draw again, and the only state that reaches every view is this one.
+  const [locale, setLocale] = useState(() => document.documentElement.getAttribute('lang'))
+
   // The add mark over the navigation and the menu it opens; `ask` is the view the menu has just
   // been told to open a form on, and it is cleared by that view as it takes it — one press, one
   // form, and no form reopening by itself when somebody comes back to the view later.
@@ -340,6 +349,21 @@ export default function App() {
     setTheme(next)
     document.documentElement.setAttribute('data-theme', next)
     window.seekHost.saveTheme?.(next)
+  }
+
+  /**
+   * Speaking another language, which is `docs/design/i18n.md` §2's "takes effect immediately".
+   *
+   * The work is `language.mjs`'s — save the tag, bind the catalogue that comes back, say which
+   * language the page is in. What is here is the two things only this component can do: ask the
+   * whole tree to draw again, and hand the answer back so the settings page can say a sentence
+   * when a save did not go through. A refusal leaves the language where it was, so this state
+   * does not move either.
+   */
+  async function changeLanguage(tag) {
+    const answer = await switchLanguage(tag)
+    if (answer?.ok === true) setLocale(answer.locale)
+    return answer
   }
 
   const [draft, setDraft] = useState('')
@@ -1296,7 +1320,7 @@ export default function App() {
       <Gutter pane="rail" />
 
       {view === 'settings' ? (
-        <Settings snapshot={snap} />
+        <Settings snapshot={snap} locale={locale} onLanguage={changeLanguage} />
       ) : view === 'contacts' ? (
         <Contacts
           people={snap.people ?? []}

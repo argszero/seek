@@ -397,6 +397,14 @@ const CLAIMS = {
   // outlives the launch: a toggle that forgot itself at the next start would be a button that
   // undoes its own work.
   'seek:theme-save': { en: /saved in that same `settings\.json`/, zh: /存进同一个 `settings\.json`/ },
+  // The window's language, which `docs/design/i18n.md` §2 makes a setting that takes effect at
+  // once. A reader is told the two things that are surprising about it — it repaints immediately,
+  // and it moves nothing anybody said — because the second is the rule the whole document separates
+  // the two languages by.
+  'seek:language-save': {
+    en: /repaints the window in it at once/,
+    zh: /窗口当场换成这个语言/,
+  },
   // The three deletions (2026-10-27). All three broadcast, so the derivation finds them; what a
   // reader has to be told is not that the buttons exist but what they take with them — the words
   // themselves, the replies of a topic, the messages of a group — and that the row of a deleted
@@ -436,6 +444,10 @@ const PLUMBING = {
   // was left in before its first frame, so that a launch saved as dark does not paint light
   // and repaint. What a person presses is `seek:theme-save`, and that is the claimed one.
   'seek:theme': 'which palette to open in: read before the first frame, so the first frame is already the right one',
+  // And the same pair for the words: this one answers which language is in use and which tags
+  // the build ships, which is what the settings page draws its switch from. The press is
+  // `seek:language-save` below; the list is a fact about the tree rather than a button.
+  'seek:language': 'the interface language in use and the tags this build ships: the switch is drawn from it',
 }
 
 test('every call that changes the store is a call the window can reach and main answers', () => {

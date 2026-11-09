@@ -36,6 +36,20 @@ contextBridge.exposeInMainWorld('seekHost', {
    */
   theme: () => ipcRenderer.invoke('seek:theme'),
   saveTheme: (theme) => ipcRenderer.invoke('seek:theme-save', theme),
+  /**
+   * The window's language, which is the second thing that file remembers.
+   *
+   * `catalogue` further down is the words; these two are which file they come from.
+   * `docs/design/i18n.md` §2 makes the interface's language a setting that takes effect
+   * immediately, so this pair is a read and a write rather than a constant, and the renderer
+   * asks for the catalogue again after a save — the words are the other half of the same answer,
+   * and a page holding two catalogues would be two answers to one question.
+   *
+   * `language` also answers which tags this build ships, read off `src/i18n/` rather than listed
+   * here: a language added by writing a file is one the switch offers without this line moving.
+   */
+  language: () => ipcRenderer.invoke('seek:language'),
+  saveLanguage: (tag) => ipcRenderer.invoke('seek:language-save', tag),
   post: (input) => ipcRenderer.invoke('seek:post', input),
   /**
    * The hover toolbar's emoji square: one person's reaction on one message.
