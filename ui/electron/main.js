@@ -61,6 +61,7 @@ const {
 const ATTACHMENT_LIMIT = 25 * 1024 * 1024
 const { defaultConfigPath, readConfiguredEndpoint, wordsHalfFrom } = require('./llm-config.js')
 const { defaultSettingsPath, llmOf, readSettings, writeSettings } = require('./settings.js')
+const { languageOf, refusalToSave } = require('./language.js')
 const {
   createOrganization,
   directoryOf,
@@ -429,15 +430,60 @@ ipcMain.handle('seek:theme-save', async (_event, theme) => {
  * carries `i18n/*.json`, checked by `packaging.test.mjs`), so the read is one call at start-up
  * rather than a build step that has to be kept in step with it.
  *
- * **The language is the kernel's own default**, `DEFAULT_LOCALE`: "the language a run speaks
- * unless it is told otherwise". Nothing here invents a second answer to what tells it —
- * `docs/design/i18n.md` §2 says the interface language is a setting and does not say where
- * that setting lives, so this handler is where that choice will land rather than a decision
- * taken quietly in the renderer.
+ * **The language is the one saved, and it is the kernel's own list that says which may be.**
+ * `docs/design/i18n.md` §2 makes the interface's language "a setting; takes effect
+ * immediately", which is two questions and this pair of calls answers both: `seek:language`
+ * says which tag is in use and which ones this tree ships, `seek:language-save` writes the
+ * choice, and the renderer asks for its words again after a save rather than being handed a
+ * second catalogue to keep in step. The list is `locales()`, read off `src/i18n/` at run time,
+ * so a language added by writing a file is one a person can pick without a code change —
+ * which is the promise `src/i18n.ts` makes and this handler has no business narrowing.
+ *
+ * A tag this tree does not ship answers `DEFAULT_LOCALE` rather than being passed on:
+ * `language.js` holds that rule and its docstring says why.
  */
+async function languageInUse() {
+  const { DEFAULT_LOCALE, locales } = await import('../../src/i18n.ts')
+  const read = await readSettings(SETTINGS_FILE)
+  return languageOf(read.settings?.language, locales(), DEFAULT_LOCALE)
+}
+
 ipcMain.handle('seek:catalogue', async () => {
-  const { DEFAULT_LOCALE, catalogueFor } = await import('../../src/i18n.ts')
-  return catalogueFor(DEFAULT_LOCALE)
+  const { catalogueFor } = await import('../../src/i18n.ts')
+  return catalogueFor(await languageInUse())
+})
+
+/** Which language is in use, and which ones this build ships — the list the switch is drawn from. */
+ipcMain.handle('seek:language', async () => {
+  const { locales } = await import('../../src/i18n.ts')
+  return { locale: await languageInUse(), shipped: locales() }
+})
+
+/**
+ * Save the window's language, and answer with the tag that is now in use.
+ *
+ * No `seek:changed` is broadcast, and that is not an omission: this is not the store. The
+ * catalogue a window draws is the renderer's own, so the renderer is the one that has to
+ * repaint, and it does that by asking for it — a broadcast would tell it something changed
+ * without saying what the new words are. A refusal is answered rather than thrown for the
+ * reason the theme's is: the page has to say the sentence, and a throw would only reach a
+ * console nobody opens.
+ */
+ipcMain.handle('seek:language-save', async (_event, tag) => {
+  const { locales } = await import('../../src/i18n.ts')
+  const shipped = locales()
+  const refusal = refusalToSave(tag, shipped)
+  if (refusal !== null) {
+    console.error(`seek: ${refusal}`)
+    return { ok: false, error: refusal }
+  }
+  try {
+    await writeSettings(SETTINGS_FILE, { language: tag })
+  } catch (error) {
+    console.error(`seek: the language could not be saved — ${error.message}`)
+    return { ok: false, error: error.message }
+  }
+  return { ok: true, locale: tag }
 })
 
 /**

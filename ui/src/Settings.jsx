@@ -46,6 +46,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { size, t } from './catalogue.mjs'
+import { languageName } from './language.mjs'
 
 const EMPTY = {
   live: { baseUrl: null, model: null, from: null, hasKey: false, keyTail: '', keyLen: 0 },
@@ -75,7 +76,7 @@ function sourceLine(reading) {
  * view is open (`App.jsx`, the rail's add mark). The page still reads the list from the same
  * snapshot it always did.
  */
-export default function Settings({ snapshot }) {
+export default function Settings({ snapshot, locale, onLanguage }) {
   const [reading, setReading] = useState(EMPTY)
   const [baseUrl, setBaseUrl] = useState('')
   const [model, setModel] = useState('')
@@ -94,6 +95,30 @@ export default function Settings({ snapshot }) {
   // endpoint, a chip saying `untested` would be a label a person can never change.
   const [failure, setFailure] = useState(null)
   const [note, setNote] = useState(null)
+  // The languages this build ships, read from the host rather than listed here: the list is
+  // `src/i18n/` on disk, and a language added by writing a file has to appear in the switch
+  // without this page being edited (`src/i18n.ts` makes that promise for `--lang` and the report,
+  // and the window is the same question). Empty until the answer arrives, which is why the
+  // control is disabled while it is — a switch with no options is a control that cannot be used
+  // yet, not one that is broken.
+  const [shipped, setShipped] = useState([])
+  const [languageBusy, setLanguageBusy] = useState(false)
+  const [languageNote, setLanguageNote] = useState(null)
+
+  // Re-read on every language change, because the list itself is drawn in the language being
+  // read: the tags do not move, their names do (`languageName()` below).
+  useEffect(() => {
+    let live = true
+    window.seekHost
+      ?.language?.()
+      .then((answer) => {
+        if (live) setShipped(answer?.shipped ?? [])
+      })
+      .catch(() => {})
+    return () => {
+      live = false
+    }
+  }, [locale])
 
   const load = useCallback(async () => {
     if (!window.seekHost?.llm) return
@@ -172,6 +197,26 @@ export default function Settings({ snapshot }) {
       setNote(t('ui.settings.models.saved'))
     } finally {
       setBusy(null)
+    }
+  }
+
+  /**
+   * Speak another language, and say so if the choice could not be kept.
+   *
+   * The repaint is `App`'s: the answer moves its state, the whole tree draws again, and every
+   * `t()` on the way is read from the catalogue that was just bound. What is said here is only
+   * the failure — a success is visible on its own, since the page a person is looking at is now
+   * in the language they picked, and a line announcing that would be the window narrating itself.
+   */
+  async function pickLanguage(tag) {
+    if (tag === locale || typeof onLanguage !== 'function') return
+    setLanguageBusy(true)
+    setLanguageNote(null)
+    try {
+      const answer = await onLanguage(tag)
+      if (answer?.ok !== true) setLanguageNote(t('ui.settings.language.not-saved'))
+    } finally {
+      setLanguageBusy(false)
     }
   }
 
@@ -378,6 +423,48 @@ export default function Settings({ snapshot }) {
               {organizationNote && (
                 <p className="card-sub" data-organization-note style={{ marginTop: 12 }}>
                   {organizationNote}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* ---- the window's own language ------------------------------------------- */}
+        {/* A third subject, and neither of the two above: the models are this machine's, the
+            organizations are the worlds on it, and this is the application's own chrome — the
+            split `docs/design/i18n.md` §2 draws first and explains from. It is drawn last
+            because it changes the words of everything above it, including its own heading, and
+            a setting that rewrites the page is less confusing at the foot of it. */}
+        <div className="settings-section">
+          <h3 className="pane-title">{t('ui.settings.language.title')}</h3>
+          <p className="pane-desc">{t('ui.settings.language.description')}</p>
+
+          <div className="card">
+            <div className="card-body">
+              <label className="field">
+                <span className="field-label">{t('ui.settings.language.label')}</span>
+                {/* The options are the host's list, and each one is named by `Intl.DisplayNames`
+                    in the language currently being read — `Chinese (China)` in English,
+                    `中文（中国）` in Chinese. A name is the one thing the catalogue cannot carry
+                    here: a language it has no keys for still has to be named in the list. */}
+                <select
+                  className="field-input"
+                  value={locale ?? ''}
+                  disabled={languageBusy || shipped.length === 0}
+                  onChange={(event) => pickLanguage(event.target.value)}
+                  data-language="select"
+                >
+                  {shipped.map((tag) => (
+                    <option key={tag} value={tag}>
+                      {languageName(tag, locale)}
+                    </option>
+                  ))}
+                </select>
+                <span className="card-sub">{t('ui.settings.language.note')}</span>
+              </label>
+              {languageNote && (
+                <p className="card-sub bad-text" data-language="note">
+                  {languageNote}
                 </p>
               )}
             </div>

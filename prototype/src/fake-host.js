@@ -30,6 +30,15 @@ const CATALOGUES = { en, 'zh-CN': zhCN }
 const ASKED = new URLSearchParams(window.location.search).get('locale')
 export const LOCALE = ASKED && CATALOGUES[ASKED] ? ASKED : 'en'
 
+/**
+ * The one the demo is speaking now, which is `LOCALE` until somebody picks another.
+ *
+ * `?locale=` chooses what it opens in; the settings page's own switch can change it afterwards,
+ * because that is what the switch does in the app and a demo that ignored the press would be a
+ * screen the window does not have.
+ */
+let locale = LOCALE
+
 /** The demo's store, and the only mutable thing in this file. */
 const data = makeFixture()
 
@@ -133,7 +142,21 @@ export const fakeHost = {
     return () => listeners.delete(listener)
   },
 
-  catalogue: async () => CATALOGUES[LOCALE],
+  catalogue: async () => CATALOGUES[locale],
+
+  // The other half of the same question: which of the shipped catalogues the words above come
+  // from, and which ones a person may pick. The list is read off what the demo imported rather
+  // than written here, so a third catalogue is offered in the demo without editing this line —
+  // the same rule the app follows by reading `src/i18n/` off the disk.
+  language: async () => ({ locale, shipped: Object.keys(CATALOGUES).sort() }),
+
+  saveLanguage: async (tag) => {
+    if (!CATALOGUES[tag]) {
+      return { ok: false, error: `the demo ships ${Object.keys(CATALOGUES).sort().join(', ')}` }
+    }
+    locale = tag
+    return { ok: true, locale }
+  },
 
   theme: async () => theme,
 
