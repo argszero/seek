@@ -16,6 +16,13 @@
  * **The count is not lost with the line.** It is still drawn twice on this screen — in the card
  * beside the list (`ui.groups.card.members`) and in the room header — so a reader who wants it
  * opens the group rather than reading it off a directory.
+ *
+ * **The picture, read 2026-11-11.** The same directory draws each row's avatar **32** across —
+ * measured on `feishu-groups-3.png` at 1x, where the shot's 156-wide rail is the scale check, and
+ * 32 is what this window already draws its own rail avatar at. Our group rows borrowed the chat
+ * list's `.conv-av`, which is 36; the client's *conversation* list measures 36 too, so 36 is right
+ * there and wrong here. The row therefore carries a picture of its own: `.conv-av` keeps its 36,
+ * because the other three readers of it were never measured against this reference.
  */
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -104,4 +111,22 @@ test('the line under a conversation stays where it was', () => {
     assert.match(source, /className="conv-last"/, `${what} is gone with the groups view’s line`)
   }
   assert.equal(count(GROUPS, 'conv-last'), 0, 'and the groups view draws none of its own')
+})
+
+test('a group row’s picture is 32, and the shared picture stays 36', () => {
+  // Two lists, two sizes, both measured on the client: its directory draws the avatar 32 across
+  // (`feishu-groups-3.png`, 1x), its conversation list 36. The shared `.conv-av` is the 36 the
+  // conversation list asks for, so the smaller picture is this row's own and not a change to it.
+  const group = row()
+  assert.equal(
+    count(group, 'group-av'),
+    1,
+    'the group row lost its own picture class, so the shared 36 is what it draws again',
+  )
+  const own = rule(SHELL, '.group-av')
+  assert.equal(own.width, '32px', 'the reference draws this row’s picture 32 across')
+  assert.equal(own.height, '32px', 'a picture that is not square is not the reference’s picture')
+  const shared = rule(SHELL, '.conv-av')
+  assert.equal(shared.width, '36px', 'the shared picture is what the conversation list measures: 36')
+  assert.equal(shared.height, '36px', 'and unchanged in height: three other lists draw it')
 })
