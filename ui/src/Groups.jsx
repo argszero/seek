@@ -259,7 +259,10 @@ export default function Groups({ rooms, people, me, onOpen, onSnapshot, ask, onA
                 data-group-row={room.id}
                 onClick={() => setOpenId(room.id)}
               >
-                <span className="conv-av">{roomTitle(room).slice(0, 1).toUpperCase()}</span>
+                {/* The second class is this row's own picture size, 32, where the conversation
+                    list measures 36 — read off the client's directory, and kept here rather than
+                    in the shared rule because that rule has three other lists behind it. */}
+                <span className="conv-av group-av">{roomTitle(room).slice(0, 1).toUpperCase()}</span>
                 <span className="conv-body">
                   <span className="conv-name">
                     {roomTitle(room)}

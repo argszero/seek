@@ -410,6 +410,17 @@ body {
    the 2px `.conv-list` already puts between two of them. */
 .conv.single-line { height: 52px; }
 
+/* The picture in one of those rows is 32 across, not the shared 36. The client's directory draws
+   it 32 — read from `feishu-groups-3.png` on 2026-11-11 as seven discs of 32×32 at x=522, one per
+   row, 54 apart, in a shot whose 156-wide rail is the scale check — while its conversation list
+   draws 36 on both sides, which is what `.conv-av` already matches. So this row carries its own
+   class rather than the shared rule moving: three other lists draw `.conv-av`, and none of them
+   was measured against this reference. It fits the 52px row with 8px of padding above and below. */
+.group-av {
+  width: 32px;
+  height: 32px;
+}
+
 /* The contacts list's own two pieces: a search box under the heading, and the kind chip that
    sits beside a name. Both reuse what is already here — `.field-input` is the window's one
    text input — so this is spacing, not a second look. */
