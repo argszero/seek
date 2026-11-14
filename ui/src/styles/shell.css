@@ -1904,6 +1904,28 @@ textarea.dialog-input {
 
 .room-member-me { margin-left: auto; color: var(--N500); font-size: 12px; }
 
+/* Where a thread stopped, and when. The sentence is the flexible half and the moment is not: a
+   bot's name and a whole clause fit on one line at this width until they do not, and the reading
+   that survives a long name is the one whose time stays put while the sentence wraps. */
+.room-walls { margin: 6px 0 0; padding: 0; list-style: none; }
+
+.room-wall {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 12px;
+  color: var(--N700);
+}
+
+.room-wall-what { min-width: 0; }
+
+.room-wall-when {
+  margin-left: auto;
+  flex: none;
+  color: var(--N500);
+}
+
 .room-manage {
   margin-top: 8px;
   height: 26px;

@@ -1956,6 +1956,53 @@ export default function App() {
                 </div>
               </div>
 
+              {/* **Where a thread stopped on purpose, and was written down** — §11.6's third
+                  ending. The kernel writes the row at the end of the turn that walked into the
+                  wall (`src/diary.ts`), the snapshot hands over who and which wall, and the
+                  sentence is this file's out of the catalogue.
+
+                  **Drawn only when there is something to list, and that is the point of the
+                  `length` gate.** Nothing is written here until a thread actually reaches a
+                  limit, so a card that was always there would tell every ordinary room that
+                  something had been recorded about it. A person reading this panel is asking
+                  "what is this room", and an empty table headed by that question is a lie. */}
+              {active.walls.length > 0 && (
+                <div className="card">
+                  <div className="card-body">
+                    <div className="card-title">
+                      {t('ui.room.wall.title', { count: active.walls.length })}
+                    </div>
+                    <ul className="room-walls">
+                      {active.walls.map((wall) => (
+                        <li
+                          key={`${wall.bot}:${wall.at}`}
+                          className="room-wall"
+                          data-room-wall={wall.reason}
+                          data-room-wall-bot={wall.bot}
+                        >
+                          <span className="room-wall-what">
+                            {/* The two walls §11.6 stops an agent at, and nothing else reaches
+                                here: the snapshot hands over `depth` or `room_agent_turns` and
+                                drops a code it has no sentence for. Each is its own lookup
+                                rather than a key picked out of a table, because a key written
+                                outside a `t()` call is a key nothing checks is shipped. */}
+                            {wall.reason === 'depth'
+                              ? t('ui.room.wall.depth', { name: whoSaid[wall.bot]?.name ?? wall.bot })
+                              : t('ui.room.wall.turns', { name: whoSaid[wall.bot]?.name ?? wall.bot })}
+                          </span>
+                          <span
+                            className="room-wall-when"
+                            data-room-wall-at={wall.at}
+                          >
+                            {whenShort(wall.at)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              )}
+
               {active.tag !== null && active.kind !== 'p2p' && (
                 <p className="room-tag" data-room-field="tag">
                   {t('ui.room.tag', { tag: active.tag })}
