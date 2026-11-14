@@ -34,7 +34,8 @@
  */
 
 import { buildBox, type BoxElapsed, type BoxMedia } from './box.ts';
-import { bumpAgentTurns } from './chain.ts';
+import { agentTurnsIn, bumpAgentTurns } from './chain.ts';
+import { recordTheWall } from './diary.ts';
 import { identityFor, type AgentIdentity } from './identity.ts';
 import type { RunTurn } from './inbox.ts';
 import { sayAs, type SayTool } from './say.ts';
@@ -335,7 +336,8 @@ export async function runTurn(
     // it was created with rather than inventing a figure for work it cannot see.
     turn.input_tokens = spent?.input_tokens ?? 0;
     turn.output_tokens = spent?.output_tokens ?? 0;
-    turn.ended_at = spec.now ?? new Date().toISOString();
+    const endedAt = spec.now ?? new Date().toISOString();
+    turn.ended_at = endedAt;
     // §11.3: this room has now had one more bot turn in a row, with no human
     // message between. Counted when the turn ends so that the third turn's own
     // words still reach the other side — the cap stops *further* messages.
@@ -343,7 +345,15 @@ export async function runTurn(
     // Only a turn *in a room* counts. §12 says a reminder does not touch this
     // counter: the cap exists to stop two bots trading turns in a room, and a
     // bot reminding itself is not a conversation in a room.
-    if (spec.roomId !== undefined) bumpAgentTurns(store, spec.roomId);
+    if (spec.roomId !== undefined) {
+      // §11.6's record belongs to the turn that walked into the wall, so the crossing is read
+      // **before** the counter moves: afterwards the room only says where it stands. The row
+      // is written inside this `finally` on purpose — a turn that threw may already have
+      // spoken, which is why the counter is bumped for it too.
+      const before = agentTurnsIn(store, spec.roomId);
+      bumpAgentTurns(store, spec.roomId);
+      recordTheWall(store, agent, spec.roomId, produced, before, endedAt);
+    }
     await store.save();
   }
 

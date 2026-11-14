@@ -698,6 +698,45 @@ function judgedByRoom(store) {
 }
 
 /**
+ * **Where a thread was stopped on purpose and written down** — §11.6's third ending.
+ *
+ * The kernel writes one `Memory` row with `level: 'diary'` at the end of the turn that walked
+ * into a wall (`src/diary.ts`), and its `body` is the reason code an entry's own
+ * `hints.chainBlocked` already uses: `depth` or `room_agent_turns`. What crosses to the window is
+ * that code, who reached it and when; *this exchange reached its limit and needs a person* is
+ * the window's sentence, as every other word on this boundary is.
+ *
+ * **A crossing, not a state.** A row is written by the turn that took the room to its cap and by
+ * no turn after it, so the list is the walls walked into and not a count of turns that happened
+ * past one — a room left sitting past its cap does not grow a diary.
+ *
+ * **What is left out.** A diary row with no `room_id` belongs to a reminder's turn (§12: a bot's
+ * own work is not a contribution to a room), so it is attached to no room here. And a row whose
+ * `body` is neither of the two codes is a store somebody edited by hand: the window has no
+ * sentence for it, and handing it over would draw a machine's word where a sentence goes. The
+ * two codes are `ChainBlockReason`'s whole membership, which is what closes that set.
+ */
+function wallsByRoom(store) {
+  const byRoom = new Map()
+  for (const [agentId, rows] of Object.entries(store.data.memories ?? {})) {
+    const agent = store.data.agents[agentId]
+    if (agent === undefined) continue
+    for (const row of rows) {
+      if (row.level !== 'diary' || row.room_id === undefined) continue
+      if (row.body !== 'depth' && row.body !== 'room_agent_turns') continue
+      const list = byRoom.get(row.room_id) ?? []
+      list.push({ bot: agent.bot_id, reason: row.body, at: row.updated_at })
+      byRoom.set(row.room_id, list)
+    }
+  }
+  // Newest first: the one a person opens the panel for is the one that just happened.
+  for (const list of byRoom.values()) {
+    list.sort((one, two) => (one.at < two.at ? 1 : one.at > two.at ? -1 : 0))
+  }
+  return byRoom
+}
+
+/**
  * Which of a bot's messages were its own idea, per message id.
  *
  * `docs/design/agent-lifecycle.md` §8 item 2 asks the window to mark "proactive messages ...
@@ -847,6 +886,8 @@ function snapshotOf(
   const proactives = proactiveByMessage(store)
   // What each bot has taken on and passed on here — one pass for the same reason as `spent`.
   const judged = judgedByRoom(store)
+  // Where a thread was stopped and written down (§11.6), read once for the same reason again.
+  const walls = wallsByRoom(store)
   // **The list is the rooms this person is in.** It was every room in the store, which was the
   // same list while a membership could only be *added*; `removeMember()` and the panel's `Leave`
   // (2026-10-27) made a room somebody is not in reachable, and the window went on listing the
@@ -893,6 +934,10 @@ function snapshotOf(
     // What the bots in this room have spent, as the ledger holds it — a number to read,
     // with nothing to compare it against (`docs/host-rulings.md`, "No spending cap").
     spend: spent.get(room.id) ?? NOTHING_SPENT,
+    // **The exchanges that came to a wall in this room, and who stopped them** — §11.6's third
+    // ending on the record. An empty list is the ordinary room and the fact that nothing has been
+    // recorded here yet; the window draws the card only when there is something in it.
+    walls: walls.get(room.id) ?? [],
     members: store.membershipsOf(room.id).map((membership) => {
       const who = store.principal(membership.principal_id)
       const isBot = Boolean(store.data.bots[membership.principal_id])
