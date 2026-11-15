@@ -410,10 +410,10 @@ function turnValues(card: {
   };
 }
 
-test('the shipped turn artifact is v15, and every version behind it is still readable', () => {
+test('the shipped turn artifact is v16, and every version behind it is still readable', () => {
   const shipped = loadWorkArtifact();
-  assert.equal(shipped.version, 'work-v15');
-  assert.match(shippedWorkPromptPath().pathname, /work-v15\.json$/);
+  assert.equal(shipped.version, 'work-v16');
+  assert.match(shippedWorkPromptPath().pathname, /work-v16\.json$/);
   const twelve = loadWorkArtifact(new URL('./prompts/work-v12.json', import.meta.url));
   const ten = loadWorkArtifact(new URL('./prompts/work-v10.json', import.meta.url));
   const eleven = loadWorkArtifact(new URL('./prompts/work-v11.json', import.meta.url));
@@ -760,7 +760,7 @@ test('v14 says how old an entry is and how long since this bot spoke, and nothin
 });
 
 test('v15 hands the bot the schedule, and moves nothing else', () => {
-  const shipped = loadWorkArtifact();
+  const shipped = loadWorkArtifact(new URL('./prompts/work-v15.json', import.meta.url));
   const fourteen = loadWorkArtifact(new URL('./prompts/work-v14.json', import.meta.url));
 
   // **What v15 is: §12's tool.** "One table, one tool, and a due row arrives as a message."
@@ -802,6 +802,78 @@ test('v15 hands the bot the schedule, and moves nothing else', () => {
     fourteen.tools,
     'v15 adds the schedule and changes no other tool',
   );
+});
+
+test('v16 gives the bot what it has been taught, and moves nothing else', () => {
+  const shipped = loadWorkArtifact();
+  const fifteen = loadWorkArtifact(new URL('./prompts/work-v15.json', import.meta.url));
+
+  // **What v16 is: the way a bot is taught.** The format is the open standard at
+  // `agentskills.io` — a directory under the bot's home holding a `SKILL.md` — and
+  // `skills.ts` reads exactly that and decides nothing about it. What this file adds is
+  // one part: a line per skill, its name, its description and its file, which is what the
+  // bot chooses by. The instruction itself arrives when the bot asks for it.
+  const added = shipped.parts.filter(
+    (part) => !fifteen.parts.some((own) => own.name === part.name),
+  );
+  assert.deepEqual(added.map((part) => part.name), ['skills'], 'one part, and it is the skills');
+  assert.equal(added[0].when, 'skills', 'and it leaves the prompt for a bot nobody taught');
+  assert.ok(added[0].text.includes('{skills}'), 'it is the one place the list is quoted');
+
+  // The rest of the file is v15's, for the reason every version's test gives: a bump that
+  // also reworded the room's temper would change what every bot is like, not only what it
+  // can be taught.
+  assert.deepEqual(
+    shipped.parts.filter((part) => part.name !== 'skills'),
+    fifteen.parts,
+    'v16 adds the skills part and renumbers nothing else',
+  );
+  assert.equal(shipped.system, fifteen.system, "the system line is v15's");
+  assert.equal(shipped.pictureLine, fifteen.pictureLine, "the picture line is v15's");
+  assert.equal(shipped.entryRoomLine, fifteen.entryRoomLine, "the room tag is v15's");
+  assert.equal(shipped.entryAgeLine, fifteen.entryAgeLine, "the age words are v15's");
+
+  // One tool moves, and it is the one that opens things. A bot handed a description with
+  // no way to the file behind it has a summary it may not follow, so `read` takes a name
+  // in the bot's own directory as well as a day — widened rather than joined by a second
+  // tool, because *open something I kept* is one verb.
+  const names = (artifact: { tools: { name: string }[] }) =>
+    artifact.tools.map((tool) => tool.name);
+  assert.deepEqual(names(shipped), names(fifteen), 'the same tools, one of them widened');
+  const propertiesOf = (artifact: { tools: { name: string; parameters: unknown }[] }) =>
+    Object.keys(
+      ((artifact.tools.find((tool) => tool.name === 'read')?.parameters as {
+        properties: Record<string, unknown>;
+      }) ?? { properties: {} }).properties,
+    );
+  assert.deepEqual(propertiesOf(shipped), ['day', 'path'], 'read takes a day or a file');
+  assert.deepEqual(propertiesOf(fifteen), ['day'], 'and it took only a day before v16');
+});
+
+test('a taught bot is told its skills, and an untaught one is asked v15 byte for byte', () => {
+  const shipped = loadWorkArtifact();
+  const fifteen = loadWorkArtifact(new URL('./prompts/work-v15.json', import.meta.url));
+
+  const taught = assembleWorkPrompt(shipped, {
+    ...turnValues({}),
+    skills:
+      '- name=pdf-tools description=Cuts and merges PDFs. Use it when a file is a PDF. ' +
+      'file=skills/pdf-tools/SKILL.md',
+  });
+  assert.ok(
+    taught.rest.includes('skills/pdf-tools/SKILL.md'),
+    'the file is named, so the bot can open the instruction behind the line',
+  );
+  assert.ok(taught.rest.includes('Cuts and merges PDFs'), 'and the description it chooses by');
+  assert.doesNotMatch(taught.rest, /\{skills\}/, 'no placeholder left whole');
+
+  // The other half of a conditional part, and the one that keeps this version free for
+  // every bot on this machine today: nothing filed means nothing said.
+  const before = assembleWorkPrompt(fifteen, turnValues({}));
+  const after = assembleWorkPrompt(shipped, turnValues({}));
+  assert.equal(after.rest, before.rest, 'an untaught bot is asked the v15 text byte for byte');
+  assert.equal(after.system, before.system, 'and reads the same head');
+  assert.equal(after.rest.includes('skills'), false, 'with no section about skills in it');
 });
 
 test('two entries a week apart do not read alike, because each line says when it arrived', () => {

@@ -55,6 +55,7 @@ import { readFileSync } from 'node:fs';
  * only once it is long enough to matter. A part that quotes a count is skipped while the
  * count is nothing, so an opening exchange reads the short prompt and a room that has been
  * at it for a while is told so.
+ *
  */
 export type PartCondition = 'always' | 'summary' | 'position' | 'room' | 'others' | 'turns';
 
@@ -812,6 +813,18 @@ export interface WorkValues {
    */
   archive: string;
   /**
+   * What this bot has been taught, one line per skill, or absent when it has been taught
+   * nothing.
+   *
+   * **A line and not the file**, which is the open standard's own shape
+   * (`agentskills.io`, progressive disclosure): what a bot chooses by is the description,
+   * and the instruction behind it arrives when the bot asks for it — `read`, naming the
+   * file this value gives it. Absent rather than `''` for the reason `others` is: the part
+   * that quotes the list leaves the prompt, so a bot nobody filed a skill for is asked the
+   * prompt it was asked before there were skills at all.
+   */
+  skills?: string;
+  /**
    * How many bot messages in a row this room has had without the person — absent until
    * the room has been going long enough to be told.
    *
@@ -867,7 +880,7 @@ export interface WorkValues {
 /**
  * The shipped turn artifact's location, beside this module.
  *
- * `work-v15.json` ships; `work-v1.json` through `work-v14.json` stay beside it. A prompt is
+ * `work-v16.json` ships; `work-v1.json` through `work-v15.json` stay beside it. A prompt is
  * versioned rather than edited in place, because `calibration/work/` measured v1 and a
  * record that quotes a prompt the tree has changed describes a run nobody can re-read
  * — `work-calibration.test.ts` holds that pair together. What v2 added is the two parts
@@ -956,9 +969,22 @@ export interface WorkValues {
  * is — a note to a future self that no room ever sees — because a model that believed it had
  * said something in the room would be relying on a message that was never posted. No part
  * moves and no other tool changes.
+ *
+ * What v16 adds is the way a bot is taught: `skills`, the third thing `data-model.md`'s
+ * rule 17 puts in an agent's own directory beside its persona and its memory. The format is
+ * the open standard at `agentskills.io` — a skill is a directory under the home holding a
+ * `SKILL.md`, whose front matter says what it does and when to use it — and `skills.ts` is
+ * the reader of exactly that, so nothing about a skill is decided here. This file adds one
+ * part, `{skills}`, one line per skill: its name, its description, and the file it lives in.
+ * The part is skipped when the home holds none, which is every bot made by this version, so
+ * what those bots are asked is the v15 text byte for byte. The tool that opens one is v8's
+ * `read`, widened rather than joined by a second: it takes a `path` in the bot's own
+ * directory as well as a `day`, because a bot handed a description and refused the file
+ * behind it has a summary it may not follow. That pair — the line, then the file only if it
+ * asks — is what the standard calls progressive disclosure, and it is the whole of it.
  */
 export function shippedWorkPromptPath(): URL {
-  return new URL('./prompts/work-v15.json', import.meta.url);
+  return new URL('./prompts/work-v16.json', import.meta.url);
 }
 
 /**
@@ -1025,6 +1051,7 @@ export function assembleWorkPrompt(
     roster: values.roster,
     summary: values.summary,
     archive: values.archive,
+    skills: values.skills ?? '',
     memories: values.memories ?? '',
     others: values.others ?? '',
     turns: values.turns ?? '',
@@ -1084,6 +1111,7 @@ const WORK_FACTS = [
   'roster',
   'summary',
   'archive',
+  'skills',
   'memories',
   'others',
   'turns',
@@ -1106,7 +1134,8 @@ function isOptionalFact(name: unknown): name is OptionalFact {
 /**
  * True for a placeholder the prompt may have to leave out: the card's four; the room's
  * note, since a room nothing has been compacted in has no note; the notes it wrote about
- * other rooms, since a bot that has worked in one room has none; the company it keeps in
+ * other rooms, since a bot that has worked in one room has none; what it has been taught,
+ * since a bot nobody filed a skill for has been taught nothing; the company it keeps in
  * this room; and how long the room has been going. Quoting a blank after a colon is the
  * same defect as quoting an empty position.
  */
@@ -1114,6 +1143,7 @@ function isSkippable(name: unknown): boolean {
   return (
     name === 'summary' ||
     name === 'memories' ||
+    name === 'skills' ||
     name === 'others' ||
     name === 'turns' ||
     name === 'silence' ||
@@ -1197,7 +1227,7 @@ function assertWorkArtifact(value: unknown, source: string): WorkArtifact {
     if (typeof row.after !== 'string') return fail(`${where}.after must be a string`);
     if (row.when !== 'always' && !isSkippable(row.when)) {
       return fail(
-        `${where}.when must be "always", "summary", or one of ${OPTIONAL_FACTS.join(', ')}, ` +
+        `${where}.when must be "always" or one of ${[...OPTIONAL_FACTS, 'summary', 'skills'].join(', ')}, ` +
           `got ${JSON.stringify(row.when)}`,
       );
     }
@@ -1222,8 +1252,9 @@ function assertWorkArtifact(value: unknown, source: string): WorkArtifact {
       }
     }
     if (isSkippable(row.when) && !dependsOn.includes(row.when)) {
+      const missing = row.when === 'skills' ? 'skills' : `a ${row.when}`;
       return fail(
-        `${where} is skipped without a ${row.when} and does not quote one, so nothing ` +
+        `${where} is skipped without ${missing} and does not quote one, so nothing ` +
           'it says depends on it',
       );
     }
