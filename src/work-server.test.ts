@@ -1,7 +1,14 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
@@ -1062,6 +1069,165 @@ test('a read that names no day is refused rather than answered with a guess', as
     /called read with day="yesterday", which is not a day/,
     'a name this runtime cannot read is not a day it may answer with a guess',
   );
+});
+
+/** A read call that names a file rather than a day, as a model writes one. */
+function readFileCall(path: string): unknown {
+  return { id: 'call_p1', function: { name: 'read', arguments: JSON.stringify({ path }) } };
+}
+
+/**
+ * A home of this test's own, holding exactly the files it is given, by name.
+ *
+ * A temporary directory rather than the fixture's `/tmp/seek/a/work`: skills are files, two
+ * runs of this file would share them, and a test that reads another's leftovers passes for
+ * the wrong reason.
+ */
+function homeWith(files: Record<string, string>): string {
+  const home = mkdtempSync(join(tmpdir(), 'seek-skills-'));
+  for (const [name, text] of Object.entries(files)) {
+    const file = join(home, name);
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, text, 'utf8');
+  }
+  return home;
+}
+
+test('what a bot has been taught reaches the turn, one line per skill', async () => {
+  const world = makeWorld();
+  const home = homeWith({
+    'skills/pdf-tools/SKILL.md':
+      '---\nname: pdf-tools\ndescription: Cuts and merges PDFs. Use it when a file is a PDF.\n---\n',
+  });
+  world.store.data.agents[world.agentA2].home = home;
+
+  const recorder = fakeServer({ content: 'nothing worth adding' });
+  const decide = await workOverServer(world.store, world.botA, serverOf(recorder), {
+    prompt: ARTIFACT,
+  });
+  await turnWith(world, decide, await entriesOf(world));
+
+  const chat = recorder.calls.find((call) => call.path === '/v1/chat/completions');
+  assert.ok(chat, 'the model was asked');
+  const asked = (chat.body.messages as { role: string; content: string }[])
+    .map((message) => message.content)
+    .join('\n');
+
+  // From the directory on the disk to the request body in one reading: `scanSkills` reads
+  // it, `valuesOf` hands it over as a fact and the artifact's part puts it in a sentence,
+  // so any of the three can drop it while the other two's own tests stay green.
+  assert.ok(
+    asked.includes('Cuts and merges PDFs. Use it when a file is a PDF.'),
+    'the description is the one thing a bot chooses a skill by, and it reached the model',
+  );
+  assert.ok(
+    asked.includes('skills/pdf-tools/SKILL.md'),
+    'and the file it would open is named, or the description is a summary it cannot follow',
+  );
+  assert.doesNotMatch(asked, /\{skills\}/, 'no placeholder left whole');
+
+  rmSync(home, { recursive: true, force: true });
+});
+
+test('a bot nobody filed a skill for is asked the prompt without the section', async () => {
+  const world = makeWorld();
+  const recorder = fakeServer({ content: 'nothing worth adding' });
+  const decide = await workOverServer(world.store, world.botA, serverOf(recorder), {
+    prompt: ARTIFACT,
+  });
+  await turnWith(world, decide, await entriesOf(world));
+
+  const chat = recorder.calls.find((call) => call.path === '/v1/chat/completions');
+  const asked = (chat?.body.messages as { role: string; content: string }[])
+    .map((message) => message.content)
+    .join('\n');
+  assert.equal(
+    asked.includes('has skills of its own'),
+    false,
+    'the fixture home holds no skills, so nobody is told about any',
+  );
+});
+
+test('a bot opens the file behind a skill, and the file comes back as it stands', async () => {
+  const world = makeWorld();
+  const body = '---\nname: pdf-tools\ndescription: Cuts PDFs.\n---\n\nRun `qpdf --split`.\n';
+  const home = homeWith({ 'skills/pdf-tools/SKILL.md': body });
+  world.store.data.agents[world.agentA2].home = home;
+
+  const recorder = fakeServer({
+    answers: [
+      { toolCalls: [readFileCall('skills/pdf-tools/SKILL.md')] },
+      { toolCalls: [sayCall(world.room, 'the skill says to split it first')] },
+    ],
+  });
+  const decide = await workOverServer(world.store, world.botA, serverOf(recorder), {
+    prompt: ARTIFACT,
+  });
+
+  const record = await turnWith(world, decide, await entriesOf(world));
+  assert.equal(
+    toolAnswer(recorder),
+    body,
+    'the instruction arrives as it was written: this reader does not reformat a file it ' +
+      'was handed',
+  );
+  assert.equal(record.produced.length, 1, 'and the turn carried on with what it read');
+  assert.equal(record.produced[0].text, 'the skill says to split it first');
+
+  rmSync(home, { recursive: true, force: true });
+});
+
+test('a read that climbs out of the bot’s own directory is refused in words', async () => {
+  const world = makeWorld();
+  const home = homeWith({ 'skills/pdf-tools/SKILL.md': '---\ndescription: Cuts PDFs.\n---\n' });
+  world.store.data.agents[world.agentA2].home = home;
+
+  const recorder = fakeServer({
+    answers: [
+      { toolCalls: [readFileCall('../../.emrg/config.toml')] },
+      { toolCalls: [sayCall(world.room, 'that is outside what I was given')] },
+    ],
+  });
+  const decide = await workOverServer(world.store, world.botA, serverOf(recorder), {
+    prompt: ARTIFACT,
+  });
+  await turnWith(world, decide, await entriesOf(world));
+
+  assert.match(
+    toolAnswer(recorder),
+    /can only look inside its own directory/,
+    'the name is refused before anything is opened, and the refusal says which bound it hit',
+  );
+
+  rmSync(home, { recursive: true, force: true });
+});
+
+test('a file that is not there is answered with what is', async () => {
+  const world = makeWorld();
+  const home = homeWith({ 'skills/pdf-tools/SKILL.md': '---\ndescription: Cuts PDFs.\n---\n' });
+  world.store.data.agents[world.agentA2].home = home;
+
+  // The near miss worth recovering from: the directory, when the file is one level down.
+  const recorder = fakeServer({
+    answers: [
+      { toolCalls: [readFileCall('skills/pdf-tools')] },
+      { toolCalls: [sayCall(world.room, 'it is the SKILL.md I want')] },
+    ],
+  });
+  const decide = await workOverServer(world.store, world.botA, serverOf(recorder), {
+    prompt: ARTIFACT,
+  });
+  await turnWith(world, decide, await entriesOf(world));
+
+  const answer = toolAnswer(recorder);
+  assert.match(answer, /has no file called "skills\/pdf-tools"/);
+  assert.match(
+    answer,
+    /skills\/pdf-tools\/SKILL\.md/,
+    'and what it does have is listed, so the model corrects itself in the same turn',
+  );
+
+  rmSync(home, { recursive: true, force: true });
 });
 
 /** A schedule call as a model writes one. */

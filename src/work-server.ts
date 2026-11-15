@@ -85,6 +85,7 @@ import {
   type FenceResult,
 } from './sandbox.ts';
 import { requireServedModel } from './served.ts';
+import { scanSkills, skillLinesOf } from './skills.ts';
 import type { SeekStore } from './store.ts';
 import type { Decide, HandedEntry, TurnContext } from './turn.ts';
 import type { Id, ScheduleRow, TokenUsage } from './types.ts';
@@ -458,7 +459,9 @@ function run(
   // directory can correct itself in the same turn instead of losing it. `schedule` is the
   // same shape for the same reason: the reminder is not a room's, and the sentence saying it
   // was written is what lets a bot fix an instant it got wrong before the turn ends.
-  if (call.name === 'read') return look(store, context, parsed as { day?: unknown });
+  if (call.name === 'read') {
+    return look(store, context, parsed as { day?: unknown; path?: unknown });
+  }
   if (call.name === 'glob') return globbed(store, context, parsed as { pattern?: unknown });
   if (call.name === 'grep') {
     return grepped(store, context, parsed as { pattern?: unknown; path?: unknown });
@@ -544,16 +547,31 @@ function run(
  * and it is the answer that lets the model correct itself — it is told which days do exist
  * and asks again. A throw there would end the turn over a wrong guess about a date.
  */
-function look(store: SeekStore, context: TurnContext, args: { day?: unknown }): string {
+function look(
+  store: SeekStore,
+  context: TurnContext,
+  args: { day?: unknown; path?: unknown },
+): string {
   const agent = store.data.agents[context.agentId];
   const home = agent?.home ?? '';
+
+  // **Two names and one tool**, because they are one idea — *open something I kept* — seen
+  // from its two ends. A day is what a note folded away (`archive.ts`); a name is a file in
+  // the bot's own directory, which is where its skills live since `work-v16.json`. A second
+  // tool called `skill` would have been a second name for the same verb, and the standard's
+  // own word for the first half of a skill is that the file is read when it is needed, not
+  // that some other tool fetches it.
+  const named = typeof args.path === 'string' ? args.path.trim() : '';
+  if (named !== '') return openedAt(home, named);
+
   const days = archiveDays(home);
   const day = typeof args.day === 'string' ? args.day.trim() : '';
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) {
     throw new Error(
       `the model called read with day=${JSON.stringify(args.day)}, which is not a day: the ` +
-        'tool declares YYYY-MM-DD, and a name this runtime cannot read is not a day it may ' +
-        `answer with a guess. The days this bot has filed are ` +
+        'tool takes a day as YYYY-MM-DD or the name of a file in this bot\'s own ' +
+        'directory, and a name this runtime cannot read is not a day it may answer with a ' +
+        `guess. The days this bot has filed are ` +
         `${days.join(', ') || 'none yet'}`,
     );
   }
@@ -781,6 +799,58 @@ function grepped(
     matches,
     `nothing in ${place} matches ${JSON.stringify(source)}` +
       (searched.length === 0 ? ': there is no file there.' : '.'),
+  );
+}
+
+/**
+ * One file in the bot's own directory, as it stands.
+ *
+ * **As it stands, rather than rendered.** A day comes back as transcript lines because the
+ * archive is the kernel's own file and `readArchiveDay` is its one reader; a file the bot
+ * or the person filed — a `SKILL.md`, a note it wrote — is theirs, and this runtime does
+ * not decide what may be in it. Rendering it would be this reader inventing a shape for a
+ * format it was handed.
+ *
+ * **The bound is checked before anything is opened** (`outsideOf`), so no call reaches past
+ * the home: an absolute name or one that climbs is refused in words the model can act on,
+ * not answered about somebody else's file.
+ *
+ * A name that is not there is answered with what is, because the mistake worth recovering
+ * from is a near miss — `skills/pdf-tools` for `skills/pdf-tools/SKILL.md` — and a model
+ * told only that it was wrong has to guess twice.
+ */
+function openedAt(home: string, name: string): string {
+  const outside = outsideOf(name);
+  if (outside !== null) return outside;
+  if (home === '') {
+    throw new Error(
+      'this bot has no directory on this machine, so there is no file here for it to open: ' +
+        "its home is what the roster row names, and every file call is bounded by it",
+    );
+  }
+
+  let text: string;
+  try {
+    text = readFileSync(join(home, name), 'utf8');
+  } catch {
+    const files = filesUnder(home, LOOK_FILES_LIMIT);
+    return (
+      `this bot has no file called ${JSON.stringify(name)}. ` +
+      (files.length === 0
+        ? 'Its directory is empty.'
+        : `What it has is ${withinLimit(files, 'nothing')}.`)
+    );
+  }
+
+  // A file and not a list, so the cut is at a byte count and says so rather than dividing
+  // entries: what a `SKILL.md` is worth reading for may be anywhere in it, and `slice` on
+  // the string cannot exceed the count it is given because a character is at least a byte.
+  const bytes = Buffer.byteLength(text, 'utf8');
+  if (bytes <= LOOK_ANSWER_LIMIT) return text;
+  return (
+    `[${bytes} bytes, of which the first ${LOOK_ANSWER_LIMIT} are here: a look goes into a ` +
+    `request that carries the whole box]\n` +
+    text.slice(0, LOOK_ANSWER_LIMIT)
   );
 }
 
@@ -1202,6 +1272,12 @@ function valuesOf(store: SeekStore, context: TurnContext): WorkValues {
     silence: elapsed === undefined ? undefined : silenceOf(elapsed, context.roomId),
     summary: box?.summary ?? '',
     archive: archivePlaceOf(store.data.agents[context.agentId]?.home ?? ''),
+    // **Read off the disk every turn, and absent when there is nothing there.** A skill is
+    // a file somebody filed, so the scan is the only reader it has and no row in the store
+    // remembers it — `skills.ts` states why a second copy would be the defect
+    // `data-model.md` rule 17 forbids. `undefined` when the home holds none, which is what
+    // makes the part leave the prompt rather than head an empty list.
+    skills: skillLinesOf(scanSkills(homeOf(store, context))),
     entries: readable.map((entry) => entryOf(store, bot.name, entry, elapsed?.now)),
   };
 }

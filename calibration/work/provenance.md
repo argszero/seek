@@ -59,7 +59,7 @@ measures the prompt the reader has; `LLAMA=<path>` names another `llama-server` 
 `src/prompts/work-v1.json` changed, which is what makes the rows comparable: the only
 variable left is the model.
 
-**The tree now ships `work-v15.json`, and every row below was measured on `work-v1.json`.** A
+**The tree now ships `work-v16.json`, and every row below was measured on `work-v1.json`.** A
 prompt is versioned rather than edited in place, so v1 stays in the tree exactly as it was
 measured. v2 adds two parts — what the bot does in its organization, and how it talks and
 works — and both are skipped when a bot's card says nothing; v3 adds one part, the note the
@@ -78,7 +78,12 @@ still assembles the v1 text, and nothing in the table was re-taken for v14 eithe
 bot §12's tool: `schedule`, one table every bot reads and writes, three verbs and no fourth. Nothing
 about it was missing except the half a bot writes with — the row, the comparator and the delivery a
 due row becomes were all here already — so v15 is a call and not a sentence, and since the rows below
-were measured with `say` alone declared, nothing in the table was re-taken for v15.
+were measured with `say` alone declared, nothing in the table was re-taken for v15. v16 gives a
+bot what it has been taught: one part listing the skills somebody filed in its own directory — a
+name, a description and the file each one lives in, by the open standard at `agentskills.io` — and
+the same `read` widened to open one of those files. The part is skipped when nothing has been filed,
+which is every bot this version makes, so a row below assembles the v15 text and nothing in the table
+was re-taken for v16 either.
 So a bot with an empty card, in a room nothing has been compacted in, was asked the v1 text
 byte for byte for as long as v2 and v3 shipped (`src/prompts.test.ts` compared the two
 assemblies, and says why it no longer can).
