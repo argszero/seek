@@ -88,7 +88,7 @@ test('a bot turn is counted once, and a bot message under the caps still wakes',
   assert.equal(chainBlock(world.store, world.botA, toA), undefined);
 });
 
-test('three bot turns in a row and the next addressed message wakes nobody — but still lands, marked', async () => {
+test('twenty-four bot turns in a row and the next addressed message wakes nobody — but still lands, marked', async () => {
   const world = makeWorld();
   const loop = new InboxLoop(world.store, makeTurn(world.store, world.botB));
   await runTurns(world, world.agentA2, AGENT_TURN_CAP);
@@ -235,7 +235,7 @@ test('an unaddressed bot message at the cap is row 3, consumed — not held for 
   assert.equal(settled.blocked.length, 0);
 });
 
-test('the depth cap stops a chain at four hops, read off the message itself', () => {
+test('the depth cap stops a chain at twenty-four hops, read off the message itself', () => {
   const world = makeWorld();
   let parent = deliver(world.store, {
     roomId: world.room,
@@ -373,7 +373,7 @@ test('two bots cannot answer each other forever', async () => {
   }
 
   assert.ok(rounds < limit, 'the exchange stopped on its own');
-  assert.equal(world.store.data.turns.length, AGENT_TURN_CAP, 'three turns, then the wall');
+  assert.equal(world.store.data.turns.length, AGENT_TURN_CAP, 'twenty-four turns, then the wall');
   assert.ok(
     agentTurnsIn(world.store, world.room) >= AGENT_TURN_CAP,
     'the room reached its cap rather than the chain running out',

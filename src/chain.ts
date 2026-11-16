@@ -10,12 +10,12 @@
  *
  * There are exactly two bounds and no third:
  *
- * 1. **Depth — cap 4.** Every message carries `caused_by`, `chain` and `depth`
+ * 1. **Depth — cap 24.** Every message carries `caused_by`, `chain` and `depth`
  *    (`delivery.ts` already writes them, data-model rule 11), and the depth is
  *    **read off the message data, never kept in a counter**: a counter has to be
  *    restored after a crash, and the one time it is restored wrong is the one
  *    time it matters.
- * 2. **The room's consecutive-agent-turn cap — 3.** This bounds a *burst*, which
+ * 2. **The room's consecutive-agent-turn cap — 24.** This bounds a *burst*, which
  *    depth never did: a burst of short exchanges uses few hops. It lives on the
  *    `Room` and not on an agent, because no single agent can see how many times
  *    its peers just spoke — an agent-local counter would be an agent measuring
@@ -107,8 +107,8 @@ export function messageOf(
 /**
  * One bot turn has run in this room.
  *
- * Called when a turn ends, not when it starts: §11.3 says three bot turns in a
- * row and *further* messages stop waking bots, so the third turn's own words
+ * Called when a turn ends, not when it starts: §11.3 says twenty-four bot turns
+ * in a row and *further* messages stop waking bots, so the last one's own words
  * must still reach the other side. Counting a turn that threw is deliberate —
  * it ran, and it may already have spoken.
  */
