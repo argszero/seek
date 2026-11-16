@@ -401,7 +401,7 @@ Because the watch side is a decision model, **watch tokens are not money and the
 
 | Failure | Mechanism |
 |---|---|
-| **Two bots wake each other and never stop** | ① a bot message does not wake another bot unless it @-mentions it, replies to it, or is a direct message ② a cap on consecutive bot turns per room — **3**, held on the Room, which is what bounds a burst ③ the depth cap, which bounds how long one chain runs (§11). A bot may open a conversation with another bot, so the *number* of chains is bounded by judgement and the record, not by a rule |
+| **Two bots wake each other and never stop** | ① a bot message does not wake another bot unless it @-mentions it, replies to it, or is a direct message ② a cap on consecutive bot turns per room — **24**, held on the Room, which is what bounds a burst ③ the depth cap, which bounds how long one chain runs (§11). A bot may open a conversation with another bot, so the *number* of chains is bounded by judgement and the record, not by a rule |
 | The watch side is too cheap → deaf and blind | hit rate observable; what it ignored can be reviewed (entries and reasons are kept) |
 | The watch side is too expensive → burning money | `spent` is recorded and visible per agent, so a runaway bill is *seen* rather than silently capped. There is no self-stop: a bill that climbs is a defect in the persona or the gate, and it is fixed there |
 | The observations outgrow what the judgement can read | the box handed over always fits — the newest observations, with an unread count for the rest — so the verdict degrades visibly instead of silently. Compaction normally prevents it; when compaction cannot run, it backs off rather than re-firing every tick |
@@ -481,7 +481,7 @@ A bot may already open a conversation with a **person**; forbidding the identica
 
 ### 11.3 One wall that counts hops
 
-1. **Depth** — every message carries `caused_by`, `chain` and `depth` (data-model rule 11). Each agent turn in a chain adds one hop. **Cap: 4.** At the cap the agent may end or escalate; it may not continue the chain.
+1. **Depth** — every message carries `caused_by`, `chain` and `depth` (data-model rule 11). Each agent turn in a chain adds one hop. **Cap: 24.** Both numbers are the implementer's defaults rather than the host's, and the ruling says so: a chain's length and a room's burst are "two numbers that are not the host's" (`docs/host-rulings.md`, "A bot may say the first word to another bot"). Twenty-four, because a wall that arrives before the room can end itself hides whether it can. At the cap the agent may end or escalate; it may not continue the chain.
 2. **The room's consecutive-agent-turn cap** (§11.4) — twenty-four bot turns in a row in one room, and further bot messages stop waking bots there. This is what bounds a burst; depth alone never did, because a burst of short exchanges uses few hops.
 
 There is **no chain budget**. A chain's cost is recorded like anything else, per turn, and is readable — but nothing stops it. The depth cap is the only numeric limit on a chain, and it is not a financial one: it exists to stop a loop, not a bill. It is read off the message data rather than kept in a counter, on purpose — a counter has to be restored after a crash, and the one time it is restored wrong is the one time it matters.
