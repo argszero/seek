@@ -14,6 +14,9 @@
  * store is the real one (`src/store.ts`) for the same reason.
  */
 import assert from 'node:assert/strict'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { test } from 'node:test'
 
 import { deliver, toggleReaction } from '../../src/delivery.ts'
@@ -541,6 +544,11 @@ test("a bot's gender, position and personality are carried to the window as writ
     gender: '男',
     position: '研发',
     personality: '实事求是、老实听话',
+    // A bot whose roster holds no rows has no agents, so nothing has been filed for it. The
+    // field is here rather than absent for the reason the three above it are: the window reads
+    // one shape, and a card that had to ask whether absence meant "none" would be reading the
+    // snapshot's mind.
+    agents: [],
   })
 
   // A bot that has said none of it is drawn as "not said" on all three rather than as no card
@@ -573,6 +581,9 @@ test('a person with no name is offered under their id', () => {
       gender: null,
       position: null,
       personality: null,
+      // A person has no agents at all, which is an empty list and not `null`: the four above
+      // are `null` because "not said" is something a bot can have said nothing about.
+      agents: [],
     },
   ])
 })
@@ -1073,4 +1084,80 @@ test('the model-server facts arrive in the shape the window reads', () => {
   assert.equal(only.stage1.refusal, 'the model server this app started stopped')
   assert.equal(only.stage1.pending, null)
   assert.equal(only.stage2.refusal, only.stage1.refusal, 'both halves were bound to the one server')
+})
+
+/**
+ * What a bot has been taught — the one fact about it that no screen showed.
+ *
+ * `docs/design/agent-lifecycle.md` states the rule this reads: a skill is a directory holding a
+ * `SKILL.md` in an agent's own home, read off the disk when a turn is assembled and stored
+ * nowhere. The bot's card is the reader this change adds, so what it needs from the snapshot is
+ * the pairing — which agent, and what that agent has — and the pairing is what is asserted here
+ * rather than a flat list, because the home a skill belongs to is the agent's and a bot has one
+ * home per roster row.
+ *
+ * **The directory is real, and the skill in it was written by this test.** A fixture that spelled
+ * the expected list out by hand would be this file's idea of a skills directory rather than the
+ * kernel's — the shape that let `at` and `created_at` drift apart while every test stayed green
+ * (see this file's header).
+ */
+test("a bot's skills are read from each agent's own home, and a home with nothing filed is empty", () => {
+  const root = mkdtempSync(join(tmpdir(), 'seek-skills-'))
+  try {
+    const taught = join(root, 'work')
+    const bare = join(root, 'watch')
+    mkdirSync(join(taught, 'skills', 'pdf-tools'), { recursive: true })
+    writeFileSync(
+      join(taught, 'skills', 'pdf-tools', 'SKILL.md'),
+      '---\nname: pdf-tools\ndescription: Cuts and merges PDFs. Use it when a file is a PDF.\n---\n\nOpen it before following it.\n',
+      'utf8',
+    )
+    // The other agent's home exists and holds no `skills/` under it, which is a bot nobody has
+    // taught rather than a broken one.
+    mkdirSync(bare, { recursive: true })
+
+    const store = seeded()
+    store.data.bots['bo_echo'] = { id: 'bo_echo', name: 'Echo' }
+    // Written work-first on purpose: `agentsOf()` answers in the store's own order, and a
+    // reader that sorted by role would have put `watch` first and gone unnoticed.
+    store.data.agents['ag_work'] = {
+      id: 'ag_work',
+      bot_id: 'bo_echo',
+      role: 'work',
+      home: taught,
+      model: 'unset',
+      prompt: 'unset',
+      tools: [],
+    }
+    store.data.agents['ag_watch'] = {
+      id: 'ag_watch',
+      bot_id: 'bo_echo',
+      role: 'watch',
+      home: bare,
+      model: 'unset',
+      prompt: 'unset',
+      tools: [],
+    }
+
+    const people = snapshotOf(store, '/tmp/seek.json').people
+    const echoed = people.find((person) => person.id === 'bo_echo')
+    assert.deepEqual(echoed.agents, [
+      {
+        role: 'work',
+        skills: [{ name: 'pdf-tools', description: 'Cuts and merges PDFs. Use it when a file is a PDF.' }],
+      },
+      // Carried as an empty group rather than dropped, so the card can say which agent has
+      // nothing instead of leaving a person to guess whether the row is missing.
+      { role: 'watch', skills: [] },
+    ])
+
+    // A person is not a bot that has said nothing, so their list of agents is empty.
+    assert.deepEqual(people.find((person) => person.id === 'pr_me').agents, [])
+
+    // `file` names the skill's own file relative to the agent's home, and no screen draws a
+    // path: it stops here rather than reaching the interface as a fact nothing can show.
+    assert.equal('file' in echoed.agents[0].skills[0], false)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
 })

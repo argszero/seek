@@ -382,6 +382,19 @@ const GENDERS = [
   { value: '其他', key: 'ui.contacts.gender.other' },
 ]
 
+/**
+ * The agents of this bot that have something filed under them, in the store's order.
+ *
+ * An agent with nothing filed is left out rather than drawn as a heading with no rows under it:
+ * the card answers "what does this bot know beyond its own prompt", and a role nobody has taught
+ * anything answers it by not appearing. The groups that survive stay apart, because each is a
+ * different home a person may have filed into — the one thing merging them would hide.
+ */
+function taughtOf(person) {
+  const agents = person.agents ?? []
+  return agents.filter((agent) => agent.skills.length !== 0)
+}
+
 /** What a row says under a name: what it does, else what it is for, else what it is. */
 function lineUnder(person) {
   const said = person.position ?? person.description
@@ -393,6 +406,8 @@ function lineUnder(person) {
 
 /** One person's card: what the store holds about them, and the way into a conversation. */
 function ContactCard({ person, firstLaw, onMessage, onRemove }) {
+  // What this bot has been taught, in the store's order — see `taughtOf`.
+  const taught = taughtOf(person)
   return (
     <div className="pane" data-contact-card={person.id}>
       <h2 className="pane-title">{person.name}</h2>
@@ -419,6 +434,43 @@ function ContactCard({ person, firstLaw, onMessage, onRemove }) {
           <p className="pane-desc" data-contact-field="personality">
             {person.personality ?? t('ui.contacts.card.nothing-said')}
           </p>
+        </div>
+      </div>
+
+      {/* **What this bot has been taught, which was the one thing about it no screen showed.**
+          `agent-lifecycle.md` says a skill is a directory in an agent's own home, read when a
+          turn is assembled; this card is what reads them out. One group per agent, named by its
+          role, because the home a skill goes in belongs to the agent and a bot has one per
+          roster row — the alternative, one merged list, would leave a person unable to tell
+          which home they had filed into. */}
+      <div className="card">
+        <div className="card-body">
+          <div className="card-title">{t('ui.contacts.card.skills')}</div>
+          {taught.length === 0 ? (
+            <p className="card-sub" data-contact-skills="none">
+              {t('ui.contacts.card.no-skills')}
+            </p>
+          ) : (
+            taught.map((agent) => (
+              <div key={agent.role} data-contact-agent={agent.role}>
+                <p className="card-sub mono">{agent.role}</p>
+                <div className="card-rows">
+                  {agent.skills.map((skill) => (
+                    <div key={skill.name} data-contact-skill={skill.name}>
+                      {/* **The name on a line of its own, not a row's left column.** The other
+                          card rows pair a short label with a value; a skill's description is
+                          prose that wraps, and beside it a name like `weekly-report` broke at
+                          its hyphen into `weekly-` / `report` — measured on the real card,
+                          2026-11-18. `.source` is the sheet's own darker caption, which is what
+                          makes a name read as the heading of the line under it. */}
+                      <p className="card-sub source mono">{skill.name}</p>
+                      <p className="card-sub">{skill.description}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </div>
 

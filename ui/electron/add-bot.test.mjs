@@ -113,6 +113,12 @@ test('a bot made in the window is in the store and in the snapshot the window dr
       gender: '男',
       position: '接口与联调',
       personality: '先给结论再给理由；改接口前列出谁会被影响。',
+      // The two rows `addBot` writes, in the order it writes them, and neither taught anything:
+      // the homes were just named in `agents.yml`, so no `skills/` is filed under either one.
+      agents: [
+        { role: 'watch', skills: [] },
+        { role: 'work', skills: [] },
+      ],
     })
 
     // On disk, not merely in the handle the window is holding.
