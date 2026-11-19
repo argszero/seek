@@ -19,6 +19,15 @@
  */
 
 const { FIRST_LAW } = require('./law.js')
+// **The kernel's own reader of a skills directory, not a second one.** `scanSkills` is what a
+// turn is assembled from (`work-server.ts`), so a copy here would be a second reading of one
+// disk ruled by `data-model.md` rule 17. It is required instead of being handed in as an
+// argument for the same reason pointed the other way: `host.js` calls `snapshotOf` from ten
+// places, and a snapshot carrying a bot's skills in one of them and not another would redraw
+// the card empty under a person's cursor. That a `.ts` module loads this way is measured, not
+// assumed — Electron 45's main process requires this file and returns the scan, and so does
+// `node --test`.
+const { scanSkills } = require('../../src/skills.ts')
 
 /**
  * The person the interface speaks as.
@@ -281,9 +290,42 @@ function everyoneOf(store) {
       gender: isBot ? textOrNull(who.gender) : null,
       position: isBot ? textOrNull(who.position) : null,
       personality: isBot ? textOrNull(who.personality) : null,
+      // What this bot has been taught, one group per agent (`taughtOf`). A person has no
+      // agents, so this is an empty list rather than `null`: the three fields above are `null`
+      // for a person because "not said" is a state a bot can be in, and a person is not a bot
+      // that has said nothing.
+      agents: isBot ? taughtOf(store, who.id) : [],
     }
   })
   return { people, stamped }
+}
+
+/**
+ * One bot's agents, and the skills each of them has filed in its own home.
+ *
+ * **A skill belongs to an agent, not to a bot.** `Agent.home` is the directory a turn opens as
+ * its own — `agents/<bot>/<role>` unless the roster row names another (`src/roster.ts`) — so a
+ * bot with two rows has two homes, and a person filing a skill is choosing which one it goes
+ * in. The groups are kept apart and named by their role for that reason: one merged list would
+ * hide the only thing a person filing a skill needs to know, and would make a skill nothing
+ * reads look like a skill that works.
+ *
+ * **Read off the disk as the snapshot is built**, because the directories are the record and a
+ * row here would be a second copy of what they say (`src/skills.ts`). Nothing in this product
+ * files one, so a bot nobody has taught comes back as its rows with nothing under them.
+ *
+ * **`file` is dropped rather than carried.** It names the file relative to the agent's home,
+ * and this window draws no path: a field the card cannot draw is a promise nobody keeps, which
+ * is the rule `skills.ts` applies to the scan's own return.
+ */
+function taughtOf(store, botId) {
+  return store.agentsOf(botId).map((agent) => ({
+    role: agent.role,
+    skills: scanSkills(agent.home).skills.map((skill) => ({
+      name: skill.name,
+      description: skill.description,
+    })),
+  }))
 }
 
 /**
