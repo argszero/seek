@@ -327,6 +327,10 @@ The screen the rail calls 机器人 lists this organization's bots and nothing e
 *"How could there be such a basic mistake? … Our goal is the same experience as a real Feishu group chat. Sending a message is sending a message: a person can send at any time, and a bot can speak at any time."* — the implementer's translation of the host's own words, 2026-10-29.
 Pressing send writes the words and draws them; the room answers on its own time, and its answer arrives afterwards as one more change. The composer is never held while a bot talks, and two things a person says are never queued one behind the other. **What this replaced was a send that waited for the whole turn**: the box disabled and the person's own line off the screen for as long as a model took to speak — a window that stops accepting words while somebody else is typing, which is how an app that has hung looks.
 
+**A message in a chat transcript shows its time.**
+*"In a chat transcript, a message should show its time."* — the implementer's translation of the host's own sentence; the session log holds the original.
+Every line a person reads in a room carries when it was said, drawn in the language the window runs in: **the day and the clock together**, because a transcript reaches back past midnight and a clock on its own is the same string for two different mornings. It is the message's own instant — the one the kernel wrote at delivery — and never the moment the window happened to draw it.
+
 ## How to work
 
 **One question at a time.**

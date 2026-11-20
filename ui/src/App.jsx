@@ -2640,6 +2640,17 @@ function Line({ message, sender, replies, inThread, onOpen, chip = false, me = n
               {proactive ? t('ui.chat.came-to-find-you') : t('ui.chat.answered-you')}
             </span>
           )}
+          {/* When it was said. The host's ruling — a chat transcript shows a message's time
+              (`docs/host-rulings.md`, "The window") — and the instant is the message's own,
+              `at` in the snapshot, which is the kernel's `created_at` written once at delivery.
+              **The absolute form and not the list's narrow one**: `whenShort()` drops the clock
+              for anything that did not happen today, and a transcript is exactly where the days
+              before today appear (`catalogue.mjs` says the same where it defines both). */}
+          {message.at && (
+            <span className="msg-time" data-msg-time={message.at}>
+              {when(message.at)}
+            </span>
+          )}
         </span>
         {/* Everything the message itself carries, on the box the client draws it on
             (`shell.css`, `.msg-bubble`): the client puts a name above a grey box and leaves the

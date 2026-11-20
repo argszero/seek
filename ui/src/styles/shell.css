@@ -953,6 +953,11 @@ body {
 }
 .msg-proactive[data-proactive='yes'] { color: var(--B700); }
 
+/* When a message was said: at the end of the name line, in the size and colour of the mark
+   beside it rather than of the name it follows, so a time reads as a detail about the line
+   and not as a second name. */
+.msg-time { margin-left: 6px; color: var(--N600); font-size: 11px; }
+
 /* The composer sits under the messages and is part of the same column, so the room's
    own width decides it — a fixed width here would drift from the messages above.
    It wraps for one reason: the mention chips take a line of their own above the box, which
