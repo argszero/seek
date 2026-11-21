@@ -917,7 +917,27 @@ function forwardAddressOf(value) {
   return { roomId, messageId }
 }
 
+/**
+ * **A press can land before the store is open.** `start()` in `main.js` makes the window
+ * first, then reads the organizations, then — on a first run — fetches the weights beside
+ * the package, and only after all that opens the store. The order is deliberate: a store
+ * this version refuses still has to open a window that draws the kernel's own paragraph
+ * about it. So the window is usable the whole time, and every write below begins by
+ * reading `host.store`.
+ *
+ * What a press answered in that span was `Cannot read properties of null (reading
+ * 'store')` — a sentence about this file's source, drawn where the kernel's own refusals
+ * go. So each write asks here first and answers in words that name the state. `yet` is the
+ * whole of it: the same press works once the store is open, which is why this line is not a
+ * refusal a person has to work around.
+ */
+function requireOpenStore(host) {
+  if (host) return
+  throw new Error('the store is not open yet, so nothing was written')
+}
+
 async function postMessage(host, input) {
+  requireOpenStore(host)
   const text = typeof input?.text === 'string' ? input.text : ''
   // A picture is a message whose words may be nothing: the caption is optional, and
   // `deliver()` accepts an `image` with an empty text as long as `media` names the blob
@@ -1040,6 +1060,7 @@ async function postMessage(host, input) {
  * would be a second shape for the same fact.
  */
 async function reactToMessage(host, input) {
+  requireOpenStore(host)
   const principalId = meOf(host.store)
   if (!principalId) {
     throw new Error('this store holds nobody to react as, so nothing was recorded')
@@ -1087,6 +1108,7 @@ async function reactToMessage(host, input) {
  *   `deliver()` refuses a sender who is not a member, in its own sentence.
  */
 async function createRoom(host, input) {
+  requireOpenStore(host)
   const rawName = typeof input?.name === 'string' ? input.name.trim() : ''
   const chosen = Array.isArray(input?.members) ? input.members : []
   // Only strings can name a principal. Anything else reaches the kernel as no member at all,
@@ -1134,6 +1156,7 @@ async function createRoom(host, input) {
  *   the member list.
  */
 async function addMember(host, input) {
+  requireOpenStore(host)
   const mods = await kernelModules()
   mods.rooms.addMember(host.store, {
     roomId: input?.roomId,
@@ -1198,6 +1221,7 @@ function rowsForNewBot(botId) {
  * Returns the snapshot, the new bot's id, and whether it was given agents.
  */
 async function addBot(host, input) {
+  requireOpenStore(host)
   const mods = await kernelModules()
   const { bot } = mods.bots.createBot(host.store, {
     name: input?.name,
@@ -1275,6 +1299,7 @@ module.exports = {
  * without clearing the three texts they did not open.
  */
 async function updateRoom(host, input) {
+  requireOpenStore(host)
   const patch = {}
   for (const field of ['name', 'description', 'announcement', 'tag']) {
     if (typeof input?.[field] === 'string') patch[field] = input[field]
@@ -1299,6 +1324,7 @@ async function updateRoom(host, input) {
  * about what is on screen and not about the store.
  */
 async function removeMember(host, input) {
+  requireOpenStore(host)
   const mods = await kernelModules()
   mods.rooms.removeMember(host.store, {
     roomId: input?.roomId,
@@ -1324,6 +1350,7 @@ async function removeMember(host, input) {
  * only place that knows where `media/` is; this file has never written a file).
  */
 async function deleteMessage(host, input) {
+  requireOpenStore(host)
   const mods = await kernelModules()
   const gone = mods.erase.deleteMessage(host.store, { messageId: input?.messageId })
   await host.store.save()
@@ -1339,6 +1366,7 @@ async function deleteMessage(host, input) {
 
 /** Take a whole thread back — the root and every reply it holds, at one instant. */
 async function deleteThread(host, input) {
+  requireOpenStore(host)
   const mods = await kernelModules()
   const gone = mods.erase.deleteThread(host.store, { rootId: input?.rootId })
   await host.store.save()
@@ -1356,6 +1384,7 @@ async function deleteThread(host, input) {
 
 /** Delete a room: its messages, its memberships, and the room itself. */
 async function deleteRoom(host, input) {
+  requireOpenStore(host)
   const mods = await kernelModules()
   const gone = mods.erase.deleteRoom(host.store, { roomId: input?.roomId })
   await host.store.save()
@@ -1379,6 +1408,7 @@ async function deleteRoom(host, input) {
  * membership in a room is delivered nothing.
  */
 async function deleteBot(host, input) {
+  requireOpenStore(host)
   const mods = await kernelModules()
   const gone = mods.bots.deleteBot(host.store, { botId: input?.botId })
   await host.store.save()
