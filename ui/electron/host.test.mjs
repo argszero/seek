@@ -22,7 +22,23 @@ import { test } from 'node:test'
 import { applyRoster } from '../../src/roster.ts'
 import { seedOneRoom, STUB_REPLY, stubDecide, stubJudge } from '../../src/main.ts'
 import { emptyData, SeekStore } from '../../src/store.ts'
-import { addMember, closeHost, createRoom, deleteBot, openHost, hostSnapshot, pictureLoader, postMessage } from './host.js'
+import {
+  addBot,
+  addMember,
+  closeHost,
+  createRoom,
+  deleteBot,
+  deleteMessage,
+  deleteRoom,
+  deleteThread,
+  hostSnapshot,
+  openHost,
+  pictureLoader,
+  postMessage,
+  reactToMessage,
+  removeMember,
+  updateRoom,
+} from './host.js'
 import { mediaDirFor, saveMedia } from './media.js'
 
 
@@ -941,5 +957,48 @@ test('the loader a turn is given reads the picture beside the store, and answers
     await assert.rejects(() => load({ key: '../seek.json', mime: 'image/png' }))
   } finally {
     await rm(dir, { recursive: true, force: true })
+  }
+})
+
+/**
+ * A press that lands before the store is open says so, and writes nothing.
+ *
+ * **The window is made before the store is, and that is deliberate.** `start()` in `main.js`
+ * makes the window first, then reads the organizations, then — on a first run — fetches the
+ * weights beside the package, and only then opens the store. The window stays usable the whole
+ * time, because a store this version refuses still has to open a window that draws the kernel's
+ * own paragraph about it. So a person can press Create, Send or Delete while there is no store
+ * at all, and every write in this file begins by reading `host.store`.
+ *
+ * What that press answered was `Cannot read properties of null (reading 'store')` — a sentence
+ * about this file's source, drawn where the kernel's own refusals go (`makeRoom()` in
+ * `ui/src/App.jsx` shows `made.error` verbatim). It was found on a real install: create a chat,
+ * choose a bot, press Create, and the form said that.
+ *
+ * Each write is driven with a host that is not there, and each has to answer in words that name
+ * the state — `yet` being the whole point, because the same press works once the store is open
+ * — rather than by throwing whatever the first `host.store` read happens to raise.
+ */
+test('a press that lands before the store is open says so, and writes nothing', async () => {
+  const writes = [
+    ['send a message', (input) => postMessage(null, input)],
+    ['react to a message', (input) => reactToMessage(null, input)],
+    ['make a room', (input) => createRoom(null, input)],
+    ['add somebody to a room', (input) => addMember(null, input)],
+    ['make a bot', (input) => addBot(null, input)],
+    ['change a room', (input) => updateRoom(null, input)],
+    ['take somebody out of a room', (input) => removeMember(null, input)],
+    ['delete a message', (input) => deleteMessage(null, input)],
+    ['delete a thread', (input) => deleteThread(null, input)],
+    ['delete a room', (input) => deleteRoom(null, input)],
+    ['delete a bot', (input) => deleteBot(null, input)],
+  ]
+
+  for (const [what, write] of writes) {
+    await assert.rejects(
+      write({}),
+      /the store is not open yet, so nothing was written/,
+      `${what}: the form says the store is not open, not what this file reads`,
+    )
   }
 })
