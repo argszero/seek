@@ -18,6 +18,8 @@
  * messages by calling `deliver()`, so the kernel's shape is the only shape in play.
  */
 
+const { join } = require('node:path')
+
 const { FIRST_LAW } = require('./law.js')
 // **The kernel's own reader of a skills directory, not a second one.** `scanSkills` is what a
 // turn is assembled from (`work-server.ts`), so a copy here would be a second reading of one
@@ -27,7 +29,7 @@ const { FIRST_LAW } = require('./law.js')
 // the card empty under a person's cursor. That a `.ts` module loads this way is measured, not
 // assumed — Electron 45's main process requires this file and returns the scan, and so does
 // `node --test`.
-const { scanSkills } = require('../../src/skills.ts')
+const { SKILLS_DIR, scanSkills } = require('../../src/skills.ts')
 
 /**
  * The person the interface speaks as.
@@ -314,13 +316,20 @@ function everyoneOf(store) {
  * row here would be a second copy of what they say (`src/skills.ts`). Nothing in this product
  * files one, so a bot nobody has taught comes back as its rows with nothing under them.
  *
- * **`file` is dropped rather than carried.** It names the file relative to the agent's home,
- * and this window draws no path: a field the card cannot draw is a promise nobody keeps, which
- * is the rule `skills.ts` applies to the scan's own return.
+ * **The directory is carried; `file` is not.** `directory` is the one path the card draws, and
+ * it is what keeping the groups apart exists for: `agent.home` is resolved beside the store,
+ * inside the data directory (`src/roster.ts`), so "its own directory" is not an address a person
+ * can open until a row says which one it is. `file` stays on the turn's side (`skills.ts`): it
+ * names one skill's own `SKILL.md` relative to that home, and drawn beside the directory it would
+ * spell the same place twice in a form the reader has to join up by hand — the card draws the
+ * skill's name instead, which is its directory under `skills/`.
  */
 function taughtOf(store, botId) {
   return store.agentsOf(botId).map((agent) => ({
     role: agent.role,
+    // Built from the kernel's own `SKILLS_DIR`, not a second spelling of `'skills'`: the scan
+    // below reads that same directory, and two spellings would drift apart in silence.
+    directory: join(agent.home, SKILLS_DIR),
     skills: scanSkills(agent.home).skills.map((skill) => ({
       name: skill.name,
       description: skill.description,

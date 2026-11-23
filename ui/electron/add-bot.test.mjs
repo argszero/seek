@@ -21,7 +21,7 @@
 import assert from 'node:assert/strict'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { test } from 'node:test'
 
 import { seedOneRoom, STUB_REPLY, stubDecide, stubJudge } from '../../src/main.ts'
@@ -115,9 +115,20 @@ test('a bot made in the window is in the store and in the snapshot the window dr
       personality: '先给结论再给理由；改接口前列出谁会被影响。',
       // The two rows `addBot` writes, in the order it writes them, and neither taught anything:
       // the homes were just named in `agents.yml`, so no `skills/` is filed under either one.
+      // The directory is still named, because that is what a person needs to file the first
+      // skill — the roster's default home beside the store, with `skills/` under it
+      // (`src/roster.ts`, `agents/<bot>/<role>`), which is the path the card now draws.
       agents: [
-        { role: 'watch', skills: [] },
-        { role: 'work', skills: [] },
+        {
+          role: 'watch',
+          directory: join(dirname(w.storeFile), 'agents', made.botId, 'watch', 'skills'),
+          skills: [],
+        },
+        {
+          role: 'work',
+          directory: join(dirname(w.storeFile), 'agents', made.botId, 'work', 'skills'),
+          skills: [],
+        },
       ],
     })
 
