@@ -1144,19 +1144,78 @@ test("a bot's skills are read from each agent's own home, and a home with nothin
     assert.deepEqual(echoed.agents, [
       {
         role: 'work',
+        directory: join(taught, 'skills'),
         skills: [{ name: 'pdf-tools', description: 'Cuts and merges PDFs. Use it when a file is a PDF.' }],
       },
       // Carried as an empty group rather than dropped, so the card can say which agent has
-      // nothing instead of leaving a person to guess whether the row is missing.
-      { role: 'watch', skills: [] },
+      // nothing instead of leaving a person to guess whether the row is missing — and so the
+      // directory a person would file into is named before anything is filed there.
+      { role: 'watch', directory: join(bare, 'skills'), skills: [] },
     ])
 
     // A person is not a bot that has said nothing, so their list of agents is empty.
     assert.deepEqual(people.find((person) => person.id === 'pr_me').agents, [])
 
-    // `file` names the skill's own file relative to the agent's home, and no screen draws a
-    // path: it stops here rather than reaching the interface as a fact nothing can show.
+    // `file` names the skill's own file relative to the agent's home, and the card draws the
+    // skill's name and the directory instead: it stops here rather than reaching the interface
+    // as a second spelling of the same place.
     assert.equal('file' in echoed.agents[0].skills[0], false)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+/**
+ * The address a person files a skill in.
+ *
+ * The card's own sentence said "a skill is a folder in this bot's own directory" and then
+ * never said which directory. `agent.home` is resolved beside the store, inside the data
+ * directory (`src/roster.ts`), so `.../agents/<bot>/<role>` is not a path a person can reach
+ * from anything the window shows — the row has to carry it. Two agents with different homes
+ * are used so a row that carried one directory for the whole bot fails instead of passing by
+ * coincidence, and the empty-state half is covered by both being empty on disk: the directory
+ * is named whether or not something is filed under it.
+ */
+test("each agent's row says which directory a skill goes in", () => {
+  const root = mkdtempSync(join(tmpdir(), 'seek-skills-dir-'))
+  try {
+    const work = join(root, 'work')
+    const watch = join(root, 'watch')
+    // Both homes exist and hold no `skills/` under them: a bot nobody has taught, which is the
+    // state the card's empty sentence is drawn in.
+    mkdirSync(work, { recursive: true })
+    mkdirSync(watch, { recursive: true })
+
+    const store = seeded()
+    store.data.bots['bo_echo'] = { id: 'bo_echo', name: 'Echo' }
+    store.data.agents['ag_work'] = {
+      id: 'ag_work',
+      bot_id: 'bo_echo',
+      role: 'work',
+      home: work,
+      model: 'unset',
+      prompt: 'unset',
+      tools: [],
+    }
+    store.data.agents['ag_watch'] = {
+      id: 'ag_watch',
+      bot_id: 'bo_echo',
+      role: 'watch',
+      home: watch,
+      model: 'unset',
+      prompt: 'unset',
+      tools: [],
+    }
+
+    const echoed = snapshotOf(store, '/tmp/seek.json').people.find((person) => person.id === 'bo_echo')
+    assert.deepEqual(
+      echoed.agents.map((agent) => [agent.role, agent.directory]),
+      [
+        ['work', join(work, 'skills')],
+        ['watch', join(watch, 'skills')],
+      ],
+      'each agent names the directory under its own home, not one shared by the bot',
+    )
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
