@@ -549,6 +549,8 @@ test("a bot's gender, position and personality are carried to the window as writ
     // one shape, and a card that had to ask whether absence meant "none" would be reading the
     // snapshot's mind.
     agents: [],
+    // Nothing has settled on this bot's inbox either, so its card has no rate to draw.
+    judged: null,
   })
 
   // A bot that has said none of it is drawn as "not said" on all three rather than as no card
@@ -584,6 +586,8 @@ test('a person with no name is offered under their id', () => {
       // A person has no agents at all, which is an empty list and not `null`: the four above
       // are `null` because "not said" is something a bot can have said nothing about.
       agents: [],
+      // And no inbox and no gate, so there is nothing a rate could be counted from.
+      judged: null,
     },
   ])
 })
@@ -1028,6 +1032,88 @@ test('a bot in a room says what it took on and what it passed on', async () => {
   assert.equal(member('bo_other').judged, null, 'a bot nothing was decided about has no reading')
   // A person has no inbox, so there is nothing here for one to be counted from.
   assert.equal(member('pr_me').judged, null, 'a person is never given a reading')
+})
+
+/**
+ * **The same two numbers for a bot as a whole, and the rate they make.**
+ *
+ * `judgedByRoom()` answers "is it picking things up *here*", which is what a member row is for.
+ * The design asks a second question of the same record — `agent-lifecycle.md:380`, *"a hit rate
+ * that suddenly jumps to 50% means a persona is written wrong"* — and that one is about the
+ * agent: a persona is one thing across every room it works in, and a reader who has to open
+ * each room to see it is a reader who will not notice. `ratio` is the third of the design's
+ * four names, and the only one no screen drew: the counts were already there and the division
+ * was left to whoever was reading them.
+ *
+ * **Nothing settled is no rate.** A bot nothing has reached has no reading at all rather than a
+ * rate of zero, the same two kinds of nothing the member row keeps apart.
+ */
+test("a bot's card totals every room it is in, and says the rate", async () => {
+  const store = new SeekStore(emptyData())
+  store.data.principals['pr_me'] = { id: 'pr_me', kind: 'human', name: 'argszero' }
+  store.data.bots['bo_card'] = { id: 'bo_card', name: 'Card' }
+  store.data.bots['bo_quiet'] = { id: 'bo_quiet', name: 'Quiet' }
+  store.data.rooms['rm_a'] = { id: 'rm_a', name: 'Room A', chat_mode: 'group', created_at: AT }
+  store.data.rooms['rm_b'] = { id: 'rm_b', name: 'Room B', chat_mode: 'group', created_at: AT }
+  for (const [index, roomId] of ['rm_a', 'rm_b'].entries()) {
+    for (const [slot, who] of ['pr_me', 'bo_card', 'bo_quiet'].entries()) {
+      const id = `mb_${index}_${slot}`
+      store.data.memberships[id] = {
+        id,
+        room_id: roomId,
+        principal_id: who,
+        joined_at: AT,
+        role: who === 'pr_me' ? 'owner' : 'member',
+      }
+    }
+  }
+  store.data.agents['ag_card'] = {
+    id: 'ag_card',
+    bot_id: 'bo_card',
+    role: 'work',
+    home: '/tmp/home',
+    model: 'big',
+    prompt: 'work-v1',
+    tools: ['say'],
+  }
+
+  // Taken on, in the first room: a mention fast-passes, and the turn is what records it.
+  deliver(store, {
+    roomId: 'rm_a',
+    senderId: 'pr_me',
+    text: '@Card the build is red',
+    mentions: [{ id: 'bo_card', name: 'Card' }],
+    now: AT,
+  })
+  const settled = gate(store, 'bo_card', store.pending('bo_card'))
+  await runTurn(store, { agentId: 'ag_card', roomId: 'rm_a', entries: settled.act, now: AT })
+
+  // Passed on, in both rooms: another bot's broadcast settles `ignore` wherever it lands. The
+  // two are in different rooms on purpose — a total that only counted one room would read
+  // `passed: 1` here and look just as plausible.
+  deliver(store, {
+    roomId: 'rm_a',
+    senderId: 'bo_quiet',
+    text: 'the deploy window is 22:00',
+    now: '2026-10-25T01:02:00.000Z',
+  })
+  deliver(store, {
+    roomId: 'rm_b',
+    senderId: 'bo_quiet',
+    text: 'lunch?',
+    now: '2026-10-25T01:03:00.000Z',
+  })
+  gate(store, 'bo_card', store.pending('bo_card'))
+
+  const people = snapshotOf(store, '/tmp/seek.json').people
+  const card = (id) => people.find((one) => one.id === id)
+
+  // One turn and two verdicts, added up across the two rooms, and the rate beside them.
+  assert.deepEqual(card('bo_card').judged, { acted: 1, passed: 2, ratio: 1 / 3 })
+  // Nothing was ever settled about this bot, so it has no rate to be wrong about.
+  assert.equal(card('bo_quiet').judged, null, 'a bot nothing was decided about has no reading')
+  // A person has no inbox and no gate, so there is nothing to count.
+  assert.equal(card('pr_me').judged, null, 'a person is never given a reading')
 })
 
 /**

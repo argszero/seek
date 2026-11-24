@@ -410,6 +410,25 @@ function ContactCard({ person, firstLaw, onMessage, onRemove }) {
             <Row label={t('ui.contacts.card.gender')} value={genderWord(person.gender)} />
             <Row label={t('ui.contacts.card.position')} value={said(person.position)} />
             <Row label={t('ui.contacts.card.description')} value={said(person.description)} />
+            {/* **What it has done with what reached it, in every room it is in.** This is the
+                one number the card did not have: `agent-lifecycle.md:380` makes the gate's hit
+                rate *"the product's cost curve"* and asks that it be visible, because a rate
+                that jumps is how a person notices a persona written wrong — and the two counts
+                alone leave the division to whoever is reading. It is drawn here rather than
+                only on a room's member row because a persona is one thing across the rooms it
+                works in, and the row is the same person looked at from inside one of them.
+                A bot nothing has been settled about has no reading, so the row is absent
+                rather than a rate of zero. */}
+            {person.judged !== null && person.judged !== undefined && (
+              <Row
+                label={t('ui.contacts.card.judged')}
+                value={t('ui.contacts.card.judged-value', {
+                  acted: person.judged.acted,
+                  seen: person.judged.acted + person.judged.passed,
+                  ratio: Math.round(person.judged.ratio * 100),
+                })}
+              />
+            )}
             <Row label={t('ui.contacts.card.id')} value={person.id} mono />
           </div>
         </div>

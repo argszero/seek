@@ -107,6 +107,8 @@
     "ui.contacts.card.description": "Description",
     "ui.contacts.card.gender": "Gender",
     "ui.contacts.card.id": "Identifier",
+    "ui.contacts.card.judged": "Took on",
+    "ui.contacts.card.judged-value": "{acted} of {seen} · {ratio}%",
     "ui.contacts.card.law": "First law",
     "ui.contacts.card.no-skills": "nothing filed yet — a skill is a folder in this directory",
     "ui.contacts.card.nothing-said": "nothing written yet, so it speaks the default way",

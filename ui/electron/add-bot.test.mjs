@@ -130,6 +130,9 @@ test('a bot made in the window is in the store and in the snapshot the window dr
           skills: [],
         },
       ],
+      // A bot made a moment ago has had nothing settle on its inbox, so its card draws no
+      // rate at all rather than a rate of zero.
+      judged: null,
     })
 
     // On disk, not merely in the handle the window is holding.

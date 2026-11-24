@@ -160,8 +160,8 @@ test('the panel draws the room’s own facts, and a removed bot is in no list of
     /return people\.filter\(\(one\) => !stamped\.has\(one\.id\) && \(one\.bot \|\| one\.id === me\)\)/,
     'a deleted bot is not offered, and neither is a person this organization does not have',
   )
-  assert.match(SNAPSHOT, /function namedOf\(store\)/)
-  assert.match(SNAPSHOT, /named: namedOf\(store\)/)
+  assert.match(SNAPSHOT, /function namedOf\(store, byRoom\)/)
+  assert.match(SNAPSHOT, /named: namedOf\(store, judged\)/)
   // And the window looks a line's sender up there, with the room's own row layered over it —
   // built from members alone, a bot that left took its name off the sentences it wrote
   // (measured 2026-10-27: `ou_447c1cba8e4d4bee` where `Echobot` had been).

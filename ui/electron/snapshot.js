@@ -264,7 +264,7 @@ function withServerFacts(snapshot, { pending = null, weights = null, refusal = n
  * written in, and a list that reorders itself between two snapshots would move under a
  * person's cursor while they are choosing.
  */
-function everyoneOf(store) {
+function everyoneOf(store, byRoom) {
   // **A bot deleted from the organization is still someone this store named.** Its row stays
   // because every message it wrote points at it (`Bot.deleted_at`), so the two answers below
   // read one list and differ in the one place that matters: who this organization *has*, and
@@ -276,6 +276,11 @@ function everyoneOf(store) {
       .filter((bot) => bot.deleted_at !== undefined)
       .map((bot) => bot.id),
   )
+  // **What each bot has taken on and passed on anywhere**, which is the reading its own card
+  // draws. Folded from the room rows `snapshotOf()` has already read rather than from a second
+  // walk of the record, for the reason every other figure there is read once: the two surfaces
+  // then cannot disagree about what was counted.
+  const judged = judgedByBot(byRoom ?? judgedByRoom(store))
   const people = [...Object.values(store.data.principals), ...Object.values(store.data.bots)].map((who) => {
     const isBot = Boolean(store.data.bots[who.id])
     return {
@@ -297,6 +302,11 @@ function everyoneOf(store) {
       // for a person because "not said" is a state a bot can be in, and a person is not a bot
       // that has said nothing.
       agents: isBot ? taughtOf(store, who.id) : [],
+      // **What it has done with what reached it, anywhere** — the one reading a card draws.
+      // `null` for a person, who has no inbox for it to be counted from, and for a bot nothing
+      // has been settled about yet, where a rate of zero would claim a reading the record does
+      // not hold. Both are the two kinds of nothing the member row keeps apart too.
+      judged: isBot ? (judged.get(who.id) ?? null) : null,
     }
   })
   return { people, stamped }
@@ -354,8 +364,8 @@ function taughtOf(store, botId) {
  * while the history it left may still *name* it. That is the whole difference between this
  * answer and `namedOf` below, and both read `everyoneOf`.
  */
-function peopleOf(store) {
-  const { people, stamped } = everyoneOf(store)
+function peopleOf(store, byRoom) {
+  const { people, stamped } = everyoneOf(store, byRoom)
   const me = meOf(store)
   return people.filter((one) => !stamped.has(one.id) && (one.bot || one.id === me))
 }
@@ -368,8 +378,8 @@ function peopleOf(store) {
  * id (`ou_447c1cba8e4d4bee`) when the author was not a member any more: the sentence survived
  * and lost its signature. Measured 2026-10-27 after taking a bot out of a room it had spoken in.
  */
-function namedOf(store) {
-  const { people } = everyoneOf(store)
+function namedOf(store, byRoom) {
+  const { people } = everyoneOf(store, byRoom)
   return Object.fromEntries(people.map((one) => [one.id, one]))
 }
 
@@ -749,6 +759,39 @@ function judgedByRoom(store) {
 }
 
 /**
+ * **The same two numbers, totalled over every room a bot was in** — the reading its own card
+ * draws.
+ *
+ * `judgedByRoom()` answers *is it picking things up here*, which is what a member row is for.
+ * `agent-lifecycle.md:380` asks a second question of the same record — *"a hit rate that
+ * suddenly jumps to 50% means a persona is written wrong or a room has been flooded by bots"* —
+ * and that one is about the agent rather than about one room it happens to be in: a persona is
+ * one thing across every room it works in, so a reader who had to open each room to see the
+ * figure would be a reader who never notices the jump. Folding the room rows is also what keeps
+ * the two surfaces from disagreeing about what was counted.
+ *
+ * **`ratio` is the third of §380's four names and the one nothing drew.** The window already
+ * had `acted` and `passed` and left the division to whoever was reading them. `watched` is
+ * `acted + passed`, because settled either way means the entry was read: the rules or the
+ * judgement declined it, or it opened a turn. It is `null` and not `0` when there is nothing to
+ * divide — a bot nothing has reached has no rate rather than a rate of nothing, the same two
+ * kinds of nothing the counts themselves keep apart.
+ */
+function judgedByBot(byRoom) {
+  const byBot = new Map()
+  for (const room of byRoom.values()) {
+    for (const [botId, row] of room) {
+      const had = byBot.get(botId) ?? { acted: 0, passed: 0 }
+      const acted = had.acted + row.acted
+      const passed = had.passed + row.passed
+      const watched = acted + passed
+      byBot.set(botId, { acted, passed, ratio: watched === 0 ? null : acted / watched })
+    }
+  }
+  return byBot
+}
+
+/**
  * **Where a thread was stopped on purpose and written down** — §11.6's third ending.
  *
  * The kernel writes one `Memory` row with `level: 'diary'` at the end of the turn that walked
@@ -948,7 +991,7 @@ function snapshotOf(
   const me = meOf(store)
   // Read once, like `spent` and `silences`: the state table and the list of bots it is about
   // must not be two reads of one store.
-  const people = peopleOf(store)
+  const people = peopleOf(store, judged)
   const mine = new Set(
     Object.values(store.data.memberships)
       .filter((row) => row.principal_id === me)
@@ -1108,7 +1151,7 @@ function snapshotOf(
     activity: botStatesOf(activity, people),
     // A message may name someone no longer in the room, so the window gets the names that are
     // not offers as well — see `namedOf`.
-    named: namedOf(store),
+    named: namedOf(store, judged),
     me,
     storeFile,
     stage1: one,
