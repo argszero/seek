@@ -103,6 +103,8 @@
     "ui.contacts.card.description": "描述",
     "ui.contacts.card.gender": "性别",
     "ui.contacts.card.id": "标识",
+    "ui.contacts.card.judged": "接下的",
+    "ui.contacts.card.judged-value": "{acted} / {seen} · {ratio}%",
     "ui.contacts.card.law": "第一准则",
     "ui.contacts.card.no-skills": "还没有东西——技能就是放在这个目录里的一个文件夹",
     "ui.contacts.card.nothing-said": "还没写，它会按默认的方式说话、做事",

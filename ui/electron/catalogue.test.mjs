@@ -97,6 +97,12 @@ const SAMPLES = {
   // supplies only the words around them.
   acted: 3,
   passed: 5,
+  // The bot card's own reading: the same two counts added up, and the rate they make. `seen` is
+  // the denominator already summed by the snapshot — what the gate settled either way — and
+  // `ratio` arrives as a whole percent rather than a fraction, because the language should not
+  // be the place that decides how many digits a rate is written to.
+  seen: 8,
+  ratio: 38,
 }
 
 function paramsFor(template) {
