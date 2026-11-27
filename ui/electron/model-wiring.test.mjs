@@ -501,6 +501,57 @@ test('a work server makes the words in the room the model’s, and the window na
   }
 })
 
+test('a bot its own roster silenced is not drawn as a model that is not ready', async () => {
+  // The words half is bound and answering — this server serves the model the work row claims —
+  // so the refusal that follows is not the model's: `say` left the row, which is the edit
+  // `README.md` invites and the one row edit the kernel refuses at bind (`work-server.ts`).
+  // `quiet` is the window's *model* reading, so this bot must stay out of it. Its reason is
+  // `refusal`, which `main.js` writes to stderr, per `docs/host-rulings.md`, "The window does
+  // not speak to a developer": a half that refused says so there rather than on the screen.
+  const w = await oneBotWorld()
+  // The roster file is what a person edits, and a store with no `agents.yml` beside it keeps
+  // its own agent rows (`host.js`, `readRosterFor`), so writing the row here silences the bot
+  // exactly as that edit does.
+  const store = await SeekStore.load(w.storeFile)
+  store.data.agents[w.world.agentA2].tools = ['read', 'glob']
+  await store.save()
+
+  const watch = fakeServer({ probabilities: ACT })
+  const work = fakeServer({ modelAlias: 'big', modelPath: null })
+  const host = await openHost(w.storeFile, {
+    server: 'http://127.0.0.1:8080',
+    window: '24',
+    fetch: watch.fetch,
+    workServer: 'http://127.0.0.1:8081',
+    workFetch: work.fetch,
+  })
+  try {
+    assert.deepEqual(host.stage1.quiet, [], 'the judgement is bound for this bot')
+    assert.match(
+      host.stage2.refusal,
+      /the roster's work row allows 'read', 'glob'/,
+      'the kernel’s own sentence still names the row, and it is the log’s',
+    )
+    assert.deepEqual(host.stage2.quiet, [], 'while the model reading does not carry it')
+
+    const snapshot = await postAndWait(host, { roomId: w.world.room, text: 'the batch failed' })
+
+    assert.equal(
+      snapshot.modelNotReady,
+      null,
+      'so nothing tells a person their model is not ready when the model is bound and answering',
+    )
+    assert.match(
+      snapshot.stage2.refusal,
+      /work row allows 'read', 'glob'/,
+      'and the reason is still there for whoever reads the log',
+    )
+  } finally {
+    closeHost(host)
+    await rm(w.dir, { recursive: true, force: true })
+  }
+})
+
 test('a refused words half leaves that bot quiet and the watch half working', async () => {
   // The fixture's work row claims `big`; this server serves `other`, so stage 2 refuses for
   // that bot and stage 1 does not. The halves are read apart and reported apart — a bot left
