@@ -198,6 +198,10 @@ function stageTwoOf(stage2) {
   return {
     server: typeof stage2?.server === 'string' && stage2.server !== '' ? stage2.server : null,
     refusal: typeof stage2?.refusal === 'string' && stage2.refusal !== '' ? stage2.refusal : null,
+    // The same reading as stage 1's, with one bot deliberately left out of it: a bot whose own
+    // work row lost `say` is refused at bind and named in `refusal` alone, because its model is
+    // bound and answering. Drawing it here would say "the model is not ready" about a model that
+    // is, which is the sentence `docs/host-rulings.md` grants only for the model itself.
     quiet: namesOf(stage2?.quiet),
     pending: pendingOf(stage2?.pending),
     // A missing weights directory starves both halves, so stage 2 reads them the same way stage

@@ -173,6 +173,27 @@ export interface WorkServerOptions {
 }
 
 /**
+ * Does this bot's work row leave it unable to answer?
+ *
+ * One row edit is refused at bind: the role that speaks losing `say` from its own row. It is
+ * the edit `README.md` invites, and the only one that leaves a bot woken with a full box and
+ * no way to answer — so it throws rather than quietly offering the turn fewer tools.
+ *
+ * **It is exported because the interface asks the same question about the same refusal.**
+ * `ui/electron/host.js` catches a refused bind and has to decide which of the window's two
+ * readings the bot belongs to: `quiet` is the model's (`snapshot.js`, `modelNotReadyOf`, which
+ * draws "the model is not ready"), and a bot its own roster silenced still has a model bound
+ * and answering. A second copy of this rule in the interface is the shape that drifted into
+ * the row which took a release to notice, so the rule keeps one home and both callers ask it.
+ *
+ * `undefined` is not this edit: a bot with no work row never reaches the bind at all
+ * (`main.ts`, `sceneOf` refuses such a store first), so there is nothing to refuse here.
+ */
+export function workRowCannotAnswer(tools: string[] | undefined): boolean {
+  return tools !== undefined && !tools.includes('say');
+}
+
+/**
  * Bind stage 2 to one bot, over one server, and hand back the loop's `Decide`.
  *
  * Asynchronous only because two of the refusals need the server's answers: a model name
@@ -259,7 +280,7 @@ export async function workOverServer(
   // `main.ts` — `sceneOf` refuses a store whose bot has no one to answer before stage 2
   // is bound at all.
   const work = store.agentsOf(botId).find((agent) => agent.role === 'work');
-  if (work && !work.tools.includes('say')) {
+  if (work !== undefined && workRowCannotAnswer(work.tools)) {
     const allowed = work.tools.map((name) => `'${name}'`).join(', ') || 'nothing';
     throw new Error(
       `the roster's work row allows ${allowed} and this turn can answer only through ` +

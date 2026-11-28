@@ -554,8 +554,17 @@ async function stageTwoFor(mods, store, standing, options) {
         }),
       );
     } catch (error) {
-      quiet.push(nameOf(bot));
+      // **Not every refused bind is a model that is not ready.** `quiet` is the model reading —
+      // `snapshot.js`'s `modelNotReadyOf` draws "the model is not ready" from it — and the one
+      // row edit the kernel refuses at bind leaves a bot whose model is bound and answering:
+      // what it lost was the word `say` in `agents.yml`, the edit `README.md` invites. Its
+      // reason belongs to `refusals`, which `main.js` writes to stderr, and that is where
+      // `docs/host-rulings.md`, "The window does not speak to a developer", puts a half that
+      // refused. The kernel answers the question so that the rule about which row edit
+      // silences a bot keeps one definition rather than growing a second one here.
       refusals.push(`${nameOf(bot)}: ${error instanceof Error ? error.message : String(error)}`);
+      const work = store.agentsOf(bot.id).find((agent) => agent.role === 'work');
+      if (!mods.workServer.workRowCannotAnswer(work?.tools)) quiet.push(nameOf(bot));
     }
   }
 
